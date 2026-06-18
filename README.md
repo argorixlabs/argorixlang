@@ -1,3 +1,10 @@
+<div align="center">
+    <img width=300 src="./assets/main.gif"/>    
+    <br/>
+    <br/>
+    <a href="https://git.io/typing-svg"><img src="https://argorix-lang.org/assets/argorix-lockup.png" alt="Typing SVG" /></a>
+</div>
+
 # Argorix Lang
 
 Argorix Lang is a compiled language for secure, verifiable communication
