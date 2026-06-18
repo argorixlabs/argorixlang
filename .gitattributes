@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.argx text eol=lf
+*.lock text eol=lf
