@@ -209,6 +209,8 @@ mod tests {
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Argorix.Security".into(),
+            assertions: vec![],
+            failures: vec![],
             agents: ["PromptScanner", "PolicyJudge", "RuntimeGate"]
                 .into_iter()
                 .map(|name| BytecodeAgent {
@@ -217,6 +219,8 @@ mod tests {
                 })
                 .collect(),
             capabilities: vec![],
+            tools: vec![],
+            models: vec![],
             instructions: vec![
                 Instruction::DeclareProtocol {
                     name: "PromptDefense".into(),

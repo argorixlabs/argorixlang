@@ -1,0 +1,5 @@
+module Argorix.Invalid
+assert magical_policy
+type UserPrompt { content: string }
+agent A { receives UserPrompt }
+

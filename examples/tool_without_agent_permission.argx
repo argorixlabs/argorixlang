@@ -1,0 +1,13 @@
+module Argorix.Invalid
+capability web.search { level safe }
+type UserPrompt { content: string }
+type ToolResult { content: string }
+tool WebSearch { capability web.search input UserPrompt output ToolResult }
+agent Agent {
+    receives UserPrompt
+    capabilities { web.search }
+    on UserPrompt as prompt {
+        call WebSearch with prompt
+    }
+}
+

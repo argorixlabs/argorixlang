@@ -6,11 +6,45 @@ pub struct IrProgram {
     pub ir_version: String,
     pub language: String,
     pub module: String,
+    pub assertions: Vec<IrAssertion>,
+    pub failures: Vec<IrFailure>,
     pub capabilities: Vec<IrCapability>,
     pub enums: Vec<IrEnum>,
     pub types: Vec<IrType>,
+    pub tools: Vec<IrTool>,
+    pub models: Vec<IrModel>,
     pub agents: Vec<IrAgent>,
     pub protocols: Vec<IrProtocol>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrAssertion {
+    pub name: String,
+    pub argument: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrFailure {
+    pub name: String,
+    pub action: String,
+    pub trace: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrModel {
+    pub name: String,
+    pub provider: String,
+    pub capability: String,
+    pub input: String,
+    pub output: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrTool {
+    pub name: String,
+    pub capability: String,
+    pub input: String,
+    pub output: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -46,6 +80,8 @@ pub struct IrAgent {
     pub receives: Vec<IrReceive>,
     pub sends: Vec<IrSend>,
     pub capabilities: Vec<String>,
+    pub tools: Vec<String>,
+    pub models: Vec<String>,
     pub handlers: Vec<IrHandler>,
 }
 
@@ -63,6 +99,8 @@ pub enum IrHandlerInstruction {
     Trace { binding: String },
     Halt,
     Intrinsic { name: String, argument: String },
+    Call { tool: String, binding: String },
+    Ask { model: String, binding: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -94,9 +132,26 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.6".to_owned(),
+            ir_version: "0.9".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
+            assertions: program
+                .assertions
+                .iter()
+                .map(|assertion| IrAssertion {
+                    name: assertion.name.value.clone(),
+                    argument: assertion.argument.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
+            failures: program
+                .failures
+                .iter()
+                .map(|failure| IrFailure {
+                    name: failure.name.value.clone(),
+                    action: failure.action.value.clone(),
+                    trace: "required".into(),
+                })
+                .collect(),
             capabilities: program
                 .capabilities
                 .iter()
@@ -133,6 +188,27 @@ impl From<&Program> for IrProgram {
                         .collect(),
                 })
                 .collect(),
+            tools: program
+                .tools
+                .iter()
+                .map(|tool| IrTool {
+                    name: tool.name.value.clone(),
+                    capability: tool.capability.value.clone(),
+                    input: tool.input.value.clone(),
+                    output: tool.output.value.clone(),
+                })
+                .collect(),
+            models: program
+                .models
+                .iter()
+                .map(|model| IrModel {
+                    name: model.name.value.clone(),
+                    provider: model.provider.value.clone(),
+                    capability: model.capability.value.clone(),
+                    input: model.input.value.clone(),
+                    output: model.output.value.clone(),
+                })
+                .collect(),
             agents: program
                 .agents
                 .iter()
@@ -160,6 +236,12 @@ impl From<&Program> for IrProgram {
                         .iter()
                         .map(|capability| capability.value.clone())
                         .collect(),
+                    tools: agent.tools.iter().map(|tool| tool.value.clone()).collect(),
+                    models: agent
+                        .models
+                        .iter()
+                        .map(|model| model.value.clone())
+                        .collect(),
                     handlers: agent
                         .handlers
                         .iter()
@@ -186,6 +268,18 @@ impl From<&Program> for IrProgram {
                                         IrHandlerInstruction::Intrinsic {
                                             name: name.value.clone(),
                                             argument: argument.value.clone(),
+                                        }
+                                    }
+                                    HandlerInstruction::CallTool { tool, binding } => {
+                                        IrHandlerInstruction::Call {
+                                            tool: tool.value.clone(),
+                                            binding: binding.value.clone(),
+                                        }
+                                    }
+                                    HandlerInstruction::AskModel { model, binding } => {
+                                        IrHandlerInstruction::Ask {
+                                            model: model.value.clone(),
+                                            binding: binding.value.clone(),
                                         }
                                     }
                                 })

@@ -1,0 +1,6 @@
+module Invalid
+capability model.invoke { level restricted requires approval }
+type Input { value: string } type Output { value: string }
+model Guard { provider simulated capability model.invoke input Input output Output }
+agent A { receives Input capabilities { model.invoke } models { Guard } on Input as input { ask Guard with input } }
+

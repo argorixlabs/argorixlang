@@ -43,6 +43,24 @@ pub enum EventType {
     VmHalted,
     FacuStateCheckpoint,
     MarronCausalGuard,
+    ToolDeclared,
+    ToolAuthorized,
+    ToolCallRequested,
+    ToolCallAllowed,
+    ToolCallDenied,
+    ToolCallDryRunResult,
+    ModelDeclared,
+    ModelAuthorized,
+    ModelCallRequested,
+    ModelCallAllowed,
+    ModelCallDenied,
+    ModelCallDryRunResult,
+    AssertionDeclared,
+    FailureDeclared,
+    AssertionVerified,
+    AssertionFailed,
+    PolicyReportGenerated,
+    FailureModeActivated,
     VmCompleted,
     VmFailed,
 }
@@ -70,6 +88,8 @@ pub struct ReactiveStep {
     pub traced: Vec<String>,
     pub halted: bool,
     pub intrinsics: Vec<InvokedIntrinsic>,
+    pub tool_calls: Vec<String>,
+    pub model_calls: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +115,25 @@ pub struct IntrinsicExecution {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCallSummary {
+    pub agent: String,
+    pub tool: String,
+    pub capability: String,
+    pub status: String,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelCallSummary {
+    pub agent: String,
+    pub model: String,
+    pub provider: String,
+    pub capability: String,
+    pub status: String,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReactiveExecutionTrace {
     pub vm_version: String,
     pub status: String,
@@ -105,8 +144,33 @@ pub struct ReactiveExecutionTrace {
     pub mailboxes: Vec<MailboxSummary>,
     pub agent_state: Vec<AgentStateSummary>,
     pub intrinsics: Vec<IntrinsicExecution>,
+    pub tool_calls: Vec<ToolCallSummary>,
+    pub model_calls: Vec<ModelCallSummary>,
+    pub policy_report: PolicyReport,
     pub events: Vec<ExecutionEvent>,
     pub security_checks: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyReport {
+    pub status: String,
+    pub assertions: Vec<AssertionResult>,
+    pub failures: Vec<FailureActivation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssertionResult {
+    pub name: String,
+    pub argument: Option<String>,
+    pub status: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailureActivation {
+    pub name: String,
+    pub action: String,
+    pub trace: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

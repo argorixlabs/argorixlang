@@ -1,9 +1,25 @@
-use crate::{BytecodeAgent, BytecodeCapability, BytecodeProgram, Instruction};
+use crate::{
+    BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeModel,
+    BytecodeProgram, BytecodeTool, Instruction,
+};
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
 
 pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     let mut instructions = Vec::new();
+    for assertion in &ir.assertions {
+        instructions.push(Instruction::DeclareAssertion {
+            name: assertion.name.clone(),
+            argument: assertion.argument.clone(),
+        });
+    }
+    for failure in &ir.failures {
+        instructions.push(Instruction::DeclareFailure {
+            name: failure.name.clone(),
+            action: failure.action.clone(),
+            trace: failure.trace.clone(),
+        });
+    }
     let capability_levels: HashMap<&str, (&str, bool)> = ir
         .capabilities
         .iter()
@@ -20,6 +36,23 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
             name: capability.name.clone(),
             level: capability.level.clone(),
             requires_approval: capability.requires_approval,
+        });
+    }
+    for tool in &ir.tools {
+        instructions.push(Instruction::DeclareTool {
+            name: tool.name.clone(),
+            capability: tool.capability.clone(),
+            input: tool.input.clone(),
+            output: tool.output.clone(),
+        });
+    }
+    for model in &ir.models {
+        instructions.push(Instruction::DeclareModel {
+            name: model.name.clone(),
+            provider: model.provider.clone(),
+            capability: model.capability.clone(),
+            input: model.input.clone(),
+            output: model.output.clone(),
         });
     }
     for agent in &ir.agents {
@@ -42,6 +75,18 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                     capability: capability.clone(),
                 });
             }
+        }
+        for tool in &agent.tools {
+            instructions.push(Instruction::AuthorizeTool {
+                agent: agent.name.clone(),
+                tool: tool.clone(),
+            });
+        }
+        for model in &agent.models {
+            instructions.push(Instruction::AuthorizeModel {
+                agent: agent.name.clone(),
+                model: model.clone(),
+            });
         }
         for handler in &agent.handlers {
             instructions.push(Instruction::DeclareHandler {
@@ -70,6 +115,16 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                             argument: argument.clone(),
                         }
                     }
+                    IrHandlerInstruction::Call { tool, binding } => Instruction::CallTool {
+                        agent: agent.name.clone(),
+                        tool: tool.clone(),
+                        binding: binding.clone(),
+                    },
+                    IrHandlerInstruction::Ask { model, binding } => Instruction::AskModel {
+                        agent: agent.name.clone(),
+                        model: model.clone(),
+                        binding: binding.clone(),
+                    },
                 });
             }
             instructions.push(Instruction::EndHandler);
@@ -91,12 +146,36 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
             message: format!("protocol {} completed", protocol.name),
         });
     }
+    for assertion in &ir.assertions {
+        instructions.push(Instruction::VerifyAssertion {
+            name: assertion.name.clone(),
+            argument: assertion.argument.clone(),
+        });
+    }
+    instructions.push(Instruction::PolicyReport);
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.6".to_owned(),
+        bytecode_version: "0.9".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
+        assertions: ir
+            .assertions
+            .iter()
+            .map(|assertion| BytecodeAssertion {
+                name: assertion.name.clone(),
+                argument: assertion.argument.clone(),
+            })
+            .collect(),
+        failures: ir
+            .failures
+            .iter()
+            .map(|failure| BytecodeFailure {
+                name: failure.name.clone(),
+                action: failure.action.clone(),
+                trace: failure.trace.clone(),
+            })
+            .collect(),
         agents: ir
             .agents
             .iter()
@@ -114,6 +193,27 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 requires_approval: capability.requires_approval,
             })
             .collect(),
+        tools: ir
+            .tools
+            .iter()
+            .map(|tool| BytecodeTool {
+                name: tool.name.clone(),
+                capability: tool.capability.clone(),
+                input: tool.input.clone(),
+                output: tool.output.clone(),
+            })
+            .collect(),
+        models: ir
+            .models
+            .iter()
+            .map(|model| BytecodeModel {
+                name: model.name.clone(),
+                provider: model.provider.clone(),
+                capability: model.capability.clone(),
+                input: model.input.clone(),
+                output: model.output.clone(),
+            })
+            .collect(),
         instructions,
     }
 }
@@ -123,7 +223,10 @@ mod tests {
     use super::lower_ir;
     use crate::Instruction;
     use argorix_ir::{
-        ir::{IrAgent, IrCapability, IrHandler, IrHandlerInstruction, IrProtocol, IrProtocolStep},
+        ir::{
+            IrAgent, IrAssertion, IrCapability, IrFailure, IrHandler, IrHandlerInstruction,
+            IrProtocol, IrProtocolStep, IrTool,
+        },
         IrProgram,
     };
 
@@ -133,6 +236,15 @@ mod tests {
             ir_version: "0.2".into(),
             language: "Argorix Lang".into(),
             module: "Example".into(),
+            assertions: vec![IrAssertion {
+                name: "runtime_status".into(),
+                argument: Some("completed".into()),
+            }],
+            failures: vec![IrFailure {
+                name: "PolicyViolation".into(),
+                action: "block".into(),
+                trace: "required".into(),
+            }],
             capabilities: vec![IrCapability {
                 name: "trace.write".into(),
                 level: "safe".into(),
@@ -140,12 +252,21 @@ mod tests {
             }],
             enums: vec![],
             types: vec![],
+            tools: vec![IrTool {
+                name: "Echo".into(),
+                capability: "trace.write".into(),
+                input: "Ping".into(),
+                output: "Pong".into(),
+            }],
+            models: vec![],
             agents: vec![IrAgent {
                 name: "Worker".into(),
                 approval: "denied".into(),
                 receives: vec![],
                 sends: vec![],
                 capabilities: vec!["trace.write".into()],
+                tools: vec!["Echo".into()],
+                models: vec![],
                 handlers: vec![IrHandler {
                     message_type: "Ping".into(),
                     binding: "ping".into(),
@@ -153,6 +274,10 @@ mod tests {
                         IrHandlerInstruction::Intrinsic {
                             name: "facu".into(),
                             argument: "ping".into(),
+                        },
+                        IrHandlerInstruction::Call {
+                            tool: "Echo".into(),
+                            binding: "ping".into(),
                         },
                         IrHandlerInstruction::Emit {
                             message_type: "Pong".into(),
@@ -173,7 +298,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.6");
+        assert_eq!(bytecode.bytecode_version, "0.9");
         assert!(bytecode
             .instructions
             .iter()
@@ -190,6 +315,34 @@ mod tests {
             .instructions
             .iter()
             .any(|instruction| matches!(instruction, Instruction::InvokeIntrinsic { .. })));
+        assert!(bytecode
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction, Instruction::DeclareTool { .. })));
+        assert!(bytecode
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction, Instruction::AuthorizeTool { .. })));
+        assert!(bytecode
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction, Instruction::CallTool { .. })));
+        assert!(bytecode.instructions.iter().any(|instruction| matches!(
+            instruction,
+            Instruction::DeclareAssertion { name, .. } if name == "runtime_status"
+        )));
+        assert!(bytecode.instructions.iter().any(|instruction| matches!(
+            instruction,
+            Instruction::DeclareFailure { name, .. } if name == "PolicyViolation"
+        )));
+        assert!(bytecode.instructions.iter().any(|instruction| matches!(
+            instruction,
+            Instruction::VerifyAssertion { name, .. } if name == "runtime_status"
+        )));
+        assert!(bytecode
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction, Instruction::PolicyReport)));
         assert!(matches!(
             bytecode.instructions.last(),
             Some(Instruction::End)

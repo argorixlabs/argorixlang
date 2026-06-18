@@ -1,7 +1,8 @@
 use crate::{
     ast::{
-        AgentDecl, Approval, CapabilityDecl, CapabilityLevel, EnumDecl, FieldDecl, HandlerDecl,
-        HandlerInstruction, Program, ProtocolDecl, ProtocolStep, ReceiveDecl, SendDecl, TypeDecl,
+        AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
+        FieldDecl, HandlerDecl, HandlerInstruction, ModelDecl, Program, ProtocolDecl, ProtocolStep,
+        ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -29,9 +30,13 @@ impl Parser {
 
         let mut program = Program {
             module,
+            assertions: Vec::new(),
+            failures: Vec::new(),
             capabilities: Vec::new(),
             enums: Vec::new(),
             types: Vec::new(),
+            tools: Vec::new(),
+            models: Vec::new(),
             agents: Vec::new(),
             protocols: Vec::new(),
         };
@@ -39,8 +44,12 @@ impl Parser {
         while !self.is_eof() {
             match self.peek_identifier() {
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
+                Some("assert") => program.assertions.push(self.parse_assertion()?),
+                Some("failure") => program.failures.push(self.parse_failure()?),
                 Some("enum") => program.enums.push(self.parse_enum()?),
                 Some("type") => program.types.push(self.parse_type()?),
+                Some("tool") => program.tools.push(self.parse_tool()?),
+                Some("model") => program.models.push(self.parse_model()?),
                 Some("agent") => program.agents.push(self.parse_agent()?),
                 Some("protocol") => program.protocols.push(self.parse_protocol()?),
                 Some(other) => {
@@ -51,7 +60,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `capability`, `enum`, `type`, `agent`, or `protocol`",
+                        "expected `assert`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, or `protocol`",
                         self.peek().span,
                     ))
                 }
@@ -59,6 +68,78 @@ impl Parser {
         }
 
         Ok(program)
+    }
+
+    fn parse_assertion(&mut self) -> Result<AssertionDecl, Diagnostic> {
+        self.expect_keyword("assert")?;
+        let name = self.expect_identifier("assertion name")?;
+        let argument = if name.value == "runtime_status" {
+            Some(self.expect_identifier("runtime status assertion argument")?)
+        } else {
+            None
+        };
+        Ok(AssertionDecl { name, argument })
+    }
+
+    fn parse_failure(&mut self) -> Result<FailureDecl, Diagnostic> {
+        self.expect_keyword("failure")?;
+        let name = self.expect_identifier("failure name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        self.expect_keyword("action")?;
+        let action = self.expect_identifier("failure action")?;
+        let trace_required = if self.match_keyword("trace") {
+            self.expect_keyword("required")?;
+            true
+        } else {
+            false
+        };
+        self.expect_symbol(TokenKind::RightBrace, "`}`")?;
+        Ok(FailureDecl {
+            name,
+            action,
+            trace_required,
+        })
+    }
+
+    fn parse_tool(&mut self) -> Result<ToolDecl, Diagnostic> {
+        self.expect_keyword("tool")?;
+        let name = self.expect_identifier("tool name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        self.expect_keyword("capability")?;
+        let capability = self.expect_identifier("tool capability")?;
+        self.expect_keyword("input")?;
+        let input = self.expect_identifier("tool input type")?;
+        self.expect_keyword("output")?;
+        let output = self.expect_identifier("tool output type")?;
+        self.expect_symbol(TokenKind::RightBrace, "`}`")?;
+        Ok(ToolDecl {
+            name,
+            capability,
+            input,
+            output,
+        })
+    }
+
+    fn parse_model(&mut self) -> Result<ModelDecl, Diagnostic> {
+        self.expect_keyword("model")?;
+        let name = self.expect_identifier("model name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        self.expect_keyword("provider")?;
+        let provider = self.expect_identifier("model provider")?;
+        self.expect_keyword("capability")?;
+        let capability = self.expect_identifier("model capability")?;
+        self.expect_keyword("input")?;
+        let input = self.expect_identifier("model input type")?;
+        self.expect_keyword("output")?;
+        let output = self.expect_identifier("model output type")?;
+        self.expect_symbol(TokenKind::RightBrace, "`}`")?;
+        Ok(ModelDecl {
+            name,
+            provider,
+            capability,
+            input,
+            output,
+        })
     }
 
     fn parse_capability(&mut self) -> Result<CapabilityDecl, Diagnostic> {
@@ -135,6 +216,8 @@ impl Parser {
         let mut receives = Vec::new();
         let mut sends = Vec::new();
         let mut capabilities = Vec::new();
+        let mut tools = Vec::new();
+        let mut models = Vec::new();
         let mut handlers = Vec::new();
 
         while !self.check(&TokenKind::RightBrace) {
@@ -192,6 +275,24 @@ impl Parser {
                     }
                     self.advance();
                 }
+                Some("tools") => {
+                    self.advance();
+                    self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+                    while !self.check(&TokenKind::RightBrace) {
+                        self.ensure_not_eof("unterminated tools block")?;
+                        tools.push(self.expect_identifier("tool name")?);
+                    }
+                    self.advance();
+                }
+                Some("models") => {
+                    self.advance();
+                    self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+                    while !self.check(&TokenKind::RightBrace) {
+                        self.ensure_not_eof("unterminated models block")?;
+                        models.push(self.expect_identifier("model name")?);
+                    }
+                    self.advance();
+                }
                 Some("on") => handlers.push(self.parse_handler()?),
                 Some(other) => {
                     return Err(Diagnostic::new(
@@ -199,12 +300,10 @@ impl Parser {
                         self.peek().span,
                     ))
                 }
-                None => {
-                    return Err(Diagnostic::new(
-                        "expected `security`, `receives`, `sends`, `capabilities`, or `on`",
-                        self.peek().span,
-                    ))
-                }
+                None => return Err(Diagnostic::new(
+                        "expected `security`, `receives`, `sends`, `capabilities`, `tools`, `models`, or `on`",
+                    self.peek().span,
+                )),
             }
         }
         self.advance();
@@ -215,6 +314,8 @@ impl Parser {
             receives,
             sends,
             capabilities,
+            tools,
+            models,
             handlers,
         })
     }
@@ -251,6 +352,20 @@ impl Parser {
                     let span = self.peek().span;
                     self.advance();
                     instructions.push(HandlerInstruction::Halt { span });
+                }
+                Some("call") => {
+                    self.advance();
+                    let tool = self.expect_identifier("tool name")?;
+                    self.expect_keyword("with")?;
+                    let binding = self.expect_identifier("tool call binding")?;
+                    instructions.push(HandlerInstruction::CallTool { tool, binding });
+                }
+                Some("ask") => {
+                    self.advance();
+                    let model = self.expect_identifier("model name")?;
+                    self.expect_keyword("with")?;
+                    let binding = self.expect_identifier("model call binding")?;
+                    instructions.push(HandlerInstruction::AskModel { model, binding });
                 }
                 Some(_) if self.peek_next_is(&TokenKind::LeftParen) => {
                     let name = self.expect_identifier("intrinsic name")?;

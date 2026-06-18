@@ -9,9 +9,47 @@ pub struct BytecodeProgram {
     pub bytecode_version: String,
     pub language: String,
     pub module: String,
+    #[serde(default)]
+    pub assertions: Vec<BytecodeAssertion>,
+    #[serde(default)]
+    pub failures: Vec<BytecodeFailure>,
     pub agents: Vec<BytecodeAgent>,
     pub capabilities: Vec<BytecodeCapability>,
+    #[serde(default)]
+    pub tools: Vec<BytecodeTool>,
+    #[serde(default)]
+    pub models: Vec<BytecodeModel>,
     pub instructions: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeAssertion {
+    pub name: String,
+    pub argument: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeFailure {
+    pub name: String,
+    pub action: String,
+    pub trace: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeModel {
+    pub name: String,
+    pub provider: String,
+    pub capability: String,
+    pub input: String,
+    pub output: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeTool {
+    pub name: String,
+    pub capability: String,
+    pub input: String,
+    pub output: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +80,41 @@ pub enum Instruction {
     DeclareProtocol {
         name: String,
     },
+    DeclareAssertion {
+        name: String,
+        argument: Option<String>,
+    },
+    DeclareFailure {
+        name: String,
+        action: String,
+        trace: String,
+    },
+    VerifyAssertion {
+        name: String,
+        argument: Option<String>,
+    },
+    PolicyReport,
+    DeclareTool {
+        name: String,
+        capability: String,
+        input: String,
+        output: String,
+    },
+    AuthorizeTool {
+        agent: String,
+        tool: String,
+    },
+    DeclareModel {
+        name: String,
+        provider: String,
+        capability: String,
+        input: String,
+        output: String,
+    },
+    AuthorizeModel {
+        agent: String,
+        model: String,
+    },
     DeclareHandler {
         agent: String,
         message_type: String,
@@ -63,6 +136,16 @@ pub enum Instruction {
         agent: String,
         name: String,
         argument: String,
+    },
+    CallTool {
+        agent: String,
+        tool: String,
+        binding: String,
+    },
+    AskModel {
+        agent: String,
+        model: String,
+        binding: String,
     },
     EndHandler,
     SendMessage {
@@ -116,13 +199,24 @@ pub enum BytecodeError {
     UnknownInstruction,
     #[error("handler instruction references unknown agent `{0}`")]
     UnknownHandlerAgent(String),
+    #[error("bytecode tool `{0}` is not declared")]
+    UnknownTool(String),
+    #[error("bytecode tool `{tool}` references unknown capability `{capability}`")]
+    UnknownToolCapability { tool: String, capability: String },
+    #[error("bytecode model `{0}` is not declared or has invalid capability")]
+    UnknownModel(String),
+    #[error("unsupported model provider `{0}`")]
+    UnknownModelProvider(String),
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
     let mut errors = Vec::new();
     if program.bytecode_version.trim().is_empty() {
         errors.push(BytecodeError::MissingVersion);
-    } else if !matches!(program.bytecode_version.as_str(), "0.3" | "0.5" | "0.6") {
+    } else if !matches!(
+        program.bytecode_version.as_str(),
+        "0.3" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9"
+    ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
         ));
@@ -136,6 +230,37 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         .iter()
         .map(|agent| agent.name.as_str())
         .collect();
+    let capabilities: HashSet<&str> = program
+        .capabilities
+        .iter()
+        .map(|capability| capability.name.as_str())
+        .collect();
+    let tools: HashSet<&str> = program
+        .tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect();
+    let models: HashSet<&str> = program
+        .models
+        .iter()
+        .map(|model| model.name.as_str())
+        .collect();
+    for tool in &program.tools {
+        if !capabilities.contains(tool.capability.as_str()) {
+            errors.push(BytecodeError::UnknownToolCapability {
+                tool: tool.name.clone(),
+                capability: tool.capability.clone(),
+            });
+        }
+    }
+    for model in &program.models {
+        if model.provider != "simulated" {
+            errors.push(BytecodeError::UnknownModelProvider(model.provider.clone()));
+        }
+        if !capabilities.contains(model.capability.as_str()) {
+            errors.push(BytecodeError::UnknownModel(model.name.clone()));
+        }
+    }
     let mut has_protocol_or_message = false;
     for instruction in &program.instructions {
         match instruction {
@@ -176,6 +301,31 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             Instruction::RequireCapability { agent, .. } if !agents.contains(agent.as_str()) => {
                 errors.push(BytecodeError::UnknownCapabilityAgent(agent.clone()));
             }
+            Instruction::AuthorizeTool { agent, tool } => {
+                if !agents.contains(agent.as_str()) {
+                    errors.push(BytecodeError::UnknownHandlerAgent(agent.clone()));
+                }
+                if !tools.contains(tool.as_str()) {
+                    errors.push(BytecodeError::UnknownTool(tool.clone()));
+                }
+            }
+            Instruction::CallTool { agent, tool, .. } => {
+                if !agents.contains(agent.as_str()) {
+                    errors.push(BytecodeError::UnknownHandlerAgent(agent.clone()));
+                }
+                if !tools.contains(tool.as_str()) {
+                    errors.push(BytecodeError::UnknownTool(tool.clone()));
+                }
+            }
+            Instruction::AuthorizeModel { agent, model }
+            | Instruction::AskModel { agent, model, .. } => {
+                if !agents.contains(agent.as_str()) {
+                    errors.push(BytecodeError::UnknownHandlerAgent(agent.clone()));
+                }
+                if !models.contains(model.as_str()) {
+                    errors.push(BytecodeError::UnknownModel(model.clone()));
+                }
+            }
             Instruction::EmitMessage { agent, .. }
             | Instruction::TraceValue { agent, .. }
             | Instruction::HandlerHalt { agent }
@@ -212,11 +362,15 @@ mod tests {
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Test".into(),
+            assertions: vec![],
+            failures: vec![],
             agents: vec![BytecodeAgent {
                 name: "Worker".into(),
                 approval: "denied".into(),
             }],
             capabilities: vec![],
+            tools: vec![],
+            models: vec![],
             instructions: vec![
                 Instruction::DeclareProtocol {
                     name: "Flow".into(),

@@ -1,6 +1,7 @@
 use crate::{
     EmittedMessage, EventFields, EventType, InjectedMessage, InvokedIntrinsic, MessageEnvelope,
-    ReactiveStep, RuntimeState, RuntimeStatus, StateCheckpoint, VmError,
+    ModelCallEnvelope, ReactiveStep, RuntimeState, RuntimeStatus, StateCheckpoint,
+    ToolCallEnvelope, VmError,
 };
 use argorix_bytecode::{verify_bytecode, BytecodeProgram, Instruction};
 use serde_json::json;
@@ -14,6 +15,8 @@ enum HandlerOp {
     Trace { binding: String },
     Halt,
     Intrinsic { name: String, argument: String },
+    ToolCall { tool: String, binding: String },
+    ModelCall { model: String, binding: String },
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +59,44 @@ impl ReactiveScheduler {
 
         self.verify_security(bytecode, state)?;
         let handlers = self.collect_handlers(bytecode);
+        let tools = bytecode
+            .tools
+            .iter()
+            .map(|tool| (tool.name.as_str(), tool))
+            .collect::<HashMap<_, _>>();
+        let models = bytecode
+            .models
+            .iter()
+            .map(|model| (model.name.as_str(), model))
+            .collect::<HashMap<_, _>>();
+        let authorized = bytecode
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                Instruction::AuthorizeTool { agent, tool } => Some((agent.as_str(), tool.as_str())),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        let authorized_models = bytecode
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                Instruction::AuthorizeModel { agent, model } => {
+                    Some((agent.as_str(), model.as_str()))
+                }
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        let agent_capabilities = bytecode
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                Instruction::RequireCapability { agent, capability } => {
+                    Some((agent.as_str(), capability.as_str()))
+                }
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
         state.pending_messages.push_back(MessageEnvelope {
             id: "msg_001".into(),
             from: injected.from.clone(),
@@ -142,6 +183,8 @@ impl ReactiveScheduler {
             let mut emitted = Vec::new();
             let mut traced = Vec::new();
             let mut invoked_intrinsics = Vec::new();
+            let mut called_tools = Vec::new();
+            let mut called_models = Vec::new();
             let mut step_halted = false;
             for operation in &handler.operations {
                 match operation {
@@ -204,6 +247,40 @@ impl ReactiveScheduler {
                             argument: argument.clone(),
                         });
                     }
+                    HandlerOp::ToolCall { tool, binding } => {
+                        if let Err(error) = self.call_tool(
+                            state,
+                            &tools,
+                            &authorized,
+                            &agent_capabilities,
+                            &key.0,
+                            &handler.binding,
+                            tool,
+                            binding,
+                            &processed,
+                        ) {
+                            state.fail(error.to_string());
+                            return Err(error);
+                        }
+                        called_tools.push(tool.clone());
+                    }
+                    HandlerOp::ModelCall { model, binding } => {
+                        if let Err(error) = self.call_model(
+                            state,
+                            &models,
+                            &authorized_models,
+                            &agent_capabilities,
+                            &key.0,
+                            &handler.binding,
+                            model,
+                            binding,
+                            &processed,
+                        ) {
+                            state.fail(error.to_string());
+                            return Err(error);
+                        }
+                        called_models.push(model.clone());
+                    }
                 }
             }
             state.completed_steps = step_index;
@@ -226,6 +303,8 @@ impl ReactiveScheduler {
                 traced,
                 halted: step_halted,
                 intrinsics: invoked_intrinsics,
+                tool_calls: called_tools,
+                model_calls: called_models,
             });
             if halted {
                 break;
@@ -299,6 +378,22 @@ impl ReactiveScheduler {
                         });
                     }
                 }
+                Instruction::CallTool { tool, binding, .. } => {
+                    if let Some((_, _, handler)) = &mut current {
+                        handler.operations.push(HandlerOp::ToolCall {
+                            tool: tool.clone(),
+                            binding: binding.clone(),
+                        });
+                    }
+                }
+                Instruction::AskModel { model, binding, .. } => {
+                    if let Some((_, _, handler)) = &mut current {
+                        handler.operations.push(HandlerOp::ModelCall {
+                            model: model.clone(),
+                            binding: binding.clone(),
+                        });
+                    }
+                }
                 Instruction::EndHandler => {
                     if let Some((agent, message, handler)) = current.take() {
                         handlers.insert((agent, message), handler);
@@ -311,6 +406,73 @@ impl ReactiveScheduler {
             handlers.insert((agent, message), handler);
         }
         handlers
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn call_tool(
+        &self,
+        state: &mut RuntimeState,
+        tools: &HashMap<&str, &argorix_bytecode::BytecodeTool>,
+        authorized: &HashSet<(&str, &str)>,
+        agent_capabilities: &HashSet<(&str, &str)>,
+        agent: &str,
+        handler_binding: &str,
+        tool_name: &str,
+        binding: &str,
+        message: &MessageEnvelope,
+    ) -> Result<(), VmError> {
+        if binding != handler_binding {
+            return Err(VmError::ToolBindingMismatch {
+                argument: binding.to_owned(),
+                binding: handler_binding.to_owned(),
+            });
+        }
+        let tool = tools
+            .get(tool_name)
+            .ok_or_else(|| VmError::UnknownTool(tool_name.to_owned()))?;
+        state.trace_ledger.record(
+            EventType::ToolCallRequested,
+            "requested",
+            format!("{agent} requested tool {tool_name}"),
+            EventFields::target(agent),
+        );
+        if !authorized.contains(&(agent, tool_name))
+            || !agent_capabilities.contains(&(agent, tool.capability.as_str()))
+        {
+            state.activate_failure("ToolDenied");
+            state.trace_ledger.record(
+                EventType::ToolCallDenied,
+                "denied",
+                format!("{agent} denied tool {tool_name}"),
+                EventFields::target(agent),
+            );
+            return Err(VmError::ToolNotAuthorized {
+                agent: agent.to_owned(),
+                tool: tool_name.to_owned(),
+            });
+        }
+        state.trace_ledger.record(
+            EventType::ToolCallAllowed,
+            "allowed",
+            format!("tool {tool_name} allowed by capability {}", tool.capability),
+            EventFields::target(agent),
+        );
+        state.tool_calls.push(ToolCallEnvelope {
+            id: format!("tool_{:03}", state.tool_calls.len() + 1),
+            agent: agent.to_owned(),
+            tool: tool_name.to_owned(),
+            capability: tool.capability.clone(),
+            input_binding: binding.to_owned(),
+            input_message_id: message.id.clone(),
+            status: "allowed".into(),
+        });
+        state.trace_ledger.record(
+            EventType::ToolCallDryRunResult,
+            "ok",
+            format!("tool {tool_name} dry-run result generated"),
+            EventFields::target(agent),
+        );
+        Ok(())
     }
 
     fn invoke_intrinsic(
@@ -399,6 +561,80 @@ impl ReactiveScheduler {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn call_model(
+        &self,
+        state: &mut RuntimeState,
+        models: &HashMap<&str, &argorix_bytecode::BytecodeModel>,
+        authorized: &HashSet<(&str, &str)>,
+        agent_capabilities: &HashSet<(&str, &str)>,
+        agent: &str,
+        handler_binding: &str,
+        model_name: &str,
+        binding: &str,
+        message: &MessageEnvelope,
+    ) -> Result<(), VmError> {
+        if binding != handler_binding {
+            return Err(VmError::ModelBindingMismatch {
+                argument: binding.to_owned(),
+                binding: handler_binding.to_owned(),
+            });
+        }
+        let model = models
+            .get(model_name)
+            .ok_or_else(|| VmError::UnknownModel(model_name.to_owned()))?;
+        if model.provider != "simulated" {
+            return Err(VmError::InvalidModelProvider(model_name.to_owned()));
+        }
+        state.trace_ledger.record(
+            EventType::ModelCallRequested,
+            "requested",
+            format!("{agent} asked model {model_name}"),
+            EventFields::target(agent),
+        );
+        if !authorized.contains(&(agent, model_name))
+            || !agent_capabilities.contains(&(agent, model.capability.as_str()))
+        {
+            state.activate_failure("ModelDenied");
+            state.trace_ledger.record(
+                EventType::ModelCallDenied,
+                "denied",
+                format!("{agent} denied model {model_name}"),
+                EventFields::target(agent),
+            );
+            return Err(VmError::ModelNotAuthorized {
+                agent: agent.to_owned(),
+                model: model_name.to_owned(),
+            });
+        }
+        state.trace_ledger.record(
+            EventType::ModelCallAllowed,
+            "allowed",
+            format!(
+                "model {model_name} allowed by capability {}",
+                model.capability
+            ),
+            EventFields::target(agent),
+        );
+        state.model_calls.push(ModelCallEnvelope {
+            id: format!("model_{:03}", state.model_calls.len() + 1),
+            agent: agent.to_owned(),
+            model: model_name.to_owned(),
+            provider: model.provider.clone(),
+            capability: model.capability.clone(),
+            input_binding: binding.to_owned(),
+            input_message_id: message.id.clone(),
+            status: "allowed".into(),
+        });
+        state.trace_ledger.record(
+            EventType::ModelCallDryRunResult,
+            "ok",
+            format!("model {model_name} dry-run result generated"),
+            EventFields::target(agent),
+        );
+        Ok(())
+    }
+
     fn verify_security(
         &self,
         bytecode: &BytecodeProgram,
@@ -461,6 +697,14 @@ mod tests {
             "../../../examples/prompt_defense_v06.argbc.json"
         ))
         .unwrap()
+    }
+
+    fn v07_fixture() -> BytecodeProgram {
+        serde_json::from_str(include_str!("../../../examples/tool_call_v07.argbc.json")).unwrap()
+    }
+
+    fn v08_fixture() -> BytecodeProgram {
+        serde_json::from_str(include_str!("../../../examples/model_call_v08.argbc.json")).unwrap()
     }
 
     #[test]
@@ -551,5 +795,65 @@ mod tests {
             .events
             .iter()
             .any(|event| event.event_type == EventType::VmFailed));
+    }
+
+    #[test]
+    fn tool_call_records_requested_allowed_and_result_events() {
+        let bytecode = v07_fixture();
+        let mut state = RuntimeState::from_bytecode(&bytecode).unwrap();
+        ReactiveScheduler::new()
+            .run(
+                &bytecode,
+                &mut state,
+                &InjectedMessage {
+                    from: "User".into(),
+                    to: "ResearchAgent".into(),
+                    act: "tell".into(),
+                    message_type: "UserPrompt".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(state.tool_calls.len(), 1);
+        for expected in [
+            EventType::ToolCallRequested,
+            EventType::ToolCallAllowed,
+            EventType::ToolCallDryRunResult,
+        ] {
+            assert!(state
+                .trace_ledger
+                .events
+                .iter()
+                .any(|event| event.event_type == expected));
+        }
+    }
+
+    #[test]
+    fn model_call_records_requested_allowed_and_result_events() {
+        let bytecode = v08_fixture();
+        let mut state = RuntimeState::from_bytecode(&bytecode).unwrap();
+        ReactiveScheduler::new()
+            .run(
+                &bytecode,
+                &mut state,
+                &InjectedMessage {
+                    from: "User".into(),
+                    to: "ResearchAgent".into(),
+                    act: "tell".into(),
+                    message_type: "UserPrompt".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(state.model_calls.len(), 1);
+        for expected in [
+            EventType::ModelCallRequested,
+            EventType::ModelCallAllowed,
+            EventType::ModelCallDryRunResult,
+        ] {
+            assert!(state
+                .trace_ledger
+                .events
+                .iter()
+                .any(|event| event.event_type == expected));
+        }
     }
 }

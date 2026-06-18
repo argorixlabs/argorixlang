@@ -21,6 +21,9 @@ pub fn check_program_with_options(
 ) -> Result<(), Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
     let symbols = collect_symbols(program, &mut diagnostics);
+    check_policies(program, &mut diagnostics);
+    check_tool_declarations(program, &symbols, &mut diagnostics);
+    check_model_declarations(program, &symbols, &mut diagnostics);
 
     for type_decl in &program.types {
         let mut field_names = HashSet::new();
@@ -86,12 +89,135 @@ pub fn check_program_with_options(
     }
 }
 
+fn check_policies(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    const ASSERTIONS: [&str; 6] = [
+        "no_unhandled_messages",
+        "all_tool_calls_traced",
+        "all_model_calls_traced",
+        "all_intrinsics_traced",
+        "halt_requires_trace",
+        "runtime_status",
+    ];
+    for assertion in &program.assertions {
+        if !ASSERTIONS.contains(&assertion.name.value.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                format!("unknown policy assertion `{}`", assertion.name.value),
+                assertion.name.span,
+            ));
+        }
+        if assertion.name.value == "runtime_status"
+            && assertion
+                .argument
+                .as_ref()
+                .map(|value| value.value.as_str())
+                != Some("completed")
+        {
+            diagnostics.push(Diagnostic::new(
+                "`runtime_status` assertion requires argument `completed`",
+                assertion.name.span,
+            ));
+        }
+    }
+    let mut failures = HashSet::new();
+    for failure in &program.failures {
+        if !failures.insert(failure.name.value.clone()) {
+            diagnostics.push(Diagnostic::new(
+                format!("duplicate failure `{}`", failure.name.value),
+                failure.name.span,
+            ));
+        }
+        if !matches!(failure.action.value.as_str(), "block" | "review" | "halt") {
+            diagnostics.push(Diagnostic::new(
+                format!("invalid failure action `{}`", failure.action.value),
+                failure.action.span,
+            ));
+        }
+        if !failure.trace_required {
+            diagnostics.push(Diagnostic::new(
+                format!("failure `{}` requires `trace required`", failure.name.value),
+                failure.name.span,
+            ));
+        }
+    }
+}
+
+fn check_model_declarations(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for model in &program.models {
+        if model.provider.value != "simulated" {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "model `{}` uses unsupported provider `{}`; only `simulated` is allowed",
+                    model.name.value, model.provider.value
+                ),
+                model.provider.span,
+            ));
+        }
+        if !symbols.capabilities.contains_key(&model.capability.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "model `{}` references unknown capability `{}`",
+                    model.name.value, model.capability.value
+                ),
+                model.capability.span,
+            ));
+        }
+        require_message_type(symbols, &model.input, diagnostics);
+        require_message_type(symbols, &model.output, diagnostics);
+    }
+}
+
+fn check_tool_declarations(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for tool in &program.tools {
+        if !symbols.capabilities.contains_key(&tool.capability.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "tool `{}` references unknown capability `{}`",
+                    tool.name.value, tool.capability.value
+                ),
+                tool.capability.span,
+            ));
+        }
+        require_message_type(symbols, &tool.input, diagnostics);
+        require_message_type(symbols, &tool.output, diagnostics);
+    }
+}
+
 fn check_handlers(
-    _program: &Program,
+    program: &Program,
     symbols: &Symbols,
     agent: &argorix_parser::ast::AgentDecl,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
+    for tool in &agent.tools {
+        if !symbols.tools.contains(&tool.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "agent `{}` references unknown tool `{}`",
+                    agent.name.value, tool.value
+                ),
+                tool.span,
+            ));
+        }
+    }
+    for model in &agent.models {
+        if !symbols.models.contains(&model.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "agent `{}` references unknown model `{}`",
+                    agent.name.value, model.value
+                ),
+                model.span,
+            ));
+        }
+    }
     let mut handled_types = HashSet::new();
     for handler in &agent.handlers {
         require_message_type(symbols, &handler.message_type, diagnostics);
@@ -202,6 +328,156 @@ fn check_handlers(
                         ));
                     }
                 }
+                HandlerInstruction::CallTool { tool, binding } => {
+                    let Some(declaration) = program
+                        .tools
+                        .iter()
+                        .find(|item| item.name.value == tool.value)
+                    else {
+                        diagnostics.push(Diagnostic::new(
+                            format!("unknown tool `{}`", tool.value),
+                            tool.span,
+                        ));
+                        continue;
+                    };
+                    if !agent
+                        .tools
+                        .iter()
+                        .any(|allowed| allowed.value == tool.value)
+                    {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "agent `{}` calls tool `{}` without declaring it in `tools`",
+                                agent.name.value, tool.value
+                            ),
+                            tool.span,
+                        ));
+                    }
+                    if binding.value != handler.binding.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "tool call binding `{}` does not match handler binding `{}`",
+                                binding.value, handler.binding.value
+                            ),
+                            binding.span,
+                        ));
+                    }
+                    if declaration.input.value != handler.message_type.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "tool `{}` expects `{}` but handler receives `{}`",
+                                tool.value, declaration.input.value, handler.message_type.value
+                            ),
+                            tool.span,
+                        ));
+                    }
+                    if !agent
+                        .capabilities
+                        .iter()
+                        .any(|capability| capability.value == declaration.capability.value)
+                    {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "agent `{}` calls tool `{}` without capability `{}`",
+                                agent.name.value, tool.value, declaration.capability.value
+                            ),
+                            tool.span,
+                        ));
+                    } else if symbols
+                        .capabilities
+                        .get(&declaration.capability.value)
+                        .is_some_and(|level| {
+                            matches!(
+                                level,
+                                CapabilityLevel::Restricted | CapabilityLevel::Dangerous
+                            )
+                        })
+                        && agent.effective_approval() != Approval::Granted
+                    {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "agent `{}` calls restricted tool `{}` without approval",
+                                agent.name.value, tool.value
+                            ),
+                            tool.span,
+                        ));
+                    }
+                }
+                HandlerInstruction::AskModel { model, binding } => {
+                    let Some(declaration) = program
+                        .models
+                        .iter()
+                        .find(|item| item.name.value == model.value)
+                    else {
+                        diagnostics.push(Diagnostic::new(
+                            format!("unknown model `{}`", model.value),
+                            model.span,
+                        ));
+                        continue;
+                    };
+                    if !agent
+                        .models
+                        .iter()
+                        .any(|allowed| allowed.value == model.value)
+                    {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "agent `{}` asks model `{}` without declaring it in `models`",
+                                agent.name.value, model.value
+                            ),
+                            model.span,
+                        ));
+                    }
+                    if binding.value != handler.binding.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "model call binding `{}` does not match handler binding `{}`",
+                                binding.value, handler.binding.value
+                            ),
+                            binding.span,
+                        ));
+                    }
+                    if declaration.input.value != handler.message_type.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "model `{}` expects `{}` but handler receives `{}`",
+                                model.value, declaration.input.value, handler.message_type.value
+                            ),
+                            model.span,
+                        ));
+                    }
+                    if !agent
+                        .capabilities
+                        .iter()
+                        .any(|capability| capability.value == declaration.capability.value)
+                    {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "agent `{}` asks model `{}` without capability `{}`",
+                                agent.name.value, model.value, declaration.capability.value
+                            ),
+                            model.span,
+                        ));
+                    } else if symbols
+                        .capabilities
+                        .get(&declaration.capability.value)
+                        .is_some_and(|level| {
+                            matches!(
+                                level,
+                                CapabilityLevel::Restricted | CapabilityLevel::Dangerous
+                            )
+                        })
+                        && agent.effective_approval() != Approval::Granted
+                    {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "agent `{}` asks restricted model `{}` without approval",
+                                agent.name.value, model.value
+                            ),
+                            model.span,
+                        ));
+                    }
+                }
             }
         }
     }
@@ -217,6 +493,12 @@ fn collect_symbols(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> Symb
     }
     for agent in &program.agents {
         report_duplicate(&mut symbols.agents, &agent.name, "agent", diagnostics);
+    }
+    for tool in &program.tools {
+        report_duplicate(&mut symbols.tools, &tool.name, "tool", diagnostics);
+    }
+    for model in &program.models {
+        report_duplicate(&mut symbols.models, &model.name, "model", diagnostics);
     }
     for capability in &program.capabilities {
         if symbols

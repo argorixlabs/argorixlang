@@ -9,11 +9,14 @@ pub mod vm;
 pub use errors::VmError;
 pub use mailbox::{AgentMailbox, MessageEnvelope};
 pub use reactive::ReactiveScheduler;
-pub use runtime::{AgentState, RuntimeState, RuntimeStatus, StateCheckpoint};
+pub use runtime::{
+    AgentState, ModelCallEnvelope, RuntimeState, RuntimeStatus, StateCheckpoint, ToolCallEnvelope,
+};
 pub use scheduler::Scheduler;
 pub use trace::{
-    AgentStateSummary, EmittedMessage, EventFields, EventType, ExecutionEvent, ExecutionTrace,
-    InjectedMessage, IntrinsicExecution, InvokedIntrinsic, MailboxSummary, ReactiveExecutionTrace,
-    ReactiveStep, TraceLedger, TraceStep,
+    AgentStateSummary, AssertionResult, EmittedMessage, EventFields, EventType, ExecutionEvent,
+    ExecutionTrace, FailureActivation, InjectedMessage, IntrinsicExecution, InvokedIntrinsic,
+    MailboxSummary, ModelCallSummary, PolicyReport, ReactiveExecutionTrace, ReactiveStep,
+    ToolCallSummary, TraceLedger, TraceStep,
 };
 pub use vm::Vm;

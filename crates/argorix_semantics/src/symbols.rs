@@ -13,6 +13,8 @@ pub struct Symbols {
     pub enums: HashSet<String>,
     pub agents: HashSet<String>,
     pub capabilities: HashMap<String, CapabilityLevel>,
+    pub tools: HashSet<String>,
+    pub models: HashSet<String>,
 }
 
 impl Symbols {

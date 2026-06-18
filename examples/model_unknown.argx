@@ -1,0 +1,4 @@
+module Invalid
+type Input { value: string }
+agent A { receives Input on Input as input { ask MissingModel with input } }
+

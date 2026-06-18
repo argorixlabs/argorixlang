@@ -35,6 +35,20 @@ pub enum VmError {
     },
     #[error("marron causal guard failed: {0}")]
     CausalGuardFailed(String),
+    #[error("tool `{tool}` is not authorized for agent `{agent}`")]
+    ToolNotAuthorized { agent: String, tool: String },
+    #[error("tool `{0}` is not declared")]
+    UnknownTool(String),
+    #[error("tool call binding `{argument}` does not match handler binding `{binding}`")]
+    ToolBindingMismatch { argument: String, binding: String },
+    #[error("model `{model}` is not authorized for agent `{agent}`")]
+    ModelNotAuthorized { agent: String, model: String },
+    #[error("model `{0}` is not declared")]
+    UnknownModel(String),
+    #[error("model call binding `{argument}` does not match handler binding `{binding}`")]
+    ModelBindingMismatch { argument: String, binding: String },
+    #[error("model `{0}` has unsupported provider")]
+    InvalidModelProvider(String),
 }
 
 impl VmError {

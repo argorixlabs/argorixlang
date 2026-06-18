@@ -3,11 +3,45 @@ use crate::span::Spanned;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
     pub module: Spanned<String>,
+    pub assertions: Vec<AssertionDecl>,
+    pub failures: Vec<FailureDecl>,
     pub capabilities: Vec<CapabilityDecl>,
     pub enums: Vec<EnumDecl>,
     pub types: Vec<TypeDecl>,
+    pub tools: Vec<ToolDecl>,
+    pub models: Vec<ModelDecl>,
     pub agents: Vec<AgentDecl>,
     pub protocols: Vec<ProtocolDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssertionDecl {
+    pub name: Spanned<String>,
+    pub argument: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailureDecl {
+    pub name: Spanned<String>,
+    pub action: Spanned<String>,
+    pub trace_required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelDecl {
+    pub name: Spanned<String>,
+    pub provider: Spanned<String>,
+    pub capability: Spanned<String>,
+    pub input: Spanned<String>,
+    pub output: Spanned<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolDecl {
+    pub name: Spanned<String>,
+    pub capability: Spanned<String>,
+    pub input: Spanned<String>,
+    pub output: Spanned<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +108,8 @@ pub struct AgentDecl {
     pub receives: Vec<ReceiveDecl>,
     pub sends: Vec<SendDecl>,
     pub capabilities: Vec<Spanned<String>>,
+    pub tools: Vec<Spanned<String>>,
+    pub models: Vec<Spanned<String>>,
     pub handlers: Vec<HandlerDecl>,
 }
 
@@ -108,6 +144,14 @@ pub enum HandlerInstruction {
     IntrinsicCall {
         name: Spanned<String>,
         argument: Spanned<String>,
+    },
+    CallTool {
+        tool: Spanned<String>,
+        binding: Spanned<String>,
+    },
+    AskModel {
+        model: Spanned<String>,
+        binding: Spanned<String>,
     },
 }
 

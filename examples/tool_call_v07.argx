@@ -1,0 +1,62 @@
+module Argorix.Tools
+
+capability web.search { level restricted requires approval }
+capability policy.evaluate { level safe }
+capability trace.write { level safe }
+capability state.write { level safe }
+capability runtime.guard { level safe }
+capability runtime.halt { level restricted requires approval }
+
+type UserPrompt { content: string }
+type ToolResult { content: string }
+type Decision { action: string reason: string }
+
+tool WebSearch {
+    capability web.search
+    input UserPrompt
+    output ToolResult
+}
+
+agent ResearchAgent {
+    security { approval granted }
+    receives UserPrompt
+    sends ToolResult to PolicyJudge
+    capabilities { web.search state.write runtime.guard }
+    tools { WebSearch }
+    on UserPrompt as prompt {
+        marron(prompt)
+        facu(prompt)
+        call WebSearch with prompt
+        emit ToolResult to PolicyJudge
+    }
+}
+
+agent PolicyJudge {
+    receives ToolResult from ResearchAgent
+    sends Decision to RuntimeGate
+    capabilities { policy.evaluate state.write runtime.guard }
+    on ToolResult as result {
+        marron(result)
+        facu(result)
+        emit Decision to RuntimeGate
+    }
+}
+
+agent RuntimeGate {
+    security { approval granted }
+    receives Decision from PolicyJudge
+    capabilities { trace.write runtime.halt runtime.guard state.write }
+    on Decision as decision {
+        marron(decision)
+        facu(decision)
+        trace decision
+        halt
+    }
+}
+
+protocol ToolDefense {
+    User -> ResearchAgent: tell UserPrompt
+    ResearchAgent -> PolicyJudge: propose ToolResult
+    PolicyJudge -> RuntimeGate: commit Decision
+}
+

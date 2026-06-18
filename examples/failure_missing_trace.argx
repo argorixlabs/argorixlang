@@ -1,0 +1,5 @@
+module Argorix.Invalid
+failure BadFailure { action block }
+type UserPrompt { content: string }
+agent A { receives UserPrompt }
+

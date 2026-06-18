@@ -1,0 +1,9 @@
+module Argorix.Invalid
+type UserPrompt { content: string }
+agent Agent {
+    receives UserPrompt
+    on UserPrompt as prompt {
+        call MissingTool with prompt
+    }
+}
+

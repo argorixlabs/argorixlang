@@ -130,7 +130,7 @@ fn emits_versioned_v02_ir_with_capabilities() {
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
 
-    assert_eq!(json["ir_version"], "0.6");
+    assert_eq!(json["ir_version"], "0.9");
     assert_eq!(json["language"], "Argorix Lang");
     assert_eq!(json["capabilities"][3]["name"], "runtime.halt");
     assert_eq!(json["capabilities"][3]["requires_approval"], true);
@@ -258,7 +258,7 @@ fn ir_includes_intrinsic_instructions() {
     let ast = parse_source(include_str!("../examples/prompt_defense_v06.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.6");
+    assert_eq!(json["ir_version"], "0.9");
     assert_eq!(
         json["agents"][0]["handlers"][0]["instructions"][0]["op"],
         "intrinsic"
@@ -266,6 +266,194 @@ fn ir_includes_intrinsic_instructions() {
     assert_eq!(
         json["agents"][0]["handlers"][0]["instructions"][0]["name"],
         "facu"
+    );
+}
+
+#[test]
+fn parses_tools_permissions_and_calls() {
+    use argorix_parser::ast::HandlerInstruction;
+    let ast = parse_source(include_str!("../examples/tool_call_v07.argx")).unwrap();
+    assert_eq!(ast.tools[0].name.value, "WebSearch");
+    assert_eq!(ast.agents[0].tools[0].value, "WebSearch");
+    assert!(matches!(
+        ast.agents[0].handlers[0].instructions[2],
+        HandlerInstruction::CallTool { ref tool, ref binding }
+            if tool.value == "WebSearch" && binding.value == "prompt"
+    ));
+}
+
+#[test]
+fn validates_tool_contracts_and_permissions() {
+    check(include_str!("../examples/tool_call_v07.argx")).unwrap();
+    for (source, expected) in [
+        (
+            include_str!("../examples/tool_unknown.argx"),
+            "unknown tool `MissingTool`",
+        ),
+        (
+            include_str!("../examples/tool_without_agent_permission.argx"),
+            "without declaring it in `tools`",
+        ),
+        (
+            include_str!("../examples/tool_missing_capability.argx"),
+            "without capability `web.search`",
+        ),
+        (
+            include_str!("../examples/tool_restricted_without_approval.argx"),
+            "without approval",
+        ),
+        (
+            include_str!("../examples/tool_wrong_binding.argx"),
+            "does not match handler binding",
+        ),
+    ] {
+        let diagnostics = check(source).unwrap_err();
+        assert!(diagnostics
+            .iter()
+            .any(|item| item.message.contains(expected)));
+    }
+}
+
+#[test]
+fn rejects_invalid_global_tool_declarations() {
+    let duplicate = r#"
+        module Invalid
+        capability web.search { level safe }
+        type Input { value: string }
+        type Output { value: string }
+        tool Search { capability web.search input Input output Output }
+        tool Search { capability web.search input Input output Output }
+    "#;
+    assert!(check(duplicate)
+        .unwrap_err()
+        .iter()
+        .any(|item| item.message.contains("duplicate tool")));
+
+    let bad_contract = r#"
+        module Invalid
+        tool Search { capability missing.cap input MissingInput output MissingOutput }
+    "#;
+    let diagnostics = check(bad_contract).unwrap_err();
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.message.contains("unknown capability")));
+    assert!(
+        diagnostics
+            .iter()
+            .filter(|item| item.message.contains("unknown message type"))
+            .count()
+            >= 2
+    );
+
+    let unknown_agent_tool = r#"
+        module Invalid
+        type Input { value: string }
+        agent Worker {
+            receives Input
+            tools { MissingTool }
+        }
+    "#;
+    assert!(check(unknown_agent_tool)
+        .unwrap_err()
+        .iter()
+        .any(|item| item
+            .message
+            .contains("references unknown tool `MissingTool`")));
+}
+
+#[test]
+fn ir_includes_tools_and_call_instruction() {
+    let ast = parse_source(include_str!("../examples/tool_call_v07.argx")).unwrap();
+    check_program(&ast).unwrap();
+    let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
+    assert_eq!(json["ir_version"], "0.9");
+    assert_eq!(json["tools"][0]["name"], "WebSearch");
+    assert_eq!(json["agents"][0]["tools"][0], "WebSearch");
+    assert_eq!(
+        json["agents"][0]["handlers"][0]["instructions"][2]["op"],
+        "call"
+    );
+}
+
+#[test]
+fn parses_models_permissions_and_ask() {
+    use argorix_parser::ast::HandlerInstruction;
+    let ast = parse_source(include_str!("../examples/model_call_v08.argx")).unwrap();
+    assert_eq!(ast.models[0].provider.value, "simulated");
+    assert_eq!(ast.agents[1].models[0].value, "GuardModel");
+    assert!(matches!(
+        ast.agents[1].handlers[0].instructions[2],
+        HandlerInstruction::AskModel { ref model, ref binding }
+            if model.value == "GuardModel" && binding.value == "result"
+    ));
+}
+
+#[test]
+fn validates_model_contracts_and_permissions() {
+    check(include_str!("../examples/model_call_v08.argx")).unwrap();
+    for (source, expected) in [
+        (
+            include_str!("../examples/model_unknown.argx"),
+            "unknown model",
+        ),
+        (
+            include_str!("../examples/model_without_agent_permission.argx"),
+            "without declaring it in `models`",
+        ),
+        (
+            include_str!("../examples/model_missing_capability.argx"),
+            "without capability `model.invoke`",
+        ),
+        (
+            include_str!("../examples/model_restricted_without_approval.argx"),
+            "without approval",
+        ),
+        (
+            include_str!("../examples/model_wrong_binding.argx"),
+            "does not match handler binding",
+        ),
+        (
+            include_str!("../examples/model_invalid_provider.argx"),
+            "unsupported provider",
+        ),
+    ] {
+        assert!(check(source)
+            .unwrap_err()
+            .iter()
+            .any(|item| item.message.contains(expected)));
+    }
+}
+
+#[test]
+fn rejects_duplicate_and_invalid_model_contracts() {
+    let source = r#"
+        module Invalid
+        model M { provider simulated capability missing input Missing output Missing }
+        model M { provider simulated capability missing input Missing output Missing }
+    "#;
+    let diagnostics = check(source).unwrap_err();
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.message.contains("duplicate model")));
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.message.contains("unknown capability")));
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.message.contains("unknown message type")));
+}
+
+#[test]
+fn ir_includes_models_and_ask() {
+    let ast = parse_source(include_str!("../examples/model_call_v08.argx")).unwrap();
+    check_program(&ast).unwrap();
+    let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
+    assert_eq!(json["ir_version"], "0.9");
+    assert_eq!(json["models"][0]["name"], "GuardModel");
+    assert_eq!(json["agents"][1]["models"][0], "GuardModel");
+    assert_eq!(
+        json["agents"][1]["handlers"][0]["instructions"][2]["op"],
+        "ask"
     );
 }
 
@@ -290,6 +478,52 @@ fn reports_precise_semantic_locations() {
     assert_eq!(diagnostics[0].span.line, 2);
     assert_eq!(diagnostics[0].span.column, 17);
     assert!(diagnostics[0].message.contains("unknown message type"));
+}
+
+#[test]
+fn parses_and_emits_v09_policies() {
+    let ast = parse_source(include_str!("../examples/policy_assertions_v09.argx")).unwrap();
+    check_program(&ast).unwrap();
+
+    assert_eq!(ast.assertions.len(), 6);
+    assert_eq!(ast.failures.len(), 3);
+    assert_eq!(
+        ast.assertions[5]
+            .argument
+            .as_ref()
+            .map(|value| value.value.as_str()),
+        Some("completed")
+    );
+    assert_eq!(ast.failures[0].action.value, "block");
+    assert!(ast.failures[0].trace_required);
+
+    let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
+    assert_eq!(json["ir_version"], "0.9");
+    assert_eq!(json["assertions"][0]["name"], "no_unhandled_messages");
+    assert_eq!(json["failures"][0]["trace"], "required");
+}
+
+#[test]
+fn rejects_invalid_v09_policy_declarations() {
+    for (source, expected) in [
+        (
+            include_str!("../examples/assert_unknown.argx"),
+            "unknown policy assertion",
+        ),
+        (
+            include_str!("../examples/failure_invalid_action.argx"),
+            "invalid failure action",
+        ),
+        (
+            include_str!("../examples/failure_missing_trace.argx"),
+            "requires `trace required`",
+        ),
+    ] {
+        assert!(check(source)
+            .unwrap_err()
+            .iter()
+            .any(|item| item.message.contains(expected)));
+    }
 }
 
 #[test]
