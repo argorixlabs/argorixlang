@@ -38,6 +38,8 @@ pub struct ProviderDecl {
     pub dry_run_only: Spanned<bool>,
     pub requires_feature_flag: bool,
     pub requires_explicit_approval: bool,
+    pub allowed_targets: Vec<Spanned<String>>,
+    pub allowed_capabilities: Vec<Spanned<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

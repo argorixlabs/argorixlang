@@ -1,0 +1,99 @@
+module Argorix.ProviderToolAllowlists
+
+provider EnterpriseSearch {
+    kind external
+    enabled false
+    dry_run_only true
+    requires feature_flag
+    requires approval
+
+    allowed_targets {
+        WebSearch
+    }
+
+    allowed_capabilities {
+        web.search
+    }
+}
+
+capability web.search { level restricted requires approval }
+capability model.invoke { level restricted requires approval }
+capability trace.write { level safe }
+capability state.write { level safe }
+capability runtime.guard { level safe }
+capability runtime.halt { level restricted requires approval }
+
+assert no_unhandled_messages
+assert all_tool_calls_traced
+assert all_model_calls_traced
+assert all_intrinsics_traced
+assert halt_requires_trace
+assert runtime_status completed
+
+failure PolicyViolation { action block trace required }
+failure ToolDenied { action review trace required }
+failure ModelDenied { action review trace required }
+
+type UserPrompt { content: string }
+type ToolResult { content: string }
+type Decision { action: string reason: string }
+
+tool WebSearch {
+    provider simulated
+    capability web.search
+    input UserPrompt
+    output ToolResult
+}
+
+model GuardModel {
+    provider simulated
+    capability model.invoke
+    input ToolResult
+    output Decision
+}
+
+agent ResearchAgent {
+    security { approval granted }
+    receives UserPrompt
+    sends ToolResult to PolicyJudge
+    capabilities { web.search state.write runtime.guard }
+    tools { WebSearch }
+    on UserPrompt as prompt {
+        marron(prompt)
+        facu(prompt)
+        call WebSearch with prompt
+        emit ToolResult to PolicyJudge
+    }
+}
+
+agent PolicyJudge {
+    security { approval granted }
+    receives ToolResult from ResearchAgent
+    sends Decision to RuntimeGate
+    capabilities { model.invoke state.write runtime.guard }
+    models { GuardModel }
+    on ToolResult as result {
+        marron(result)
+        facu(result)
+        ask GuardModel with result
+        emit Decision to RuntimeGate
+    }
+}
+
+agent RuntimeGate {
+    security { approval granted }
+    receives Decision from PolicyJudge
+    capabilities { trace.write runtime.halt runtime.guard state.write }
+    on Decision as decision {
+        marron(decision)
+        facu(decision)
+        trace decision
+        halt
+    }
+}
+
+protocol ProviderDefense {
+    User -> ResearchAgent: tell UserPrompt
+    ResearchAgent -> PolicyJudge: propose ToolResult
+    PolicyJudge -> RuntimeGate: commit Decision
+}

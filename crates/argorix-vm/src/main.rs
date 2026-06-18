@@ -64,7 +64,7 @@ fn run() -> Result<()> {
             provider_contracts,
         } => {
             if !dry_run {
-                bail!("v0.11 only supports execution with `--dry-run`");
+                bail!("v0.12 only supports execution with `--dry-run`");
             }
             let source = fs::read_to_string(&file)
                 .with_context(|| format!("failed to read `{}`", file.display()))?;
@@ -79,7 +79,7 @@ fn run() -> Result<()> {
                 if json {
                     println!("{}", serde_json::to_string_pretty(&trace)?);
                 } else {
-                    println!("Argorix VM v0.11\n");
+                    println!("Argorix VM v0.12\n");
                     println!("Execution mode: reactive dry-run");
                     println!("Scheduler: {}", trace.scheduler);
                     if providers {
@@ -98,6 +98,14 @@ fn run() -> Result<()> {
                             println!(
                                 "- {}: {}, disabled, dry-run-only, requires feature_flag, requires approval",
                                 contract.name, contract.kind
+                            );
+                            println!(
+                                "  allowed_targets: {}",
+                                format_allowlist(&contract.allowed_targets)
+                            );
+                            println!(
+                                "  allowed_capabilities: {}",
+                                format_allowlist(&contract.allowed_capabilities)
                             );
                         }
                         println!("- simulated: executable\n");
@@ -268,7 +276,7 @@ fn run() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&trace)?);
             } else if mailboxes {
-                println!("Argorix VM v0.11\n");
+                println!("Argorix VM v0.12\n");
                 println!("Execution mode: dry-run");
                 println!("Scheduler: {}", trace.scheduler);
                 println!("Agents: {}\n", trace.mailboxes.len());
@@ -288,7 +296,7 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
                 println!("Trace ledger: generated");
             } else {
-                println!("Argorix VM v0.11\n");
+                println!("Argorix VM v0.12\n");
                 println!("Loaded bytecode: {}", file.display());
                 println!("Execution mode: dry-run\n");
                 for step in &trace.steps {
@@ -306,6 +314,13 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+fn format_allowlist(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".into()
+    } else {
+        values.join(", ")
+    }
+}
 fn parse_injection(value: &str) -> Result<InjectedMessage> {
     let parts = value.split(':').collect::<Vec<_>>();
     if parts.len() != 4 || parts.iter().any(|part| part.trim().is_empty()) {
@@ -321,9 +336,17 @@ fn parse_injection(value: &str) -> Result<InjectedMessage> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_injection, Cli, Command};
+    use super::{format_allowlist, parse_injection, Cli, Command};
     use clap::Parser;
 
+    #[test]
+    fn formats_populated_and_empty_allowlists() {
+        assert_eq!(format_allowlist(&[]), "none");
+        assert_eq!(
+            format_allowlist(&["GuardModel".into(), "WebSearch".into()]),
+            "GuardModel, WebSearch"
+        );
+    }
     #[test]
     fn cli_accepts_reactive_injection() {
         let cli = Cli::try_parse_from([

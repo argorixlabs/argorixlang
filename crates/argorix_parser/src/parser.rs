@@ -97,7 +97,15 @@ impl Parser {
         while self.match_keyword("requires") {
             let requirement = self.expect_identifier("provider requirement")?;
             match requirement.value.as_str() {
-                "feature_flag" if !requires_feature_flag => requires_feature_flag = true,
+                "feature_flag" if !requires_feature_flag => {
+                    if requires_explicit_approval {
+                        return Err(Diagnostic::new(
+                            "`requires feature_flag` must appear before `requires approval`",
+                            requirement.span,
+                        ));
+                    }
+                    requires_feature_flag = true;
+                }
                 "approval" if !requires_explicit_approval => {
                     requires_explicit_approval = true;
                 }
@@ -117,7 +125,45 @@ impl Parser {
                 }
             }
         }
-        self.expect_symbol(TokenKind::RightBrace, "`}`")?;
+        let mut allowed_targets = None;
+        let mut allowed_capabilities = None;
+        while !self.check(&TokenKind::RightBrace) {
+            match self.peek_identifier() {
+                Some("allowed_targets") => {
+                    if allowed_targets.is_some() {
+                        return Err(Diagnostic::new(
+                            "duplicate `allowed_targets` block",
+                            self.peek().span,
+                        ));
+                    }
+                    self.advance();
+                    allowed_targets = Some(self.parse_identifier_block("allowed target")?);
+                }
+                Some("allowed_capabilities") => {
+                    if allowed_capabilities.is_some() {
+                        return Err(Diagnostic::new(
+                            "duplicate `allowed_capabilities` block",
+                            self.peek().span,
+                        ));
+                    }
+                    self.advance();
+                    allowed_capabilities = Some(self.parse_identifier_block("allowed capability")?);
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected provider item `{other}`"),
+                        self.peek().span,
+                    ));
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected provider allowlist block",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
         Ok(ProviderDecl {
             name,
             kind: Spanned::new(kind, kind_token.span),
@@ -125,9 +171,24 @@ impl Parser {
             dry_run_only,
             requires_feature_flag,
             requires_explicit_approval,
+            allowed_targets: allowed_targets.unwrap_or_default(),
+            allowed_capabilities: allowed_capabilities.unwrap_or_default(),
         })
     }
 
+    fn parse_identifier_block(
+        &mut self,
+        description: &str,
+    ) -> Result<Vec<Spanned<String>>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut values = Vec::new();
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated provider allowlist block")?;
+            values.push(self.expect_identifier(description)?);
+        }
+        self.advance();
+        Ok(values)
+    }
     fn parse_assertion(&mut self) -> Result<AssertionDecl, Diagnostic> {
         self.expect_keyword("assert")?;
         let name = self.expect_identifier("assertion name")?;

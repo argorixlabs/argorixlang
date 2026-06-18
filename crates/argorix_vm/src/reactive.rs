@@ -1175,8 +1175,8 @@ mod tests {
                 dry_run_only: true,
                 requires_feature_flag: true,
                 requires_explicit_approval: true,
-                allowed_targets: vec![],
-                allowed_capabilities: vec![],
+                allowed_targets: vec!["GuardModel".into()],
+                allowed_capabilities: vec!["model.invoke".into()],
             })
             .unwrap();
         let mut state = RuntimeState::from_bytecode(&bytecode).unwrap();

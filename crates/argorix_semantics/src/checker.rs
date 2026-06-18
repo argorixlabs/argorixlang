@@ -21,7 +21,7 @@ pub fn check_program_with_options(
 ) -> Result<(), Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
     let symbols = collect_symbols(program, &mut diagnostics);
-    check_provider_contracts(program, &mut diagnostics);
+    check_provider_contracts(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
     check_model_declarations(program, &symbols, &mut diagnostics);
@@ -90,7 +90,11 @@ pub fn check_program_with_options(
     }
 }
 
-fn check_provider_contracts(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+fn check_provider_contracts(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let mut names = HashSet::new();
     for provider in &program.providers {
         report_duplicate(&mut names, &provider.name, "provider", diagnostics);
@@ -103,7 +107,7 @@ fn check_provider_contracts(program: &Program, diagnostics: &mut Vec<Diagnostic>
         if provider.kind.value.as_str() != "external" {
             diagnostics.push(Diagnostic::new(
                 format!(
-                    "provider contract `{}` must use kind `external` in v0.11",
+                    "provider contract `{}` must use kind `external` in v0.12",
                     provider.name.value
                 ),
                 provider.kind.span,
@@ -145,9 +149,77 @@ fn check_provider_contracts(program: &Program, diagnostics: &mut Vec<Diagnostic>
                 provider.name.span,
             ));
         }
+
+        let mut targets = HashSet::new();
+        for target in &provider.allowed_targets {
+            if !targets.insert(target.value.clone()) {
+                diagnostics.push(Diagnostic::new(
+                    format!("duplicate allowed target `{}`", target.value),
+                    target.span,
+                ));
+                continue;
+            }
+            let tool = program
+                .tools
+                .iter()
+                .find(|item| item.name.value == target.value);
+            let model = program
+                .models
+                .iter()
+                .find(|item| item.name.value == target.value);
+            let capability = match (tool, model) {
+                (None, None) => {
+                    diagnostics.push(Diagnostic::new(
+                        format!("unknown allowlist target `{}`", target.value),
+                        target.span,
+                    ));
+                    None
+                }
+                (Some(_), Some(_)) => {
+                    diagnostics.push(Diagnostic::new(
+                        format!("ambiguous allowlist target `{}`", target.value),
+                        target.span,
+                    ));
+                    None
+                }
+                (Some(tool), None) => Some(tool.capability.value.as_str()),
+                (None, Some(model)) => Some(model.capability.value.as_str()),
+            };
+            if let Some(capability) = capability {
+                if !provider.allowed_capabilities.is_empty()
+                    && !provider
+                        .allowed_capabilities
+                        .iter()
+                        .any(|allowed| allowed.value == capability)
+                {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "allowlist target `{}` requires capability `{capability}`",
+                            target.value
+                        ),
+                        target.span,
+                    ));
+                }
+            }
+        }
+
+        let mut capabilities = HashSet::new();
+        for capability in &provider.allowed_capabilities {
+            if !capabilities.insert(capability.value.clone()) {
+                diagnostics.push(Diagnostic::new(
+                    format!("duplicate allowed capability `{}`", capability.value),
+                    capability.span,
+                ));
+            }
+            if !symbols.capabilities.contains_key(&capability.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!("unknown allowlist capability `{}`", capability.value),
+                    capability.span,
+                ));
+            }
+        }
     }
 }
-
 fn check_policies(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
     const ASSERTIONS: [&str; 6] = [
         "no_unhandled_messages",

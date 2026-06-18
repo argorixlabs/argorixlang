@@ -72,7 +72,7 @@ impl ProviderRegistry {
             Some("provider contract name must not be empty")
         } else {
             match contract.kind {
-                ProviderKind::Simulated => Some("only external contracts are declarative in v0.11"),
+                ProviderKind::Simulated => Some("only external contracts are declarative in v0.12"),
                 ProviderKind::External if contract.enabled => {
                     Some("external provider contracts must be disabled")
                 }
@@ -84,12 +84,6 @@ impl ProviderRegistry {
                 }
                 ProviderKind::External if !contract.requires_explicit_approval => {
                     Some("external provider contracts require explicit approval")
-                }
-                ProviderKind::External if !contract.allowed_targets.is_empty() => {
-                    Some("allowed_targets is reserved and must be empty in v0.11")
-                }
-                ProviderKind::External if !contract.allowed_capabilities.is_empty() => {
-                    Some("allowed_capabilities is reserved and must be empty in v0.11")
                 }
                 ProviderKind::External => None,
             }

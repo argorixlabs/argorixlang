@@ -123,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    fn external_contract_validation_enforces_v011_invariants() {
+    fn external_contract_validation_enforces_v012_invariants() {
         let cases = [
             (
                 AdapterContract {
@@ -160,20 +160,6 @@ mod tests {
                 },
                 "explicit approval",
             ),
-            (
-                AdapterContract {
-                    allowed_targets: vec!["Model".into()],
-                    ..external_contract("Targets")
-                },
-                "allowed_targets",
-            ),
-            (
-                AdapterContract {
-                    allowed_capabilities: vec!["model.invoke".into()],
-                    ..external_contract("Capabilities")
-                },
-                "allowed_capabilities",
-            ),
         ];
 
         for (contract, expected) in cases {
@@ -185,6 +171,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn registry_accepts_populated_allowlists_without_interpreting_them() {
+        let mut registry = ProviderRegistry::default();
+        let mut contract = external_contract("OpenAI");
+        contract.allowed_targets = vec!["GuardModel".into()];
+        contract.allowed_capabilities = vec!["model.invoke".into()];
+        registry.register_contract(contract).unwrap();
+        let validated = registry.validate_contract("OpenAI").unwrap();
+        assert_eq!(validated.allowed_targets, vec!["GuardModel"]);
+        assert_eq!(validated.allowed_capabilities, vec!["model.invoke"]);
+    }
     #[test]
     fn simulated_provider_invokes_tool_in_dry_run() {
         let response = SimulatedProvider

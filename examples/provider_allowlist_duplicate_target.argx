@@ -1,0 +1,16 @@
+module Invalid.Allowlist
+provider OpenAI {
+    kind external
+    enabled false
+    dry_run_only true
+    requires feature_flag
+    requires approval
+    allowed_targets { GuardModel GuardModel }
+    allowed_capabilities { model.invoke }
+}
+capability model.invoke { level safe }
+capability web.search { level safe }
+type Input { value: string }
+type Output { value: string }
+model GuardModel { provider simulated capability model.invoke input Input output Output }
+tool WebSearch { provider simulated capability web.search input Input output Output }

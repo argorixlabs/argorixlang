@@ -130,7 +130,7 @@ fn emits_versioned_v02_ir_with_capabilities() {
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
 
-    assert_eq!(json["ir_version"], "0.11");
+    assert_eq!(json["ir_version"], "0.12");
     assert_eq!(json["language"], "Argorix Lang");
     assert_eq!(json["capabilities"][3]["name"], "runtime.halt");
     assert_eq!(json["capabilities"][3]["requires_approval"], true);
@@ -258,7 +258,7 @@ fn ir_includes_intrinsic_instructions() {
     let ast = parse_source(include_str!("../examples/prompt_defense_v06.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.11");
+    assert_eq!(json["ir_version"], "0.12");
     assert_eq!(
         json["agents"][0]["handlers"][0]["instructions"][0]["op"],
         "intrinsic"
@@ -351,15 +351,54 @@ fn parser_recognizes_external_provider_contract_fields() {
 }
 
 #[test]
-fn parser_does_not_expose_reserved_provider_allowlists() {
-    for field in ["allowed_targets", "allowed_capabilities"] {
+fn parser_recognizes_provider_allowlists_in_either_order() {
+    for blocks in [
+        "allowed_targets { GuardModel WebSearch }\nallowed_capabilities { model.invoke web.search }",
+        "allowed_capabilities { model.invoke web.search }\nallowed_targets { GuardModel WebSearch }",
+    ] {
         let source = format!(
-            "module Contracts\nprovider OpenAI {{ kind external enabled false dry_run_only true requires feature_flag requires approval {field} {{ Anything }} }}\n"
+            "module Contracts\nprovider OpenAI {{ kind external enabled false dry_run_only true requires feature_flag requires approval {blocks} }}\n"
         );
-        assert!(parse_source(&source).is_err());
+        let ast = parse_source(&source).unwrap();
+        let provider = &ast.providers[0];
+        assert_eq!(provider.allowed_targets.len(), 2);
+        assert_eq!(provider.allowed_capabilities.len(), 2);
     }
 }
 
+#[test]
+fn parser_accepts_v011_contract_without_allowlists() {
+    let ast = parse_source(
+        "module Contracts\nprovider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }\n",
+    )
+    .unwrap();
+    assert!(ast.providers[0].allowed_targets.is_empty());
+    assert!(ast.providers[0].allowed_capabilities.is_empty());
+}
+
+#[test]
+fn parser_rejects_duplicate_allowlist_blocks() {
+    for block in ["allowed_targets", "allowed_capabilities"] {
+        let source = format!(
+            "module Contracts\nprovider OpenAI {{ kind external enabled false dry_run_only true requires feature_flag requires approval {block} {{ One }} {block} {{ Two }} }}\n"
+        );
+        let diagnostics = parse_source(&source).unwrap_err();
+        assert!(diagnostics[0]
+            .message
+            .contains(&format!("duplicate `{block}` block")));
+    }
+}
+
+#[test]
+fn parser_rejects_reversed_provider_requirements() {
+    let diagnostics = parse_source(
+        "module Contracts\nprovider OpenAI { kind external enabled false dry_run_only true requires approval requires feature_flag }\n",
+    )
+    .unwrap_err();
+    assert!(diagnostics[0]
+        .message
+        .contains("must appear before `requires approval`"));
+}
 #[test]
 fn semantic_checker_accepts_disabled_external_provider_contract() {
     check(
@@ -425,11 +464,17 @@ fn semantic_checker_rejects_duplicate_provider_contracts() {
 
 #[test]
 fn semantic_checker_rejects_external_contract_used_by_model_or_tool() {
-    let provider = "provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }";
-    for declaration in [
-        "model M { provider OpenAI capability model.invoke input I output O }",
-        "tool T { provider OpenAI capability model.invoke input I output O }",
+    for (target, declaration) in [
+        (
+            "M",
+            "model M { provider OpenAI capability model.invoke input I output O }",
+        ),
+        (
+            "T",
+            "tool T { provider OpenAI capability model.invoke input I output O }",
+        ),
     ] {
+        let provider = format!("provider OpenAI {{ kind external enabled false dry_run_only true requires feature_flag requires approval allowed_targets {{ {target} }} allowed_capabilities {{ model.invoke }} }}");
         let source = format!(
             "module Contracts\n{provider}\ncapability model.invoke {{ level safe }}\ntype I {{ value: string }}\ntype O {{ value: string }}\n{declaration}\n"
         );
@@ -440,6 +485,103 @@ fn semantic_checker_rejects_external_contract_used_by_model_or_tool() {
     }
 }
 
+fn allowlist_program(targets: &str, capabilities: &str, declarations: &str) -> String {
+    format!(
+        r#"
+        module Allowlists
+        provider OpenAI {{
+            kind external
+            enabled false
+            dry_run_only true
+            requires feature_flag
+            requires approval
+            allowed_targets {{ {targets} }}
+            allowed_capabilities {{ {capabilities} }}
+        }}
+        capability model.invoke {{ level safe }}
+        capability web.search {{ level safe }}
+        type Input {{ value: string }}
+        type Output {{ value: string }}
+        {declarations}
+        "#
+    )
+}
+
+#[test]
+fn semantic_checker_accepts_valid_model_and_tool_allowlists() {
+    check(&allowlist_program(
+        "GuardModel WebSearch",
+        "model.invoke web.search",
+        "model GuardModel { provider simulated capability model.invoke input Input output Output }\n\
+         tool WebSearch { provider simulated capability web.search input Input output Output }",
+    ))
+    .unwrap();
+}
+
+#[test]
+fn semantic_checker_rejects_invalid_allowlist_entries() {
+    let cases = [
+        (allowlist_program("Missing", "model.invoke", ""), "unknown allowlist target `Missing`"),
+        (allowlist_program("", "missing.capability", ""), "unknown allowlist capability `missing.capability`"),
+        (allowlist_program("GuardModel GuardModel", "model.invoke", "model GuardModel { provider simulated capability model.invoke input Input output Output }"), "duplicate allowed target `GuardModel`"),
+        (allowlist_program("", "model.invoke model.invoke", ""), "duplicate allowed capability `model.invoke`"),
+        (allowlist_program("Shared", "model.invoke web.search", "model Shared { provider simulated capability model.invoke input Input output Output }\ntool Shared { provider simulated capability web.search input Input output Output }"), "ambiguous allowlist target `Shared`"),
+    ];
+    for (source, expected) in cases {
+        let diagnostics = check(&source).unwrap_err();
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item.message.contains(expected)),
+            "{diagnostics:?}"
+        );
+    }
+}
+
+#[test]
+fn semantic_checker_rejects_incompatible_allowlist_capabilities() {
+    for (target, allowed, declaration, expected) in [
+        ("GuardModel", "web.search", "model GuardModel { provider simulated capability model.invoke input Input output Output }", "target `GuardModel` requires capability `model.invoke`"),
+        ("WebSearch", "model.invoke", "tool WebSearch { provider simulated capability web.search input Input output Output }", "target `WebSearch` requires capability `web.search`"),
+    ] {
+        let diagnostics = check(&allowlist_program(target, allowed, declaration)).unwrap_err();
+        assert!(diagnostics.iter().any(|item| item.message.contains(expected)), "{diagnostics:?}");
+    }
+}
+#[test]
+fn ir_preserves_populated_provider_allowlists() {
+    let ast = parse_source(&allowlist_program(
+        "GuardModel WebSearch",
+        "model.invoke web.search",
+        "model GuardModel { provider simulated capability model.invoke input Input output Output }\n\
+         tool WebSearch { provider simulated capability web.search input Input output Output }\n\
+         agent Worker { receives Input }\n\
+         protocol Flow { User -> Worker: tell Input }",
+    ))
+    .unwrap();
+    check_program(&ast).unwrap();
+    let ir = IrProgram::from(&ast);
+    assert_eq!(ir.ir_version, "0.12");
+    assert_eq!(
+        ir.providers[0].allowed_targets,
+        vec!["GuardModel", "WebSearch"]
+    );
+    assert_eq!(
+        ir.providers[0].allowed_capabilities,
+        vec!["model.invoke", "web.search"]
+    );
+    let bytecode = argorix_bytecode::lower_ir(&ir);
+    assert_eq!(bytecode.bytecode_version, "0.12");
+    assert_eq!(
+        bytecode.providers[0].allowed_targets,
+        vec!["GuardModel", "WebSearch"]
+    );
+    assert_eq!(
+        bytecode.providers[0].allowed_capabilities,
+        vec!["model.invoke", "web.search"]
+    );
+    argorix_bytecode::verify_bytecode(&bytecode).unwrap();
+}
 #[test]
 fn ir_and_bytecode_include_declarative_provider_contracts() {
     let source = r#"
@@ -458,14 +600,14 @@ fn ir_and_bytecode_include_declarative_provider_contracts() {
     let ast = parse_source(source).unwrap();
     check_program(&ast).unwrap();
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.11");
+    assert_eq!(ir.ir_version, "0.12");
     assert_eq!(ir.providers[0].name, "OpenAI");
     assert_eq!(ir.providers[0].kind, "external");
     assert!(ir.providers[0].allowed_targets.is_empty());
     assert!(ir.providers[0].allowed_capabilities.is_empty());
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.11");
+    assert_eq!(bytecode.bytecode_version, "0.12");
     assert_eq!(bytecode.providers[0].name, "OpenAI");
     assert!(bytecode.providers[0].allowed_targets.is_empty());
     assert!(bytecode.providers[0].allowed_capabilities.is_empty());
@@ -495,12 +637,12 @@ fn ir_and_bytecode_make_tool_provider_explicit() {
     assert!(ast.tools[0].provider.is_none());
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.11");
+    assert_eq!(ir.ir_version, "0.12");
     assert_eq!(ir.tools[0].provider, "simulated");
     assert_eq!(ir.models.len(), 0);
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.11");
+    assert_eq!(bytecode.bytecode_version, "0.12");
     assert_eq!(bytecode.tools[0].provider, "simulated");
     assert!(bytecode.instructions.iter().any(|instruction| matches!(
         instruction,
@@ -607,7 +749,7 @@ fn ir_includes_tools_and_call_instruction() {
     let ast = parse_source(include_str!("../examples/tool_call_v07.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.11");
+    assert_eq!(json["ir_version"], "0.12");
     assert_eq!(json["tools"][0]["name"], "WebSearch");
     assert_eq!(json["agents"][0]["tools"][0], "WebSearch");
     assert_eq!(
@@ -689,7 +831,7 @@ fn ir_includes_models_and_ask() {
     let ast = parse_source(include_str!("../examples/model_call_v08.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.11");
+    assert_eq!(json["ir_version"], "0.12");
     assert_eq!(json["models"][0]["name"], "GuardModel");
     assert_eq!(json["agents"][1]["models"][0], "GuardModel");
     assert_eq!(
@@ -739,7 +881,7 @@ fn parses_and_emits_v09_policies() {
     assert!(ast.failures[0].trace_required);
 
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.11");
+    assert_eq!(json["ir_version"], "0.12");
     assert_eq!(json["assertions"][0]["name"], "no_unhandled_messages");
     assert_eq!(json["failures"][0]["trace"], "required");
 }

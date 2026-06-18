@@ -3,7 +3,7 @@ use crate::{
     InjectedMessage, IntrinsicExecution, MailboxSummary, PolicyReport, ReactiveExecutionTrace,
     ReactiveScheduler, RuntimeState, RuntimeStatus, Scheduler, VmError,
 };
-use argorix_bytecode::BytecodeProgram;
+use argorix_bytecode::{verify_bytecode, BytecodeProgram};
 use argorix_provider::{AdapterContract, ProviderKind, ProviderRegistry};
 
 pub struct Vm {
@@ -132,6 +132,11 @@ impl Vm {
         injected: InjectedMessage,
     ) -> Result<ReactiveExecutionTrace, VmError> {
         let mut state = RuntimeState::from_bytecode(bytecode)?;
+        if let Err(errors) = verify_bytecode(bytecode) {
+            let error = VmError::from_verification(errors);
+            state.fail(error.to_string());
+            return Err(error);
+        }
         let execution_providers = self.load_provider_contracts(bytecode, &mut state)?;
         for (name, kind) in execution_providers.entries() {
             state.trace_ledger.record(
@@ -237,7 +242,7 @@ impl Vm {
             .collect();
         let provider_calls = state.provider_calls.clone();
         Ok(ReactiveExecutionTrace {
-            vm_version: "0.11".into(),
+            vm_version: "0.12".into(),
             status: if policy_report.status == "passed" {
                 "completed".into()
             } else {
@@ -552,7 +557,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.11");
+        assert_eq!(json["vm_version"], "0.12");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -574,7 +579,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.11");
+        assert_eq!(json["vm_version"], "0.12");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -596,7 +601,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.11");
+        assert_eq!(json["vm_version"], "0.12");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -651,7 +656,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.11");
+        assert_eq!(trace.vm_version, "0.12");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -709,6 +714,33 @@ mod tests {
     }
 
     #[test]
+    fn vm_json_preserves_populated_provider_allowlists() {
+        let bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_allowlists_v012.argbc.json"
+        ))
+        .unwrap();
+        let trace = Vm::new()
+            .run_reactive(
+                &bytecode,
+                InjectedMessage {
+                    from: "User".into(),
+                    to: "ResearchAgent".into(),
+                    act: "tell".into(),
+                    message_type: "UserPrompt".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(trace.vm_version, "0.12");
+        assert_eq!(
+            trace.provider_contracts[0].allowed_targets,
+            vec!["GuardModel"]
+        );
+        assert_eq!(
+            trace.provider_contracts[0].allowed_capabilities,
+            vec!["model.invoke"]
+        );
+    }
+    #[test]
     fn rejected_provider_contract_preserves_runtime_ledger() {
         let mut bytecode = valid_bytecode();
         add_external_contract(&mut bytecode, true);
@@ -750,7 +782,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.11");
+        assert_eq!(json["vm_version"], "0.12");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");

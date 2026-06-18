@@ -4,16 +4,14 @@ Argorix Lang is a compiled language for secure, verifiable communication
 between AI agents. Rust bootstraps the compiler; Argorix Lang remains its own
 language with a path toward progressive self-hosting.
 
-Version 0.11 adds declarative external adapter contracts on top of the v0.10
-provider boundary. External providers can be described and validated, but
-cannot execute:
+Version 0.12 activates declarative target and capability allowlists for external adapter contracts. External providers remain disabled and cannot execute:
 
 ```text
 .argx
   -> lexer / parser / AST
   -> semantic and security verification
-  -> Argorix IR 0.11
-  -> Argorix Bytecode 0.11
+  -> Argorix IR 0.12
+  -> Argorix Bytecode 0.12
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -90,8 +88,38 @@ cargo run -p argorixc -- check examples/provider_contracts_v011.argx
 cargo run -p argorixc -- emit-ir examples/provider_contracts_v011.argx
 cargo run -p argorixc -- emit-bytecode examples/provider_contracts_v011.argx
 cargo run -p argorix-vm -- run examples/provider_contracts_v011.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models --policy --providers --provider-contracts
+cargo run -p argorixc -- check examples/provider_allowlists_v012.argx
+cargo run -p argorixc -- emit-ir examples/provider_allowlists_v012.argx
+cargo run -p argorixc -- emit-bytecode examples/provider_allowlists_v012.argx
+cargo run -p argorix-vm -- run examples/provider_allowlists_v012.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models --policy --providers --provider-contracts
 ```
 
+## Provider contract allowlists v0.12
+
+External provider contracts may now declare future target and capability permissions:
+
+```argx
+provider OpenAI {
+    kind external
+    enabled false
+    dry_run_only true
+    requires feature_flag
+    requires approval
+
+    allowed_targets { GuardModel }
+    allowed_capabilities { model.invoke }
+}
+```
+
+The two optional blocks may appear in either order after the requirement clauses, at most once each. Duplicate blocks fail in parsing; duplicate elements fail in semantic validation at the repeated element.
+
+Targets must resolve to a global tool or model. A name shared by a tool and model is an ambiguous allowlist target. Capabilities must exist globally, and every allowlisted target must match at least one listed capability when the capability list is populated.
+
+Empty lists mean `zero future permissions`; they are never wildcards. Contracts without blocks remain compatible with v0.11 source and lower to empty arrays.
+
+`Allowlisted does not mean executable.` Tools and models still use only `simulated`; attempts to execute an external contract remain fail-closed and emit `ExternalProviderExecutionBlocked`.
+
+Use `--provider-contracts` to print indented allowlists. Empty lists are shown as `none`. JSON preserves list order in `provider_contracts`.
 ## External adapter contracts v0.11
 
 Module-level provider declarations describe future external adapters without
@@ -317,7 +345,7 @@ executes the matching handler, queues emitted messages, and repeats until
 
 ```json
 {
-  "bytecode_version": "0.11",
+  "bytecode_version": "0.12",
   "language": "Argorix Lang",
   "module": "Argorix.Security",
   "providers": [],
@@ -376,7 +404,7 @@ because a capability happens to be named `runtime.halt`.
 
 The verifier requires:
 
-- Bytecode version `0.11` for newly compiled programs. Versions `0.3`, `0.5`,
+- Bytecode version `0.12` for newly compiled programs. Versions `0.3`, `0.5`,
   `0.6`, `0.7`, `0.8`, `0.9`, and `0.10` remain accepted for compatibility.
 - At least one agent.
 - At least one protocol or `SendMessage`.
@@ -412,7 +440,7 @@ mailboxes. No network calls, tools, LLMs, or concurrent tasks are executed.
 Text output:
 
 ```text
-Argorix VM v0.11
+Argorix VM v0.12
 
 Loaded bytecode: examples/prompt_defense.argbc.json
 Execution mode: dry-run
@@ -465,7 +493,7 @@ The ledger records `VmStarted`, declarations, message scheduling, delivery and
 processing, then `VmCompleted` or `VmFailed`. Because the scheduler mutates a
 caller-owned state, failure diagnostics do not discard the ledger.
 
-Reactive JSON uses `vm_version: "0.11"` and
+Reactive JSON uses `vm_version: "0.12"` and
 `mode: "reactive-dry-run"`. Each step records the agent, handled message,
 emitted messages, traced bindings, and whether the handler halted execution.
 
@@ -506,8 +534,8 @@ cargo run -p argorixc -- --legacy-capabilities check examples/prompt_defense.arg
 crates/argorixc          Source compiler CLI
 crates/argorix_parser    Lexer, parser, AST, spans, diagnostics
 crates/argorix_semantics Source-level security and protocol verifier
-crates/argorix_ir        Argorix IR 0.11 with declarative adapter contracts
-crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.11 verifier
+crates/argorix_ir        Argorix IR 0.12 with provider contract allowlists
+crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.12 verifier
 crates/argorix_provider  Executable providers, adapter contracts, and registry
 crates/argorix_vm        Linear/reactive schedulers, mailboxes, VM, ledger
 crates/argorix-vm        Bytecode VM CLI
@@ -532,6 +560,16 @@ tests                    End-to-end compiler tests
 - `provider_boundary_v010.argbc.json`: generated Bytecode 0.10 fixture.
 - `provider_contracts_v011.argx`: valid disabled external adapter contract.
 - `provider_contracts_v011.argbc.json`: generated Bytecode 0.11 fixture.
+- `provider_allowlists_v012.argx`: valid model allowlist contract.
+- `provider_allowlists_v012.argbc.json`: generated Bytecode 0.12 model fixture.
+- `provider_allowlists_tools_v012.argx`: valid tool allowlist contract.
+- `provider_allowlists_tools_v012.argbc.json`: generated Bytecode 0.12 tool fixture.
+- `provider_allowlist_unknown_target.argx`: unknown target failure.
+- `provider_allowlist_unknown_capability.argx`: unknown capability failure.
+- `provider_allowlist_duplicate_target.argx`: duplicate target failure.
+- `provider_allowlist_duplicate_capability.argx`: duplicate capability failure.
+- `provider_allowlist_incompatible_capability.argx`: target/capability mismatch.
+- `provider_allowlist_external_execution_still_blocked.argx`: allowlisted external execution failure.
 - `provider_external_enabled.argx`: enabled external-contract failure.
 - `provider_external_missing_feature_flag.argx`: missing feature gate failure.
 - `provider_external_missing_approval.argx`: missing approval gate failure.
@@ -560,8 +598,9 @@ tests                    End-to-end compiler tests
 9. v0.9: compiled global policies, failure modes, and runtime reports
 10. v0.10: audited provider boundary and simulated provider registry
 11. v0.11: disabled external adapter contracts and conformance checks
-12. v0.12+: target/capability constraints and sandboxed provider work
-13. Optional WASM/native backends
-14. Progressive self-hosting in Argorix Lang
+12. v0.12: declarative provider target/capability allowlists
+13. v0.13+: sandboxed provider work
+14. Optional WASM/native backends
+15. Progressive self-hosting in Argorix Lang
 
 > Rust is the forge. Argorix Lang is the sword.

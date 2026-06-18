@@ -146,7 +146,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.11".to_owned(),
+            ir_version: "0.12".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             providers: program
@@ -159,8 +159,16 @@ impl From<&Program> for IrProgram {
                     dry_run_only: provider.dry_run_only.value,
                     requires_feature_flag: provider.requires_feature_flag,
                     requires_explicit_approval: provider.requires_explicit_approval,
-                    allowed_targets: vec![],
-                    allowed_capabilities: vec![],
+                    allowed_targets: provider
+                        .allowed_targets
+                        .iter()
+                        .map(|item| item.value.clone())
+                        .collect(),
+                    allowed_capabilities: provider
+                        .allowed_capabilities
+                        .iter()
+                        .map(|item| item.value.clone())
+                        .collect(),
                 })
                 .collect(),
             assertions: program

@@ -241,7 +241,7 @@ pub enum BytecodeError {
     UnknownModel(String),
     #[error("unsupported model provider `{0}`")]
     UnknownModelProvider(String),
-    #[error("provider contracts require bytecode version 0.11")]
+    #[error("provider contracts require bytecode version 0.11 or 0.12")]
     ContractsRequireV011,
     #[error("duplicate provider contract `{0}`")]
     DuplicateProviderContract(String),
@@ -257,7 +257,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         errors.push(BytecodeError::MissingVersion);
     } else if !matches!(
         program.bytecode_version.as_str(),
-        "0.3" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9" | "0.10" | "0.11"
+        "0.3" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9" | "0.10" | "0.11" | "0.12"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -266,7 +266,9 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if program.agents.is_empty() {
         errors.push(BytecodeError::NoAgents);
     }
-    if program.bytecode_version != "0.11" && !program.providers.is_empty() {
+    if !matches!(program.bytecode_version.as_str(), "0.11" | "0.12")
+        && !program.providers.is_empty()
+    {
         errors.push(BytecodeError::ContractsRequireV011);
     }
     let mut provider_contract_names = HashSet::new();
@@ -323,20 +325,14 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             errors.push(BytecodeError::UnknownModel(model.name.clone()));
         }
     }
+    validate_contract_allowlists(program, &capabilities, &mut errors);
     let mut has_protocol_or_message = false;
     let contract_declarations = program
         .instructions
         .iter()
-        .filter(|instruction| matches!(instruction, Instruction::DeclareProviderContract { .. }))
-        .count();
-    if contract_declarations != program.providers.len()
-        || program.providers.iter().any(|contract| {
-            !program
-                .instructions
-                .iter()
-                .any(|instruction| matches_contract_declaration(instruction, contract))
-        })
-    {
+        .filter_map(instruction_contract)
+        .collect::<Vec<_>>();
+    if contract_declarations != program.providers {
         errors.push(BytecodeError::ProviderContractDeclarationMismatch);
     }
     for instruction in &program.instructions {
@@ -449,21 +445,94 @@ fn invalid_contract_reason(contract: &BytecodeProviderContract) -> Option<&'stat
         Some("external contracts require a feature flag")
     } else if !contract.requires_explicit_approval {
         Some("external contracts require explicit approval")
-    } else if !contract.allowed_targets.is_empty() {
-        Some("allowed_targets must be empty in v0.11")
-    } else if !contract.allowed_capabilities.is_empty() {
-        Some("allowed_capabilities must be empty in v0.11")
     } else {
         None
     }
 }
 
-fn matches_contract_declaration(
-    instruction: &Instruction,
-    contract: &BytecodeProviderContract,
-) -> bool {
-    matches!(
-        instruction,
+fn validate_contract_allowlists(
+    program: &BytecodeProgram,
+    capabilities: &HashSet<&str>,
+    errors: &mut Vec<BytecodeError>,
+) {
+    for contract in &program.providers {
+        if program.bytecode_version == "0.11"
+            && (!contract.allowed_targets.is_empty() || !contract.allowed_capabilities.is_empty())
+        {
+            errors.push(BytecodeError::InvalidProviderContract {
+                name: contract.name.clone(),
+                reason: "Bytecode 0.11 provider allowlists must be empty".into(),
+            });
+            continue;
+        }
+        if program.bytecode_version != "0.12" {
+            continue;
+        }
+        let mut seen_targets = HashSet::new();
+        for target in &contract.allowed_targets {
+            if !seen_targets.insert(target.as_str()) {
+                errors.push(BytecodeError::InvalidProviderContract {
+                    name: contract.name.clone(),
+                    reason: format!("duplicate allowed target `{target}`"),
+                });
+                continue;
+            }
+            let tool = program.tools.iter().find(|item| item.name == *target);
+            let model = program.models.iter().find(|item| item.name == *target);
+            let required = match (tool, model) {
+                (None, None) => {
+                    errors.push(BytecodeError::InvalidProviderContract {
+                        name: contract.name.clone(),
+                        reason: format!("unknown allowlist target `{target}`"),
+                    });
+                    None
+                }
+                (Some(_), Some(_)) => {
+                    errors.push(BytecodeError::InvalidProviderContract {
+                        name: contract.name.clone(),
+                        reason: format!("ambiguous allowlist target `{target}`"),
+                    });
+                    None
+                }
+                (Some(tool), None) => Some(tool.capability.as_str()),
+                (None, Some(model)) => Some(model.capability.as_str()),
+            };
+            if let Some(required) = required {
+                if !contract.allowed_capabilities.is_empty()
+                    && !contract
+                        .allowed_capabilities
+                        .iter()
+                        .any(|item| item == required)
+                {
+                    errors.push(BytecodeError::InvalidProviderContract {
+                        name: contract.name.clone(),
+                        reason: format!(
+                            "allowlist target `{target}` requires capability `{required}`"
+                        ),
+                    });
+                }
+            }
+        }
+        let mut seen_capabilities = HashSet::new();
+        for capability in &contract.allowed_capabilities {
+            if !seen_capabilities.insert(capability.as_str()) {
+                errors.push(BytecodeError::InvalidProviderContract {
+                    name: contract.name.clone(),
+                    reason: format!("duplicate allowed capability `{capability}`"),
+                });
+            }
+            if !capabilities.contains(capability.as_str()) {
+                errors.push(BytecodeError::InvalidProviderContract {
+                    name: contract.name.clone(),
+                    reason: format!("unknown allowlist capability `{capability}`"),
+                });
+            }
+        }
+    }
+}
+
+fn instruction_contract(instruction: &Instruction) -> Option<BytecodeProviderContract> {
+    match instruction {
         Instruction::DeclareProviderContract {
             name,
             kind,
@@ -473,17 +542,19 @@ fn matches_contract_declaration(
             requires_explicit_approval,
             allowed_targets,
             allowed_capabilities,
-        } if name == &contract.name
-            && kind == &contract.kind
-            && enabled == &contract.enabled
-            && dry_run_only == &contract.dry_run_only
-            && requires_feature_flag == &contract.requires_feature_flag
-            && requires_explicit_approval == &contract.requires_explicit_approval
-            && allowed_targets == &contract.allowed_targets
-            && allowed_capabilities == &contract.allowed_capabilities
-    )
+        } => Some(BytecodeProviderContract {
+            name: name.clone(),
+            kind: kind.clone(),
+            enabled: *enabled,
+            dry_run_only: *dry_run_only,
+            requires_feature_flag: *requires_feature_flag,
+            requires_explicit_approval: *requires_explicit_approval,
+            allowed_targets: allowed_targets.clone(),
+            allowed_capabilities: allowed_capabilities.clone(),
+        }),
+        _ => None,
+    }
 }
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -581,6 +652,51 @@ mod tests {
         assert!(errors.contains(&BytecodeError::ProviderContractDeclarationMismatch));
     }
 
+    #[test]
+    fn accepts_v012_populated_provider_allowlists() {
+        let program: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_allowlists_v012.argbc.json"
+        ))
+        .unwrap();
+        verify_bytecode(&program).unwrap();
+        assert_eq!(program.providers[0].allowed_targets, vec!["GuardModel"]);
+        assert_eq!(
+            program.providers[0].allowed_capabilities,
+            vec!["model.invoke"]
+        );
+    }
+
+    #[test]
+    fn rejects_provider_declarations_in_a_different_order_than_top_level_contracts() {
+        let mut program: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_allowlists_v012.argbc.json"
+        ))
+        .unwrap();
+        let mut second = program.providers[0].clone();
+        second.name = "Anthropic".into();
+        program.providers.push(second);
+        let mut declaration = program.instructions[0].clone();
+        if let Instruction::DeclareProviderContract { name, .. } = &mut declaration {
+            *name = "Anthropic".into();
+        }
+        program.instructions.insert(0, declaration);
+        let errors = verify_bytecode(&program).unwrap_err();
+        assert!(errors.contains(&BytecodeError::ProviderContractDeclarationMismatch));
+    }
+    #[test]
+    fn rejects_populated_allowlists_in_v011_even_when_declaration_matches() {
+        let mut program: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_allowlists_v012.argbc.json"
+        ))
+        .unwrap();
+        program.bytecode_version = "0.11".into();
+        let errors = verify_bytecode(&program).unwrap_err();
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            BytecodeError::InvalidProviderContract { reason, .. }
+                if reason.contains("0.11 provider allowlists must be empty")
+        )));
+    }
     #[test]
     fn accepts_v010_without_provider_contracts() {
         let mut program = valid_program();
