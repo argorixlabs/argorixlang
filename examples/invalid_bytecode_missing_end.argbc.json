@@ -1,0 +1,26 @@
+{
+  "bytecode_version": "0.3",
+  "language": "Argorix Lang",
+  "module": "Argorix.Invalid",
+  "agents": [
+    {
+      "name": "Receiver",
+      "approval": "denied"
+    }
+  ],
+  "capabilities": [],
+  "instructions": [
+    {
+      "op": "DeclareProtocol",
+      "name": "Incomplete"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "Receiver",
+      "act": "tell",
+      "message_type": "Message"
+    }
+  ]
+}
+

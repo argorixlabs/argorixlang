@@ -1,0 +1,18 @@
+[package]
+name = "argorixc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "argorixc"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+argorix_ir.workspace = true
+argorix_bytecode.workspace = true
+argorix_parser.workspace = true
+argorix_semantics.workspace = true
+clap.workspace = true
+serde_json.workspace = true

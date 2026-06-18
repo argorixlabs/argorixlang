@@ -1,0 +1,11 @@
+[package]
+name = "argorix_bytecode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+argorix_ir.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+

@@ -1,0 +1,14 @@
+module Argorix.Invalid
+
+type Decision {
+    action: string
+}
+
+agent RuntimeGate {
+    receives Decision
+
+    on Decision as decision {
+        halt
+    }
+}
+

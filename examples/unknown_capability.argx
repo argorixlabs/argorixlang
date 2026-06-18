@@ -1,0 +1,14 @@
+module Argorix.Invalid
+
+type UserPrompt {
+    content: string
+}
+
+agent PromptScanner {
+    receives UserPrompt
+
+    capabilities {
+        regex.match
+    }
+}
+

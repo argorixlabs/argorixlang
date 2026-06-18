@@ -1,0 +1,11 @@
+module Argorix.Invalid
+capability state.write { level safe }
+type UserPrompt { content: string }
+agent Scanner {
+    receives UserPrompt
+    capabilities { state.write }
+    on UserPrompt as prompt {
+        facu(other)
+    }
+}
+

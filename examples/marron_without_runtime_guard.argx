@@ -1,0 +1,9 @@
+module Argorix.Invalid
+type UserPrompt { content: string }
+agent Scanner {
+    receives UserPrompt
+    on UserPrompt as prompt {
+        marron(prompt)
+    }
+}
+

@@ -1,0 +1,140 @@
+{
+  "bytecode_version": "0.3",
+  "language": "Argorix Lang",
+  "module": "Argorix.Security",
+  "agents": [
+    {
+      "name": "PromptScanner",
+      "approval": "denied"
+    },
+    {
+      "name": "PolicyJudge",
+      "approval": "denied"
+    },
+    {
+      "name": "RuntimeGate",
+      "approval": "granted"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "regex.match",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "name": "policy.evaluate",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "name": "runtime.halt",
+      "level": "restricted",
+      "requires_approval": true
+    }
+  ],
+  "instructions": [
+    {
+      "op": "DeclareCapability",
+      "name": "regex.match",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "policy.evaluate",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "runtime.halt",
+      "level": "restricted",
+      "requires_approval": true
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "PromptScanner",
+      "approval": "denied"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "PromptScanner",
+      "capability": "regex.match"
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "PolicyJudge",
+      "approval": "denied"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "PolicyJudge",
+      "capability": "policy.evaluate"
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "RuntimeGate",
+      "approval": "granted"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "RuntimeGate",
+      "capability": "trace.write"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "RuntimeGate",
+      "capability": "runtime.halt"
+    },
+    {
+      "op": "RequireApproval",
+      "agent": "RuntimeGate",
+      "capability": "runtime.halt"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "PromptDefense"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "PromptScanner",
+      "act": "tell",
+      "message_type": "UserPrompt"
+    },
+    {
+      "op": "SendMessage",
+      "from": "PromptScanner",
+      "to": "PolicyJudge",
+      "act": "propose",
+      "message_type": "Finding"
+    },
+    {
+      "op": "SendMessage",
+      "from": "PolicyJudge",
+      "to": "RuntimeGate",
+      "act": "commit",
+      "message_type": "Decision"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol PromptDefense completed"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}
+

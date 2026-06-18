@@ -1,0 +1,19 @@
+module Argorix.Invalid
+
+capability runtime.halt {
+    level restricted
+    requires approval
+}
+
+type Decision {
+    action: string
+}
+
+agent RuntimeGate {
+    receives Decision
+
+    capabilities {
+        runtime.halt
+    }
+}
+

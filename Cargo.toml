@@ -1,0 +1,42 @@
+[package]
+name = "argorix-lang"
+version = "0.6.0"
+edition = "2021"
+publish = false
+
+[workspace]
+members = [
+    "crates/argorixc",
+    "crates/argorix_parser",
+    "crates/argorix_semantics",
+    "crates/argorix_ir",
+    "crates/argorix_bytecode",
+    "crates/argorix_vm",
+    "crates/argorix-vm",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.6.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+argorix_parser = { path = "crates/argorix_parser" }
+argorix_semantics = { path = "crates/argorix_semantics" }
+argorix_ir = { path = "crates/argorix_ir" }
+argorix_bytecode = { path = "crates/argorix_bytecode" }
+argorix_vm = { path = "crates/argorix_vm" }
+
+[dependencies]
+argorix_parser.workspace = true
+argorix_semantics.workspace = true
+argorix_ir.workspace = true
+argorix_bytecode.workspace = true
+argorix_vm.workspace = true
+serde_json.workspace = true

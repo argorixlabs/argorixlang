@@ -1,0 +1,22 @@
+agent PromptScanner {
+    role "security_scanner"
+
+    receives UserPrompt
+    sends Finding to PolicyJudge
+
+    detector Injection {
+        match "(?i)ignore previous instructions"
+        match "(?i)reveal system prompt"
+        severity high
+    }
+
+    on UserPrompt {
+        if Injection.match {
+            send Finding {
+                kind: "prompt_injection",
+                severity: high,
+                evidence: input.slice
+            } to PolicyJudge
+        }
+    }
+}

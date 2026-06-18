@@ -1,0 +1,12 @@
+module Argorix.Invalid
+
+type UserPrompt {
+    content: string
+}
+
+agent PromptScanner {
+    on UserPrompt as prompt {
+        trace prompt
+    }
+}
+

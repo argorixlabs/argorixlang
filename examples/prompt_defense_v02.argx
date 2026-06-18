@@ -1,0 +1,79 @@
+module Argorix.Security
+
+capability regex.match {
+    level safe
+}
+
+capability policy.evaluate {
+    level safe
+}
+
+capability trace.write {
+    level safe
+}
+
+capability runtime.halt {
+    level restricted
+    requires approval
+}
+
+enum Risk {
+    low
+    medium
+    high
+    critical
+}
+
+type UserPrompt {
+    content: string
+}
+
+type Finding {
+    kind: string
+    risk: Risk
+    evidence: string
+}
+
+type Decision {
+    action: string
+    risk: Risk
+    reason: string
+}
+
+agent PromptScanner {
+    receives UserPrompt
+    sends Finding to PolicyJudge
+
+    capabilities {
+        regex.match
+    }
+}
+
+agent PolicyJudge {
+    receives Finding from PromptScanner
+    sends Decision to RuntimeGate
+
+    capabilities {
+        policy.evaluate
+    }
+}
+
+agent RuntimeGate {
+    security {
+        approval granted
+    }
+
+    receives Decision from PolicyJudge
+
+    capabilities {
+        trace.write
+        runtime.halt
+    }
+}
+
+protocol PromptDefense {
+    User -> PromptScanner: tell UserPrompt
+    PromptScanner -> PolicyJudge: propose Finding
+    PolicyJudge -> RuntimeGate: commit Decision
+}
+

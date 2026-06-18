@@ -1,0 +1,20 @@
+// Capabilities are opaque strings in v0.1. This example is intentionally
+// invalid because its protocol uses an unsupported communicative act.
+module Argorix.Invalid
+
+type Alert {
+    content: string
+}
+
+agent Guard {
+    receives Alert
+
+    capabilities {
+        custom.unregistered_capability
+    }
+}
+
+protocol InvalidAct {
+    User -> Guard: execute Alert
+}
+
