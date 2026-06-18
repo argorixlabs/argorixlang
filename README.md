@@ -1,17 +1,58 @@
 <div align="center">
-    <img width=300 src="./assets/main.gif"/>    
-    <br/>
-    <br/>
-    <a href="https://git.io/typing-svg"><img src="https://argorix-lang.org/assets/argorix-lockup.png" alt="Typing SVG" /></a>
+  <img width="520" src="https://argorix-lang.org/assets/argorix-lockup.png" alt="Argorix Lang" />
+
+  <br />
+  <br />
+
+  <strong>Secure. Verifiable. Programmable.</strong>
+
+  <br />
+  <br />
+
+  <a href="https://argorix-lang.org">Website</a>
+  ·
+  <a href="https://github.com/argorixlabs/argorixlang">Repository</a>
+  ·
+  <a href="#build-and-verify">Build</a>
+  ·
+  <a href="#roadmap">Roadmap</a>
+  ·
+  <a href="./LICENSE">Apache-2.0</a>
 </div>
 
 # Argorix Lang
 
-Argorix Lang is a compiled language for secure, verifiable communication
-between AI agents. Rust bootstraps the compiler; Argorix Lang remains its own
-language with a path toward progressive self-hosting.
+**Argorix Lang** is a compiled language for secure, verifiable communication between AI agents.
 
-Version 0.12 activates declarative target and capability allowlists for external adapter contracts. External providers remain disabled and cannot execute:
+It is currently implemented in **Rust**, with a long-term path toward progressive self-hosting. The project explores language-level infrastructure for AI-agent systems where security, traceability, provider boundaries, and runtime evidence are part of the execution model rather than afterthoughts.
+
+Argorix Lang is early-stage infrastructure, but the direction is explicit:
+
+```text
+source language
+  -> parser
+  -> semantic and security verification
+  -> Argorix IR
+  -> Argorix Bytecode
+  -> Argorix VM
+  -> deterministic scheduling
+  -> controlled tool/model calls
+  -> provider boundary validation
+  -> global policy verification
+  -> trace ledger
+```
+
+## Current status
+
+**Version:** `0.12`  
+**Status:** early alpha  
+**License:** Apache-2.0  
+**Implementation:** Rust  
+**Execution mode:** dry-run / simulated runtime only  
+
+Version `0.12` activates declarative target and capability allowlists for external adapter contracts.
+
+External providers remain disabled and cannot execute.
 
 ```text
 .argx
@@ -34,8 +75,44 @@ Version 0.12 activates declarative target and capability allowlists for external
   -> trace ledger
 ```
 
-The VM does not call LLMs, tools, MCP, A2A, networks, shells, or other external
-systems. It validates bytecode and simulates protocol message flow only.
+> The VM does not call LLMs, tools, MCP, A2A, networks, shells, or other external systems.  
+> It validates bytecode and simulates protocol message flow only.
+
+## Why Argorix Lang?
+
+Most AI-agent systems today are built on fragile layers of prompts, wrappers, tools, provider-specific logic, and scattered runtime permissions.
+
+That can work for prototypes.
+
+It becomes harder to reason about when systems need:
+
+- security guarantees,
+- traceable execution,
+- auditable behavior,
+- provider boundaries,
+- controlled tool/model calls,
+- deterministic runtime state,
+- policy verification,
+- and evidence suitable for inspection.
+
+Argorix Lang explores a different path: **structured, auditable, programmable execution for AI-agent systems.**
+
+## Why Rust?
+
+Argorix Lang is implemented in Rust because infrastructure for AI safety should start from a secure systems foundation.
+
+Rust provides:
+
+- memory safety,
+- strong typing,
+- predictable performance,
+- explicit control,
+- concurrency safety,
+- and a strong base for compiler, bytecode, and VM infrastructure.
+
+Rust is not just an implementation choice for Argorix Lang.
+
+It reflects the project’s design philosophy: secure infrastructure should be built on secure foundations.
 
 ## Requirements
 
@@ -50,7 +127,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Compiler commands:
+## Compiler commands
 
 ```bash
 cargo run -p argorixc -- check examples/prompt_defense_v02.argx
@@ -59,51 +136,89 @@ cargo run -p argorixc -- graph examples/prompt_defense_v02.argx
 cargo run -p argorixc -- capabilities examples/prompt_defense_v02.argx
 cargo run -p argorixc -- emit-bytecode examples/prompt_defense_v02.argx
 cargo run -p argorixc -- verify-bytecode examples/prompt_defense_v02.argx
-cargo run -p argorixc -- check examples/prompt_defense_v05.argx
-cargo run -p argorixc -- emit-ir examples/prompt_defense_v05.argx
-cargo run -p argorixc -- emit-bytecode examples/prompt_defense_v05.argx
 ```
 
-VM commands:
+Latest provider allowlist example:
+
+```bash
+cargo run -p argorixc -- check examples/provider_allowlists_v012.argx
+cargo run -p argorixc -- emit-ir examples/provider_allowlists_v012.argx
+cargo run -p argorixc -- emit-bytecode examples/provider_allowlists_v012.argx
+```
+
+## VM commands
 
 ```bash
 cargo run -p argorix-vm -- run examples/prompt_defense.argbc.json --dry-run
 cargo run -p argorix-vm -- run examples/prompt_defense.argbc.json --dry-run --json
 cargo run -p argorix-vm -- run examples/prompt_defense.argbc.json --dry-run --mailboxes
-cargo run -p argorix-vm -- run examples/prompt_defense_v05.argbc.json --dry-run --reactive --inject User:PromptScanner:tell:UserPrompt
-cargo run -p argorix-vm -- run examples/prompt_defense_v05.argbc.json --dry-run --reactive --inject User:PromptScanner:tell:UserPrompt --json
-cargo run -p argorixc -- check examples/prompt_defense_v06.argx
-cargo run -p argorixc -- emit-ir examples/prompt_defense_v06.argx
-cargo run -p argorixc -- emit-bytecode examples/prompt_defense_v06.argx
-cargo run -p argorix-vm -- run examples/prompt_defense_v06.argbc.json --dry-run --reactive --inject User:PromptScanner:tell:UserPrompt --state
-cargo run -p argorixc -- check examples/tool_call_v07.argx
-cargo run -p argorixc -- emit-ir examples/tool_call_v07.argx
-cargo run -p argorixc -- emit-bytecode examples/tool_call_v07.argx
-cargo run -p argorix-vm -- run examples/tool_call_v07.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools
-cargo run -p argorixc -- check examples/model_call_v08.argx
-cargo run -p argorixc -- emit-ir examples/model_call_v08.argx
-cargo run -p argorixc -- emit-bytecode examples/model_call_v08.argx
-cargo run -p argorix-vm -- run examples/model_call_v08.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models
-cargo run -p argorixc -- check examples/policy_assertions_v09.argx
-cargo run -p argorixc -- emit-bytecode examples/policy_assertions_v09.argx
-cargo run -p argorix-vm -- run examples/policy_assertions_v09.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --policy
-cargo run -p argorixc -- check examples/provider_boundary_v010.argx
-cargo run -p argorixc -- emit-ir examples/provider_boundary_v010.argx
-cargo run -p argorixc -- emit-bytecode examples/provider_boundary_v010.argx
-cargo run -p argorix-vm -- run examples/provider_boundary_v010.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models --policy --providers
-cargo run -p argorixc -- check examples/provider_contracts_v011.argx
-cargo run -p argorixc -- emit-ir examples/provider_contracts_v011.argx
-cargo run -p argorixc -- emit-bytecode examples/provider_contracts_v011.argx
-cargo run -p argorix-vm -- run examples/provider_contracts_v011.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models --policy --providers --provider-contracts
-cargo run -p argorixc -- check examples/provider_allowlists_v012.argx
-cargo run -p argorixc -- emit-ir examples/provider_allowlists_v012.argx
-cargo run -p argorixc -- emit-bytecode examples/provider_allowlists_v012.argx
-cargo run -p argorix-vm -- run examples/provider_allowlists_v012.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models --policy --providers --provider-contracts
+```
+
+Reactive execution example:
+
+```bash
+cargo run -p argorix-vm -- run examples/prompt_defense_v06.argbc.json \
+  --dry-run \
+  --reactive \
+  --inject User:PromptScanner:tell:UserPrompt \
+  --state
+```
+
+Controlled tool-call example:
+
+```bash
+cargo run -p argorix-vm -- run examples/tool_call_v07.argbc.json \
+  --dry-run \
+  --reactive \
+  --inject User:ResearchAgent:tell:UserPrompt \
+  --state \
+  --tools
+```
+
+Controlled model-call example:
+
+```bash
+cargo run -p argorix-vm -- run examples/model_call_v08.argbc.json \
+  --dry-run \
+  --reactive \
+  --inject User:ResearchAgent:tell:UserPrompt \
+  --state \
+  --tools \
+  --models
+```
+
+Provider boundary example:
+
+```bash
+cargo run -p argorix-vm -- run examples/provider_boundary_v010.argbc.json \
+  --dry-run \
+  --reactive \
+  --inject User:ResearchAgent:tell:UserPrompt \
+  --state \
+  --tools \
+  --models \
+  --policy \
+  --providers
+```
+
+Provider contract allowlist example:
+
+```bash
+cargo run -p argorix-vm -- run examples/provider_allowlists_v012.argbc.json \
+  --dry-run \
+  --reactive \
+  --inject User:ResearchAgent:tell:UserPrompt \
+  --state \
+  --tools \
+  --models \
+  --policy \
+  --providers \
+  --provider-contracts
 ```
 
 ## Provider contract allowlists v0.12
 
-External provider contracts may now declare future target and capability permissions:
+External provider contracts may declare future target and capability permissions:
 
 ```argx
 provider OpenAI {
@@ -118,19 +233,37 @@ provider OpenAI {
 }
 ```
 
-The two optional blocks may appear in either order after the requirement clauses, at most once each. Duplicate blocks fail in parsing; duplicate elements fail in semantic validation at the repeated element.
+The two optional blocks may appear in either order after the requirement clauses, at most once each.
 
-Targets must resolve to a global tool or model. A name shared by a tool and model is an ambiguous allowlist target. Capabilities must exist globally, and every allowlisted target must match at least one listed capability when the capability list is populated.
+Duplicate blocks fail during parsing.
 
-Empty lists mean `zero future permissions`; they are never wildcards. Contracts without blocks remain compatible with v0.11 source and lower to empty arrays.
+Duplicate elements fail during semantic validation at the repeated element.
 
-`Allowlisted does not mean executable.` Tools and models still use only `simulated`; attempts to execute an external contract remain fail-closed and emit `ExternalProviderExecutionBlocked`.
+Targets must resolve to a global tool or model. A name shared by a tool and model is an ambiguous allowlist target.
 
-Use `--provider-contracts` to print indented allowlists. Empty lists are shown as `none`. JSON preserves list order in `provider_contracts`.
+Capabilities must exist globally. Every allowlisted target must match at least one listed capability when the capability list is populated.
+
+Empty lists mean **zero future permissions**. They are never wildcards.
+
+Contracts without blocks remain compatible with v0.11 source and lower to empty arrays.
+
+> Allowlisted does not mean executable.
+
+Tools and models still use only `simulated`. Attempts to execute an external contract remain fail-closed and emit:
+
+```text
+ExternalProviderExecutionBlocked
+```
+
+Use `--provider-contracts` to print indented allowlists.
+
+Empty lists are shown as `none`.
+
+JSON preserves list order in `provider_contracts`.
+
 ## External adapter contracts v0.11
 
-Module-level provider declarations describe future external adapters without
-making them executable:
+Module-level provider declarations describe future external adapters without making them executable:
 
 ```argx
 provider OpenAI {
@@ -142,37 +275,53 @@ provider OpenAI {
 }
 ```
 
-`ProviderRegistry` keeps two separate maps: executable providers and
-declarative adapter contracts. `simulated` is registered by default as the
-only executable provider and must not be declared as a provider contract.
+`ProviderRegistry` keeps two separate maps:
+
+- executable providers,
+- declarative adapter contracts.
+
+`simulated` is registered by default as the only executable provider and must not be declared as a provider contract.
+
 External contracts never implement `Provider`.
 
-Every external contract must be disabled, dry-run-only, feature-flag gated,
-and explicitly approved. Tools and models still accept only `simulated`.
-Attempted external execution is blocked fail-closed and leaves the trace
-ledger available for inspection.
+Every external contract must be:
 
-`allowed_targets` and `allowed_capabilities` are reserved for v0.12 or later.
-They are not part of the v0.11 source syntax and are serialized as empty arrays
-in IR, Bytecode, and VM JSON.
+- disabled,
+- dry-run-only,
+- feature-flag gated,
+- explicitly approved.
 
-In IR and Bytecode v0.11, the top-level `providers` collection represents
-declarative provider contracts, not executable provider instances. Executable
-providers are runtime registry entries and appear separately in VM output.
+Tools and models still accept only `simulated`.
 
-Bytecode loads contracts before scheduling and emits
-`ProviderContractDeclared`, `ProviderContractValidated`, or
-`ProviderContractRejected`. A blocked call emits
-`ExternalProviderExecutionBlocked`.
+Attempted external execution is blocked fail-closed and leaves the trace ledger available for inspection.
 
-Use `--provider-contracts` for the separated textual report. Reactive JSON
-always includes `provider_contracts`; `providers` contains only executable
-providers.
+In IR and Bytecode v0.11, the top-level `providers` collection represents declarative provider contracts, not executable provider instances.
+
+Executable providers are runtime registry entries and appear separately in VM output.
+
+Bytecode loads contracts before scheduling and emits:
+
+- `ProviderContractDeclared`
+- `ProviderContractValidated`
+- `ProviderContractRejected`
+
+A blocked call emits:
+
+- `ExternalProviderExecutionBlocked`
+
+Use `--provider-contracts` for the separated textual report.
+
+Reactive JSON always includes `provider_contracts`; `providers` contains only executable providers.
 
 ## Provider boundary v0.10
 
-The standalone `argorix_provider` crate defines synchronous provider contracts,
-typed tool/model requests and responses, provider errors, and a registry.
+The standalone `argorix_provider` crate defines:
+
+- synchronous provider contracts,
+- typed tool/model requests and responses,
+- provider errors,
+- provider registry.
+
 `ProviderRegistry::default()` registers only `simulated`.
 
 Tools may omit their provider in source:
@@ -185,31 +334,40 @@ tool WebSearch {
 }
 ```
 
-The AST preserves this omission as `None`. Semantic validation permits only
-`simulated`, and IR resolves the omitted value to `simulated`. IR and Bytecode
-0.10 therefore always carry an explicit provider for both tools and models.
+The AST preserves this omission as `None`.
 
-Reactive calls now follow:
+Semantic validation permits only `simulated`.
+
+IR resolves the omitted value to `simulated`.
+
+IR and Bytecode 0.10 therefore always carry an explicit provider for both tools and models.
+
+Reactive calls follow:
 
 ```text
 VM -> ProviderRegistry -> SimulatedProvider -> response -> trace ledger
 ```
 
-`SimulatedProvider` accepts only `dry_run: true`, performs no network or
-external execution, and returns typed simulated responses. Unknown providers,
-provider errors, or invalid responses fail closed, preserve the runtime ledger,
-and activate an applicable failure mode.
+`SimulatedProvider` accepts only `dry_run: true`, performs no network or external execution, and returns typed simulated responses.
 
-Use `--providers` to print registered providers and ordered calls. Reactive
-JSON includes `providers` and `provider_calls`. Audit events include
-`ProviderRegistered`, `ProviderSelected`, `ProviderRequestCreated`,
-`ProviderResponseReceived`, `ProviderDryRunEnforced`, and
-`ProviderBoundaryDenied`.
+Unknown providers, provider errors, or invalid responses fail closed, preserve the runtime ledger, and activate an applicable failure mode.
+
+Use `--providers` to print registered providers and ordered calls.
+
+Reactive JSON includes `providers` and `provider_calls`.
+
+Audit events include:
+
+- `ProviderRegistered`
+- `ProviderSelected`
+- `ProviderRequestCreated`
+- `ProviderResponseReceived`
+- `ProviderDryRunEnforced`
+- `ProviderBoundaryDenied`
 
 ## Global policies and failure modes v0.9
 
-Policies are module-level assertions verified after deterministic reactive
-execution:
+Policies are module-level assertions verified after deterministic reactive execution:
 
 ```argx
 assert no_unhandled_messages
@@ -224,17 +382,30 @@ failure ToolDenied { action review trace required }
 failure ModelDenied { action review trace required }
 ```
 
-The compiler rejects unknown assertions, unsupported runtime status targets,
-invalid failure actions, duplicate failures, and failure declarations without
-`trace required`. Failure actions are limited to `block`, `review`, and
-`halt`.
+The compiler rejects:
 
-IR and Bytecode 0.9 preserve these declarations and emit
-`DeclareAssertion`, `DeclareFailure`, `VerifyAssertion`, and `PolicyReport`.
-The VM evaluates every assertion against runtime state and the trace ledger,
-emits verification events, activates the declared failure mode on violation,
-and returns a structured `policy_report`. Use `--policy` for the text report
-or `--json` for the complete machine-readable report.
+- unknown assertions,
+- unsupported runtime status targets,
+- invalid failure actions,
+- duplicate failures,
+- failure declarations without `trace required`.
+
+Failure actions are limited to:
+
+- `block`
+- `review`
+- `halt`
+
+IR and Bytecode 0.9 preserve these declarations and emit:
+
+- `DeclareAssertion`
+- `DeclareFailure`
+- `VerifyAssertion`
+- `PolicyReport`
+
+The VM evaluates every assertion against runtime state and the trace ledger, emits verification events, activates the declared failure mode on violation, and returns a structured `policy_report`.
+
+Use `--policy` for the text report or `--json` for the complete machine-readable report.
 
 ## Simulated model adapter v0.8
 
@@ -249,15 +420,34 @@ model GuardModel {
 }
 ```
 
-Agents authorize models in `models` and invoke them with
-`ask ModelName with binding`. Only provider `simulated` is accepted. The
-compiler checks model uniqueness, provider, capability and type contracts,
-agent authorization, approval, binding, and handler input compatibility.
+Agents authorize models in `models` and invoke them with:
 
-IR and Bytecode 0.8 add model registries plus `DeclareModel`,
-`AuthorizeModel`, and `AskModel`. The VM creates a `ModelCallEnvelope`, checks
-authorization and capability again, and records requested, allowed/denied, and
-dry-run-result events. No API, network, or real model is called.
+```argx
+ask ModelName with binding
+```
+
+Only provider `simulated` is accepted.
+
+The compiler checks:
+
+- model uniqueness,
+- provider,
+- capability,
+- type contracts,
+- agent authorization,
+- approval,
+- binding,
+- handler input compatibility.
+
+IR and Bytecode 0.8 add model registries plus:
+
+- `DeclareModel`
+- `AuthorizeModel`
+- `AskModel`
+
+The VM creates a `ModelCallEnvelope`, checks authorization and capability again, and records requested, allowed/denied, and dry-run-result events.
+
+No API, network, or real model is called.
 
 ## Controlled tools v0.7
 
@@ -281,15 +471,35 @@ on UserPrompt as prompt {
 }
 ```
 
-The compiler verifies tool uniqueness, capability and type contracts, agent
-authorization, required capability and approval, handler binding, and input
-message compatibility. IR 0.7 includes tools and call instructions. Bytecode
-0.7 lowers these contracts to `DeclareTool`, `AuthorizeTool`, and `CallTool`.
+The compiler verifies:
 
-The VM never executes a real tool in v0.7. It creates a `ToolCallEnvelope`,
-checks authorization and capability again, and records `ToolCallRequested`,
-`ToolCallAllowed` or `ToolCallDenied`, plus `ToolCallDryRunResult`. The
-`--tools` flag prints the resulting controlled call ledger.
+- tool uniqueness,
+- capability contracts,
+- type contracts,
+- agent authorization,
+- required capability,
+- approval,
+- handler binding,
+- input message compatibility.
+
+IR 0.7 includes tools and call instructions.
+
+Bytecode 0.7 lowers these contracts to:
+
+- `DeclareTool`
+- `AuthorizeTool`
+- `CallTool`
+
+The VM never executes a real tool in v0.7.
+
+It creates a `ToolCallEnvelope`, checks authorization and capability again, and records:
+
+- `ToolCallRequested`
+- `ToolCallAllowed`
+- `ToolCallDenied`
+- `ToolCallDryRunResult`
+
+The `--tools` flag prints the resulting controlled call ledger.
 
 ## Runtime intrinsics v0.6
 
@@ -304,17 +514,32 @@ on Decision as decision {
 }
 ```
 
-`facu(binding)` requires `state.write`. It updates the agent's handled-message
-metadata and creates a deterministic checkpoint containing the message ID,
-message type, binding, and checkpoint index.
+`facu(binding)` requires `state.write`.
 
-`marron(binding)` requires `runtime.guard`. It verifies that the current
-envelope was delivered by the scheduler, belongs to the active handler, and
-contains non-empty `id`, `from`, `to`, `act`, and `message_type` fields.
+It updates the agent's handled-message metadata and creates a deterministic checkpoint containing:
+
+- message ID,
+- message type,
+- binding,
+- checkpoint index.
+
+`marron(binding)` requires `runtime.guard`.
+
+It verifies that the current envelope:
+
+- was delivered by the scheduler,
+- belongs to the active handler,
+- contains non-empty `id`,
+- contains non-empty `from`,
+- contains non-empty `to`,
+- contains non-empty `act`,
+- contains non-empty `message_type`.
+
 Failures transition the runtime to `failed` while retaining the trace ledger.
 
-Only `facu` and `marron` are recognized. Both must use the exact binding
-declared by the enclosing handler.
+Only `facu` and `marron` are recognized.
+
+Both must use the exact binding declared by the enclosing handler.
 
 ## Reactive handlers v0.5
 
@@ -331,10 +556,22 @@ agent PromptScanner {
 }
 ```
 
-Handlers support only `emit MessageType to AgentName`, `trace binding`, and
-`halt`. The compiler verifies input types, matching `receives` and `sends`
-contracts, destinations, trace bindings, duplicate handlers, and the
-`runtime.halt` capability and approval policy.
+Handlers support only:
+
+- `emit MessageType to AgentName`
+- `trace binding`
+- `halt`
+
+The compiler verifies:
+
+- input types,
+- matching `receives` contracts,
+- matching `sends` contracts,
+- destinations,
+- trace bindings,
+- duplicate handlers,
+- `runtime.halt` capability,
+- approval policy.
 
 Reactive execution requires an initial message in this format:
 
@@ -342,9 +579,9 @@ Reactive execution requires an initial message in this format:
 --inject FROM:TO:ACT:MESSAGE_TYPE
 ```
 
-Payloads are `{}` in v0.5. The scheduler delivers the injected envelope,
-executes the matching handler, queues emitted messages, and repeats until
-`halt` or until no pending messages remain.
+Payloads are `{}` in v0.5.
+
+The scheduler delivers the injected envelope, executes the matching handler, queues emitted messages, and repeats until `halt` or until no pending messages remain.
 
 ## Bytecode
 
@@ -402,17 +639,16 @@ The instruction model supports:
 - `Halt`
 - `End`
 
-Lowering emits declarations and security requirements before protocol message
-instructions. `Halt` is supported by the format and causes dry-run execution to
-stop with an error; the compiler does not emit it for a valid protocol merely
-because a capability happens to be named `runtime.halt`.
+Lowering emits declarations and security requirements before protocol message instructions.
+
+`Halt` is supported by the format and causes dry-run execution to stop with an error. The compiler does not emit it for a valid protocol merely because a capability happens to be named `runtime.halt`.
 
 ## Bytecode verification
 
 The verifier requires:
 
-- Bytecode version `0.12` for newly compiled programs. Versions `0.3`, `0.5`,
-  `0.6`, `0.7`, `0.8`, `0.9`, and `0.10` remain accepted for compatibility.
+- Bytecode version `0.12` for newly compiled programs.
+- Compatibility with versions `0.3`, `0.5`, `0.6`, `0.7`, `0.8`, `0.9`, and `0.10`.
 - At least one agent.
 - At least one protocol or `SendMessage`.
 - Complete, non-empty message fields.
@@ -420,14 +656,19 @@ The verifier requires:
 - Existing agents for approval and capability requirements.
 - A final `End` instruction.
 
-Allowed external entities remain `User`, `System`, `Runtime`, `Memory`, and
-`Tool`.
+Allowed external entities remain:
+
+- `User`
+- `System`
+- `Runtime`
+- `Memory`
+- `Tool`
 
 ## VM runtime
 
-The VM verifies bytecode again before execution and initializes one FIFO
-mailbox for every internal agent. The deterministic scheduler converts each
-`SendMessage` into a serializable message envelope:
+The VM verifies bytecode again before execution and initializes one FIFO mailbox for every internal agent.
+
+The deterministic scheduler converts each `SendMessage` into a serializable message envelope:
 
 ```json
 {
@@ -440,11 +681,13 @@ mailbox for every internal agent. The deterministic scheduler converts each
 }
 ```
 
-Each internal message is scheduled, delivered to the receiver mailbox, and
-processed in bytecode order. External entities do not receive internal
-mailboxes. No network calls, tools, LLMs, or concurrent tasks are executed.
+Each internal message is scheduled, delivered to the receiver mailbox, and processed in bytecode order.
 
-Text output:
+External entities do not receive internal mailboxes.
+
+No network calls, tools, LLMs, or concurrent tasks are executed.
+
+Example text output:
 
 ```text
 Argorix VM v0.12
@@ -461,15 +704,15 @@ Trace: generated
 Status: completed
 ```
 
-With `--mailboxes`, the CLI shows initialization and the three scheduler phases
-for each message. With `--json`, execution returns runtime state summaries and
-the complete ledger:
+With `--mailboxes`, the CLI shows initialization and the three scheduler phases for each message.
+
+With `--json`, execution returns runtime state summaries and the complete ledger:
 
 ```json
 {
-  "vm_version": "0.5",
+  "vm_version": "0.12",
   "status": "completed",
-  "mode": "dry-run",
+  "mode": "reactive-dry-run",
   "scheduler": "deterministic",
   "steps": [
     {
@@ -493,32 +736,73 @@ the complete ledger:
 }
 ```
 
-Runtime status progresses through `initialized`, `running`, and `completed`,
-or transitions to `failed`. The public `RuntimeState` retains agents,
-mailboxes, pending messages, completed-step count, status, and `TraceLedger`.
-The ledger records `VmStarted`, declarations, message scheduling, delivery and
-processing, then `VmCompleted` or `VmFailed`. Because the scheduler mutates a
-caller-owned state, failure diagnostics do not discard the ledger.
+Runtime status progresses through:
 
-Reactive JSON uses `vm_version: "0.12"` and
-`mode: "reactive-dry-run"`. Each step records the agent, handled message,
-emitted messages, traced bindings, and whether the handler halted execution.
+- `initialized`
+- `running`
+- `completed`
+- `failed`
 
-In v0.6 the same JSON also includes `agent_state` summaries and an ordered
-`intrinsics` ledger. Runtime state stores full `AgentState` and
-`StateCheckpoint` records for internal use and testing.
+The public `RuntimeState` retains:
 
-Tool-aware JSON also includes `tool_calls`, with agent, tool, capability,
-authorization status, and `dry-run` mode.
+- agents,
+- mailboxes,
+- pending messages,
+- completed-step count,
+- status,
+- `TraceLedger`.
 
-Model-aware JSON includes `model_calls`, with agent, model, simulated provider,
-capability, authorization status, and dry-run mode. Use `--models` for the
-textual model-call ledger.
+The ledger records:
 
-Policy-aware JSON includes `policy_report.status`, one result per assertion,
-and any activated failure modes. The trace ledger also records assertion and
-failure declarations, assertion verification or failure, failure-mode
-activation, and policy-report generation.
+- `VmStarted`
+- declarations,
+- message scheduling,
+- delivery,
+- processing,
+- `VmCompleted`
+- `VmFailed`
+
+Because the scheduler mutates a caller-owned state, failure diagnostics do not discard the ledger.
+
+Reactive JSON uses:
+
+```text
+vm_version: "0.12"
+mode: "reactive-dry-run"
+```
+
+Each step records:
+
+- agent,
+- handled message,
+- emitted messages,
+- traced bindings,
+- whether the handler halted execution.
+
+Tool-aware JSON includes `tool_calls`, with:
+
+- agent,
+- tool,
+- capability,
+- authorization status,
+- dry-run mode.
+
+Model-aware JSON includes `model_calls`, with:
+
+- agent,
+- model,
+- simulated provider,
+- capability,
+- authorization status,
+- dry-run mode.
+
+Policy-aware JSON includes:
+
+- `policy_report.status`,
+- one result per assertion,
+- activated failure modes.
+
+The trace ledger also records assertion and failure declarations, assertion verification or failure, failure-mode activation, and policy-report generation.
 
 ## Source security model
 
@@ -552,6 +836,8 @@ tests                    End-to-end compiler tests
 
 ## Examples
 
+### Valid source and bytecode fixtures
+
 - `prompt_defense_v02.argx`: valid secure source program.
 - `prompt_defense_v05.argx`: valid reactive source program.
 - `prompt_defense_v05.argbc.json`: generated reactive Bytecode 0.5.
@@ -571,6 +857,9 @@ tests                    End-to-end compiler tests
 - `provider_allowlists_v012.argbc.json`: generated Bytecode 0.12 model fixture.
 - `provider_allowlists_tools_v012.argx`: valid tool allowlist contract.
 - `provider_allowlists_tools_v012.argbc.json`: generated Bytecode 0.12 tool fixture.
+
+### Failure fixtures
+
 - `provider_allowlist_unknown_target.argx`: unknown target failure.
 - `provider_allowlist_unknown_capability.argx`: unknown capability failure.
 - `provider_allowlist_duplicate_target.argx`: duplicate target failure.
@@ -587,27 +876,49 @@ tests                    End-to-end compiler tests
 - `assert_unknown.argx`: unknown assertion failure.
 - `failure_invalid_action.argx`: unsupported failure action.
 - `failure_missing_trace.argx`: missing mandatory failure trace.
-- `prompt_defense.argbc.json`: generated valid bytecode.
 - `invalid_bytecode_missing_end.argbc.json`: verifier failure fixture.
 - `restricted_without_approval.argx`: source approval failure.
 - `unknown_capability.argx`: undeclared capability failure.
 
 ## Roadmap
 
-1. v0.1: compiled structure
-2. v0.2: compiled security
-3. v0.3: compiled execution through bytecode and dry-run VM
-4. v0.4: agent mailboxes, deterministic scheduling, runtime state, trace ledger
-5. v0.5: declarative handlers and reactive dry-run execution
-6. v0.6: controlled agent state, deterministic checkpoints, causal guards
-7. v0.7: declared, authorized, capability-controlled tool calls
-8. v0.8: declared, authorized, simulated model invocation
-9. v0.9: compiled global policies, failure modes, and runtime reports
-10. v0.10: audited provider boundary and simulated provider registry
-11. v0.11: disabled external adapter contracts and conformance checks
-12. v0.12: declarative provider target/capability allowlists
-13. v0.13+: sandboxed provider work
-14. Optional WASM/native backends
-15. Progressive self-hosting in Argorix Lang
+1. `v0.1` — compiled structure.
+2. `v0.2` — compiled security.
+3. `v0.3` — compiled execution through bytecode and dry-run VM.
+4. `v0.4` — agent mailboxes, deterministic scheduling, runtime state, trace ledger.
+5. `v0.5` — declarative handlers and reactive dry-run execution.
+6. `v0.6` — controlled agent state, deterministic checkpoints, causal guards.
+7. `v0.7` — declared, authorized, capability-controlled tool calls.
+8. `v0.8` — declared, authorized, simulated model invocation.
+9. `v0.9` — compiled global policies, failure modes, and runtime reports.
+10. `v0.10` — audited provider boundary and simulated provider registry.
+11. `v0.11` — disabled external adapter contracts and conformance checks.
+12. `v0.12` — declarative provider target/capability allowlists.
+13. `v0.13+` — sandboxed provider work.
+14. Optional WASM/native backends.
+15. Progressive self-hosting in Argorix Lang.
+
+## Security posture
+
+Argorix Lang is designed to fail closed.
+
+Current versions do not execute real tools, real models, network calls, MCP/A2A calls, shells, or external provider systems.
+
+The VM validates bytecode, simulates protocol message flow, records runtime evidence, and preserves the trace ledger for inspection.
+
+External provider contracts are declarative only until sandboxed provider work is introduced in later versions.
+
+## Project philosophy
+
+Secure AI-agent systems should be:
+
+- explicit,
+- inspectable,
+- testable,
+- traceable,
+- policy-aware,
+- governed at the runtime boundary.
+
+Argorix Lang is an open-source exploration of that direction.
 
 > Rust is the forge. Argorix Lang is the sword.
