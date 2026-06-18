@@ -1,0 +1,8 @@
+module Invalid.ExternalMissingFeatureFlag
+
+provider OpenAI {
+    kind external
+    enabled false
+    dry_run_only true
+    requires approval
+}

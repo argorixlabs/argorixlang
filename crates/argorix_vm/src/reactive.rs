@@ -4,6 +4,9 @@ use crate::{
     ToolCallEnvelope, VmError,
 };
 use argorix_bytecode::{verify_bytecode, BytecodeProgram, Instruction};
+use argorix_provider::{
+    ModelProviderRequest, ProviderCallStatus, ProviderRegistry, ToolProviderRequest,
+};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 
@@ -39,6 +42,16 @@ impl ReactiveScheduler {
         state: &mut RuntimeState,
         injected: &InjectedMessage,
     ) -> Result<Vec<ReactiveStep>, VmError> {
+        self.run_with_registry(bytecode, state, injected, &ProviderRegistry::default())
+    }
+
+    pub fn run_with_registry(
+        &self,
+        bytecode: &BytecodeProgram,
+        state: &mut RuntimeState,
+        injected: &InjectedMessage,
+        providers: &ProviderRegistry,
+    ) -> Result<Vec<ReactiveStep>, VmError> {
         state.trace_ledger.record(
             EventType::VmStarted,
             "ok",
@@ -46,6 +59,7 @@ impl ReactiveScheduler {
             EventFields::default(),
         );
         state.status = RuntimeStatus::Running;
+        self.block_declared_external_execution(bytecode, state, providers)?;
         if let Err(errors) = verify_bytecode(bytecode) {
             let error = VmError::from_verification(errors);
             state.fail(error.to_string());
@@ -258,6 +272,7 @@ impl ReactiveScheduler {
                             tool,
                             binding,
                             &processed,
+                            providers,
                         ) {
                             state.fail(error.to_string());
                             return Err(error);
@@ -275,6 +290,7 @@ impl ReactiveScheduler {
                             model,
                             binding,
                             &processed,
+                            providers,
                         ) {
                             state.fail(error.to_string());
                             return Err(error);
@@ -323,6 +339,61 @@ impl ReactiveScheduler {
             EventFields::default(),
         );
         Ok(steps)
+    }
+
+    fn block_declared_external_execution(
+        &self,
+        bytecode: &BytecodeProgram,
+        state: &mut RuntimeState,
+        providers: &ProviderRegistry,
+    ) -> Result<(), VmError> {
+        for instruction in &bytecode.instructions {
+            let (provider, target, kind) = match instruction {
+                Instruction::CallTool { tool, .. } => {
+                    let Some(declaration) = bytecode
+                        .tools
+                        .iter()
+                        .find(|candidate| candidate.name == *tool)
+                    else {
+                        continue;
+                    };
+                    (declaration.provider.as_str(), tool.as_str(), "tool")
+                }
+                Instruction::AskModel { model, .. } => {
+                    let Some(declaration) = bytecode
+                        .models
+                        .iter()
+                        .find(|candidate| candidate.name == *model)
+                    else {
+                        continue;
+                    };
+                    (declaration.provider.as_str(), model.as_str(), "model")
+                }
+                _ => continue,
+            };
+            if providers.contains_contract(provider) {
+                let reason = format!(
+                    "external provider contract `{provider}` cannot execute {kind} {target}"
+                );
+                state.activate_failure(if kind == "tool" {
+                    "ToolDenied"
+                } else {
+                    "ModelDenied"
+                });
+                state.trace_ledger.record(
+                    EventType::ExternalProviderExecutionBlocked,
+                    "blocked",
+                    reason.clone(),
+                    EventFields::default(),
+                );
+                state.fail(reason.clone());
+                return Err(VmError::ProviderBoundary {
+                    provider: provider.into(),
+                    reason,
+                });
+            }
+        }
+        Ok(())
     }
 
     fn collect_handlers(&self, bytecode: &BytecodeProgram) -> HashMap<(String, String), Handler> {
@@ -420,6 +491,7 @@ impl ReactiveScheduler {
         tool_name: &str,
         binding: &str,
         message: &MessageEnvelope,
+        providers: &ProviderRegistry,
     ) -> Result<(), VmError> {
         if binding != handler_binding {
             return Err(VmError::ToolBindingMismatch {
@@ -457,14 +529,116 @@ impl ReactiveScheduler {
             format!("tool {tool_name} allowed by capability {}", tool.capability),
             EventFields::target(agent),
         );
+        let call_id = format!("tool_{:03}", state.tool_calls.len() + 1);
+        let provider_name = tool.provider.as_str();
+        if providers.contains_contract(provider_name) {
+            let reason = format!(
+                "external provider contract `{provider_name}` cannot execute tool {tool_name}"
+            );
+            state.activate_failure("ToolDenied");
+            state.trace_ledger.record(
+                EventType::ExternalProviderExecutionBlocked,
+                "blocked",
+                reason.clone(),
+                EventFields::target(agent),
+            );
+            return Err(VmError::ProviderBoundary {
+                provider: provider_name.into(),
+                reason,
+            });
+        }
+        state.trace_ledger.record(
+            EventType::ProviderSelected,
+            "selected",
+            format!("provider {provider_name} selected for tool {tool_name}"),
+            EventFields::target(agent),
+        );
+        let provider = providers.get(provider_name).map_err(|error| {
+            state.activate_failure("ToolDenied");
+            state.trace_ledger.record(
+                EventType::ProviderBoundaryDenied,
+                "denied",
+                error.to_string(),
+                EventFields::target(agent),
+            );
+            VmError::ProviderBoundary {
+                provider: provider_name.to_owned(),
+                reason: error.to_string(),
+            }
+        })?;
+        state.trace_ledger.record(
+            EventType::ProviderRequestCreated,
+            "created",
+            format!("provider request {call_id} created for tool {tool_name}"),
+            EventFields::target(agent),
+        );
+        state.trace_ledger.record(
+            EventType::ProviderDryRunEnforced,
+            "enforced",
+            format!("provider {provider_name} restricted to dry-run"),
+            EventFields::target(agent),
+        );
+        let response = provider
+            .invoke_tool(ToolProviderRequest {
+                call_id: call_id.clone(),
+                agent: agent.to_owned(),
+                tool: tool_name.to_owned(),
+                input_type: tool.input.clone(),
+                output_type: tool.output.clone(),
+                input_binding: binding.to_owned(),
+                dry_run: true,
+            })
+            .map_err(|error| {
+                state.activate_failure("ToolDenied");
+                state.trace_ledger.record(
+                    EventType::ProviderBoundaryDenied,
+                    "denied",
+                    error.to_string(),
+                    EventFields::target(agent),
+                );
+                VmError::ProviderBoundary {
+                    provider: provider_name.to_owned(),
+                    reason: error.to_string(),
+                }
+            })?;
+        state.trace_ledger.record(
+            EventType::ProviderResponseReceived,
+            "received",
+            format!("provider response received for {call_id}"),
+            EventFields::target(agent),
+        );
+        if response.call_id != call_id
+            || response.output_type != tool.output
+            || response.status != ProviderCallStatus::Allowed
+            || !response.simulated
+        {
+            state.activate_failure("ToolDenied");
+            state.trace_ledger.record(
+                EventType::ProviderBoundaryDenied,
+                "denied",
+                format!("invalid provider response for {call_id}"),
+                EventFields::target(agent),
+            );
+            return Err(VmError::ProviderBoundary {
+                provider: provider_name.to_owned(),
+                reason: "invalid tool response".into(),
+            });
+        }
         state.tool_calls.push(ToolCallEnvelope {
-            id: format!("tool_{:03}", state.tool_calls.len() + 1),
+            id: call_id,
             agent: agent.to_owned(),
             tool: tool_name.to_owned(),
             capability: tool.capability.clone(),
             input_binding: binding.to_owned(),
             input_message_id: message.id.clone(),
             status: "allowed".into(),
+        });
+        state.provider_calls.push(crate::ProviderCallSummary {
+            provider: provider_name.to_owned(),
+            kind: "tool".into(),
+            target: tool_name.to_owned(),
+            status: "allowed".into(),
+            simulated: response.simulated,
         });
         state.trace_ledger.record(
             EventType::ToolCallDryRunResult,
@@ -573,6 +747,7 @@ impl ReactiveScheduler {
         model_name: &str,
         binding: &str,
         message: &MessageEnvelope,
+        providers: &ProviderRegistry,
     ) -> Result<(), VmError> {
         if binding != handler_binding {
             return Err(VmError::ModelBindingMismatch {
@@ -583,9 +758,6 @@ impl ReactiveScheduler {
         let model = models
             .get(model_name)
             .ok_or_else(|| VmError::UnknownModel(model_name.to_owned()))?;
-        if model.provider != "simulated" {
-            return Err(VmError::InvalidModelProvider(model_name.to_owned()));
-        }
         state.trace_ledger.record(
             EventType::ModelCallRequested,
             "requested",
@@ -616,8 +788,103 @@ impl ReactiveScheduler {
             ),
             EventFields::target(agent),
         );
+        let call_id = format!("model_{:03}", state.model_calls.len() + 1);
+        let provider_name = model.provider.as_str();
+        if providers.contains_contract(provider_name) {
+            let reason = format!(
+                "external provider contract `{provider_name}` cannot execute model {model_name}"
+            );
+            state.activate_failure("ModelDenied");
+            state.trace_ledger.record(
+                EventType::ExternalProviderExecutionBlocked,
+                "blocked",
+                reason.clone(),
+                EventFields::target(agent),
+            );
+            return Err(VmError::ProviderBoundary {
+                provider: provider_name.into(),
+                reason,
+            });
+        }
+        state.trace_ledger.record(
+            EventType::ProviderSelected,
+            "selected",
+            format!("provider {provider_name} selected for model {model_name}"),
+            EventFields::target(agent),
+        );
+        let provider = providers.get(provider_name).map_err(|error| {
+            state.activate_failure("ModelDenied");
+            state.trace_ledger.record(
+                EventType::ProviderBoundaryDenied,
+                "denied",
+                error.to_string(),
+                EventFields::target(agent),
+            );
+            VmError::ProviderBoundary {
+                provider: provider_name.to_owned(),
+                reason: error.to_string(),
+            }
+        })?;
+        state.trace_ledger.record(
+            EventType::ProviderRequestCreated,
+            "created",
+            format!("provider request {call_id} created for model {model_name}"),
+            EventFields::target(agent),
+        );
+        state.trace_ledger.record(
+            EventType::ProviderDryRunEnforced,
+            "enforced",
+            format!("provider {provider_name} restricted to dry-run"),
+            EventFields::target(agent),
+        );
+        let response = provider
+            .invoke_model(ModelProviderRequest {
+                call_id: call_id.clone(),
+                agent: agent.to_owned(),
+                model: model_name.to_owned(),
+                input_type: model.input.clone(),
+                output_type: model.output.clone(),
+                input_binding: binding.to_owned(),
+                dry_run: true,
+            })
+            .map_err(|error| {
+                state.activate_failure("ModelDenied");
+                state.trace_ledger.record(
+                    EventType::ProviderBoundaryDenied,
+                    "denied",
+                    error.to_string(),
+                    EventFields::target(agent),
+                );
+                VmError::ProviderBoundary {
+                    provider: provider_name.to_owned(),
+                    reason: error.to_string(),
+                }
+            })?;
+        state.trace_ledger.record(
+            EventType::ProviderResponseReceived,
+            "received",
+            format!("provider response received for {call_id}"),
+            EventFields::target(agent),
+        );
+        if response.call_id != call_id
+            || response.output_type != model.output
+            || response.status != ProviderCallStatus::Allowed
+            || !response.simulated
+        {
+            state.activate_failure("ModelDenied");
+            state.trace_ledger.record(
+                EventType::ProviderBoundaryDenied,
+                "denied",
+                format!("invalid provider response for {call_id}"),
+                EventFields::target(agent),
+            );
+            return Err(VmError::ProviderBoundary {
+                provider: provider_name.to_owned(),
+                reason: "invalid model response".into(),
+            });
+        }
         state.model_calls.push(ModelCallEnvelope {
-            id: format!("model_{:03}", state.model_calls.len() + 1),
+            id: call_id,
             agent: agent.to_owned(),
             model: model_name.to_owned(),
             provider: model.provider.clone(),
@@ -625,6 +892,13 @@ impl ReactiveScheduler {
             input_binding: binding.to_owned(),
             input_message_id: message.id.clone(),
             status: "allowed".into(),
+        });
+        state.provider_calls.push(crate::ProviderCallSummary {
+            provider: provider_name.to_owned(),
+            kind: "model".into(),
+            target: model_name.to_owned(),
+            status: "allowed".into(),
+            simulated: response.simulated,
         });
         state.trace_ledger.record(
             EventType::ModelCallDryRunResult,
@@ -682,8 +956,9 @@ impl ReactiveScheduler {
 #[cfg(test)]
 mod tests {
     use super::ReactiveScheduler;
-    use crate::{EventType, InjectedMessage, RuntimeState};
+    use crate::{EventType, InjectedMessage, RuntimeState, RuntimeStatus, VmError};
     use argorix_bytecode::{BytecodeProgram, Instruction};
+    use argorix_provider::{AdapterContract, ProviderKind, ProviderRegistry};
 
     fn fixture() -> BytecodeProgram {
         serde_json::from_str(include_str!(
@@ -855,5 +1130,84 @@ mod tests {
                 .iter()
                 .any(|event| event.event_type == expected));
         }
+    }
+
+    #[test]
+    fn missing_provider_fails_closed_and_preserves_ledger() {
+        let bytecode = v08_fixture();
+        let mut state = RuntimeState::from_bytecode(&bytecode).unwrap();
+        let result = ReactiveScheduler::new().run_with_registry(
+            &bytecode,
+            &mut state,
+            &InjectedMessage {
+                from: "User".into(),
+                to: "ResearchAgent".into(),
+                act: "tell".into(),
+                message_type: "UserPrompt".into(),
+            },
+            &ProviderRegistry::empty(),
+        );
+
+        assert!(matches!(result, Err(VmError::ProviderBoundary { .. })));
+        assert_eq!(state.status, RuntimeStatus::Failed);
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderBoundaryDenied));
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::FailureModeActivated));
+    }
+
+    #[test]
+    fn external_provider_execution_is_blocked_and_preserves_ledger() {
+        let mut bytecode = v08_fixture();
+        bytecode.models[0].provider = "OpenAI".into();
+        let mut registry = ProviderRegistry::default();
+        registry
+            .register_contract(AdapterContract {
+                name: "OpenAI".into(),
+                kind: ProviderKind::External,
+                enabled: false,
+                dry_run_only: true,
+                requires_feature_flag: true,
+                requires_explicit_approval: true,
+                allowed_targets: vec![],
+                allowed_capabilities: vec![],
+            })
+            .unwrap();
+        let mut state = RuntimeState::from_bytecode(&bytecode).unwrap();
+        let result = ReactiveScheduler::new().run_with_registry(
+            &bytecode,
+            &mut state,
+            &InjectedMessage {
+                from: "User".into(),
+                to: "ResearchAgent".into(),
+                act: "tell".into(),
+                message_type: "UserPrompt".into(),
+            },
+            &registry,
+        );
+
+        assert!(matches!(result, Err(VmError::ProviderBoundary { .. })));
+        assert_eq!(state.status, RuntimeStatus::Failed);
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| { event.event_type == EventType::ExternalProviderExecutionBlocked }));
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::FailureModeActivated));
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::VmFailed));
     }
 }

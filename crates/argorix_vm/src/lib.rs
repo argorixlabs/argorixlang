@@ -16,7 +16,7 @@ pub use scheduler::Scheduler;
 pub use trace::{
     AgentStateSummary, AssertionResult, EmittedMessage, EventFields, EventType, ExecutionEvent,
     ExecutionTrace, FailureActivation, InjectedMessage, IntrinsicExecution, InvokedIntrinsic,
-    MailboxSummary, ModelCallSummary, PolicyReport, ReactiveExecutionTrace, ReactiveStep,
-    ToolCallSummary, TraceLedger, TraceStep,
+    MailboxSummary, ModelCallSummary, PolicyReport, ProviderCallSummary, ProviderContractSummary,
+    ProviderSummary, ReactiveExecutionTrace, ReactiveStep, ToolCallSummary, TraceLedger, TraceStep,
 };
 pub use vm::Vm;

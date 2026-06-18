@@ -1,4 +1,7 @@
-use crate::{AgentMailbox, EventFields, EventType, MessageEnvelope, TraceLedger, VmError};
+use crate::{
+    AgentMailbox, EventFields, EventType, MessageEnvelope, ProviderCallSummary, TraceLedger,
+    VmError,
+};
 use argorix_bytecode::BytecodeProgram;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -63,6 +66,7 @@ pub struct RuntimeState {
     pub pending_messages: VecDeque<MessageEnvelope>,
     pub tool_calls: Vec<ToolCallEnvelope>,
     pub model_calls: Vec<ModelCallEnvelope>,
+    pub provider_calls: Vec<ProviderCallSummary>,
     pub failure_modes: Vec<argorix_bytecode::BytecodeFailure>,
     pub completed_steps: usize,
     pub trace_ledger: TraceLedger,
@@ -177,6 +181,7 @@ impl RuntimeState {
             pending_messages: VecDeque::new(),
             tool_calls: Vec::new(),
             model_calls: Vec::new(),
+            provider_calls: Vec::new(),
             failure_modes: bytecode.failures.clone(),
             completed_steps: 0,
             trace_ledger,

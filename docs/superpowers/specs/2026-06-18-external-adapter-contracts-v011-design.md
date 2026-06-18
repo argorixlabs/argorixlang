@@ -47,6 +47,9 @@ implement `Provider` and cannot be returned by the executable-provider lookup.
 The contract map supports `register_contract`, `get_contract`,
 `validate_contract`, and `is_enabled`.
 
+`simulated` is registered by default as the only executable provider and must
+not be declared as a provider contract.
+
 Registration rejects duplicate contract names and collisions with executable
 provider names. In particular, source code cannot declare a contract named
 `simulated`.
@@ -126,6 +129,9 @@ IR version `0.11` adds a top-level `providers` collection before assertions:
 }
 ```
 
+This top-level `providers` collection represents declarative provider
+contracts, not executable provider instances.
+
 Each provider declaration lowers to:
 
 ```json
@@ -161,6 +167,9 @@ same stable contract representation as IR. It also adds:
   "allowed_capabilities": []
 }
 ```
+
+As in IR, the Bytecode `providers` collection contains declarative contracts,
+not runtime executable-provider instances.
 
 `DeclareProviderContract` instructions appear before tool, model, agent, and
 protocol declarations.

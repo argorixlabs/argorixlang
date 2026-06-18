@@ -1,3 +1,3 @@
 pub mod ir;
 
-pub use ir::IrProgram;
+pub use ir::{IrProgram, IrProviderContract};

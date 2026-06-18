@@ -2,7 +2,7 @@ use crate::{
     ast::{
         AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
         FieldDecl, HandlerDecl, HandlerInstruction, ModelDecl, Program, ProtocolDecl, ProtocolStep,
-        ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
+        ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -30,6 +30,7 @@ impl Parser {
 
         let mut program = Program {
             module,
+            providers: Vec::new(),
             assertions: Vec::new(),
             failures: Vec::new(),
             capabilities: Vec::new(),
@@ -43,6 +44,7 @@ impl Parser {
 
         while !self.is_eof() {
             match self.peek_identifier() {
+                Some("provider") => program.providers.push(self.parse_provider()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("failure") => program.failures.push(self.parse_failure()?),
@@ -60,7 +62,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `assert`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, or `protocol`",
+                        "expected `provider`, `assert`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, or `protocol`",
                         self.peek().span,
                     ))
                 }
@@ -68,6 +70,62 @@ impl Parser {
         }
 
         Ok(program)
+    }
+
+    fn parse_provider(&mut self) -> Result<ProviderDecl, Diagnostic> {
+        self.expect_keyword("provider")?;
+        let name = self.expect_identifier("provider name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        self.expect_keyword("kind")?;
+        let kind_token = self.expect_identifier("provider kind")?;
+        let kind = match kind_token.value.as_str() {
+            "simulated" => ProviderKindDecl::Simulated,
+            "external" => ProviderKindDecl::External,
+            other => {
+                return Err(Diagnostic::new(
+                    format!("invalid provider kind `{other}`; expected `simulated` or `external`"),
+                    kind_token.span,
+                ))
+            }
+        };
+        self.expect_keyword("enabled")?;
+        let enabled = self.expect_bool("provider enabled value")?;
+        self.expect_keyword("dry_run_only")?;
+        let dry_run_only = self.expect_bool("provider dry_run_only value")?;
+        let mut requires_feature_flag = false;
+        let mut requires_explicit_approval = false;
+        while self.match_keyword("requires") {
+            let requirement = self.expect_identifier("provider requirement")?;
+            match requirement.value.as_str() {
+                "feature_flag" if !requires_feature_flag => requires_feature_flag = true,
+                "approval" if !requires_explicit_approval => {
+                    requires_explicit_approval = true;
+                }
+                "feature_flag" | "approval" => {
+                    return Err(Diagnostic::new(
+                        format!("duplicate provider requirement `{}`", requirement.value),
+                        requirement.span,
+                    ))
+                }
+                other => {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "invalid provider requirement `{other}`; expected `feature_flag` or `approval`"
+                        ),
+                        requirement.span,
+                    ))
+                }
+            }
+        }
+        self.expect_symbol(TokenKind::RightBrace, "`}`")?;
+        Ok(ProviderDecl {
+            name,
+            kind: Spanned::new(kind, kind_token.span),
+            enabled,
+            dry_run_only,
+            requires_feature_flag,
+            requires_explicit_approval,
+        })
     }
 
     fn parse_assertion(&mut self) -> Result<AssertionDecl, Diagnostic> {
@@ -105,6 +163,11 @@ impl Parser {
         self.expect_keyword("tool")?;
         let name = self.expect_identifier("tool name")?;
         self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let provider = if self.match_keyword("provider") {
+            Some(self.expect_identifier("tool provider")?)
+        } else {
+            None
+        };
         self.expect_keyword("capability")?;
         let capability = self.expect_identifier("tool capability")?;
         self.expect_keyword("input")?;
@@ -114,6 +177,7 @@ impl Parser {
         self.expect_symbol(TokenKind::RightBrace, "`}`")?;
         Ok(ToolDecl {
             name,
+            provider,
             capability,
             input,
             output,
@@ -453,6 +517,21 @@ impl Parser {
                 token.span,
             ))
         }
+    }
+
+    fn expect_bool(&mut self, description: &str) -> Result<Spanned<bool>, Diagnostic> {
+        let token = self.expect_identifier(description)?;
+        let value = match token.value.as_str() {
+            "true" => true,
+            "false" => false,
+            other => {
+                return Err(Diagnostic::new(
+                    format!("invalid boolean `{other}`; expected `true` or `false`"),
+                    token.span,
+                ))
+            }
+        };
+        Ok(Spanned::new(value, token.span))
     }
 
     fn expect_symbol(&mut self, expected: TokenKind, display: &str) -> Result<(), Diagnostic> {

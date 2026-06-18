@@ -51,7 +51,7 @@ fn run() -> Result<()> {
     match cli.command {
         Command::Check { file } => {
             let compiled = compile(&file, options)?;
-            println!("Argorix Lang compiler v0.9\n");
+            println!("Argorix Lang compiler v0.11\n");
             println!("File: {}", file.display());
             println!("Status: OK\n");
             println!("Module: {}", compiled.program.module.value);
@@ -117,7 +117,7 @@ fn run() -> Result<()> {
                 .filter(|instruction| matches!(instruction, Instruction::DeclareProtocol { .. }))
                 .count();
 
-            println!("Argorix Bytecode verification v0.9\n");
+            println!("Argorix Bytecode verification v0.11\n");
             println!("File: {}", file.display());
             println!("Status: OK\n");
             println!("Bytecode version: {}", bytecode.bytecode_version);
@@ -194,7 +194,7 @@ mod tests {
         check_program(&program).unwrap();
         let json = serde_json::to_string(&lower_ir(&IrProgram::from(&program))).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["bytecode_version"], "0.9");
+        assert_eq!(parsed["bytecode_version"], "0.11");
     }
 
     #[test]

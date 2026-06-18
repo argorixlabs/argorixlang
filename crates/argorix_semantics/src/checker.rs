@@ -21,6 +21,7 @@ pub fn check_program_with_options(
 ) -> Result<(), Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
     let symbols = collect_symbols(program, &mut diagnostics);
+    check_provider_contracts(program, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
     check_model_declarations(program, &symbols, &mut diagnostics);
@@ -86,6 +87,64 @@ pub fn check_program_with_options(
         Ok(())
     } else {
         Err(diagnostics)
+    }
+}
+
+fn check_provider_contracts(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let mut names = HashSet::new();
+    for provider in &program.providers {
+        report_duplicate(&mut names, &provider.name, "provider", diagnostics);
+        if provider.name.value == "simulated" {
+            diagnostics.push(Diagnostic::new(
+                "`simulated` is the reserved executable provider and must not be declared as a provider contract",
+                provider.name.span,
+            ));
+        }
+        if provider.kind.value.as_str() != "external" {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "provider contract `{}` must use kind `external` in v0.11",
+                    provider.name.value
+                ),
+                provider.kind.span,
+            ));
+        }
+        if provider.enabled.value {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "external provider contract `{}` must be disabled",
+                    provider.name.value
+                ),
+                provider.enabled.span,
+            ));
+        }
+        if !provider.dry_run_only.value {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "external provider contract `{}` requires `dry_run_only true`",
+                    provider.name.value
+                ),
+                provider.dry_run_only.span,
+            ));
+        }
+        if !provider.requires_feature_flag {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "external provider contract `{}` requires `requires feature_flag`",
+                    provider.name.value
+                ),
+                provider.name.span,
+            ));
+        }
+        if !provider.requires_explicit_approval {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "external provider contract `{}` requires `requires approval`",
+                    provider.name.value
+                ),
+                provider.name.span,
+            ));
+        }
     }
 }
 
@@ -176,6 +235,17 @@ fn check_tool_declarations(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for tool in &program.tools {
+        if let Some(provider) = &tool.provider {
+            if provider.value != "simulated" {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "tool `{}` uses unsupported provider `{}`; only `simulated` is allowed",
+                        tool.name.value, provider.value
+                    ),
+                    provider.span,
+                ));
+            }
+        }
         if !symbols.capabilities.contains_key(&tool.capability.value) {
             diagnostics.push(Diagnostic::new(
                 format!(

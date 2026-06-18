@@ -3,6 +3,7 @@ use crate::span::Spanned;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
     pub module: Spanned<String>,
+    pub providers: Vec<ProviderDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub failures: Vec<FailureDecl>,
     pub capabilities: Vec<CapabilityDecl>,
@@ -12,6 +13,31 @@ pub struct Program {
     pub models: Vec<ModelDecl>,
     pub agents: Vec<AgentDecl>,
     pub protocols: Vec<ProtocolDecl>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderKindDecl {
+    Simulated,
+    External,
+}
+
+impl ProviderKindDecl {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Simulated => "simulated",
+            Self::External => "external",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderDecl {
+    pub name: Spanned<String>,
+    pub kind: Spanned<ProviderKindDecl>,
+    pub enabled: Spanned<bool>,
+    pub dry_run_only: Spanned<bool>,
+    pub requires_feature_flag: bool,
+    pub requires_explicit_approval: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +65,7 @@ pub struct ModelDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolDecl {
     pub name: Spanned<String>,
+    pub provider: Option<Spanned<String>>,
     pub capability: Spanned<String>,
     pub input: Spanned<String>,
     pub output: Spanned<String>,

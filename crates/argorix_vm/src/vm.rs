@@ -4,13 +4,23 @@ use crate::{
     ReactiveScheduler, RuntimeState, RuntimeStatus, Scheduler, VmError,
 };
 use argorix_bytecode::BytecodeProgram;
+use argorix_provider::{AdapterContract, ProviderKind, ProviderRegistry};
 
-#[derive(Debug, Default)]
-pub struct Vm;
+pub struct Vm {
+    providers: ProviderRegistry,
+}
+
+impl Default for Vm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Vm {
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self {
+            providers: ProviderRegistry::default(),
+        }
     }
 
     pub fn run_dry(&self, bytecode: &BytecodeProgram) -> Result<ExecutionTrace, VmError> {
@@ -44,13 +54,99 @@ impl Vm {
         RuntimeState::from_bytecode(bytecode)
     }
 
+    pub fn load_provider_contracts(
+        &self,
+        bytecode: &BytecodeProgram,
+        state: &mut RuntimeState,
+    ) -> Result<ProviderRegistry, VmError> {
+        let mut registry = self.providers.execution_registry();
+        for provider in &bytecode.providers {
+            state.trace_ledger.record(
+                EventType::ProviderContractDeclared,
+                "declared",
+                format!("provider contract {} declared", provider.name),
+                EventFields::default(),
+            );
+            let kind = match provider.kind.as_str() {
+                "simulated" => ProviderKind::Simulated,
+                "external" => ProviderKind::External,
+                other => {
+                    let reason = format!("unsupported provider kind `{other}`");
+                    self.reject_provider_contract(state, &provider.name, &reason);
+                    return Err(VmError::ProviderBoundary {
+                        provider: provider.name.clone(),
+                        reason,
+                    });
+                }
+            };
+            let contract = AdapterContract {
+                name: provider.name.clone(),
+                kind,
+                enabled: provider.enabled,
+                dry_run_only: provider.dry_run_only,
+                requires_feature_flag: provider.requires_feature_flag,
+                requires_explicit_approval: provider.requires_explicit_approval,
+                allowed_targets: provider.allowed_targets.clone(),
+                allowed_capabilities: provider.allowed_capabilities.clone(),
+            };
+            if let Err(error) = registry.register_contract(contract) {
+                let reason = error.to_string();
+                self.reject_provider_contract(state, &provider.name, &reason);
+                return Err(VmError::ProviderBoundary {
+                    provider: provider.name.clone(),
+                    reason,
+                });
+            }
+            if let Err(error) = registry.validate_contract(&provider.name) {
+                let reason = error.to_string();
+                self.reject_provider_contract(state, &provider.name, &reason);
+                return Err(VmError::ProviderBoundary {
+                    provider: provider.name.clone(),
+                    reason,
+                });
+            }
+            state.trace_ledger.record(
+                EventType::ProviderContractValidated,
+                "validated",
+                format!("provider contract {} validated", provider.name),
+                EventFields::default(),
+            );
+        }
+        Ok(registry)
+    }
+
+    fn reject_provider_contract(&self, state: &mut RuntimeState, name: &str, reason: &str) {
+        state.activate_failure("ProviderContractRejected");
+        state.trace_ledger.record(
+            EventType::ProviderContractRejected,
+            "rejected",
+            format!("provider contract {name} rejected: {reason}"),
+            EventFields::default(),
+        );
+        state.fail(format!("provider contract {name} rejected: {reason}"));
+    }
+
     pub fn run_reactive(
         &self,
         bytecode: &BytecodeProgram,
         injected: InjectedMessage,
     ) -> Result<ReactiveExecutionTrace, VmError> {
         let mut state = RuntimeState::from_bytecode(bytecode)?;
-        let steps = ReactiveScheduler::new().run(bytecode, &mut state, &injected)?;
+        let execution_providers = self.load_provider_contracts(bytecode, &mut state)?;
+        for (name, kind) in execution_providers.entries() {
+            state.trace_ledger.record(
+                EventType::ProviderRegistered,
+                "registered",
+                format!("provider {name} registered as {kind:?}"),
+                EventFields::default(),
+            );
+        }
+        let steps = ReactiveScheduler::new().run_with_registry(
+            bytecode,
+            &mut state,
+            &injected,
+            &execution_providers,
+        )?;
         let policy_report = self.evaluate_policy(bytecode, &mut state, &steps);
         let mailboxes = state
             .agents
@@ -108,8 +204,40 @@ impl Vm {
                 mode: "dry-run".into(),
             })
             .collect();
+        let providers = execution_providers
+            .entries()
+            .into_iter()
+            .map(|(name, kind)| crate::ProviderSummary {
+                name: name.to_owned(),
+                kind: match kind {
+                    argorix_provider::ProviderKind::Simulated => "simulated",
+                    argorix_provider::ProviderKind::External => "external",
+                }
+                .into(),
+                enabled: true,
+            })
+            .collect();
+        let provider_contracts = execution_providers
+            .contract_entries()
+            .into_iter()
+            .map(|contract| crate::ProviderContractSummary {
+                name: contract.name.clone(),
+                kind: match contract.kind {
+                    ProviderKind::Simulated => "simulated",
+                    ProviderKind::External => "external",
+                }
+                .into(),
+                enabled: contract.enabled,
+                dry_run_only: contract.dry_run_only,
+                requires_feature_flag: contract.requires_feature_flag,
+                requires_explicit_approval: contract.requires_explicit_approval,
+                allowed_targets: contract.allowed_targets.clone(),
+                allowed_capabilities: contract.allowed_capabilities.clone(),
+            })
+            .collect();
+        let provider_calls = state.provider_calls.clone();
         Ok(ReactiveExecutionTrace {
-            vm_version: "0.9".into(),
+            vm_version: "0.11".into(),
             status: if policy_report.status == "passed" {
                 "completed".into()
             } else {
@@ -124,6 +252,9 @@ impl Vm {
             intrinsics,
             tool_calls,
             model_calls,
+            providers,
+            provider_contracts,
+            provider_calls,
             policy_report,
             events: state.trace_ledger.events,
             security_checks: "passed".into(),
@@ -263,13 +394,43 @@ impl Vm {
 mod tests {
     use super::Vm;
     use crate::{EventType, InjectedMessage, RuntimeStatus, Scheduler};
-    use argorix_bytecode::{BytecodeAgent, BytecodeProgram, Instruction};
+    use argorix_bytecode::{BytecodeAgent, BytecodeProgram, BytecodeProviderContract, Instruction};
+    use serde_json::json;
+
+    fn add_external_contract(bytecode: &mut BytecodeProgram, enabled: bool) {
+        bytecode.bytecode_version = "0.11".into();
+        let contract = BytecodeProviderContract {
+            name: "OpenAI".into(),
+            kind: "external".into(),
+            enabled,
+            dry_run_only: true,
+            requires_feature_flag: true,
+            requires_explicit_approval: true,
+            allowed_targets: vec![],
+            allowed_capabilities: vec![],
+        };
+        bytecode.providers.push(contract.clone());
+        bytecode.instructions.insert(
+            0,
+            Instruction::DeclareProviderContract {
+                name: contract.name,
+                kind: contract.kind,
+                enabled: contract.enabled,
+                dry_run_only: contract.dry_run_only,
+                requires_feature_flag: contract.requires_feature_flag,
+                requires_explicit_approval: contract.requires_explicit_approval,
+                allowed_targets: contract.allowed_targets,
+                allowed_capabilities: contract.allowed_capabilities,
+            },
+        );
+    }
 
     fn valid_bytecode() -> BytecodeProgram {
         BytecodeProgram {
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Example".into(),
+            providers: vec![],
             assertions: vec![],
             failures: vec![],
             agents: vec![BytecodeAgent {
@@ -391,7 +552,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.9");
+        assert_eq!(json["vm_version"], "0.11");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -413,7 +574,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.9");
+        assert_eq!(json["vm_version"], "0.11");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -435,7 +596,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.9");
+        assert_eq!(json["vm_version"], "0.11");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -470,6 +631,134 @@ mod tests {
             .events
             .iter()
             .any(|event| event.event_type == EventType::PolicyReportGenerated));
+    }
+
+    #[test]
+    fn provider_boundary_routes_tool_and_model_calls() {
+        let bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/policy_assertions_v09.argbc.json"
+        ))
+        .unwrap();
+        let trace = Vm::new()
+            .run_reactive(
+                &bytecode,
+                InjectedMessage {
+                    from: "User".into(),
+                    to: "ResearchAgent".into(),
+                    act: "tell".into(),
+                    message_type: "UserPrompt".into(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(trace.vm_version, "0.11");
+        assert_eq!(trace.providers[0].name, "simulated");
+        assert_eq!(trace.providers[0].kind, "simulated");
+        assert_eq!(trace.provider_calls.len(), 2);
+        assert_eq!(trace.provider_calls[0].kind, "tool");
+        assert_eq!(trace.provider_calls[0].target, "WebSearch");
+        assert_eq!(trace.provider_calls[1].kind, "model");
+        assert_eq!(trace.provider_calls[1].target, "GuardModel");
+        assert!(trace
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderSelected));
+        assert!(trace
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderRegistered));
+        assert!(trace
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderRequestCreated));
+        assert!(trace
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderResponseReceived));
+        assert!(trace
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderDryRunEnforced));
+
+        let json = serde_json::to_value(trace).unwrap();
+        assert_eq!(json["providers"][0]["name"], "simulated");
+        assert_eq!(json["provider_calls"][0]["kind"], "tool");
+        assert_eq!(json["provider_calls"][1]["kind"], "model");
+    }
+
+    #[test]
+    fn vm_loads_and_validates_provider_contracts_before_execution() {
+        let mut bytecode = valid_bytecode();
+        add_external_contract(&mut bytecode, false);
+        let vm = Vm::new();
+        let mut state = vm.initialize(&bytecode).unwrap();
+        let registry = vm.load_provider_contracts(&bytecode, &mut state).unwrap();
+
+        assert!(registry.contains("simulated"));
+        assert!(registry.contains_contract("OpenAI"));
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderContractDeclared));
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderContractValidated));
+    }
+
+    #[test]
+    fn rejected_provider_contract_preserves_runtime_ledger() {
+        let mut bytecode = valid_bytecode();
+        add_external_contract(&mut bytecode, true);
+        let vm = Vm::new();
+        let mut state = vm.initialize(&bytecode).unwrap();
+        let result = vm.load_provider_contracts(&bytecode, &mut state);
+
+        assert!(result.is_err());
+        assert_eq!(state.status, RuntimeStatus::Failed);
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ProviderContractRejected));
+        assert!(state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::VmFailed));
+    }
+
+    #[test]
+    fn reactive_json_lists_executable_providers_and_declarative_contracts_separately() {
+        let mut bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_boundary_v010.argbc.json"
+        ))
+        .unwrap();
+        add_external_contract(&mut bytecode, false);
+        let trace = Vm::new()
+            .run_reactive(
+                &bytecode,
+                InjectedMessage {
+                    from: "User".into(),
+                    to: "ResearchAgent".into(),
+                    act: "tell".into(),
+                    message_type: "UserPrompt".into(),
+                },
+            )
+            .unwrap();
+        let json = serde_json::to_value(trace).unwrap();
+
+        assert_eq!(json["vm_version"], "0.11");
+        assert_eq!(json["providers"][0]["name"], "simulated");
+        assert_eq!(json["providers"][0]["enabled"], true);
+        assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
+        assert_eq!(json["provider_contracts"][0]["allowed_targets"], json!([]));
+        assert_eq!(
+            json["provider_contracts"][0]["allowed_capabilities"],
+            json!([])
+        );
     }
 
     #[test]

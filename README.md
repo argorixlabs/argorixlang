@@ -4,15 +4,16 @@ Argorix Lang is a compiled language for secure, verifiable communication
 between AI agents. Rust bootstraps the compiler; Argorix Lang remains its own
 language with a path toward progressive self-hosting.
 
-Version 0.9 adds compiled global policy assertions, declared failure modes,
-runtime verification, and auditable policy reports:
+Version 0.11 adds declarative external adapter contracts on top of the v0.10
+provider boundary. External providers can be described and validated, but
+cannot execute:
 
 ```text
 .argx
   -> lexer / parser / AST
   -> semantic and security verification
-  -> Argorix IR 0.9
-  -> Argorix Bytecode 0.9
+  -> Argorix IR 0.11
+  -> Argorix Bytecode 0.11
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -20,6 +21,9 @@ runtime verification, and auditable policy reports:
   -> agent state and causal guards
   -> controlled tool calls
   -> controlled model calls
+  -> provider registry
+  -> external adapter contract validation
+  -> simulated provider boundary
   -> global policy verification
   -> declared failure modes
   -> trace ledger
@@ -78,7 +82,94 @@ cargo run -p argorix-vm -- run examples/model_call_v08.argbc.json --dry-run --re
 cargo run -p argorixc -- check examples/policy_assertions_v09.argx
 cargo run -p argorixc -- emit-bytecode examples/policy_assertions_v09.argx
 cargo run -p argorix-vm -- run examples/policy_assertions_v09.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --policy
+cargo run -p argorixc -- check examples/provider_boundary_v010.argx
+cargo run -p argorixc -- emit-ir examples/provider_boundary_v010.argx
+cargo run -p argorixc -- emit-bytecode examples/provider_boundary_v010.argx
+cargo run -p argorix-vm -- run examples/provider_boundary_v010.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models --policy --providers
+cargo run -p argorixc -- check examples/provider_contracts_v011.argx
+cargo run -p argorixc -- emit-ir examples/provider_contracts_v011.argx
+cargo run -p argorixc -- emit-bytecode examples/provider_contracts_v011.argx
+cargo run -p argorix-vm -- run examples/provider_contracts_v011.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models --policy --providers --provider-contracts
 ```
+
+## External adapter contracts v0.11
+
+Module-level provider declarations describe future external adapters without
+making them executable:
+
+```argx
+provider OpenAI {
+    kind external
+    enabled false
+    dry_run_only true
+    requires feature_flag
+    requires approval
+}
+```
+
+`ProviderRegistry` keeps two separate maps: executable providers and
+declarative adapter contracts. `simulated` is registered by default as the
+only executable provider and must not be declared as a provider contract.
+External contracts never implement `Provider`.
+
+Every external contract must be disabled, dry-run-only, feature-flag gated,
+and explicitly approved. Tools and models still accept only `simulated`.
+Attempted external execution is blocked fail-closed and leaves the trace
+ledger available for inspection.
+
+`allowed_targets` and `allowed_capabilities` are reserved for v0.12 or later.
+They are not part of the v0.11 source syntax and are serialized as empty arrays
+in IR, Bytecode, and VM JSON.
+
+In IR and Bytecode v0.11, the top-level `providers` collection represents
+declarative provider contracts, not executable provider instances. Executable
+providers are runtime registry entries and appear separately in VM output.
+
+Bytecode loads contracts before scheduling and emits
+`ProviderContractDeclared`, `ProviderContractValidated`, or
+`ProviderContractRejected`. A blocked call emits
+`ExternalProviderExecutionBlocked`.
+
+Use `--provider-contracts` for the separated textual report. Reactive JSON
+always includes `provider_contracts`; `providers` contains only executable
+providers.
+
+## Provider boundary v0.10
+
+The standalone `argorix_provider` crate defines synchronous provider contracts,
+typed tool/model requests and responses, provider errors, and a registry.
+`ProviderRegistry::default()` registers only `simulated`.
+
+Tools may omit their provider in source:
+
+```argx
+tool WebSearch {
+    capability web.search
+    input UserPrompt
+    output ToolResult
+}
+```
+
+The AST preserves this omission as `None`. Semantic validation permits only
+`simulated`, and IR resolves the omitted value to `simulated`. IR and Bytecode
+0.10 therefore always carry an explicit provider for both tools and models.
+
+Reactive calls now follow:
+
+```text
+VM -> ProviderRegistry -> SimulatedProvider -> response -> trace ledger
+```
+
+`SimulatedProvider` accepts only `dry_run: true`, performs no network or
+external execution, and returns typed simulated responses. Unknown providers,
+provider errors, or invalid responses fail closed, preserve the runtime ledger,
+and activate an applicable failure mode.
+
+Use `--providers` to print registered providers and ordered calls. Reactive
+JSON includes `providers` and `provider_calls`. Audit events include
+`ProviderRegistered`, `ProviderSelected`, `ProviderRequestCreated`,
+`ProviderResponseReceived`, `ProviderDryRunEnforced`, and
+`ProviderBoundaryDenied`.
 
 ## Global policies and failure modes v0.9
 
@@ -226,9 +317,10 @@ executes the matching handler, queues emitted messages, and repeats until
 
 ```json
 {
-  "bytecode_version": "0.9",
+  "bytecode_version": "0.11",
   "language": "Argorix Lang",
   "module": "Argorix.Security",
+  "providers": [],
   "agents": [],
   "capabilities": [],
   "instructions": [
@@ -249,6 +341,7 @@ executes the matching handler, queues emitted messages, and repeats until
 The instruction model supports:
 
 - `DeclareAgent`
+- `DeclareProviderContract`
 - `DeclareCapability`
 - `DeclareProtocol`
 - `DeclareHandler`
@@ -283,8 +376,8 @@ because a capability happens to be named `runtime.halt`.
 
 The verifier requires:
 
-- Bytecode version `0.9` for newly compiled programs. Versions `0.3`, `0.5`,
-  `0.6`, `0.7`, and `0.8` remain accepted for compatibility.
+- Bytecode version `0.11` for newly compiled programs. Versions `0.3`, `0.5`,
+  `0.6`, `0.7`, `0.8`, `0.9`, and `0.10` remain accepted for compatibility.
 - At least one agent.
 - At least one protocol or `SendMessage`.
 - Complete, non-empty message fields.
@@ -319,7 +412,7 @@ mailboxes. No network calls, tools, LLMs, or concurrent tasks are executed.
 Text output:
 
 ```text
-Argorix VM v0.9
+Argorix VM v0.11
 
 Loaded bytecode: examples/prompt_defense.argbc.json
 Execution mode: dry-run
@@ -372,7 +465,7 @@ The ledger records `VmStarted`, declarations, message scheduling, delivery and
 processing, then `VmCompleted` or `VmFailed`. Because the scheduler mutates a
 caller-owned state, failure diagnostics do not discard the ledger.
 
-Reactive JSON uses `vm_version: "0.9"` and
+Reactive JSON uses `vm_version: "0.11"` and
 `mode: "reactive-dry-run"`. Each step records the agent, handled message,
 emitted messages, traced bindings, and whether the handler halted execution.
 
@@ -413,8 +506,9 @@ cargo run -p argorixc -- --legacy-capabilities check examples/prompt_defense.arg
 crates/argorixc          Source compiler CLI
 crates/argorix_parser    Lexer, parser, AST, spans, diagnostics
 crates/argorix_semantics Source-level security and protocol verifier
-crates/argorix_ir        Argorix IR 0.9 with compiled policies
-crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.9 verifier
+crates/argorix_ir        Argorix IR 0.11 with declarative adapter contracts
+crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.11 verifier
+crates/argorix_provider  Executable providers, adapter contracts, and registry
 crates/argorix_vm        Linear/reactive schedulers, mailboxes, VM, ledger
 crates/argorix-vm        Bytecode VM CLI
 examples                 Source and bytecode fixtures
@@ -434,6 +528,17 @@ tests                    End-to-end compiler tests
 - `model_call_v08.argbc.json`: generated Bytecode 0.8 fixture.
 - `policy_assertions_v09.argx`: valid global-policy source program.
 - `policy_assertions_v09.argbc.json`: generated Bytecode 0.9 fixture.
+- `provider_boundary_v010.argx`: valid provider-boundary source program.
+- `provider_boundary_v010.argbc.json`: generated Bytecode 0.10 fixture.
+- `provider_contracts_v011.argx`: valid disabled external adapter contract.
+- `provider_contracts_v011.argbc.json`: generated Bytecode 0.11 fixture.
+- `provider_external_enabled.argx`: enabled external-contract failure.
+- `provider_external_missing_feature_flag.argx`: missing feature gate failure.
+- `provider_external_missing_approval.argx`: missing approval gate failure.
+- `provider_external_used_by_model.argx`: external model-provider failure.
+- `provider_external_used_by_tool.argx`: external tool-provider failure.
+- `tool_invalid_provider.argx`: unsupported tool provider failure.
+- `model_invalid_provider_v010.argx`: unsupported model provider failure.
 - `assert_unknown.argx`: unknown assertion failure.
 - `failure_invalid_action.argx`: unsupported failure action.
 - `failure_missing_trace.argx`: missing mandatory failure trace.
@@ -453,8 +558,10 @@ tests                    End-to-end compiler tests
 7. v0.7: declared, authorized, capability-controlled tool calls
 8. v0.8: declared, authorized, simulated model invocation
 9. v0.9: compiled global policies, failure modes, and runtime reports
-10. Sandboxed real capability providers and cryptographic identities
-11. Optional WASM/native backends
-12. Progressive self-hosting in Argorix Lang
+10. v0.10: audited provider boundary and simulated provider registry
+11. v0.11: disabled external adapter contracts and conformance checks
+12. v0.12+: target/capability constraints and sandboxed provider work
+13. Optional WASM/native backends
+14. Progressive self-hosting in Argorix Lang
 
 > Rust is the forge. Argorix Lang is the sword.

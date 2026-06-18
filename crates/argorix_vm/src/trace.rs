@@ -55,6 +55,16 @@ pub enum EventType {
     ModelCallAllowed,
     ModelCallDenied,
     ModelCallDryRunResult,
+    ProviderRegistered,
+    ProviderSelected,
+    ProviderRequestCreated,
+    ProviderResponseReceived,
+    ProviderDryRunEnforced,
+    ProviderBoundaryDenied,
+    ProviderContractDeclared,
+    ProviderContractValidated,
+    ProviderContractRejected,
+    ExternalProviderExecutionBlocked,
     AssertionDeclared,
     FailureDeclared,
     AssertionVerified,
@@ -146,9 +156,40 @@ pub struct ReactiveExecutionTrace {
     pub intrinsics: Vec<IntrinsicExecution>,
     pub tool_calls: Vec<ToolCallSummary>,
     pub model_calls: Vec<ModelCallSummary>,
+    pub providers: Vec<ProviderSummary>,
+    pub provider_contracts: Vec<ProviderContractSummary>,
+    pub provider_calls: Vec<ProviderCallSummary>,
     pub policy_report: PolicyReport,
     pub events: Vec<ExecutionEvent>,
     pub security_checks: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderSummary {
+    pub name: String,
+    pub kind: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderContractSummary {
+    pub name: String,
+    pub kind: String,
+    pub enabled: bool,
+    pub dry_run_only: bool,
+    pub requires_feature_flag: bool,
+    pub requires_explicit_approval: bool,
+    pub allowed_targets: Vec<String>,
+    pub allowed_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCallSummary {
+    pub provider: String,
+    pub kind: String,
+    pub target: String,
+    pub status: String,
+    pub simulated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

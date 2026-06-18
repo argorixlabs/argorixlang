@@ -10,6 +10,8 @@ pub struct BytecodeProgram {
     pub language: String,
     pub module: String,
     #[serde(default)]
+    pub providers: Vec<BytecodeProviderContract>,
+    #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
     pub failures: Vec<BytecodeFailure>,
@@ -20,6 +22,20 @@ pub struct BytecodeProgram {
     #[serde(default)]
     pub models: Vec<BytecodeModel>,
     pub instructions: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeProviderContract {
+    pub name: String,
+    pub kind: String,
+    pub enabled: bool,
+    pub dry_run_only: bool,
+    pub requires_feature_flag: bool,
+    pub requires_explicit_approval: bool,
+    #[serde(default)]
+    pub allowed_targets: Vec<String>,
+    #[serde(default)]
+    pub allowed_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +63,8 @@ pub struct BytecodeModel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BytecodeTool {
     pub name: String,
+    #[serde(default = "default_provider")]
+    pub provider: String,
     pub capability: String,
     pub input: String,
     pub output: String,
@@ -68,6 +86,18 @@ pub struct BytecodeCapability {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op")]
 pub enum Instruction {
+    DeclareProviderContract {
+        name: String,
+        kind: String,
+        enabled: bool,
+        dry_run_only: bool,
+        requires_feature_flag: bool,
+        requires_explicit_approval: bool,
+        #[serde(default)]
+        allowed_targets: Vec<String>,
+        #[serde(default)]
+        allowed_capabilities: Vec<String>,
+    },
     DeclareAgent {
         name: String,
         approval: String,
@@ -96,6 +126,8 @@ pub enum Instruction {
     PolicyReport,
     DeclareTool {
         name: String,
+        #[serde(default = "default_provider")]
+        provider: String,
         capability: String,
         input: String,
         output: String,
@@ -203,10 +235,20 @@ pub enum BytecodeError {
     UnknownTool(String),
     #[error("bytecode tool `{tool}` references unknown capability `{capability}`")]
     UnknownToolCapability { tool: String, capability: String },
+    #[error("unsupported tool provider `{0}`")]
+    UnknownToolProvider(String),
     #[error("bytecode model `{0}` is not declared or has invalid capability")]
     UnknownModel(String),
     #[error("unsupported model provider `{0}`")]
     UnknownModelProvider(String),
+    #[error("provider contracts require bytecode version 0.11")]
+    ContractsRequireV011,
+    #[error("duplicate provider contract `{0}`")]
+    DuplicateProviderContract(String),
+    #[error("invalid provider contract `{name}`: {reason}")]
+    InvalidProviderContract { name: String, reason: String },
+    #[error("provider contract declarations do not match the top-level providers collection")]
+    ProviderContractDeclarationMismatch,
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -215,7 +257,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         errors.push(BytecodeError::MissingVersion);
     } else if !matches!(
         program.bytecode_version.as_str(),
-        "0.3" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9"
+        "0.3" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9" | "0.10" | "0.11"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -223,6 +265,23 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     if program.agents.is_empty() {
         errors.push(BytecodeError::NoAgents);
+    }
+    if program.bytecode_version != "0.11" && !program.providers.is_empty() {
+        errors.push(BytecodeError::ContractsRequireV011);
+    }
+    let mut provider_contract_names = HashSet::new();
+    for contract in &program.providers {
+        if !provider_contract_names.insert(contract.name.as_str()) {
+            errors.push(BytecodeError::DuplicateProviderContract(
+                contract.name.clone(),
+            ));
+        }
+        if let Some(reason) = invalid_contract_reason(contract) {
+            errors.push(BytecodeError::InvalidProviderContract {
+                name: contract.name.clone(),
+                reason: reason.into(),
+            });
+        }
     }
 
     let agents: HashSet<&str> = program
@@ -246,6 +305,9 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         .map(|model| model.name.as_str())
         .collect();
     for tool in &program.tools {
+        if tool.provider != "simulated" {
+            errors.push(BytecodeError::UnknownToolProvider(tool.provider.clone()));
+        }
         if !capabilities.contains(tool.capability.as_str()) {
             errors.push(BytecodeError::UnknownToolCapability {
                 tool: tool.name.clone(),
@@ -262,6 +324,21 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         }
     }
     let mut has_protocol_or_message = false;
+    let contract_declarations = program
+        .instructions
+        .iter()
+        .filter(|instruction| matches!(instruction, Instruction::DeclareProviderContract { .. }))
+        .count();
+    if contract_declarations != program.providers.len()
+        || program.providers.iter().any(|contract| {
+            !program
+                .instructions
+                .iter()
+                .any(|instruction| matches_contract_declaration(instruction, contract))
+        })
+    {
+        errors.push(BytecodeError::ProviderContractDeclarationMismatch);
+    }
     for instruction in &program.instructions {
         match instruction {
             Instruction::DeclareProtocol { .. } => has_protocol_or_message = true,
@@ -353,15 +430,73 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
 }
 
+fn default_provider() -> String {
+    "simulated".into()
+}
+
+fn invalid_contract_reason(contract: &BytecodeProviderContract) -> Option<&'static str> {
+    if contract.name.trim().is_empty() {
+        Some("name must not be empty")
+    } else if contract.name == "simulated" {
+        Some("`simulated` is reserved for the executable provider")
+    } else if contract.kind != "external" {
+        Some("kind must be external")
+    } else if contract.enabled {
+        Some("external contracts must be disabled")
+    } else if !contract.dry_run_only {
+        Some("external contracts must be dry-run-only")
+    } else if !contract.requires_feature_flag {
+        Some("external contracts require a feature flag")
+    } else if !contract.requires_explicit_approval {
+        Some("external contracts require explicit approval")
+    } else if !contract.allowed_targets.is_empty() {
+        Some("allowed_targets must be empty in v0.11")
+    } else if !contract.allowed_capabilities.is_empty() {
+        Some("allowed_capabilities must be empty in v0.11")
+    } else {
+        None
+    }
+}
+
+fn matches_contract_declaration(
+    instruction: &Instruction,
+    contract: &BytecodeProviderContract,
+) -> bool {
+    matches!(
+        instruction,
+        Instruction::DeclareProviderContract {
+            name,
+            kind,
+            enabled,
+            dry_run_only,
+            requires_feature_flag,
+            requires_explicit_approval,
+            allowed_targets,
+            allowed_capabilities,
+        } if name == &contract.name
+            && kind == &contract.kind
+            && enabled == &contract.enabled
+            && dry_run_only == &contract.dry_run_only
+            && requires_feature_flag == &contract.requires_feature_flag
+            && requires_explicit_approval == &contract.requires_explicit_approval
+            && allowed_targets == &contract.allowed_targets
+            && allowed_capabilities == &contract.allowed_capabilities
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{verify_bytecode, BytecodeAgent, BytecodeError, BytecodeProgram, Instruction};
+    use super::{
+        verify_bytecode, BytecodeAgent, BytecodeError, BytecodeProgram, BytecodeProviderContract,
+        Instruction,
+    };
 
     fn valid_program() -> BytecodeProgram {
         BytecodeProgram {
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Test".into(),
+            providers: vec![],
             assertions: vec![],
             failures: vec![],
             agents: vec![BytecodeAgent {
@@ -405,5 +540,51 @@ mod tests {
         program.instructions.insert(1, Instruction::Unknown);
         let errors = verify_bytecode(&program).unwrap_err();
         assert!(errors.contains(&BytecodeError::UnknownInstruction));
+    }
+
+    #[test]
+    fn validates_v011_provider_contracts_and_declarations() {
+        let mut program = valid_program();
+        program.bytecode_version = "0.11".into();
+        let contract = BytecodeProviderContract {
+            name: "OpenAI".into(),
+            kind: "external".into(),
+            enabled: false,
+            dry_run_only: true,
+            requires_feature_flag: true,
+            requires_explicit_approval: true,
+            allowed_targets: vec![],
+            allowed_capabilities: vec![],
+        };
+        program.providers.push(contract.clone());
+        program.instructions.insert(
+            0,
+            Instruction::DeclareProviderContract {
+                name: contract.name,
+                kind: contract.kind,
+                enabled: contract.enabled,
+                dry_run_only: contract.dry_run_only,
+                requires_feature_flag: contract.requires_feature_flag,
+                requires_explicit_approval: contract.requires_explicit_approval,
+                allowed_targets: contract.allowed_targets,
+                allowed_capabilities: contract.allowed_capabilities,
+            },
+        );
+        verify_bytecode(&program).unwrap();
+
+        program.providers[0].enabled = true;
+        let errors = verify_bytecode(&program).unwrap_err();
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            BytecodeError::InvalidProviderContract { name, .. } if name == "OpenAI"
+        )));
+        assert!(errors.contains(&BytecodeError::ProviderContractDeclarationMismatch));
+    }
+
+    #[test]
+    fn accepts_v010_without_provider_contracts() {
+        let mut program = valid_program();
+        program.bytecode_version = "0.10".into();
+        verify_bytecode(&program).unwrap();
     }
 }

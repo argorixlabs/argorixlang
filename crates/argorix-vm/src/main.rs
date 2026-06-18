@@ -33,6 +33,10 @@ enum Command {
         models: bool,
         #[arg(long)]
         policy: bool,
+        #[arg(long)]
+        providers: bool,
+        #[arg(long)]
+        provider_contracts: bool,
     },
 }
 
@@ -56,9 +60,11 @@ fn run() -> Result<()> {
             tools,
             models,
             policy,
+            providers,
+            provider_contracts,
         } => {
             if !dry_run {
-                bail!("v0.9 only supports execution with `--dry-run`");
+                bail!("v0.11 only supports execution with `--dry-run`");
             }
             let source = fs::read_to_string(&file)
                 .with_context(|| format!("failed to read `{}`", file.display()))?;
@@ -73,9 +79,30 @@ fn run() -> Result<()> {
                 if json {
                     println!("{}", serde_json::to_string_pretty(&trace)?);
                 } else {
-                    println!("Argorix VM v0.9\n");
+                    println!("Argorix VM v0.11\n");
                     println!("Execution mode: reactive dry-run");
-                    println!("Scheduler: {}\n", trace.scheduler);
+                    println!("Scheduler: {}", trace.scheduler);
+                    if providers {
+                        println!("Provider boundary: enabled\n");
+                        println!("Provider registry:");
+                        for provider in &trace.providers {
+                            println!("- {}: {}, executable", provider.name, provider.kind);
+                        }
+                        println!();
+                    } else {
+                        println!();
+                    }
+                    if provider_contracts {
+                        println!("Provider contracts:");
+                        for contract in &trace.provider_contracts {
+                            println!(
+                                "- {}: {}, disabled, dry-run-only, requires feature_flag, requires approval",
+                                contract.name, contract.kind
+                            );
+                        }
+                        println!("- simulated: executable\n");
+                        println!("External provider execution: blocked by design\n");
+                    }
                     println!(
                         "Injected: {} --{} {}--> {}\n",
                         trace.injected.from,
@@ -112,6 +139,21 @@ fn run() -> Result<()> {
                                     "Step {}: Tool {} allowed by capability {}",
                                     step.index, tool, call.capability
                                 );
+                                if providers {
+                                    if let Some(provider_call) =
+                                        trace.provider_calls.iter().find(|provider_call| {
+                                            provider_call.kind == "tool"
+                                                && provider_call.target == *tool
+                                        })
+                                    {
+                                        println!(
+                                            "Step {}: Provider {} selected for tool {}",
+                                            step.index, provider_call.provider, tool
+                                        );
+                                        println!("Step {}: Provider request created", step.index);
+                                        println!("Step {}: Provider response received", step.index);
+                                    }
+                                }
                                 println!(
                                     "Step {}: Tool {} dry-run result generated",
                                     step.index, tool
@@ -129,6 +171,21 @@ fn run() -> Result<()> {
                                     "Step {}: Model {} allowed by capability {}",
                                     step.index, model, call.capability
                                 );
+                                if providers {
+                                    if let Some(provider_call) =
+                                        trace.provider_calls.iter().find(|provider_call| {
+                                            provider_call.kind == "model"
+                                                && provider_call.target == *model
+                                        })
+                                    {
+                                        println!(
+                                            "Step {}: Provider {} selected for model {}",
+                                            step.index, provider_call.provider, model
+                                        );
+                                        println!("Step {}: Provider request created", step.index);
+                                        println!("Step {}: Provider response received", step.index);
+                                    }
+                                }
                                 println!(
                                     "Step {}: Model {} dry-run result generated",
                                     step.index, model
@@ -191,6 +248,16 @@ fn run() -> Result<()> {
                         }
                         println!("\nPolicy report: {}", trace.policy_report.status);
                     }
+                    if providers {
+                        println!("Provider calls:");
+                        for call in &trace.provider_calls {
+                            println!(
+                                "- {} {} {}: {}, simulated={}",
+                                call.provider, call.kind, call.target, call.status, call.simulated
+                            );
+                        }
+                        println!();
+                    }
                     println!("Status: {}", trace.status);
                     println!("Trace ledger: generated");
                 }
@@ -201,7 +268,7 @@ fn run() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&trace)?);
             } else if mailboxes {
-                println!("Argorix VM v0.9\n");
+                println!("Argorix VM v0.11\n");
                 println!("Execution mode: dry-run");
                 println!("Scheduler: {}", trace.scheduler);
                 println!("Agents: {}\n", trace.mailboxes.len());
@@ -221,7 +288,7 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
                 println!("Trace ledger: generated");
             } else {
-                println!("Argorix VM v0.9\n");
+                println!("Argorix VM v0.11\n");
                 println!("Loaded bytecode: {}", file.display());
                 println!("Execution mode: dry-run\n");
                 for step in &trace.steps {
@@ -345,5 +412,49 @@ mod tests {
         ])
         .unwrap();
         assert!(matches!(cli.command, Command::Run { policy: true, .. }));
+    }
+
+    #[test]
+    fn cli_accepts_providers_flag() {
+        let cli = Cli::try_parse_from([
+            "argorix-vm",
+            "run",
+            "program.json",
+            "--dry-run",
+            "--reactive",
+            "--inject",
+            "User:Worker:tell:Ping",
+            "--providers",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Run {
+                providers: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_accepts_provider_contracts_flag() {
+        let cli = Cli::try_parse_from([
+            "argorix-vm",
+            "run",
+            "program.json",
+            "--dry-run",
+            "--reactive",
+            "--inject",
+            "User:Worker:tell:Ping",
+            "--provider-contracts",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Run {
+                provider_contracts: true,
+                ..
+            }
+        ));
     }
 }

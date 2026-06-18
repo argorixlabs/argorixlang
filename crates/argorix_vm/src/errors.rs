@@ -49,6 +49,8 @@ pub enum VmError {
     ModelBindingMismatch { argument: String, binding: String },
     #[error("model `{0}` has unsupported provider")]
     InvalidModelProvider(String),
+    #[error("provider boundary denied call through `{provider}`: {reason}")]
+    ProviderBoundary { provider: String, reason: String },
 }
 
 impl VmError {

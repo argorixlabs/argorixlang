@@ -1,0 +1,10 @@
+module InvalidModelProvider
+capability model.invoke { level safe }
+type ToolResult { content: string }
+type Decision { action: string }
+model GuardModel {
+    provider external_llm
+    capability model.invoke
+    input ToolResult
+    output Decision
+}

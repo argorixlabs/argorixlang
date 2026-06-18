@@ -6,6 +6,7 @@ pub struct IrProgram {
     pub ir_version: String,
     pub language: String,
     pub module: String,
+    pub providers: Vec<IrProviderContract>,
     pub assertions: Vec<IrAssertion>,
     pub failures: Vec<IrFailure>,
     pub capabilities: Vec<IrCapability>,
@@ -15,6 +16,18 @@ pub struct IrProgram {
     pub models: Vec<IrModel>,
     pub agents: Vec<IrAgent>,
     pub protocols: Vec<IrProtocol>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrProviderContract {
+    pub name: String,
+    pub kind: String,
+    pub enabled: bool,
+    pub dry_run_only: bool,
+    pub requires_feature_flag: bool,
+    pub requires_explicit_approval: bool,
+    pub allowed_targets: Vec<String>,
+    pub allowed_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -42,6 +55,7 @@ pub struct IrModel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrTool {
     pub name: String,
+    pub provider: String,
     pub capability: String,
     pub input: String,
     pub output: String,
@@ -132,9 +146,23 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.9".to_owned(),
+            ir_version: "0.11".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
+            providers: program
+                .providers
+                .iter()
+                .map(|provider| IrProviderContract {
+                    name: provider.name.value.clone(),
+                    kind: provider.kind.value.as_str().into(),
+                    enabled: provider.enabled.value,
+                    dry_run_only: provider.dry_run_only.value,
+                    requires_feature_flag: provider.requires_feature_flag,
+                    requires_explicit_approval: provider.requires_explicit_approval,
+                    allowed_targets: vec![],
+                    allowed_capabilities: vec![],
+                })
+                .collect(),
             assertions: program
                 .assertions
                 .iter()
@@ -193,6 +221,12 @@ impl From<&Program> for IrProgram {
                 .iter()
                 .map(|tool| IrTool {
                     name: tool.name.value.clone(),
+                    provider: resolved_provider(
+                        tool.provider
+                            .as_ref()
+                            .map(|provider| provider.value.as_str()),
+                    )
+                    .to_owned(),
                     capability: tool.capability.value.clone(),
                     input: tool.input.value.clone(),
                     output: tool.output.value.clone(),
@@ -307,4 +341,8 @@ impl From<&Program> for IrProgram {
                 .collect(),
         }
     }
+}
+
+pub fn resolved_provider(provider: Option<&str>) -> &str {
+    provider.unwrap_or("simulated")
 }

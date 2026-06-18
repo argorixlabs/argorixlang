@@ -130,7 +130,7 @@ fn emits_versioned_v02_ir_with_capabilities() {
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
 
-    assert_eq!(json["ir_version"], "0.9");
+    assert_eq!(json["ir_version"], "0.11");
     assert_eq!(json["language"], "Argorix Lang");
     assert_eq!(json["capabilities"][3]["name"], "runtime.halt");
     assert_eq!(json["capabilities"][3]["requires_approval"], true);
@@ -258,7 +258,7 @@ fn ir_includes_intrinsic_instructions() {
     let ast = parse_source(include_str!("../examples/prompt_defense_v06.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.9");
+    assert_eq!(json["ir_version"], "0.11");
     assert_eq!(
         json["agents"][0]["handlers"][0]["instructions"][0]["op"],
         "intrinsic"
@@ -280,6 +280,247 @@ fn parses_tools_permissions_and_calls() {
         HandlerInstruction::CallTool { ref tool, ref binding }
             if tool.value == "WebSearch" && binding.value == "prompt"
     ));
+}
+
+#[test]
+fn parser_preserves_optional_tool_provider() {
+    let explicit = parse_source(
+        "module P\ncapability web.search { level safe }\ntype I { value: string }\ntype O { value: string }\ntool T { provider simulated capability web.search input I output O }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        explicit.tools[0]
+            .provider
+            .as_ref()
+            .map(|provider| provider.value.as_str()),
+        Some("simulated")
+    );
+
+    let omitted = parse_source(
+        "module P\ncapability web.search { level safe }\ntype I { value: string }\ntype O { value: string }\ntool T { capability web.search input I output O }\n",
+    )
+    .unwrap();
+    assert!(omitted.tools[0].provider.is_none());
+}
+
+#[test]
+fn semantic_checker_resolves_and_validates_tool_providers() {
+    let omitted = "module P\ncapability web.search { level safe }\ntype I { value: string }\ntype O { value: string }\ntool T { capability web.search input I output O }\n";
+    let explicit = "module P\ncapability web.search { level safe }\ntype I { value: string }\ntype O { value: string }\ntool T { provider simulated capability web.search input I output O }\n";
+    check(omitted).unwrap();
+    check(explicit).unwrap();
+
+    let diagnostics = check(include_str!("../examples/tool_invalid_provider.argx")).unwrap_err();
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.message.contains("unsupported provider `real_web`")));
+}
+
+#[test]
+fn semantic_checker_rejects_v010_invalid_model_provider() {
+    let diagnostics =
+        check(include_str!("../examples/model_invalid_provider_v010.argx")).unwrap_err();
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.message.contains("unsupported provider `external_llm`")));
+}
+
+#[test]
+fn parser_recognizes_external_provider_contract_fields() {
+    let ast = parse_source(
+        r#"
+        module Contracts
+        provider OpenAI {
+            kind external
+            enabled false
+            dry_run_only true
+            requires feature_flag
+            requires approval
+        }
+        "#,
+    )
+    .unwrap();
+
+    let provider = &ast.providers[0];
+    assert_eq!(provider.name.value, "OpenAI");
+    assert_eq!(provider.kind.value.as_str(), "external");
+    assert!(!provider.enabled.value);
+    assert!(provider.dry_run_only.value);
+    assert!(provider.requires_feature_flag);
+    assert!(provider.requires_explicit_approval);
+}
+
+#[test]
+fn parser_does_not_expose_reserved_provider_allowlists() {
+    for field in ["allowed_targets", "allowed_capabilities"] {
+        let source = format!(
+            "module Contracts\nprovider OpenAI {{ kind external enabled false dry_run_only true requires feature_flag requires approval {field} {{ Anything }} }}\n"
+        );
+        assert!(parse_source(&source).is_err());
+    }
+}
+
+#[test]
+fn semantic_checker_accepts_disabled_external_provider_contract() {
+    check(
+        r#"
+        module Contracts
+        provider OpenAI {
+            kind external
+            enabled false
+            dry_run_only true
+            requires feature_flag
+            requires approval
+        }
+        "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn semantic_checker_rejects_invalid_external_provider_contracts() {
+    let cases = [
+        (
+            "provider OpenAI { kind external enabled true dry_run_only true requires feature_flag requires approval }",
+            "must be disabled",
+        ),
+        (
+            "provider OpenAI { kind external enabled false dry_run_only false requires feature_flag requires approval }",
+            "dry_run_only true",
+        ),
+        (
+            "provider OpenAI { kind external enabled false dry_run_only true requires approval }",
+            "requires feature_flag",
+        ),
+        (
+            "provider OpenAI { kind external enabled false dry_run_only true requires feature_flag }",
+            "requires approval",
+        ),
+        (
+            "provider simulated { kind external enabled false dry_run_only true requires feature_flag requires approval }",
+            "reserved executable provider",
+        ),
+    ];
+
+    for (declaration, expected) in cases {
+        let diagnostics = check(&format!("module Contracts\n{declaration}\n")).unwrap_err();
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains(expected)),
+            "{diagnostics:?}"
+        );
+    }
+}
+
+#[test]
+fn semantic_checker_rejects_duplicate_provider_contracts() {
+    let declaration = "provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }";
+    let diagnostics =
+        check(&format!("module Contracts\n{declaration}\n{declaration}\n")).unwrap_err();
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("duplicate provider `OpenAI`")));
+}
+
+#[test]
+fn semantic_checker_rejects_external_contract_used_by_model_or_tool() {
+    let provider = "provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }";
+    for declaration in [
+        "model M { provider OpenAI capability model.invoke input I output O }",
+        "tool T { provider OpenAI capability model.invoke input I output O }",
+    ] {
+        let source = format!(
+            "module Contracts\n{provider}\ncapability model.invoke {{ level safe }}\ntype I {{ value: string }}\ntype O {{ value: string }}\n{declaration}\n"
+        );
+        let diagnostics = check(&source).unwrap_err();
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("only `simulated` is allowed")));
+    }
+}
+
+#[test]
+fn ir_and_bytecode_include_declarative_provider_contracts() {
+    let source = r#"
+        module Contracts
+        provider OpenAI {
+            kind external
+            enabled false
+            dry_run_only true
+            requires feature_flag
+            requires approval
+        }
+        type Ping { value: string }
+        agent Worker { receives Ping }
+        protocol Flow { User -> Worker: tell Ping }
+    "#;
+    let ast = parse_source(source).unwrap();
+    check_program(&ast).unwrap();
+    let ir = IrProgram::from(&ast);
+    assert_eq!(ir.ir_version, "0.11");
+    assert_eq!(ir.providers[0].name, "OpenAI");
+    assert_eq!(ir.providers[0].kind, "external");
+    assert!(ir.providers[0].allowed_targets.is_empty());
+    assert!(ir.providers[0].allowed_capabilities.is_empty());
+
+    let bytecode = argorix_bytecode::lower_ir(&ir);
+    assert_eq!(bytecode.bytecode_version, "0.11");
+    assert_eq!(bytecode.providers[0].name, "OpenAI");
+    assert!(bytecode.providers[0].allowed_targets.is_empty());
+    assert!(bytecode.providers[0].allowed_capabilities.is_empty());
+    assert!(matches!(
+        bytecode.instructions.first(),
+        Some(argorix_bytecode::Instruction::DeclareProviderContract {
+            name,
+            kind,
+            enabled: false,
+            dry_run_only: true,
+            requires_feature_flag: true,
+            requires_explicit_approval: true,
+            allowed_targets,
+            allowed_capabilities,
+        }) if name == "OpenAI"
+            && kind == "external"
+            && allowed_targets.is_empty()
+            && allowed_capabilities.is_empty()
+    ));
+    argorix_bytecode::verify_bytecode(&bytecode).unwrap();
+}
+
+#[test]
+fn ir_and_bytecode_make_tool_provider_explicit() {
+    let ast = parse_source(include_str!("../examples/tool_call_v07.argx")).unwrap();
+    check_program(&ast).unwrap();
+    assert!(ast.tools[0].provider.is_none());
+
+    let ir = IrProgram::from(&ast);
+    assert_eq!(ir.ir_version, "0.11");
+    assert_eq!(ir.tools[0].provider, "simulated");
+    assert_eq!(ir.models.len(), 0);
+
+    let bytecode = argorix_bytecode::lower_ir(&ir);
+    assert_eq!(bytecode.bytecode_version, "0.11");
+    assert_eq!(bytecode.tools[0].provider, "simulated");
+    assert!(bytecode.instructions.iter().any(|instruction| matches!(
+        instruction,
+        argorix_bytecode::Instruction::DeclareTool { provider, .. }
+            if provider == "simulated"
+    )));
+}
+
+#[test]
+fn ir_and_bytecode_preserve_model_provider() {
+    let ast = parse_source(include_str!("../examples/model_call_v08.argx")).unwrap();
+    check_program(&ast).unwrap();
+    let ir = IrProgram::from(&ast);
+    assert_eq!(ir.models[0].provider, "simulated");
+    let bytecode = argorix_bytecode::lower_ir(&ir);
+    assert!(bytecode.instructions.iter().any(|instruction| matches!(
+        instruction,
+        argorix_bytecode::Instruction::DeclareModel { provider, .. }
+            if provider == "simulated"
+    )));
 }
 
 #[test]
@@ -366,7 +607,7 @@ fn ir_includes_tools_and_call_instruction() {
     let ast = parse_source(include_str!("../examples/tool_call_v07.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.9");
+    assert_eq!(json["ir_version"], "0.11");
     assert_eq!(json["tools"][0]["name"], "WebSearch");
     assert_eq!(json["agents"][0]["tools"][0], "WebSearch");
     assert_eq!(
@@ -448,7 +689,7 @@ fn ir_includes_models_and_ask() {
     let ast = parse_source(include_str!("../examples/model_call_v08.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.9");
+    assert_eq!(json["ir_version"], "0.11");
     assert_eq!(json["models"][0]["name"], "GuardModel");
     assert_eq!(json["agents"][1]["models"][0], "GuardModel");
     assert_eq!(
@@ -498,7 +739,7 @@ fn parses_and_emits_v09_policies() {
     assert!(ast.failures[0].trace_required);
 
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.9");
+    assert_eq!(json["ir_version"], "0.11");
     assert_eq!(json["assertions"][0]["name"], "no_unhandled_messages");
     assert_eq!(json["failures"][0]["trace"], "required");
 }

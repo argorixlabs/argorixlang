@@ -1,0 +1,10 @@
+module InvalidToolProvider
+capability web.search { level safe }
+type UserPrompt { content: string }
+type ToolResult { content: string }
+tool WebSearch {
+    provider real_web
+    capability web.search
+    input UserPrompt
+    output ToolResult
+}

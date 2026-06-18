@@ -1,12 +1,24 @@
 use crate::{
     BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeModel,
-    BytecodeProgram, BytecodeTool, Instruction,
+    BytecodeProgram, BytecodeProviderContract, BytecodeTool, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
 
 pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     let mut instructions = Vec::new();
+    for provider in &ir.providers {
+        instructions.push(Instruction::DeclareProviderContract {
+            name: provider.name.clone(),
+            kind: provider.kind.clone(),
+            enabled: provider.enabled,
+            dry_run_only: provider.dry_run_only,
+            requires_feature_flag: provider.requires_feature_flag,
+            requires_explicit_approval: provider.requires_explicit_approval,
+            allowed_targets: provider.allowed_targets.clone(),
+            allowed_capabilities: provider.allowed_capabilities.clone(),
+        });
+    }
     for assertion in &ir.assertions {
         instructions.push(Instruction::DeclareAssertion {
             name: assertion.name.clone(),
@@ -41,6 +53,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     for tool in &ir.tools {
         instructions.push(Instruction::DeclareTool {
             name: tool.name.clone(),
+            provider: tool.provider.clone(),
             capability: tool.capability.clone(),
             input: tool.input.clone(),
             output: tool.output.clone(),
@@ -156,9 +169,23 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.9".to_owned(),
+        bytecode_version: "0.11".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
+        providers: ir
+            .providers
+            .iter()
+            .map(|provider| BytecodeProviderContract {
+                name: provider.name.clone(),
+                kind: provider.kind.clone(),
+                enabled: provider.enabled,
+                dry_run_only: provider.dry_run_only,
+                requires_feature_flag: provider.requires_feature_flag,
+                requires_explicit_approval: provider.requires_explicit_approval,
+                allowed_targets: provider.allowed_targets.clone(),
+                allowed_capabilities: provider.allowed_capabilities.clone(),
+            })
+            .collect(),
         assertions: ir
             .assertions
             .iter()
@@ -198,6 +225,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
             .iter()
             .map(|tool| BytecodeTool {
                 name: tool.name.clone(),
+                provider: tool.provider.clone(),
                 capability: tool.capability.clone(),
                 input: tool.input.clone(),
                 output: tool.output.clone(),
@@ -236,6 +264,7 @@ mod tests {
             ir_version: "0.2".into(),
             language: "Argorix Lang".into(),
             module: "Example".into(),
+            providers: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -254,6 +283,7 @@ mod tests {
             types: vec![],
             tools: vec![IrTool {
                 name: "Echo".into(),
+                provider: "simulated".into(),
                 capability: "trace.write".into(),
                 input: "Ping".into(),
                 output: "Pong".into(),
@@ -298,7 +328,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.9");
+        assert_eq!(bytecode.bytecode_version, "0.11");
         assert!(bytecode
             .instructions
             .iter()
