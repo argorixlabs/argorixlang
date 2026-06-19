@@ -1,0 +1,12 @@
+module main
+
+import shared.alpha
+import shared.beta
+
+agent Receiver {
+    receives Ping
+}
+
+protocol Flow {
+    User -> Receiver: tell Ping
+}

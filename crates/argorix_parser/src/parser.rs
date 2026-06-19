@@ -1,13 +1,31 @@
 use crate::{
     ast::{
         AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
-        FieldDecl, HandlerDecl, HandlerInstruction, ModelDecl, Program, ProtocolDecl, ProtocolStep,
-        ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
+        FieldDecl, HandlerDecl, HandlerInstruction, ImportDecl, ModelDecl, Program, ProtocolDecl,
+        ProtocolStep, ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
     span::Spanned,
 };
+
+/// Validate a dotted module path such as `agents.research`.
+///
+/// Each segment must match `[a-zA-Z_][a-zA-Z0-9_]*`. Relative or aliased imports
+/// are not supported in v0.16.
+pub fn is_valid_module_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    name.split('.').all(|segment| {
+        let mut chars = segment.chars();
+        match chars.next() {
+            Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
+            _ => return false,
+        }
+        chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+    })
+}
 
 pub fn parse_source(source: &str) -> Result<Program, Vec<Diagnostic>> {
     let tokens = lex(source)?;
@@ -27,9 +45,19 @@ impl Parser {
     fn parse(mut self) -> Result<Program, Diagnostic> {
         self.expect_keyword("module")?;
         let module = self.expect_identifier("module name")?;
+        if !is_valid_module_name(&module.value) {
+            return Err(Diagnostic::new(
+                format!(
+                    "invalid module name `{}`; module names use dotted identifiers like `agents.research`",
+                    module.value
+                ),
+                module.span,
+            ));
+        }
 
         let mut program = Program {
             module,
+            imports: Vec::new(),
             providers: Vec::new(),
             assertions: Vec::new(),
             failures: Vec::new(),
@@ -44,6 +72,7 @@ impl Parser {
 
         while !self.is_eof() {
             match self.peek_identifier() {
+                Some("import") => program.imports.push(self.parse_import()?),
                 Some("provider") => program.providers.push(self.parse_provider()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
@@ -62,7 +91,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `provider`, `assert`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, or `protocol`",
+                        "expected `import`, `provider`, `assert`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, or `protocol`",
                         self.peek().span,
                     ))
                 }
@@ -70,6 +99,27 @@ impl Parser {
         }
 
         Ok(program)
+    }
+
+    fn parse_import(&mut self) -> Result<ImportDecl, Diagnostic> {
+        self.expect_keyword("import")?;
+        let path = self.expect_identifier("imported module path")?;
+        if !is_valid_module_name(&path.value) {
+            return Err(Diagnostic::new(
+                format!(
+                    "invalid import path `{}`; relative imports are not supported in v0.16",
+                    path.value
+                ),
+                path.span,
+            ));
+        }
+        if self.peek_identifier() == Some("as") {
+            return Err(Diagnostic::new(
+                "import aliases are not supported in v0.16",
+                self.peek().span,
+            ));
+        }
+        Ok(ImportDecl { path })
     }
 
     fn parse_provider(&mut self) -> Result<ProviderDecl, Diagnostic> {
@@ -664,5 +714,43 @@ mod tests {
         assert_eq!(program.types.len(), 1);
         assert_eq!(program.agents.len(), 1);
         assert_eq!(program.protocols[0].steps.len(), 1);
+    }
+
+    #[test]
+    fn parses_import_statements() {
+        let source = r#"
+            module app.main
+            import agents.research
+            import policies.default
+            type Ping { content: string }
+            agent Receiver { receives Ping }
+            protocol Flow { User -> Receiver: tell Ping }
+        "#;
+        let program = parse_source(source).unwrap();
+        assert_eq!(program.module.value, "app.main");
+        assert_eq!(program.imports.len(), 2);
+        assert_eq!(program.imports[0].path.value, "agents.research");
+        assert_eq!(program.imports[1].path.value, "policies.default");
+    }
+
+    #[test]
+    fn rejects_import_alias() {
+        let source = "module main\nimport agents.research as research\n";
+        let diagnostics = parse_source(source).unwrap_err();
+        assert!(diagnostics[0].message.contains("aliases are not supported"));
+    }
+
+    #[test]
+    fn rejects_relative_import_syntax() {
+        let source = "module main\nimport ./agents/research\n";
+        // The lexer rejects `.` and `/` before the parser ever sees the path.
+        assert!(parse_source(source).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_module_name() {
+        let source = "module agents..research\n";
+        let diagnostics = parse_source(source).unwrap_err();
+        assert!(diagnostics[0].message.contains("invalid module name"));
     }
 }

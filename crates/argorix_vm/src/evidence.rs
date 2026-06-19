@@ -13,6 +13,10 @@ pub struct EvidenceBundle {
     pub bundle_version: String,
     pub language: String,
     pub module: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<argorix_bytecode::BytecodeModule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<argorix_bytecode::BytecodeModuleImport>,
     pub bytecode_version: String,
     pub vm_version: String,
     pub report_version: String,
@@ -68,9 +72,11 @@ impl EvidenceBundle {
     ) -> Result<Self, EvidenceError> {
         let trace = outcome.result.as_ref().ok();
         Ok(Self {
-            bundle_version: "0.15".into(),
+            bundle_version: "0.16".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
+            modules: bytecode.modules.clone(),
+            imports: bytecode.imports.clone(),
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: report.vm_version.clone(),
             report_version: report.report_version.clone(),
@@ -112,7 +118,7 @@ pub fn verify_evidence(bundle_path: &Path) -> Result<EvidenceVerificationResult,
     let mut checks = Checks::default();
 
     checks.record(
-        matches!(bundle.bundle_version.as_str(), "0.14" | "0.15"),
+        matches!(bundle.bundle_version.as_str(), "0.14" | "0.15" | "0.16"),
         "unsupported bundle_version",
     );
     checks.record(

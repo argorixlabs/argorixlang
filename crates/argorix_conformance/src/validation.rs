@@ -6,7 +6,7 @@ use std::{
 };
 use thiserror::Error;
 
-pub const STAGES: [&str; 10] = [
+pub const STAGES: [&str; 14] = [
     "parse",
     "semantic_check",
     "emit_ir",
@@ -17,9 +17,13 @@ pub const STAGES: [&str; 10] = [
     "trace_out",
     "evidence_bundle",
     "verify_evidence",
+    "resolve_package",
+    "check_package",
+    "emit_ir_package",
+    "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 13] = [
+pub const CATEGORIES: [&str; 17] = [
     "parser",
     "semantics",
     "ir",
@@ -33,6 +37,10 @@ pub const CATEGORIES: [&str; 13] = [
     "evidence_bundle",
     "offline_verification",
     "compatibility",
+    "modules",
+    "package",
+    "module_graph",
+    "multi_file_semantics",
 ];
 
 #[derive(Debug, Error)]
@@ -46,9 +54,9 @@ pub fn validate_suite(
     suite_path: &Path,
 ) -> Result<(), ConformanceValidationError> {
     let mut errors = Vec::new();
-    if suite.suite_version != "0.15" {
+    if suite.suite_version != "0.16" {
         errors.push(format!(
-            "suite_version must be `0.15`, found `{}`",
+            "suite_version must be `0.16`, found `{}`",
             suite.suite_version
         ));
     }
@@ -133,16 +141,25 @@ fn validate_case(case: &ConformanceCase, suite_path: &Path, errors: &mut Vec<Str
     for (stage, dependency) in [
         ("semantic_check", "parse"),
         ("emit_ir", "semantic_check"),
-        ("emit_bytecode", "emit_ir"),
         ("run_vm", "verify_bytecode"),
         ("security_report", "run_vm"),
         ("trace_out", "run_vm"),
         ("evidence_bundle", "security_report"),
         ("evidence_bundle", "trace_out"),
         ("verify_evidence", "evidence_bundle"),
+        ("check_package", "resolve_package"),
+        ("emit_ir_package", "check_package"),
+        ("graph_package", "resolve_package"),
     ] {
         validate_dependency(case, stage, dependency, errors);
     }
+    // `emit_bytecode` may be produced from a single-file IR or a package IR.
+    validate_dependency_any(
+        case,
+        "emit_bytecode",
+        &["emit_ir", "emit_ir_package"],
+        errors,
+    );
     if case.stages.iter().any(|stage| stage == "verify_bytecode")
         && !case.stages.iter().any(|stage| stage == "emit_bytecode")
         && case.bytecode_path.is_none()
@@ -152,15 +169,26 @@ fn validate_case(case: &ConformanceCase, suite_path: &Path, errors: &mut Vec<Str
             case.id
         ));
     }
-    if case.stages.iter().any(|stage| {
-        matches!(
-            stage.as_str(),
-            "parse" | "semantic_check" | "emit_ir" | "emit_bytecode"
-        )
-    }) && case.source_path.is_none()
+    if case
+        .stages
+        .iter()
+        .any(|stage| matches!(stage.as_str(), "parse" | "semantic_check" | "emit_ir"))
+        && case.source_path.is_none()
     {
         errors.push(format!(
             "case `{}` source stages require source_path",
+            case.id
+        ));
+    }
+    if case.stages.iter().any(|stage| {
+        matches!(
+            stage.as_str(),
+            "resolve_package" | "check_package" | "emit_ir_package" | "graph_package"
+        )
+    }) && case.manifest_path.is_none()
+    {
+        errors.push(format!(
+            "case `{}` package stages require manifest_path",
             case.id
         ));
     }
@@ -227,6 +255,7 @@ fn validate_case(case: &ConformanceCase, suite_path: &Path, errors: &mut Vec<Str
     for (label, path) in [
         ("source_path", case.source_path.as_deref()),
         ("bytecode_path", case.bytecode_path.as_deref()),
+        ("manifest_path", case.manifest_path.as_deref()),
     ] {
         if let Some(path) = path {
             match resolve_fixture_path(suite_path, path) {
@@ -255,6 +284,31 @@ fn validate_dependency(
         errors.push(format!(
             "case `{}` {stage} requires earlier stage `{dependency}`",
             case.id
+        ));
+    }
+}
+
+/// Validate that `stage` is preceded by at least one of the alternative producers.
+fn validate_dependency_any(
+    case: &ConformanceCase,
+    stage: &str,
+    dependencies: &[&str],
+    errors: &mut Vec<String>,
+) {
+    let Some(stage_index) = case.stages.iter().position(|item| item == stage) else {
+        return;
+    };
+    let satisfied = dependencies.iter().any(|dependency| {
+        case.stages
+            .iter()
+            .position(|item| item == dependency)
+            .is_some_and(|index| index < stage_index)
+    });
+    if !satisfied {
+        errors.push(format!(
+            "case `{}` {stage} requires an earlier stage among [{}]",
+            case.id,
+            dependencies.join(", ")
         ));
     }
 }

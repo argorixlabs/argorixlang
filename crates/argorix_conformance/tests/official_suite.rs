@@ -9,16 +9,16 @@ fn temp_workdir() -> PathBuf {
 }
 
 #[test]
-fn official_v015_suite_passes_and_records_blocked_external_execution() {
+fn official_v016_suite_passes_and_records_blocked_external_execution() {
     let suite_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../conformance/suite.v015.json");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../conformance/suite.v016.json");
     let suite: ConformanceSuite = serde_json::from_slice(&fs::read(&suite_path).unwrap()).unwrap();
     let workdir = temp_workdir();
 
     let result = run_suite(&suite, &suite_path, &workdir).unwrap();
 
     assert!(result.passed, "{:?}", result.failures);
-    assert_eq!(result.cases_total, 29);
+    assert_eq!(result.cases_total, 44);
     let report: serde_json::Value = serde_json::from_slice(
         &fs::read(workdir.join("external-provider-blocked-reportable/run.security.json")).unwrap(),
     )

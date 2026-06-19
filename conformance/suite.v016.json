@@ -1,5 +1,5 @@
 {
-  "suite_version": "0.15",
+  "suite_version": "0.16",
   "cases": [
     {
       "id": "minimal-protocol-parses",
@@ -9,6 +9,15 @@
       "stages": ["parse"]
     },
     {
+      "id": "invalid-module-name-rejected",
+      "name": "Invalid module name is rejected",
+      "category": "parser",
+      "source_path": "sources/invalid_module_name.argx",
+      "stages": ["parse"],
+      "expected_failure_stage": "parse",
+      "expected_failure_contains": "invalid module name"
+    },
+    {
       "id": "capability-registry-valid",
       "name": "Capability registry validates",
       "category": "semantics",
@@ -16,17 +25,17 @@
       "stages": ["parse", "semantic_check"]
     },
     {
-      "id": "current-ir-v015",
-      "name": "Current source emits IR 0.15",
+      "id": "current-ir-v016",
+      "name": "Current source emits IR 0.16",
       "category": "ir",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir"]
     },
     {
-      "id": "current-bytecode-v015",
-      "name": "Current source emits and verifies Bytecode 0.15",
+      "id": "current-bytecode-v016",
+      "name": "Current source emits and verifies Bytecode 0.16",
       "category": "bytecode",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode"]
     },
     {
@@ -41,7 +50,7 @@
       "id": "policy-assertions-pass",
       "name": "Policy assertions pass under VM execution",
       "category": "policy",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report"],
       "injection": "User:ResearchAgent:tell:UserPrompt"
     },
@@ -98,7 +107,7 @@
       "id": "offline-verification-intact",
       "name": "Intact evidence verifies offline",
       "category": "offline_verification",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
       "injection": "User:ResearchAgent:tell:UserPrompt"
     },
@@ -109,6 +118,14 @@
       "bytecode_path": "bytecode/reactive_v014.argbc.json",
       "stages": ["verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
       "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "single-file-v016-full-pipeline",
+      "name": "Single-file v0.16 source completes the full pipeline",
+      "category": "compatibility",
+      "source_path": "sources/provider_allowlists_v016.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:ResearchAgent:tell:UserPrompt"
     },
     {
       "id": "unknown-capability-rejected",
@@ -213,7 +230,7 @@
       "id": "bytecode-provider-declaration-mismatch",
       "name": "Mutated provider collection and instruction mismatch is rejected",
       "category": "bytecode",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode"],
       "mutation": {
         "before_stage": "verify_bytecode",
@@ -228,7 +245,7 @@
       "id": "external-provider-blocked-reportable",
       "name": "External provider execution is blocked and remains reportable",
       "category": "provider_boundary",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
       "injection": "User:ResearchAgent:tell:UserPrompt",
       "mutation": {
@@ -242,7 +259,7 @@
       "id": "evidence-report-tamper",
       "name": "Evidence verification fails when report changes",
       "category": "offline_verification",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
       "injection": "User:ResearchAgent:tell:UserPrompt",
       "mutation": {
@@ -258,7 +275,7 @@
       "id": "evidence-bytecode-tamper",
       "name": "Evidence verification fails when Bytecode changes",
       "category": "offline_verification",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
       "injection": "User:ResearchAgent:tell:UserPrompt",
       "mutation": {
@@ -274,7 +291,7 @@
       "id": "evidence-ledger-tamper",
       "name": "Evidence verification fails when ledger digest changes",
       "category": "offline_verification",
-      "source_path": "sources/provider_allowlists_v015.argx",
+      "source_path": "sources/provider_allowlists_v016.argx",
       "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
       "injection": "User:ResearchAgent:tell:UserPrompt",
       "mutation": {
@@ -285,6 +302,113 @@
       },
       "expected_failure_stage": "verify_evidence",
       "expected_failure_contains": "ledger_digest mismatch"
+    },
+    {
+      "id": "package-check-works",
+      "name": "Package resolves and passes whole-package semantics",
+      "category": "package",
+      "manifest_path": "modules/project/argorix.toml",
+      "stages": ["resolve_package", "check_package"]
+    },
+    {
+      "id": "package-emit-ir-works",
+      "name": "Package emits IR 0.16 with module metadata",
+      "category": "modules",
+      "manifest_path": "modules/project/argorix.toml",
+      "stages": ["resolve_package", "check_package", "emit_ir_package"]
+    },
+    {
+      "id": "package-emit-bytecode-works",
+      "name": "Package emits and verifies Bytecode 0.16 with module metadata",
+      "category": "package",
+      "manifest_path": "modules/project/argorix.toml",
+      "stages": ["resolve_package", "check_package", "emit_ir_package", "emit_bytecode", "verify_bytecode"]
+    },
+    {
+      "id": "package-graph-works",
+      "name": "Package graph resolves deterministically",
+      "category": "module_graph",
+      "manifest_path": "modules/project/argorix.toml",
+      "stages": ["resolve_package", "graph_package"]
+    },
+    {
+      "id": "multi-file-protocol-references-imported-agents",
+      "name": "Multi-file protocol references agents from imported modules",
+      "category": "multi_file_semantics",
+      "manifest_path": "modules/project/argorix.toml",
+      "stages": ["resolve_package", "check_package", "emit_ir_package", "emit_bytecode", "verify_bytecode", "run_vm", "security_report"],
+      "injection": "User:ResearchAgent:tell:UserPrompt"
+    },
+    {
+      "id": "multi-file-evidence-preserves-module-metadata",
+      "name": "Evidence pipeline preserves module metadata from a package",
+      "category": "multi_file_semantics",
+      "manifest_path": "modules/project/argorix.toml",
+      "stages": ["resolve_package", "check_package", "emit_ir_package", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:ResearchAgent:tell:UserPrompt"
+    },
+    {
+      "id": "unknown-import-rejected",
+      "name": "Unknown import is rejected",
+      "category": "modules",
+      "manifest_path": "modules/unknown_import/argorix.toml",
+      "stages": ["resolve_package"],
+      "expected_failure_stage": "resolve_package",
+      "expected_failure_contains": "unknown module"
+    },
+    {
+      "id": "cyclic-import-rejected",
+      "name": "Cyclic import is rejected",
+      "category": "modules",
+      "manifest_path": "modules/cyclic_import/argorix.toml",
+      "stages": ["resolve_package"],
+      "expected_failure_stage": "resolve_package",
+      "expected_failure_contains": "cyclic import"
+    },
+    {
+      "id": "duplicate-module-rejected",
+      "name": "Duplicate module is rejected",
+      "category": "modules",
+      "manifest_path": "modules/duplicate_module/argorix.toml",
+      "stages": ["resolve_package"],
+      "expected_failure_stage": "resolve_package",
+      "expected_failure_contains": "duplicate module"
+    },
+    {
+      "id": "module-path-mismatch-rejected",
+      "name": "Module path mismatch is rejected",
+      "category": "modules",
+      "manifest_path": "modules/module_path_mismatch/argorix.toml",
+      "stages": ["resolve_package"],
+      "expected_failure_stage": "resolve_package",
+      "expected_failure_contains": "path requires"
+    },
+    {
+      "id": "import-outside-root-rejected",
+      "name": "Import outside the project root is rejected",
+      "category": "modules",
+      "manifest_path": "modules/import_outside_root/argorix.toml",
+      "stages": ["resolve_package"],
+      "expected_failure_stage": "resolve_package",
+      "expected_failure_contains": "outside the project root"
+    },
+    {
+      "id": "package-missing-entry-rejected",
+      "name": "Package missing entry is rejected",
+      "category": "package",
+      "manifest_path": "modules/missing_entry/argorix.toml",
+      "stages": ["resolve_package"],
+      "expected_failure_stage": "resolve_package",
+      "expected_failure_contains": "entry.main"
+    },
+    {
+      "id": "duplicate-global-symbol-rejected",
+      "name": "Duplicate global symbol across modules is rejected",
+      "category": "multi_file_semantics",
+      "manifest_path": "modules/duplicate_global_symbol/argorix.toml",
+      "stages": ["resolve_package", "check_package"],
+      "expected_failure_stage": "check_package",
+      "expected_failure_contains": "duplicate type"
     }
   ]
 }

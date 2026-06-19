@@ -13,6 +13,8 @@ pub struct ConformanceCase {
     pub category: String,
     pub source_path: Option<String>,
     pub bytecode_path: Option<String>,
+    #[serde(default)]
+    pub manifest_path: Option<String>,
     pub stages: Vec<String>,
     pub injection: Option<String>,
     pub mutation: Option<ConformanceMutation>,

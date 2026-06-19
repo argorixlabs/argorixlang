@@ -44,22 +44,25 @@ source language
 
 ## Current status
 
-**Version:** `0.15`
+**Version:** `0.16`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version 0.15 adds an official, portable Conformance Suite for the compiler,
-Bytecode verifier, VM, security reports, and evidence pipeline. External
+Version 0.16 adds a local Module / Package System: multi-file projects with
+deterministic, auditable import resolution. Modules are explicit, never
+implicit — there is no remote registry, no external dependencies, and no
+network. Single-file compilation continues to work unchanged, and external
 providers remain disabled and cannot execute.
 
 ```text
-.argx
+argorix.toml + src/*.argx
+  -> module resolution (deterministic graph)
+  -> whole-package semantic and security verification
   -> lexer / parser / AST
-  -> semantic and security verification
-  -> Argorix IR 0.15
-  -> Argorix Bytecode 0.15
+  -> Argorix IR 0.16 (with module metadata)
+  -> Argorix Bytecode 0.16 (with module metadata)
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -138,6 +141,17 @@ cargo run -p argorixc -- capabilities examples/prompt_defense_v02.argx
 cargo run -p argorixc -- emit-bytecode examples/prompt_defense_v02.argx
 cargo run -p argorixc -- verify-bytecode examples/prompt_defense_v02.argx
 ```
+
+Package commands (multi-file projects, v0.16):
+
+```bash
+cargo run -p argorixc -- check-package examples/module_project/argorix.toml
+cargo run -p argorixc -- emit-ir-package examples/module_project/argorix.toml
+cargo run -p argorixc -- emit-bytecode-package examples/module_project/argorix.toml
+cargo run -p argorixc -- graph-package examples/module_project
+```
+
+Each package command also accepts a directory and looks for `argorix.toml`.
 
 Latest provider allowlist example:
 
@@ -389,6 +403,153 @@ Conformance paths resolve from the suite, not from the shell.
 ```
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
+
+## Argorix Lang v0.16 Module / Package System
+
+Version 0.16 lets a protocol grow from a single file into a structured,
+multi-file project without making any dependency implicit.
+
+```text
+Secure agent protocols must be modular without becoming implicit.
+```
+
+### What is a module?
+
+A module is a single `.argx` file that declares exactly one `module` name. The
+name is a dotted identifier (`agents.research`) that must match the file's path
+relative to `src/`:
+
+```text
+src/agents/research.argx   ->   module agents.research
+src/policies/default.argx  ->   module policies.default
+src/main.argx              ->   module main      (or module app.main)
+```
+
+Module names match `[a-zA-Z_][a-zA-Z0-9_]*(.[a-zA-Z_][a-zA-Z0-9_]*)*`.
+
+### What is a local package?
+
+A package is a directory with an `argorix.toml` manifest and a `src/` tree:
+
+```toml
+[package]
+name = "argorix-example"
+version = "0.16.0"
+
+[entry]
+main = "src/main.argx"
+```
+
+`argorix.toml` is optional for compiling a single file, and required for
+multi-file compilation by package root. `entry.main` names the entry file, and
+every path is relative to the manifest directory. There are no absolute paths
+and no external dependencies.
+
+### Imports
+
+Imports are declared at the top level, right after the `module` declaration:
+
+```argx
+module app.main
+
+import agents.research
+import agents.reviewer
+import policies.default
+import providers.contracts
+import tools.search
+
+protocol ProviderDefense {
+    User -> ResearchAgent: tell UserPrompt
+    ResearchAgent -> PolicyJudge: propose ToolResult
+    PolicyJudge -> RuntimeGate: commit Decision
+}
+```
+
+Each `import agents.research` resolves deterministically to
+`src/agents/research.argx`. After resolution, the top-level declarations of
+every reachable module (types, enums, agents, tools, models, providers,
+policies, protocols) become globally visible. A protocol in one module may
+reference agents defined in imported modules, and an imported provider contract
+or policy applies to the whole package.
+
+### How imports resolve
+
+Resolution starts from the entry module and walks imports into a deterministic
+graph. The resolver rejects:
+
+- unknown imports (no matching file under `src/`),
+- cyclic imports,
+- duplicate modules,
+- a module whose declared name does not match its path,
+- files outside the project root,
+- duplicate global symbols across modules (no silent shadowing).
+
+Diagnostics never contain absolute paths and never depend on the current
+working directory.
+
+### Compiling a single file
+
+```bash
+cargo run -p argorixc -- check examples/provider_allowlists_v016.argx
+cargo run -p argorixc -- emit-bytecode examples/provider_allowlists_v016.argx
+```
+
+### Compiling a package
+
+```bash
+cargo run -p argorixc -- check-package examples/module_project/argorix.toml
+cargo run -p argorixc -- emit-ir-package examples/module_project/argorix.toml
+cargo run -p argorixc -- emit-bytecode-package examples/module_project/argorix.toml
+cargo run -p argorixc -- graph-package examples/module_project
+```
+
+`emit-ir-package` and `emit-bytecode-package` attach module metadata:
+
+```json
+{
+  "ir_version": "0.16",
+  "module": "app.main",
+  "modules": [{ "name": "agents.research", "path": "src/agents/research.argx" }],
+  "imports": [{ "from": "app.main", "to": "agents.research" }]
+}
+```
+
+The VM, security report, and evidence bundle preserve this module metadata when
+it is present, so multi-file evidence remains independently verifiable.
+
+### Viewing the module graph
+
+```text
+app.main
+├── agents.research
+├── agents.reviewer
+├── policies.default
+├── providers.contracts
+└── tools.search
+```
+
+### Why no remote package registry yet?
+
+v0.16 is deliberately offline. A remote registry, package downloads, external
+dependencies, and secrets are explicitly out of scope: a secure agent protocol
+must remain independently auditable, and remote resolution would make
+dependencies implicit and unverifiable. The module system is the local,
+deterministic foundation those features would later build on.
+
+### Security rules and limitations
+
+- No relative imports (`import ./agents/research`).
+- No import aliases (`import agents.research as research`).
+- No remote registry, package downloads, or external dependencies.
+- No absolute paths in manifests.
+- `simulated` remains the only executable provider; external providers stay
+  disabled and non-executable in multi-file projects exactly as in single-file
+  ones.
+
+```text
+Secure agent protocols must be modular without becoming implicit.
+```
+
 ## Provider contract allowlists v0.12
 
 External provider contracts may declare future target and capability permissions:
@@ -820,9 +981,10 @@ Lowering emits declarations and security requirements before protocol message in
 
 The verifier requires:
 
-- Bytecode version `0.15` for newly compiled programs. Versions `0.3`, `0.5`,
-  `0.6`, `0.7`, `0.8`, `0.9`, `0.10`, `0.11`, `0.12`, `0.13`, and `0.14`
-  remain accepted for compatibility.
+- Bytecode version `0.16` for newly compiled programs. Versions `0.3`, `0.5`,
+  `0.6`, `0.7`, `0.8`, `0.9`, `0.10`, `0.11`, `0.12`, `0.13`, `0.14`, and `0.15`
+  remain accepted for compatibility. Module metadata (`modules`/`imports`)
+  requires version `0.16`.
 - At least one agent.
 - At least one protocol or `SendMessage`.
 - Complete, non-empty message fields.
@@ -864,7 +1026,7 @@ No network calls, tools, LLMs, or concurrent tasks are executed.
 Example text output:
 
 ```text
-Argorix VM v0.15
+Argorix VM v0.16
 
 Loaded bytecode: examples/prompt_defense.argbc.json
 Execution mode: dry-run
@@ -917,7 +1079,7 @@ Runtime status progresses through:
 - `completed`
 - `failed`
 
-Reactive JSON uses `vm_version: "0.15"` and
+Reactive JSON uses `vm_version: "0.16"` and
 `mode: "reactive-dry-run"`. Each step records the agent, handled message,
 emitted messages, traced bindings, and whether the handler halted execution.
 
@@ -1003,8 +1165,9 @@ cargo run -p argorixc -- --legacy-capabilities check examples/prompt_defense.arg
 crates/argorixc          Source compiler CLI
 crates/argorix_parser    Lexer, parser, AST, spans, diagnostics
 crates/argorix_semantics Source-level security and protocol verifier
-crates/argorix_ir          Argorix IR 0.15 with provider contract allowlists
-crates/argorix_bytecode    IR lowering and Bytecode 0.3 through 0.15 verifier
+crates/argorix_ir          Argorix IR 0.16 with module metadata
+crates/argorix_bytecode    IR lowering and Bytecode 0.3 through 0.16 verifier
+crates/argorix_module      Manifest parsing and deterministic module resolution
 crates/argorix_conformance Official direct-API Conformance Suite runner
 crates/argorix_provider  Executable providers, adapter contracts, and registry
 crates/argorix_vm        VM, preserved outcomes, ledger, security reports
@@ -1040,7 +1203,11 @@ tests                    End-to-end compiler tests
 - `provider_allowlists_v014.argbc.json`: generated Bytecode 0.14 evidence fixture.
 - `provider_allowlists_v015.argx`: Conformance Suite release source fixture.
 - `provider_allowlists_v015.argbc.json`: generated Bytecode 0.15 fixture.
-- `conformance/suite.v015.json`: official portable v0.15 suite.
+- `provider_allowlists_v016.argx`: single-file v0.16 source fixture.
+- `provider_allowlists_v016.argbc.json`: generated Bytecode 0.16 fixture.
+- `module_project/`: multi-file v0.16 package (`argorix.toml` + `src/`).
+- `invalid_modules/`: package fixtures for each module-resolution failure.
+- `conformance/suite.v016.json`: official portable v0.16 suite.
 - `provider_allowlists_tools_v012.argx`: valid tool allowlist contract.
 - `provider_allowlists_tools_v012.argbc.json`: generated Bytecode 0.12 tool fixture.
 
@@ -1083,9 +1250,10 @@ tests                    End-to-end compiler tests
 13. `v0.13` — preserved execution outcomes and deterministic security reports.
 14. `v0.14` — portable Evidence Bundles and offline semantic verification.
 15. `v0.15` — official portable, data-driven Conformance Suite.
-16. `v0.16+` — sandboxed provider work.
-17. Optional WASM/native backends.
-18. Progressive self-hosting in Argorix Lang.
+16. `v0.16` — local Module / Package System with deterministic resolution.
+17. `v0.17+` — sandboxed provider work.
+18. Optional WASM/native backends.
+19. Progressive self-hosting in Argorix Lang.
 
 ## Security posture
 

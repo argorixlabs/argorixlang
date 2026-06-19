@@ -1,0 +1,15 @@
+module tools.search
+
+tool WebSearch {
+    provider simulated
+    capability web.search
+    input UserPrompt
+    output ToolResult
+}
+
+model GuardModel {
+    provider simulated
+    capability model.invoke
+    input ToolResult
+    output Decision
+}

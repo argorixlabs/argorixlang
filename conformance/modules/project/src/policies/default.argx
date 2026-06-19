@@ -1,0 +1,19 @@
+module policies.default
+
+capability web.search { level restricted requires approval }
+capability model.invoke { level restricted requires approval }
+capability trace.write { level safe }
+capability state.write { level safe }
+capability runtime.guard { level safe }
+capability runtime.halt { level restricted requires approval }
+
+assert no_unhandled_messages
+assert all_tool_calls_traced
+assert all_model_calls_traced
+assert all_intrinsics_traced
+assert halt_requires_trace
+assert runtime_status completed
+
+failure PolicyViolation { action block trace required }
+failure ToolDenied { action review trace required }
+failure ModelDenied { action review trace required }

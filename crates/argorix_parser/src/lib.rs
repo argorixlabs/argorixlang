@@ -6,4 +6,4 @@ pub mod span;
 
 pub use ast::Program;
 pub use diagnostics::Diagnostic;
-pub use parser::parse_source;
+pub use parser::{is_valid_module_name, parse_source};

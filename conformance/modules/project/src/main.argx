@@ -1,0 +1,17 @@
+module app.main
+
+import agents.research
+import agents.reviewer
+import policies.default
+import providers.contracts
+import tools.search
+
+type UserPrompt { content: string }
+type ToolResult { content: string }
+type Decision { action: string reason: string }
+
+protocol ProviderDefense {
+    User -> ResearchAgent: tell UserPrompt
+    ResearchAgent -> PolicyJudge: propose ToolResult
+    PolicyJudge -> RuntimeGate: commit Decision
+}

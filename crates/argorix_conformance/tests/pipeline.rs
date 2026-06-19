@@ -4,7 +4,7 @@ use argorix_conformance::{
 };
 use std::{fs, path::PathBuf};
 
-const CATEGORIES: [&str; 13] = [
+const CATEGORIES: [&str; 17] = [
     "parser",
     "semantics",
     "ir",
@@ -18,6 +18,10 @@ const CATEGORIES: [&str; 13] = [
     "evidence_bundle",
     "offline_verification",
     "compatibility",
+    "modules",
+    "package",
+    "module_graph",
+    "multi_file_semantics",
 ];
 
 fn temp_root(name: &str) -> PathBuf {
@@ -34,6 +38,7 @@ fn basic_case(id: &str, category: &str) -> ConformanceCase {
         category: category.into(),
         source_path: Some("sources/program.argx".into()),
         bytecode_path: None,
+        manifest_path: None,
         stages: vec!["parse".into()],
         injection: None,
         mutation: None,
@@ -61,7 +66,7 @@ fn suite_with(root: &std::path::Path, special: ConformanceCase) -> (ConformanceS
     cases[category_index] = special;
     (
         ConformanceSuite {
-            suite_version: "0.15".into(),
+            suite_version: "0.16".into(),
             cases,
         },
         root.join("suite.v015.json"),
@@ -78,6 +83,7 @@ fn executes_source_pipeline_and_writes_ir_and_bytecode_in_case_workdir() {
         category: "bytecode".into(),
         source_path: Some("sources/program.argx".into()),
         bytecode_path: None,
+        manifest_path: None,
         stages: vec![
             "parse".into(),
             "semantic_check".into(),
@@ -123,6 +129,7 @@ fn executes_vm_report_trace_bundle_and_offline_verification() {
         category: "evidence_bundle".into(),
         source_path: Some("sources/program.argx".into()),
         bytecode_path: None,
+        manifest_path: None,
         stages: vec![
             "parse".into(),
             "semantic_check".into(),

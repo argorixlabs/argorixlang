@@ -1,0 +1,6 @@
+[package]
+name = "import-outside-root"
+version = "0.16.0"
+
+[entry]
+main = "../escape/main.argx"

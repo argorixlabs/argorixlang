@@ -1,0 +1,3 @@
+module app.main
+
+type Pong { content: string }

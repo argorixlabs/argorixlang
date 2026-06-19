@@ -7,7 +7,7 @@ use serde_json::json;
 #[test]
 fn suite_deserializes_approved_case_schema() {
     let suite: ConformanceSuite = serde_json::from_value(json!({
-        "suite_version": "0.15",
+        "suite_version": "0.16",
         "cases": [{
             "id": "evidence-report-tamper",
             "name": "Evidence verification fails when report changes",
@@ -28,7 +28,7 @@ fn suite_deserializes_approved_case_schema() {
     }))
     .unwrap();
 
-    assert_eq!(suite.suite_version, "0.15");
+    assert_eq!(suite.suite_version, "0.16");
     assert_eq!(
         suite.cases[0].mutation.as_ref().unwrap().artifact,
         "security_report"
@@ -42,7 +42,7 @@ fn suite_deserializes_approved_case_schema() {
 #[test]
 fn result_serializes_stably_with_case_and_stage_results() {
     let result = ConformanceResult {
-        suite_version: "0.15".into(),
+        suite_version: "0.16".into(),
         passed: false,
         cases_total: 1,
         cases_passed: 0,
@@ -73,7 +73,7 @@ fn result_serializes_stably_with_case_and_stage_results() {
     };
 
     let value = serde_json::to_value(&result).unwrap();
-    assert_eq!(value["suite_version"], "0.15");
+    assert_eq!(value["suite_version"], "0.16");
     assert_eq!(value["case_results"][0]["stages"][1]["status"], "failed");
     assert_eq!(value["failures"][0]["case_id"], "broken");
 }

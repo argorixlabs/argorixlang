@@ -1,0 +1,3 @@
+module shared.alpha
+
+type Ping { content: string }

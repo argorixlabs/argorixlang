@@ -1,0 +1,6 @@
+[package]
+name = "duplicate-global-symbol"
+version = "0.16.0"
+
+[entry]
+main = "src/main.argx"

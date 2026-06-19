@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use argorix_bytecode::{lower_ir, verify_bytecode, Instruction};
 use argorix_ir::IrProgram;
+use argorix_module::{check_package, package_ir, resolve_package, ModuleGraph, ResolvedPackage};
 use argorix_parser::{parse_source, Diagnostic, Program};
 use argorix_semantics::{check_program_with_options, CheckOptions};
 use clap::{Parser, Subcommand};
@@ -34,6 +35,14 @@ enum Command {
     EmitBytecode { file: PathBuf },
     /// Compile and verify Argorix Bytecode.
     VerifyBytecode { file: PathBuf },
+    /// Validate a multi-file package from its `argorix.toml` manifest (or directory).
+    CheckPackage { manifest: PathBuf },
+    /// Compile a package into Argorix IR JSON with module metadata.
+    EmitIrPackage { manifest: PathBuf },
+    /// Compile a package into Argorix Bytecode JSON with module metadata.
+    EmitBytecodePackage { manifest: PathBuf },
+    /// Print the deterministic module graph of a package.
+    GraphPackage { manifest: PathBuf },
 }
 
 fn main() {
@@ -51,7 +60,7 @@ fn run() -> Result<()> {
     match cli.command {
         Command::Check { file } => {
             let compiled = compile(&file, options)?;
-            println!("Argorix Lang compiler v0.15\n");
+            println!("Argorix Lang compiler v0.16\n");
             println!("File: {}", file.display());
             println!("Status: OK\n");
             println!("Module: {}", compiled.program.module.value);
@@ -117,7 +126,7 @@ fn run() -> Result<()> {
                 .filter(|instruction| matches!(instruction, Instruction::DeclareProtocol { .. }))
                 .count();
 
-            println!("Argorix Bytecode verification v0.15\n");
+            println!("Argorix Bytecode verification v0.16\n");
             println!("File: {}", file.display());
             println!("Status: OK\n");
             println!("Bytecode version: {}", bytecode.bytecode_version);
@@ -125,8 +134,69 @@ fn run() -> Result<()> {
             println!("Agents: {}", bytecode.agents.len());
             println!("Protocols: {protocols}");
         }
+        Command::CheckPackage { manifest } => {
+            let package = resolve_package_arg(&manifest)?;
+            let merged = check_package_program(&package)?;
+            println!("Argorix Lang compiler v0.16\n");
+            println!("Package entry: {}", package.graph.entry);
+            println!("Modules: {}", package.graph.modules.len());
+            println!("Imports: {}", package.graph.imports.len());
+            println!("Agents: {}", merged.agents.len());
+            println!("Protocols: {}", merged.protocols.len());
+            println!("Semantic checks: passed");
+        }
+        Command::EmitIrPackage { manifest } => {
+            let package = resolve_package_arg(&manifest)?;
+            let merged = check_package_program(&package)?;
+            let ir = package_ir(&merged, &package.graph);
+            println!("{}", serde_json::to_string_pretty(&ir)?);
+        }
+        Command::EmitBytecodePackage { manifest } => {
+            let package = resolve_package_arg(&manifest)?;
+            let merged = check_package_program(&package)?;
+            let ir = package_ir(&merged, &package.graph);
+            let bytecode = lower_ir(&ir);
+            verify_bytecode(&bytecode).map_err(bytecode_errors)?;
+            println!("{}", serde_json::to_string_pretty(&bytecode)?);
+        }
+        Command::GraphPackage { manifest } => {
+            let package = resolve_package_arg(&manifest)?;
+            print_module_graph(&package.graph);
+        }
     }
     Ok(())
+}
+
+/// Resolve a package from a manifest path or a directory containing `argorix.toml`.
+fn resolve_package_arg(manifest: &Path) -> Result<ResolvedPackage> {
+    let manifest_path = if manifest.is_dir() {
+        manifest.join("argorix.toml")
+    } else {
+        manifest.to_path_buf()
+    };
+    resolve_package(&manifest_path).map_err(|error| anyhow::anyhow!("{error}"))
+}
+
+fn check_package_program(package: &ResolvedPackage) -> Result<Program> {
+    check_package(package).map_err(|messages| anyhow::anyhow!("{}", messages.join("\n")))
+}
+
+fn print_module_graph(graph: &ModuleGraph) {
+    println!("{}", graph.entry);
+    let children: Vec<&str> = graph
+        .imports
+        .iter()
+        .filter(|edge| edge.from == graph.entry)
+        .map(|edge| edge.to.as_str())
+        .collect();
+    for (index, child) in children.iter().enumerate() {
+        let connector = if index + 1 == children.len() {
+            "└──"
+        } else {
+            "├──"
+        };
+        println!("{connector} {child}");
+    }
 }
 
 fn bytecode_errors(errors: Vec<argorix_bytecode::BytecodeError>) -> anyhow::Error {
@@ -194,7 +264,7 @@ mod tests {
         check_program(&program).unwrap();
         let json = serde_json::to_string(&lower_ir(&IrProgram::from(&program))).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["bytecode_version"], "0.15");
+        assert_eq!(parsed["bytecode_version"], "0.16");
     }
 
     #[test]

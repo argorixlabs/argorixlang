@@ -1,6 +1,6 @@
 [package]
 name = "argorix-lang"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2021"
 publish = false
 
@@ -11,6 +11,7 @@ members = [
     "crates/argorix_semantics",
     "crates/argorix_ir",
     "crates/argorix_bytecode",
+    "crates/argorix_module",
     "crates/argorix_provider",
     "crates/argorix_vm",
     "crates/argorix-vm",
@@ -19,7 +20,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.15.0"
+version = "0.16.0"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -34,6 +35,7 @@ argorix_parser = { path = "crates/argorix_parser" }
 argorix_semantics = { path = "crates/argorix_semantics" }
 argorix_ir = { path = "crates/argorix_ir" }
 argorix_bytecode = { path = "crates/argorix_bytecode" }
+argorix_module = { path = "crates/argorix_module" }
 argorix_provider = { path = "crates/argorix_provider" }
 argorix_vm = { path = "crates/argorix_vm" }
 argorix_conformance = { package = "argorix-conformance", path = "crates/argorix_conformance" }

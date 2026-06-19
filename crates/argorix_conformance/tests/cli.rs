@@ -2,7 +2,7 @@ use argorix_conformance::types::{ConformanceCase, ConformanceSuite};
 use serde_json::Value;
 use std::{fs, path::PathBuf, process::Command};
 
-const CATEGORIES: [&str; 13] = [
+const CATEGORIES: [&str; 17] = [
     "parser",
     "semantics",
     "ir",
@@ -16,6 +16,10 @@ const CATEGORIES: [&str; 13] = [
     "evidence_bundle",
     "offline_verification",
     "compatibility",
+    "modules",
+    "package",
+    "module_graph",
+    "multi_file_semantics",
 ];
 
 fn temp_root(name: &str) -> PathBuf {
@@ -37,6 +41,7 @@ fn write_suite(root: &std::path::Path, failing: bool) -> PathBuf {
             category: (*category).into(),
             source_path: Some("sources/minimal.argx".into()),
             bytecode_path: None,
+            manifest_path: None,
             stages: vec!["parse".into()],
             injection: None,
             mutation: None,
@@ -49,7 +54,7 @@ fn write_suite(root: &std::path::Path, failing: bool) -> PathBuf {
         cases[0].expected_failure_contains = Some("expected failure".into());
     }
     let suite = ConformanceSuite {
-        suite_version: "0.15".into(),
+        suite_version: "0.16".into(),
         cases,
     };
     let path = root.join("suite.v015.json");
@@ -78,9 +83,9 @@ fn text_mode_uses_default_workdir_and_prints_clear_summary() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Argorix Conformance Suite v0.15"));
-    assert!(stdout.contains("Cases: 13"));
-    assert!(stdout.contains("Passed: 13"));
+    assert!(stdout.contains("Argorix Conformance Suite v0.16"));
+    assert!(stdout.contains("Cases: 17"));
+    assert!(stdout.contains("Passed: 17"));
     assert!(stdout.contains("Conformance: passed"));
     assert!(root.join("target/argorix-conformance/case-0").exists());
     fs::remove_dir_all(root).unwrap();
@@ -103,7 +108,7 @@ fn json_mode_is_clean_and_honors_custom_workdir() {
     assert!(output.status.success());
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["passed"], true);
-    assert_eq!(result["cases_total"], 13);
+    assert_eq!(result["cases_total"], 17);
     assert!(output.stderr.is_empty());
     assert!(workdir.join("case-0").exists());
     fs::remove_dir_all(root).unwrap();

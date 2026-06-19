@@ -11,6 +11,10 @@ pub struct SecurityReport {
     pub report_version: String,
     pub language: String,
     pub module: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<argorix_bytecode::BytecodeModule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<argorix_bytecode::BytecodeModuleImport>,
     pub bytecode_version: String,
     pub vm_version: String,
     pub execution: ExecutionSummary,
@@ -191,13 +195,15 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.15".into(),
+            report_version: "0.16".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
+            modules: bytecode.modules.clone(),
+            imports: bytecode.imports.clone(),
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.15".into()),
+                .unwrap_or_else(|| "0.16".into()),
             execution,
             policy,
             provider_boundary,

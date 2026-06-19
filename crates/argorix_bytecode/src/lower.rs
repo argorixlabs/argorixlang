@@ -1,6 +1,7 @@
 use crate::{
     BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeModel,
-    BytecodeProgram, BytecodeProviderContract, BytecodeTool, Instruction,
+    BytecodeModule, BytecodeModuleImport, BytecodeProgram, BytecodeProviderContract, BytecodeTool,
+    Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -169,9 +170,25 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.15".to_owned(),
+        bytecode_version: "0.16".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
+        modules: ir
+            .modules
+            .iter()
+            .map(|module| BytecodeModule {
+                name: module.name.clone(),
+                path: module.path.clone(),
+            })
+            .collect(),
+        imports: ir
+            .imports
+            .iter()
+            .map(|import| BytecodeModuleImport {
+                from: import.from.clone(),
+                to: import.to.clone(),
+            })
+            .collect(),
         providers: ir
             .providers
             .iter()
@@ -264,6 +281,8 @@ mod tests {
             ir_version: "0.2".into(),
             language: "Argorix Lang".into(),
             module: "Example".into(),
+            modules: vec![],
+            imports: vec![],
             providers: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
@@ -328,7 +347,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.15");
+        assert_eq!(bytecode.bytecode_version, "0.16");
         assert!(bytecode
             .instructions
             .iter()

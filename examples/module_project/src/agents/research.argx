@@ -1,0 +1,15 @@
+module agents.research
+
+agent ResearchAgent {
+    security { approval granted }
+    receives UserPrompt
+    sends ToolResult to PolicyJudge
+    capabilities { web.search state.write runtime.guard }
+    tools { WebSearch }
+    on UserPrompt as prompt {
+        marron(prompt)
+        facu(prompt)
+        call WebSearch with prompt
+        emit ToolResult to PolicyJudge
+    }
+}

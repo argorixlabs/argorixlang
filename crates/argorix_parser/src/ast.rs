@@ -3,6 +3,7 @@ use crate::span::Spanned;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
     pub module: Spanned<String>,
+    pub imports: Vec<ImportDecl>,
     pub providers: Vec<ProviderDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub failures: Vec<FailureDecl>,
@@ -13,6 +14,11 @@ pub struct Program {
     pub models: Vec<ModelDecl>,
     pub agents: Vec<AgentDecl>,
     pub protocols: Vec<ProtocolDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportDecl {
+    pub path: Spanned<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

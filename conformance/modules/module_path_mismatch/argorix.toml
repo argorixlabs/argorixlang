@@ -1,0 +1,6 @@
+[package]
+name = "module-path-mismatch"
+version = "0.16.0"
+
+[entry]
+main = "src/main.argx"

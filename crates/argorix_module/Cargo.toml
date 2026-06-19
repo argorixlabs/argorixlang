@@ -1,0 +1,12 @@
+[package]
+name = "argorix_module"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+argorix_parser.workspace = true
+argorix_semantics.workspace = true
+argorix_ir.workspace = true
+thiserror.workspace = true

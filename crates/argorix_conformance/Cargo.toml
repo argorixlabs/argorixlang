@@ -16,6 +16,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 argorix_bytecode.workspace = true
 argorix_ir.workspace = true
+argorix_module.workspace = true
 argorix_parser.workspace = true
 argorix_semantics.workspace = true
 argorix_vm.workspace = true

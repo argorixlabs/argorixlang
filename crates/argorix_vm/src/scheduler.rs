@@ -209,6 +209,8 @@ mod tests {
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Argorix.Security".into(),
+            modules: vec![],
+            imports: vec![],
             providers: vec![],
             assertions: vec![],
             failures: vec![],

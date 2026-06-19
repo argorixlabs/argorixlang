@@ -6,7 +6,7 @@ use argorix_conformance::{
 use serde_json::json;
 use std::{fs, path::PathBuf};
 
-const CATEGORIES: [&str; 13] = [
+const CATEGORIES: [&str; 17] = [
     "parser",
     "semantics",
     "ir",
@@ -20,6 +20,10 @@ const CATEGORIES: [&str; 13] = [
     "evidence_bundle",
     "offline_verification",
     "compatibility",
+    "modules",
+    "package",
+    "module_graph",
+    "multi_file_semantics",
 ];
 
 fn temp_root(name: &str) -> PathBuf {
@@ -36,6 +40,7 @@ fn case(id: &str, category: &str) -> ConformanceCase {
         category: category.into(),
         source_path: Some("sources/minimal.argx".into()),
         bytecode_path: None,
+        manifest_path: None,
         stages: vec!["parse".into()],
         injection: None,
         mutation: None,
@@ -49,7 +54,7 @@ fn valid_suite(root: &std::path::Path) -> (ConformanceSuite, PathBuf) {
     fs::write(root.join("sources/minimal.argx"), "module Minimal\n").unwrap();
     let suite_path = root.join("suite.v015.json");
     let suite = ConformanceSuite {
-        suite_version: "0.15".into(),
+        suite_version: "0.16".into(),
         cases: CATEGORIES
             .iter()
             .enumerate()
@@ -129,7 +134,7 @@ fn rejects_duplicate_ids_missing_categories_and_paths_outside_suite() {
     let error = validate_suite(&suite, &suite_path).unwrap_err().to_string();
 
     assert!(error.contains("duplicate case id"));
-    assert!(error.contains("missing required category `compatibility`"));
+    assert!(error.contains("missing required category `multi_file_semantics`"));
     assert!(error.contains("escapes the portable suite tree"));
     fs::remove_dir_all(root).unwrap();
 }

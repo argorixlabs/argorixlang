@@ -9,6 +9,10 @@ pub struct BytecodeProgram {
     pub bytecode_version: String,
     pub language: String,
     pub module: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<BytecodeModule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<BytecodeModuleImport>,
     #[serde(default)]
     pub providers: Vec<BytecodeProviderContract>,
     #[serde(default)]
@@ -22,6 +26,18 @@ pub struct BytecodeProgram {
     #[serde(default)]
     pub models: Vec<BytecodeModel>,
     pub instructions: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeModule {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeModuleImport {
+    pub from: String,
+    pub to: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -249,6 +265,10 @@ pub enum BytecodeError {
     InvalidProviderContract { name: String, reason: String },
     #[error("provider contract declarations do not match the top-level providers collection")]
     ProviderContractDeclarationMismatch,
+    #[error("module metadata requires bytecode version 0.16")]
+    ModulesRequireV016,
+    #[error("module import edge references unknown module `{0}`")]
+    UnknownModuleImport(String),
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -269,6 +289,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.13"
             | "0.14"
             | "0.15"
+            | "0.16"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -279,10 +300,27 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     if !matches!(
         program.bytecode_version.as_str(),
-        "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
+        "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
+    }
+    if (!program.modules.is_empty() || !program.imports.is_empty())
+        && program.bytecode_version != "0.16"
+    {
+        errors.push(BytecodeError::ModulesRequireV016);
+    }
+    let module_names: HashSet<&str> = program
+        .modules
+        .iter()
+        .map(|module| module.name.as_str())
+        .collect();
+    for import in &program.imports {
+        for endpoint in [import.from.as_str(), import.to.as_str()] {
+            if !module_names.contains(endpoint) {
+                errors.push(BytecodeError::UnknownModuleImport(endpoint.to_owned()));
+            }
+        }
     }
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
@@ -480,7 +518,7 @@ fn validate_contract_allowlists(
         }
         if !matches!(
             program.bytecode_version.as_str(),
-            "0.12" | "0.13" | "0.14" | "0.15"
+            "0.12" | "0.13" | "0.14" | "0.15" | "0.16"
         ) {
             continue;
         }
@@ -583,6 +621,8 @@ mod tests {
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Test".into(),
+            modules: vec![],
+            imports: vec![],
             providers: vec![],
             assertions: vec![],
             failures: vec![],
@@ -767,5 +807,55 @@ mod tests {
         let mut program = valid_program();
         program.bytecode_version = "0.10".into();
         verify_bytecode(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_v016_module_metadata() {
+        let mut program = valid_program();
+        program.bytecode_version = "0.16".into();
+        program.modules = vec![
+            super::BytecodeModule {
+                name: "main".into(),
+                path: "src/main.argx".into(),
+            },
+            super::BytecodeModule {
+                name: "agents.worker".into(),
+                path: "src/agents/worker.argx".into(),
+            },
+        ];
+        program.imports = vec![super::BytecodeModuleImport {
+            from: "main".into(),
+            to: "agents.worker".into(),
+        }];
+        verify_bytecode(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_module_metadata_below_v016() {
+        let mut program = valid_program();
+        program.modules = vec![super::BytecodeModule {
+            name: "main".into(),
+            path: "src/main.argx".into(),
+        }];
+        let errors = verify_bytecode(&program).unwrap_err();
+        assert!(errors.contains(&BytecodeError::ModulesRequireV016));
+    }
+
+    #[test]
+    fn rejects_unknown_module_import_edge() {
+        let mut program = valid_program();
+        program.bytecode_version = "0.16".into();
+        program.modules = vec![super::BytecodeModule {
+            name: "main".into(),
+            path: "src/main.argx".into(),
+        }];
+        program.imports = vec![super::BytecodeModuleImport {
+            from: "main".into(),
+            to: "agents.missing".into(),
+        }];
+        let errors = verify_bytecode(&program).unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|error| matches!(error, BytecodeError::UnknownModuleImport(name) if name == "agents.missing")));
     }
 }

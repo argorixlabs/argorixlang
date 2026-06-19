@@ -1,0 +1,6 @@
+[package]
+name = "argorix-example"
+version = "0.16.0"
+
+[entry]
+main = "src/main.argx"

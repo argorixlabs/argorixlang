@@ -292,7 +292,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.15".into(),
+            vm_version: "0.16".into(),
             status: if policy_report.status == "passed" {
                 "completed".into()
             } else {
@@ -300,6 +300,8 @@ impl Vm {
             },
             mode: "reactive-dry-run".into(),
             scheduler: "deterministic".into(),
+            modules: bytecode.modules.clone(),
+            imports: bytecode.imports.clone(),
             injected,
             steps,
             mailboxes,
@@ -507,6 +509,8 @@ mod tests {
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Example".into(),
+            modules: vec![],
+            imports: vec![],
             providers: vec![],
             assertions: vec![],
             failures: vec![],
@@ -657,7 +661,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.15");
+        assert_eq!(json["vm_version"], "0.16");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -679,7 +683,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.15");
+        assert_eq!(json["vm_version"], "0.16");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -701,7 +705,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.15");
+        assert_eq!(json["vm_version"], "0.16");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -756,7 +760,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.15");
+        assert_eq!(trace.vm_version, "0.16");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -830,7 +834,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.15");
+        assert_eq!(trace.vm_version, "0.16");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -882,7 +886,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.15");
+        assert_eq!(json["vm_version"], "0.16");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");

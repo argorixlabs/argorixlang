@@ -1,0 +1,27 @@
+module agents.reviewer
+
+agent PolicyJudge {
+    security { approval granted }
+    receives ToolResult from ResearchAgent
+    sends Decision to RuntimeGate
+    capabilities { model.invoke state.write runtime.guard }
+    models { GuardModel }
+    on ToolResult as result {
+        marron(result)
+        facu(result)
+        ask GuardModel with result
+        emit Decision to RuntimeGate
+    }
+}
+
+agent RuntimeGate {
+    security { approval granted }
+    receives Decision from PolicyJudge
+    capabilities { trace.write runtime.halt runtime.guard state.write }
+    on Decision as decision {
+        marron(decision)
+        facu(decision)
+        trace decision
+        halt
+    }
+}

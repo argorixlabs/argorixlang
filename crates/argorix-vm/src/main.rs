@@ -81,7 +81,7 @@ fn run() -> Result<()> {
             evidence_bundle,
         } => {
             if !dry_run {
-                bail!("v0.15 only supports execution with `--dry-run`");
+                bail!("v0.16 only supports execution with `--dry-run`");
             }
             let source = fs::read_to_string(&file)
                 .with_context(|| format!("failed to read `{}`", file.display()))?;
@@ -116,7 +116,7 @@ fn run() -> Result<()> {
                 if json {
                     println!("{}", serde_json::to_string_pretty(&trace)?);
                 } else {
-                    println!("Argorix VM v0.15\n");
+                    println!("Argorix VM v0.16\n");
                     println!("Execution mode: reactive dry-run");
                     println!("Scheduler: {}", trace.scheduler);
                     if providers {
@@ -322,7 +322,7 @@ fn run() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&trace)?);
             } else if mailboxes {
-                println!("Argorix VM v0.15\n");
+                println!("Argorix VM v0.16\n");
                 println!("Execution mode: dry-run");
                 println!("Scheduler: {}", trace.scheduler);
                 println!("Agents: {}\n", trace.mailboxes.len());
@@ -342,7 +342,7 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
                 println!("Trace ledger: generated");
             } else {
-                println!("Argorix VM v0.15\n");
+                println!("Argorix VM v0.16\n");
                 println!("Loaded bytecode: {}", file.display());
                 println!("Execution mode: dry-run\n");
                 for step in &trace.steps {

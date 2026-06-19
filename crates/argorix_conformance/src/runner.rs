@@ -11,6 +11,7 @@ use crate::{
 };
 use argorix_bytecode::{lower_ir, verify_bytecode, BytecodeProgram};
 use argorix_ir::IrProgram;
+use argorix_module::{check_package, package_ir, resolve_package, ResolvedPackage};
 use argorix_parser::{parse_source, Program};
 use argorix_semantics::check_program;
 use argorix_vm::{
@@ -211,6 +212,57 @@ fn execute_stage(
             state.ir = Some(ir);
             Ok(None)
         }
+        "resolve_package" => {
+            let manifest = resolve_fixture_path(
+                suite_path,
+                case.manifest_path
+                    .as_deref()
+                    .ok_or_else(|| "manifest_path is required".to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            let package = resolve_package(&manifest).map_err(|error| error.to_string())?;
+            state.package = Some(package);
+            Ok(None)
+        }
+        "check_package" => {
+            let package = state
+                .package
+                .as_ref()
+                .ok_or_else(|| "resolve_package output is unavailable".to_string())?;
+            let merged = check_package(package).map_err(|messages| messages.join("; "))?;
+            state.program = Some(merged);
+            Ok(None)
+        }
+        "emit_ir_package" => {
+            let package = state
+                .package
+                .as_ref()
+                .ok_or_else(|| "resolve_package output is unavailable".to_string())?;
+            let program = state
+                .program
+                .as_ref()
+                .ok_or_else(|| "check_package output is unavailable".to_string())?;
+            let ir = package_ir(program, &package.graph);
+            workspace
+                .write_json(&workspace.ir, &ir)
+                .map_err(|error| error.to_string())?;
+            state.ir = Some(ir);
+            Ok(None)
+        }
+        "graph_package" => {
+            let package = state
+                .package
+                .as_ref()
+                .ok_or_else(|| "resolve_package output is unavailable".to_string())?;
+            if package.graph.modules.is_empty() {
+                return Err("module graph is empty".into());
+            }
+            Ok(Some(format!(
+                "graph: {} modules, {} imports",
+                package.graph.modules.len(),
+                package.graph.imports.len()
+            )))
+        }
         "emit_bytecode" => {
             let ir = state
                 .ir
@@ -339,6 +391,7 @@ fn execute_stage(
 #[derive(Default)]
 struct CaseState {
     program: Option<Program>,
+    package: Option<ResolvedPackage>,
     ir: Option<IrProgram>,
     bytecode: Option<BytecodeProgram>,
     outcome: Option<ExecutionOutcome>,

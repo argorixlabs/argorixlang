@@ -1,0 +1,13 @@
+module main
+
+import agents.missing
+
+type Ping { content: string }
+
+agent Receiver {
+    receives Ping
+}
+
+protocol Flow {
+    User -> Receiver: tell Ping
+}

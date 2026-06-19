@@ -6,6 +6,10 @@ pub struct IrProgram {
     pub ir_version: String,
     pub language: String,
     pub module: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<IrModule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<IrModuleImport>,
     pub providers: Vec<IrProviderContract>,
     pub assertions: Vec<IrAssertion>,
     pub failures: Vec<IrFailure>,
@@ -16,6 +20,18 @@ pub struct IrProgram {
     pub models: Vec<IrModel>,
     pub agents: Vec<IrAgent>,
     pub protocols: Vec<IrProtocol>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrModule {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrModuleImport {
+    pub from: String,
+    pub to: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -146,9 +162,11 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.15".to_owned(),
+            ir_version: "0.16".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
+            modules: Vec::new(),
+            imports: Vec::new(),
             providers: program
                 .providers
                 .iter()

@@ -4,7 +4,7 @@ use argorix_conformance::{
 };
 use std::{fs, path::PathBuf};
 
-const CATEGORIES: [&str; 13] = [
+const CATEGORIES: [&str; 17] = [
     "parser",
     "semantics",
     "ir",
@@ -18,6 +18,10 @@ const CATEGORIES: [&str; 13] = [
     "evidence_bundle",
     "offline_verification",
     "compatibility",
+    "modules",
+    "package",
+    "module_graph",
+    "multi_file_semantics",
 ];
 
 fn temp_root(name: &str) -> PathBuf {
@@ -45,6 +49,7 @@ fn suite(root: &std::path::Path, special: ConformanceCase) -> (ConformanceSuite,
             category: (*category).into(),
             source_path: Some("sources/good.argx".into()),
             bytecode_path: None,
+            manifest_path: None,
             stages: vec!["parse".into()],
             injection: None,
             mutation: None,
@@ -59,7 +64,7 @@ fn suite(root: &std::path::Path, special: ConformanceCase) -> (ConformanceSuite,
     cases[index] = special;
     (
         ConformanceSuite {
-            suite_version: "0.15".into(),
+            suite_version: "0.16".into(),
             cases,
         },
         root.join("suite.v015.json"),
@@ -73,6 +78,7 @@ fn negative_case(source: &str, expected_contains: &str) -> ConformanceCase {
         category: "semantics".into(),
         source_path: Some(source.into()),
         bytecode_path: None,
+        manifest_path: None,
         stages: vec!["parse".into(), "semantic_check".into(), "emit_ir".into()],
         injection: None,
         mutation: None,

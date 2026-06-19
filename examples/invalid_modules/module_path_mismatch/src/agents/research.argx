@@ -1,0 +1,3 @@
+module agents.reviewer
+
+type Note { content: string }
