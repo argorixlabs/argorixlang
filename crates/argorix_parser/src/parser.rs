@@ -1,7 +1,8 @@
 use crate::{
     ast::{
         AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
-        FieldDecl, HandlerDecl, HandlerInstruction, ImportDecl, ModelDecl, Program, ProtocolDecl,
+        FieldDecl, HandlerDecl, HandlerInstruction, ImportDecl, ModelDecl, PolicyDecl, PolicyRule,
+        PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
         ProtocolStep, ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
@@ -60,6 +61,7 @@ impl Parser {
             imports: Vec::new(),
             providers: Vec::new(),
             assertions: Vec::new(),
+            policies: Vec::new(),
             failures: Vec::new(),
             capabilities: Vec::new(),
             enums: Vec::new(),
@@ -76,6 +78,7 @@ impl Parser {
                 Some("provider") => program.providers.push(self.parse_provider()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
+                Some("policy") => program.policies.push(self.parse_policy()?),
                 Some("failure") => program.failures.push(self.parse_failure()?),
                 Some("enum") => program.enums.push(self.parse_enum()?),
                 Some("type") => program.types.push(self.parse_type()?),
@@ -91,7 +94,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `assert`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, or `protocol`",
+                        "expected `import`, `provider`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, or `protocol`",
                         self.peek().span,
                     ))
                 }
@@ -248,6 +251,109 @@ impl Parser {
             None
         };
         Ok(AssertionDecl { name, argument })
+    }
+
+    fn parse_policy(&mut self) -> Result<PolicyDecl, Diagnostic> {
+        self.expect_keyword("policy")?;
+        let name = self.expect_identifier("policy name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut rules = Vec::new();
+        let mut violation = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated policy declaration")?;
+            match self.peek_identifier() {
+                Some("require") | Some("deny") => {
+                    let require = self.match_keyword("require");
+                    if !require {
+                        self.expect_keyword("deny")?;
+                    }
+                    let rule = self.parse_policy_rule()?;
+                    rules.push(if require {
+                        PolicyRuleDecl::Require { rule }
+                    } else {
+                        PolicyRuleDecl::Deny { rule }
+                    });
+                }
+                Some("on") => {
+                    if violation.is_some() {
+                        return Err(Diagnostic::new(
+                            "duplicate `on violation` block",
+                            self.peek().span,
+                        ));
+                    }
+                    violation = Some(self.parse_policy_violation()?);
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected policy item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected `require`, `deny`, or `on violation`",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        Ok(PolicyDecl {
+            name,
+            rules,
+            violation,
+        })
+    }
+
+    fn parse_policy_rule(&mut self) -> Result<Spanned<PolicyRule>, Diagnostic> {
+        let token = self.expect_identifier("policy rule")?;
+        let value = match token.value.as_str() {
+            "no_unhandled_messages" => PolicyRule::NoUnhandledMessages,
+            "all_tool_calls_traced" => PolicyRule::AllToolCallsTraced,
+            "all_model_calls_traced" => PolicyRule::AllModelCallsTraced,
+            "all_intrinsics_traced" => PolicyRule::AllIntrinsicsTraced,
+            "all_provider_calls_traced" => PolicyRule::AllProviderCallsTraced,
+            "halt_requires_trace" => PolicyRule::HaltRequiresTrace,
+            "provider_contracts_declared" => PolicyRule::ProviderContractsDeclared,
+            "provider_allowlists_valid" => PolicyRule::ProviderAllowlistsValid,
+            "external_execution" => PolicyRule::ExternalExecution,
+            "evidence_bundle_verified" => PolicyRule::EvidenceBundleVerified,
+            "security_report_generated" => PolicyRule::SecurityReportGenerated,
+            "runtime_status" => {
+                let argument = self.expect_identifier("runtime status policy argument")?;
+                if argument.value == "completed" {
+                    PolicyRule::RuntimeStatusCompleted
+                } else {
+                    PolicyRule::Unknown(format!("runtime_status {}", argument.value))
+                }
+            }
+            other => PolicyRule::Unknown(other.to_owned()),
+        };
+        Ok(Spanned::new(value, token.span))
+    }
+
+    fn parse_policy_violation(&mut self) -> Result<PolicyViolationDecl, Diagnostic> {
+        self.expect_keyword("on")?;
+        self.expect_keyword("violation")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        self.expect_keyword("action")?;
+        let action_token = self.expect_identifier("policy violation action")?;
+        let action = match action_token.value.as_str() {
+            "block" => PolicyViolationAction::Block,
+            "review" => PolicyViolationAction::Review,
+            "warn" => PolicyViolationAction::Warn,
+            other => PolicyViolationAction::Unknown(other.to_owned()),
+        };
+        let mut trace_required = false;
+        if self.match_keyword("trace") {
+            self.expect_keyword("required")?;
+            trace_required = true;
+        }
+        self.expect_symbol(TokenKind::RightBrace, "`}`")?;
+        Ok(PolicyViolationDecl {
+            action: Spanned::new(action, action_token.span),
+            trace_required,
+        })
     }
 
     fn parse_failure(&mut self) -> Result<FailureDecl, Diagnostic> {
@@ -700,6 +806,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::parse_source;
+    use crate::ast::{PolicyRule, PolicyRuleDecl, PolicyViolationAction};
 
     #[test]
     fn parses_minimal_program() {
@@ -752,5 +859,92 @@ mod tests {
         let source = "module agents..research\n";
         let diagnostics = parse_source(source).unwrap_err();
         assert!(diagnostics[0].message.contains("invalid module name"));
+    }
+
+    #[test]
+    fn parses_policy_v2_block() {
+        let program = parse_source(
+            r#"
+            module main
+            policy ProviderSafety {
+                require runtime_status completed
+                deny external_execution
+                on violation {
+                    action block
+                    trace required
+                }
+            }
+            "#,
+        )
+        .unwrap();
+        let policy = &program.policies[0];
+        assert_eq!(policy.name.value, "ProviderSafety");
+        assert!(matches!(
+            policy.rules[0],
+            PolicyRuleDecl::Require {
+                rule: crate::span::Spanned {
+                    value: PolicyRule::RuntimeStatusCompleted,
+                    ..
+                }
+            }
+        ));
+        assert!(matches!(
+            policy.rules[1],
+            PolicyRuleDecl::Deny {
+                rule: crate::span::Spanned {
+                    value: PolicyRule::ExternalExecution,
+                    ..
+                }
+            }
+        ));
+        let violation = policy.violation.as_ref().unwrap();
+        assert_eq!(violation.action.value, PolicyViolationAction::Block);
+        assert!(violation.trace_required);
+    }
+
+    #[test]
+    fn preserves_unknown_policy_rule_and_action() {
+        let program = parse_source(
+            r#"
+            module main
+            policy FuturePolicy {
+                require future_rule
+                on violation { action future_action }
+            }
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            &program.policies[0].rules[0],
+            PolicyRuleDecl::Require { rule }
+                if rule.value == PolicyRule::Unknown("future_rule".into())
+        ));
+        assert_eq!(
+            program.policies[0]
+                .violation
+                .as_ref()
+                .unwrap()
+                .action
+                .value,
+            PolicyViolationAction::Unknown("future_action".into())
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_policy_violation_block() {
+        let diagnostics = parse_source(
+            r#"
+            module main
+            policy Bad {
+                deny external_execution
+                on violation { action warn }
+                on violation { action block }
+            }
+            "#,
+        )
+        .unwrap_err();
+        assert!(diagnostics[0]
+            .message
+            .contains("duplicate `on violation` block"));
     }
 }

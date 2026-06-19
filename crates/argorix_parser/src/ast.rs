@@ -6,6 +6,7 @@ pub struct Program {
     pub imports: Vec<ImportDecl>,
     pub providers: Vec<ProviderDecl>,
     pub assertions: Vec<AssertionDecl>,
+    pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
     pub capabilities: Vec<CapabilityDecl>,
     pub enums: Vec<EnumDecl>,
@@ -52,6 +53,98 @@ pub struct ProviderDecl {
 pub struct AssertionDecl {
     pub name: Spanned<String>,
     pub argument: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolicyDecl {
+    pub name: Spanned<String>,
+    pub rules: Vec<PolicyRuleDecl>,
+    pub violation: Option<PolicyViolationDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PolicyRuleDecl {
+    Require { rule: Spanned<PolicyRule> },
+    Deny { rule: Spanned<PolicyRule> },
+}
+
+impl PolicyRuleDecl {
+    pub const fn effect(&self) -> &'static str {
+        match self {
+            Self::Require { .. } => "require",
+            Self::Deny { .. } => "deny",
+        }
+    }
+
+    pub const fn rule(&self) -> &Spanned<PolicyRule> {
+        match self {
+            Self::Require { rule } | Self::Deny { rule } => rule,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PolicyRule {
+    NoUnhandledMessages,
+    AllToolCallsTraced,
+    AllModelCallsTraced,
+    AllIntrinsicsTraced,
+    AllProviderCallsTraced,
+    HaltRequiresTrace,
+    RuntimeStatusCompleted,
+    ProviderContractsDeclared,
+    ProviderAllowlistsValid,
+    ExternalExecution,
+    EvidenceBundleVerified,
+    SecurityReportGenerated,
+    Unknown(String),
+}
+
+impl PolicyRule {
+    pub fn source_name(&self) -> String {
+        match self {
+            Self::NoUnhandledMessages => "no_unhandled_messages",
+            Self::AllToolCallsTraced => "all_tool_calls_traced",
+            Self::AllModelCallsTraced => "all_model_calls_traced",
+            Self::AllIntrinsicsTraced => "all_intrinsics_traced",
+            Self::AllProviderCallsTraced => "all_provider_calls_traced",
+            Self::HaltRequiresTrace => "halt_requires_trace",
+            Self::RuntimeStatusCompleted => "runtime_status completed",
+            Self::ProviderContractsDeclared => "provider_contracts_declared",
+            Self::ProviderAllowlistsValid => "provider_allowlists_valid",
+            Self::ExternalExecution => "external_execution",
+            Self::EvidenceBundleVerified => "evidence_bundle_verified",
+            Self::SecurityReportGenerated => "security_report_generated",
+            Self::Unknown(value) => value,
+        }
+        .to_owned()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolicyViolationDecl {
+    pub action: Spanned<PolicyViolationAction>,
+    pub trace_required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PolicyViolationAction {
+    Block,
+    Review,
+    Warn,
+    Unknown(String),
+}
+
+impl PolicyViolationAction {
+    pub fn source_name(&self) -> String {
+        match self {
+            Self::Block => "block",
+            Self::Review => "review",
+            Self::Warn => "warn",
+            Self::Unknown(value) => value,
+        }
+        .to_owned()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

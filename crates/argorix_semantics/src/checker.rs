@@ -1,6 +1,9 @@
 use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
-    ast::{Approval, CapabilityLevel, HandlerInstruction, Program},
+    ast::{
+        Approval, CapabilityLevel, HandlerInstruction, PolicyRule, PolicyRuleDecl,
+        PolicyViolationAction, Program,
+    },
     diagnostics::Diagnostic,
     span::Spanned,
 };
@@ -247,6 +250,59 @@ fn check_policies(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
                 "`runtime_status` assertion requires argument `completed`",
                 assertion.name.span,
             ));
+        }
+    }
+    let mut policy_names = HashSet::new();
+    for policy in &program.policies {
+        if !policy_names.insert(policy.name.value.clone()) {
+            diagnostics.push(Diagnostic::new(
+                format!("duplicate policy `{}`", policy.name.value),
+                policy.name.span,
+            ));
+        }
+        let mut required = HashSet::new();
+        let mut denied = HashSet::new();
+        for declaration in &policy.rules {
+            let rule = declaration.rule();
+            if let PolicyRule::Unknown(value) = &rule.value {
+                diagnostics.push(Diagnostic::new(
+                    format!("unknown policy rule `{value}`"),
+                    rule.span,
+                ));
+                continue;
+            }
+            let name = rule.value.source_name();
+            let (current, opposite) = match declaration {
+                PolicyRuleDecl::Require { .. } => (&mut required, &denied),
+                PolicyRuleDecl::Deny { .. } => (&mut denied, &required),
+            };
+            if !current.insert(name.clone()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "duplicate {} rule `{name}` in policy `{}`",
+                        declaration.effect(),
+                        policy.name.value
+                    ),
+                    rule.span,
+                ));
+            }
+            if opposite.contains(&name) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "contradictory policy rule `{name}` in policy `{}`",
+                        policy.name.value
+                    ),
+                    rule.span,
+                ));
+            }
+        }
+        if let Some(violation) = &policy.violation {
+            if let PolicyViolationAction::Unknown(value) = &violation.action.value {
+                diagnostics.push(Diagnostic::new(
+                    format!("invalid policy violation action `{value}`"),
+                    violation.action.span,
+                ));
+            }
         }
     }
     let mut failures = HashSet::new();
@@ -809,5 +865,61 @@ mod tests {
         assert_eq!(diagnostics.len(), 2);
         assert!(diagnostics[0].message.contains("unknown message type"));
         assert!(diagnostics[1].message.contains("unknown send destination"));
+    }
+
+    #[test]
+    fn rejects_invalid_policy_v2_declarations() {
+        let source = r#"
+            module main
+            policy Duplicate {
+                require external_execution
+                require external_execution
+            }
+            policy Contradictory {
+                require external_execution
+                deny external_execution
+            }
+            policy UnknownRule {
+                require future_rule
+                on violation { action future_action }
+            }
+            policy Duplicate { deny external_execution }
+        "#;
+        let program = parse_source(source).unwrap();
+        let messages = check_program(&program)
+            .unwrap_err()
+            .into_iter()
+            .map(|diagnostic| diagnostic.message)
+            .collect::<Vec<_>>();
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate policy `Duplicate`")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate require rule `external_execution`")));
+        assert!(messages.iter().any(|message| {
+            message.contains("contradictory policy rule `external_execution`")
+        }));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("unknown policy rule `future_rule`")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("invalid policy violation action `future_action`")));
+    }
+
+    #[test]
+    fn accepts_policy_v2_and_legacy_assertions_together() {
+        let source = r#"
+            module main
+            assert all_tool_calls_traced
+            policy RuntimeSafety {
+                require no_unhandled_messages
+                deny external_execution
+                on violation { action review trace required }
+            }
+        "#;
+        let program = parse_source(source).unwrap();
+        check_program(&program).unwrap();
     }
 }

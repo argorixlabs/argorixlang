@@ -15,6 +15,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         imports: Vec::new(),
         providers: Vec::new(),
         assertions: Vec::new(),
+        policies: Vec::new(),
         failures: Vec::new(),
         capabilities: Vec::new(),
         enums: Vec::new(),
@@ -39,6 +40,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         };
         merged.providers.extend(program.providers.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
+        merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());
         merged
             .capabilities
@@ -90,4 +92,63 @@ pub fn package_ir(merged: &Program, graph: &ModuleGraph) -> IrProgram {
 
 fn dummy_module(name: &str) -> argorix_parser::span::Spanned<String> {
     argorix_parser::span::Spanned::new(name.to_owned(), argorix_parser::span::Span::new(0, 0, 1, 1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{check_package, merge_package};
+    use crate::resolver::{ModuleGraph, ResolvedModule, ResolvedPackage};
+    use argorix_parser::parse_source;
+    use std::collections::BTreeMap;
+
+    fn package(sources: &[(&str, &str)]) -> ResolvedPackage {
+        let programs = sources
+            .iter()
+            .map(|(name, source)| ((*name).to_owned(), parse_source(source).unwrap()))
+            .collect::<BTreeMap<_, _>>();
+        ResolvedPackage {
+            graph: ModuleGraph {
+                entry: "main".into(),
+                modules: sources
+                    .iter()
+                    .map(|(name, source)| ResolvedModule {
+                        name: (*name).into(),
+                        path: format!("src/{}.argx", name.replace('.', "/")),
+                        source: (*source).into(),
+                    })
+                    .collect(),
+                imports: vec![],
+            },
+            programs,
+        }
+    }
+
+    #[test]
+    fn merges_imported_policy_declarations() {
+        let package = package(&[
+            ("main", "module main\nimport policies.default"),
+            (
+                "policies.default",
+                "module policies.default\npolicy RuntimeSafety { require no_unhandled_messages }",
+            ),
+        ]);
+        let merged = merge_package(&package);
+        assert_eq!(merged.policies.len(), 1);
+        assert_eq!(merged.policies[0].name.value, "RuntimeSafety");
+    }
+
+    #[test]
+    fn rejects_duplicate_policy_names_across_modules() {
+        let package = package(&[
+            ("main", "module main\npolicy Shared { deny external_execution }"),
+            (
+                "policies.default",
+                "module policies.default\npolicy Shared { require no_unhandled_messages }",
+            ),
+        ]);
+        let messages = check_package(&package).unwrap_err();
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate policy `Shared`")));
+    }
 }
