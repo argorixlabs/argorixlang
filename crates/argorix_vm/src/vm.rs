@@ -475,7 +475,7 @@ impl Vm {
             }
             let passed = violations.is_empty();
             let action = (!passed)
-                .then(|| policy.on_violation.as_ref())
+                .then_some(policy.on_violation.as_ref())
                 .flatten()
                 .map(|violation| violation.action.clone());
             let trace_required = policy

@@ -301,11 +301,7 @@ fn run() -> Result<()> {
                         println!("Policy blocks:");
                         for block in &trace.policy_report.policy_blocks {
                             println!("- {}: {}", block.name, block.status);
-                            for rule in block
-                                .require_rules
-                                .iter()
-                                .chain(block.deny_rules.iter())
-                            {
+                            for rule in block.require_rules.iter().chain(block.deny_rules.iter()) {
                                 println!(
                                     "  {} {}: {}",
                                     rule.effect,

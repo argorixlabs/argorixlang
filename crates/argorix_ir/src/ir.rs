@@ -230,12 +230,13 @@ impl From<&Program> for IrProgram {
                             rule: declaration.rule().value.source_name(),
                         })
                         .collect(),
-                    on_violation: policy.violation.as_ref().map(|violation| {
-                        IrPolicyViolation {
+                    on_violation: policy
+                        .violation
+                        .as_ref()
+                        .map(|violation| IrPolicyViolation {
                             action: violation.action.value.source_name(),
                             trace_required: violation.trace_required,
-                        }
-                    }),
+                        }),
                 })
                 .collect(),
             failures: program
@@ -442,10 +443,6 @@ mod tests {
             ir.policies[0].on_violation.as_ref().unwrap().action,
             "block"
         );
-        assert!(ir.policies[0]
-            .on_violation
-            .as_ref()
-            .unwrap()
-            .trace_required);
+        assert!(ir.policies[0].on_violation.as_ref().unwrap().trace_required);
     }
 }

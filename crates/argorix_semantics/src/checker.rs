@@ -897,9 +897,9 @@ mod tests {
         assert!(messages
             .iter()
             .any(|message| message.contains("duplicate require rule `external_execution`")));
-        assert!(messages.iter().any(|message| {
-            message.contains("contradictory policy rule `external_execution`")
-        }));
+        assert!(messages
+            .iter()
+            .any(|message| { message.contains("contradictory policy rule `external_execution`") }));
         assert!(messages
             .iter()
             .any(|message| message.contains("unknown policy rule `future_rule`")));

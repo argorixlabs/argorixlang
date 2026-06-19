@@ -920,12 +920,7 @@ mod tests {
                 if rule.value == PolicyRule::Unknown("future_rule".into())
         ));
         assert_eq!(
-            program.policies[0]
-                .violation
-                .as_ref()
-                .unwrap()
-                .action
-                .value,
+            program.policies[0].violation.as_ref().unwrap().action.value,
             PolicyViolationAction::Unknown("future_action".into())
         );
     }

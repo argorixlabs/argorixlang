@@ -140,7 +140,10 @@ mod tests {
     #[test]
     fn rejects_duplicate_policy_names_across_modules() {
         let package = package(&[
-            ("main", "module main\npolicy Shared { deny external_execution }"),
+            (
+                "main",
+                "module main\npolicy Shared { deny external_execution }",
+            ),
             (
                 "policies.default",
                 "module policies.default\npolicy Shared { require no_unhandled_messages }",
