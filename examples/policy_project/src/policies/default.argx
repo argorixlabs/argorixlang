@@ -1,0 +1,14 @@
+module policies.default
+
+assert no_unhandled_messages
+
+policy ImportedRuntimeSafety {
+    require no_unhandled_messages
+    require runtime_status completed
+    deny external_execution
+
+    on violation {
+        action block
+        trace required
+    }
+}

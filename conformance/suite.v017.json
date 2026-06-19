@@ -1,0 +1,217 @@
+{
+  "suite_version": "0.17",
+  "cases": [
+    {
+      "id": "policy-v2-parses",
+      "name": "Policy v2 block parses",
+      "category": "parser",
+      "source_path": "sources/policy_v017.argx",
+      "stages": ["parse"]
+    },
+    {
+      "id": "policy-v2-semantics",
+      "name": "Policy v2 semantic check passes",
+      "category": "semantics",
+      "source_path": "sources/policy_v017.argx",
+      "stages": ["parse", "semantic_check"]
+    },
+    {
+      "id": "policy-v2-ir",
+      "name": "IR 0.17 preserves policy metadata",
+      "category": "ir",
+      "source_path": "sources/policy_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir"]
+    },
+    {
+      "id": "policy-v2-bytecode",
+      "name": "Bytecode 0.17 preserves and verifies policy metadata",
+      "category": "bytecode",
+      "source_path": "sources/policy_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode"]
+    },
+    {
+      "id": "policy-warn-runtime",
+      "name": "Warn action allows runtime completion",
+      "category": "vm",
+      "source_path": "sources/policy_warn_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "legacy-assertions-compatible",
+      "name": "Legacy assertions remain compatible",
+      "category": "policy",
+      "source_path": "sources/provider_allowlists_v016.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm"],
+      "injection": "User:ResearchAgent:tell:UserPrompt"
+    },
+    {
+      "id": "policy-v2-full-evidence",
+      "name": "Policy v2 appears in trace report and evidence",
+      "category": "policy_v2",
+      "source_path": "sources/policy_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "provider-boundary-v010-compatible",
+      "name": "Provider boundary Bytecode 0.10 remains compatible",
+      "category": "provider_boundary",
+      "bytecode_path": "bytecode/compat_v010.argbc.json",
+      "stages": ["verify_bytecode"]
+    },
+    {
+      "id": "adapter-contract-v011-compatible",
+      "name": "Adapter contract Bytecode 0.11 remains compatible",
+      "category": "adapter_contracts",
+      "bytecode_path": "bytecode/compat_v011.argbc.json",
+      "stages": ["verify_bytecode"]
+    },
+    {
+      "id": "allowlists-v012-compatible",
+      "name": "Provider allowlists Bytecode 0.12 remain compatible",
+      "category": "allowlists",
+      "bytecode_path": "bytecode/compat_v012.argbc.json",
+      "stages": ["verify_bytecode"]
+    },
+    {
+      "id": "policy-v2-security-report",
+      "name": "SecurityReport 0.17 summarizes Policy v2",
+      "category": "security_report",
+      "source_path": "sources/policy_review_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "policy-v2-evidence-bundle",
+      "name": "EvidenceBundle 0.17 covers Policy v2",
+      "category": "evidence_bundle",
+      "source_path": "sources/policy_warn_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "policy-v2-offline-verification",
+      "name": "Policy v2 evidence verifies offline",
+      "category": "offline_verification",
+      "source_path": "sources/policy_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "bytecode-v014-compatible",
+      "name": "Historical Bytecode remains compatible",
+      "category": "compatibility",
+      "bytecode_path": "bytecode/reactive_v014.argbc.json",
+      "stages": ["verify_bytecode", "run_vm"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "imported-policy-ir",
+      "name": "Imported policy enters package IR",
+      "category": "modules",
+      "manifest_path": "modules/policy_project/argorix.toml",
+      "stages": ["resolve_package", "check_package", "emit_ir_package"]
+    },
+    {
+      "id": "policy-package-check",
+      "name": "Policy package passes whole-package checking",
+      "category": "package",
+      "manifest_path": "modules/policy_project/argorix.toml",
+      "stages": ["resolve_package", "check_package", "emit_ir_package", "emit_bytecode", "verify_bytecode"]
+    },
+    {
+      "id": "policy-package-graph",
+      "name": "Policy package graph resolves deterministically",
+      "category": "module_graph",
+      "manifest_path": "modules/policy_project/argorix.toml",
+      "stages": ["resolve_package", "graph_package"]
+    },
+    {
+      "id": "imported-policy-runtime",
+      "name": "Imported policy evaluates at runtime",
+      "category": "multi_file_semantics",
+      "manifest_path": "modules/policy_project/argorix.toml",
+      "stages": ["resolve_package", "check_package", "emit_ir_package", "emit_bytecode", "verify_bytecode", "run_vm", "security_report"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "unknown-policy-rule",
+      "name": "Unknown policy rule fails semantics",
+      "category": "policy_v2",
+      "source_path": "sources/policy_unknown_rule.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "unknown policy rule"
+    },
+    {
+      "id": "duplicate-policy-rule",
+      "name": "Duplicate policy rule fails semantics",
+      "category": "policy_v2",
+      "source_path": "sources/policy_duplicate_rule.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "duplicate require rule"
+    },
+    {
+      "id": "duplicate-policy-name",
+      "name": "Duplicate policy name fails semantics",
+      "category": "policy_v2",
+      "source_path": "sources/policy_duplicate_name.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "duplicate policy"
+    },
+    {
+      "id": "contradictory-policy",
+      "name": "Contradictory policy effects fail semantics",
+      "category": "policy_v2",
+      "source_path": "sources/policy_contradictory.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "contradictory policy rule"
+    },
+    {
+      "id": "duplicate-violation-block",
+      "name": "Duplicate violation block fails parsing",
+      "category": "policy_v2",
+      "source_path": "sources/policy_duplicate_violation.argx",
+      "stages": ["parse"],
+      "expected_failure_stage": "parse",
+      "expected_failure_contains": "duplicate `on violation` block"
+    },
+    {
+      "id": "invalid-violation-action",
+      "name": "Invalid violation action fails semantics",
+      "category": "policy_v2",
+      "source_path": "sources/policy_invalid_action.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "invalid policy violation action"
+    },
+    {
+      "id": "policy-block-nonzero",
+      "name": "Block action is an expected VM failure",
+      "category": "policy_v2",
+      "source_path": "sources/policy_block_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm"],
+      "injection": "User:Worker:tell:Ping",
+      "expected_failure_stage": "run_vm",
+      "expected_failure_contains": "activated block action"
+    },
+    {
+      "id": "deny-external-detects-blocked-attempt",
+      "name": "Deny external execution detects a blocked provider attempt",
+      "category": "policy_v2",
+      "source_path": "sources/policy_external_attempt_v017.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report"],
+      "injection": "User:Worker:tell:Ping",
+      "mutation": {
+        "before_stage": "run_vm",
+        "artifact": "bytecode",
+        "json_pointer": "/models/0/provider",
+        "value": "OpenAI"
+      }
+    }
+  ]
+}

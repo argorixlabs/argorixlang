@@ -1,0 +1,6 @@
+module main
+import agents.worker
+import policies.default
+
+type Ping { content: string }
+protocol Flow { User -> Worker: tell Ping }

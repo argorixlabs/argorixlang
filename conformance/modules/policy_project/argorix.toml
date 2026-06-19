@@ -1,0 +1,6 @@
+[package]
+name = "conformance-policy-project"
+version = "0.17.0"
+
+[entry]
+main = "src/main.argx"

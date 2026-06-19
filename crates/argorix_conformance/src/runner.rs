@@ -309,7 +309,19 @@ fn execute_stage(
                     .ok_or_else(|| "injection is required".to_string())?,
             )
             .map_err(|error| error.to_string())?;
-            state.outcome = Some(Vm::new().run_reactive_outcome(bytecode, injection));
+            let outcome = Vm::new().run_reactive_outcome(bytecode, injection);
+            let blocked = outcome.result.as_ref().ok().and_then(|trace| {
+                trace
+                    .policy_report
+                    .actions
+                    .iter()
+                    .find(|action| action.action == "block")
+                    .map(|action| action.policy.clone())
+            });
+            state.outcome = Some(outcome);
+            if let Some(policy) = blocked {
+                return Err(format!("policy `{policy}` activated block action"));
+            }
             Ok(None)
         }
         "security_report" => {

@@ -1,0 +1,75 @@
+{
+  "bytecode_version": "0.17",
+  "language": "Argorix Lang",
+  "module": "Argorix.PolicyV017",
+  "providers": [],
+  "assertions": [
+    {"name": "no_unhandled_messages", "argument": null},
+    {"name": "all_tool_calls_traced", "argument": null},
+    {"name": "all_model_calls_traced", "argument": null},
+    {"name": "all_intrinsics_traced", "argument": null},
+    {"name": "halt_requires_trace", "argument": null},
+    {"name": "runtime_status", "argument": "completed"}
+  ],
+  "policies": [
+    {
+      "name": "RuntimeSafety",
+      "rules": [
+        {"effect": "require", "rule": "no_unhandled_messages"},
+        {"effect": "require", "rule": "all_tool_calls_traced"},
+        {"effect": "require", "rule": "all_model_calls_traced"},
+        {"effect": "require", "rule": "all_intrinsics_traced"},
+        {"effect": "require", "rule": "all_provider_calls_traced"},
+        {"effect": "require", "rule": "halt_requires_trace"},
+        {"effect": "require", "rule": "runtime_status completed"}
+      ],
+      "on_violation": null
+    },
+    {
+      "name": "ProviderSafety",
+      "rules": [
+        {"effect": "require", "rule": "provider_contracts_declared"},
+        {"effect": "require", "rule": "provider_allowlists_valid"},
+        {"effect": "deny", "rule": "external_execution"}
+      ],
+      "on_violation": {"action": "block", "trace_required": true}
+    }
+  ],
+  "failures": [
+    {"name": "PolicyViolation", "action": "block", "trace": "required"}
+  ],
+  "agents": [
+    {"name": "ResearchAgent", "approval": "denied"}
+  ],
+  "capabilities": [
+    {"name": "trace.write", "level": "safe", "requires_approval": false}
+  ],
+  "tools": [],
+  "models": [],
+  "instructions": [
+    {"op": "DeclareAssertion", "name": "no_unhandled_messages", "argument": null},
+    {"op": "DeclareAssertion", "name": "all_tool_calls_traced", "argument": null},
+    {"op": "DeclareAssertion", "name": "all_model_calls_traced", "argument": null},
+    {"op": "DeclareAssertion", "name": "all_intrinsics_traced", "argument": null},
+    {"op": "DeclareAssertion", "name": "halt_requires_trace", "argument": null},
+    {"op": "DeclareAssertion", "name": "runtime_status", "argument": "completed"},
+    {"op": "DeclareFailure", "name": "PolicyViolation", "action": "block", "trace": "required"},
+    {"op": "DeclareCapability", "name": "trace.write", "level": "safe", "requires_approval": false},
+    {"op": "DeclareAgent", "name": "ResearchAgent", "approval": "denied"},
+    {"op": "RequireCapability", "agent": "ResearchAgent", "capability": "trace.write"},
+    {"op": "DeclareHandler", "agent": "ResearchAgent", "message_type": "UserPrompt", "binding": "prompt"},
+    {"op": "TraceValue", "agent": "ResearchAgent", "binding": "prompt"},
+    {"op": "EndHandler"},
+    {"op": "DeclareProtocol", "name": "PolicyDefense"},
+    {"op": "SendMessage", "from": "User", "to": "ResearchAgent", "act": "tell", "message_type": "UserPrompt"},
+    {"op": "Trace", "message": "protocol PolicyDefense completed"},
+    {"op": "VerifyAssertion", "name": "no_unhandled_messages", "argument": null},
+    {"op": "VerifyAssertion", "name": "all_tool_calls_traced", "argument": null},
+    {"op": "VerifyAssertion", "name": "all_model_calls_traced", "argument": null},
+    {"op": "VerifyAssertion", "name": "all_intrinsics_traced", "argument": null},
+    {"op": "VerifyAssertion", "name": "halt_requires_trace", "argument": null},
+    {"op": "VerifyAssertion", "name": "runtime_status", "argument": "completed"},
+    {"op": "PolicyReport"},
+    {"op": "End"}
+  ]
+}

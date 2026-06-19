@@ -1,0 +1,12 @@
+module main
+
+import agents.research
+import policies.default
+import providers.contracts
+
+capability trace.write { level safe }
+type UserPrompt { content: string }
+
+protocol PolicyProject {
+    User -> ResearchAgent: tell UserPrompt
+}

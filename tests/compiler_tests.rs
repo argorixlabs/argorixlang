@@ -936,3 +936,17 @@ fn v016_fixture_remains_verifiable_after_v017_default_emission() {
     assert_eq!(fixture.bytecode_version, "0.16");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
 }
+
+#[test]
+fn v017_policy_fixture_matches_fresh_compiler_output_structurally() {
+    let source = include_str!("../examples/policy_v017.argx");
+    let ast = parse_source(source).unwrap();
+    check_program(&ast).unwrap();
+    let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+    let fixture: argorix_bytecode::BytecodeProgram =
+        serde_json::from_str(include_str!("../examples/policy_v017.argbc.json")).unwrap();
+
+    assert_eq!(emitted.bytecode_version, "0.17");
+    assert_eq!(emitted, fixture);
+    assert_eq!(emitted.policies.len(), 2);
+}

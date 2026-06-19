@@ -1,0 +1,5 @@
+module invalid.unknown_rule
+
+policy Bad {
+    require future_rule
+}

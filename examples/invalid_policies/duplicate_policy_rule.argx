@@ -1,0 +1,6 @@
+module invalid.duplicate_rule
+
+policy Bad {
+    require no_unhandled_messages
+    require no_unhandled_messages
+}

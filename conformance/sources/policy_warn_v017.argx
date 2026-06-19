@@ -1,0 +1,10 @@
+module conformance.policy_warn
+
+policy WarnEvidence {
+    require evidence_bundle_verified
+    on violation { action warn }
+}
+
+type Ping { content: string }
+agent Worker { receives Ping on Ping as ping { trace ping } }
+protocol Flow { User -> Worker: tell Ping }

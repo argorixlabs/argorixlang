@@ -308,6 +308,11 @@ fn policy_summary(outcome: &ExecutionOutcome) -> PolicySummary {
         .filter_map(|event| extract_name(&event.details, "assertion ", " evaluated"))
         .collect::<Vec<_>>();
     let assertions_failed = count_event(events, EventType::AssertionFailed);
+    let actions = events
+        .iter()
+        .filter(|event| event.event_type == EventType::PolicyActionActivated)
+        .filter_map(|event| parse_policy_action(&event.details))
+        .collect::<Vec<_>>();
     PolicySummary {
         evaluated: assertions_passed + assertions_failed > 0,
         passed: assertions_passed + assertions_failed > 0 && assertions_failed == 0,
@@ -320,21 +325,15 @@ fn policy_summary(outcome: &ExecutionOutcome) -> PolicySummary {
             .filter(|event| event.event_type == EventType::FailureModeActivated)
             .filter_map(|event| extract_name(&event.details, "failure mode ", " activated"))
             .collect(),
-        policy_blocks_total: 0,
+        policy_blocks_total: count_event(events, EventType::PolicyDeclared),
         policy_blocks_passed: 0,
         policy_blocks_failed: count_event(events, EventType::PolicyViolation),
         require_rules_total: 0,
         deny_rules_total: 0,
         violations: Vec::new(),
-        actions: Vec::new(),
-        review_required: events.iter().any(|event| {
-            event.event_type == EventType::PolicyActionActivated
-                && event.details.contains("action review")
-        }),
-        warning: events.iter().any(|event| {
-            event.event_type == EventType::PolicyActionActivated
-                && event.details.contains("action warn")
-        }),
+        review_required: actions.iter().any(|action| action.action == "review"),
+        warning: actions.iter().any(|action| action.action == "warn"),
+        actions,
     }
 }
 
@@ -377,11 +376,7 @@ fn verdict(
             reasons,
         };
     }
-    if policy
-        .actions
-        .iter()
-        .any(|action| action.action == "block")
-    {
+    if policy.actions.iter().any(|action| action.action == "block") {
         return SecurityVerdict {
             passed: false,
             severity: "high".into(),
@@ -477,4 +472,20 @@ fn extract_name(details: &str, prefix: &str, suffix: &str) -> Option<String> {
         .strip_prefix(prefix)
         .and_then(|value| value.strip_suffix(suffix))
         .map(str::to_owned)
+}
+
+fn parse_policy_action(details: &str) -> Option<crate::PolicyActionResult> {
+    let words = details.split_whitespace().collect::<Vec<_>>();
+    if words.len() < 6 || words.first().copied() != Some("policy") {
+        return None;
+    }
+    let trace_required = words
+        .iter()
+        .find_map(|word| word.strip_prefix("trace_required="))
+        == Some("true");
+    Some(crate::PolicyActionResult {
+        policy: words[1].to_owned(),
+        action: words[3].to_owned(),
+        trace_required,
+    })
 }

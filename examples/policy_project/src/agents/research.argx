@@ -1,0 +1,9 @@
+module agents.research
+
+agent ResearchAgent {
+    receives UserPrompt
+    capabilities { trace.write }
+    on UserPrompt as prompt {
+        trace prompt
+    }
+}

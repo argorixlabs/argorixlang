@@ -1,0 +1,2 @@
+module conformance.policy_unknown
+policy Bad { require future_rule }

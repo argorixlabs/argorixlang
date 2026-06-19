@@ -1,0 +1,18 @@
+module conformance.policy_v017
+
+capability trace.write { level safe }
+assert no_unhandled_messages
+
+policy RuntimeSafety {
+    require no_unhandled_messages
+    require runtime_status completed
+    deny external_execution
+}
+
+type Ping { content: string }
+agent Worker {
+    receives Ping
+    capabilities { trace.write }
+    on Ping as ping { trace ping }
+}
+protocol Flow { User -> Worker: tell Ping }

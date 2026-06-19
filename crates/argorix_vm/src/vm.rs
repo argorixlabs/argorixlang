@@ -1,10 +1,10 @@
+use crate::policy::{evaluate_rule, PolicyEvidenceContext};
 use crate::{
     AgentStateSummary, AssertionResult, EventFields, EventType, ExecutionTrace, FailureActivation,
     InjectedMessage, IntrinsicExecution, MailboxSummary, PolicyActionResult, PolicyBlockResult,
     PolicyReport, PolicyRuleResult, PolicyViolation, ReactiveExecutionTrace, ReactiveScheduler,
     RuntimeState, RuntimeStatus, Scheduler, VmError,
 };
-use crate::policy::{evaluate_rule, PolicyEvidenceContext};
 use argorix_bytecode::{verify_bytecode, BytecodeError, BytecodeProgram};
 use argorix_provider::{AdapterContract, ProviderKind, ProviderRegistry};
 
@@ -180,6 +180,7 @@ impl Vm {
                     format!("provider boundary denied external provider {provider}"),
                     EventFields::default(),
                 );
+                record_external_execution_policy_violations(bytecode, &mut state);
             }
             let error = VmError::from_verification(errors);
             state.fail(error.to_string());
@@ -427,9 +428,7 @@ impl Vm {
                     evaluation.passed
                 };
                 let reason = (!passed).then(|| {
-                    if declaration.effect == "deny"
-                        && declaration.rule == "external_execution"
-                    {
+                    if declaration.effect == "deny" && declaration.rule == "external_execution" {
                         "external provider execution was attempted".to_owned()
                     } else if declaration.effect == "deny" {
                         format!("denied condition `{}` occurred", declaration.rule)
@@ -556,8 +555,49 @@ impl Vm {
     }
 }
 
+fn record_external_execution_policy_violations(
+    bytecode: &BytecodeProgram,
+    state: &mut RuntimeState,
+) {
+    for policy in &bytecode.policies {
+        if !policy
+            .rules
+            .iter()
+            .any(|rule| rule.effect == "deny" && rule.rule == "external_execution")
+        {
+            continue;
+        }
+        state.trace_ledger.record(
+            EventType::PolicyEvaluated,
+            "failed",
+            format!("policy {} deny external_execution evaluated", policy.name),
+            EventFields::default(),
+        );
+        state.trace_ledger.record(
+            EventType::PolicyViolation,
+            "violated",
+            format!(
+                "policy {} deny external_execution violated: external provider execution was attempted",
+                policy.name
+            ),
+            EventFields::default(),
+        );
+        if let Some(violation) = &policy.on_violation {
+            state.trace_ledger.record(
+                EventType::PolicyActionActivated,
+                "active",
+                format!(
+                    "policy {} action {} activated trace_required={}",
+                    policy.name, violation.action, violation.trace_required
+                ),
+                EventFields::default(),
+            );
+        }
+    }
+}
+
 fn blocked_external_provider<'a>(
-    bytecode: &'a BytecodeProgram,
+    _bytecode: &'a BytecodeProgram,
     errors: &'a [BytecodeError],
 ) -> Option<&'a str> {
     errors.iter().find_map(|error| {
@@ -566,11 +606,7 @@ fn blocked_external_provider<'a>(
             | BytecodeError::UnknownModelProvider(provider) => provider.as_str(),
             _ => return None,
         };
-        bytecode
-            .providers
-            .iter()
-            .any(|contract| contract.name == provider && contract.kind == "external")
-            .then_some(provider)
+        (provider != "simulated").then_some(provider)
     })
 }
 
@@ -1122,7 +1158,11 @@ mod tests {
             assert_eq!(trace.policy_report.status, expected_status);
             assert_eq!(
                 trace.status,
-                if expected_error { "failed" } else { "completed" }
+                if expected_error {
+                    "failed"
+                } else {
+                    "completed"
+                }
             );
             assert_eq!(
                 Vm::new().run_reactive(&bytecode, injection).is_err(),
@@ -1133,5 +1173,54 @@ mod tests {
                 .iter()
                 .any(|event| event.event_type == EventType::PolicyViolation));
         }
+    }
+
+    #[test]
+    fn deny_external_execution_records_violation_for_blocked_attempt() {
+        let mut bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/policy_assertions_v09.argbc.json"
+        ))
+        .unwrap();
+        bytecode.bytecode_version = "0.17".into();
+        bytecode.models[0].provider = "OpenAI".into();
+        bytecode.policies = vec![BytecodePolicy {
+            name: "ProviderSafety".into(),
+            rules: vec![BytecodePolicyRule {
+                effect: "deny".into(),
+                rule: "external_execution".into(),
+            }],
+            on_violation: Some(BytecodePolicyViolation {
+                action: "block".into(),
+                trace_required: true,
+            }),
+        }];
+        let outcome = Vm::new().run_reactive_outcome(
+            &bytecode,
+            InjectedMessage {
+                from: "User".into(),
+                to: "ResearchAgent".into(),
+                act: "tell".into(),
+                message_type: "UserPrompt".into(),
+            },
+        );
+        assert!(outcome.result.is_err());
+        assert!(outcome
+            .state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ExternalProviderExecutionBlocked));
+        assert!(outcome
+            .state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::PolicyViolation));
+        assert!(outcome
+            .state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::PolicyActionActivated));
     }
 }

@@ -1,0 +1,7 @@
+module invalid.duplicate_violation
+
+policy Bad {
+    deny external_execution
+    on violation { action warn }
+    on violation { action block }
+}

@@ -1,0 +1,3 @@
+module conformance.policy_duplicate_name
+policy Shared { require no_unhandled_messages }
+policy Shared { deny external_execution }

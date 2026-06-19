@@ -1,0 +1,47 @@
+module Argorix.PolicyV017
+
+capability trace.write { level safe }
+
+assert no_unhandled_messages
+assert all_tool_calls_traced
+assert all_model_calls_traced
+assert all_intrinsics_traced
+assert halt_requires_trace
+assert runtime_status completed
+
+policy RuntimeSafety {
+    require no_unhandled_messages
+    require all_tool_calls_traced
+    require all_model_calls_traced
+    require all_intrinsics_traced
+    require all_provider_calls_traced
+    require halt_requires_trace
+    require runtime_status completed
+}
+
+policy ProviderSafety {
+    require provider_contracts_declared
+    require provider_allowlists_valid
+    deny external_execution
+
+    on violation {
+        action block
+        trace required
+    }
+}
+
+failure PolicyViolation { action block trace required }
+
+type UserPrompt { content: string }
+
+agent ResearchAgent {
+    receives UserPrompt
+    capabilities { trace.write }
+    on UserPrompt as prompt {
+        trace prompt
+    }
+}
+
+protocol PolicyDefense {
+    User -> ResearchAgent: tell UserPrompt
+}

@@ -1,0 +1,6 @@
+module invalid.invalid_action
+
+policy Bad {
+    deny external_execution
+    on violation { action explode }
+}

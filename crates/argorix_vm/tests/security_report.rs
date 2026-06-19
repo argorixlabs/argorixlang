@@ -20,6 +20,18 @@ fn injection() -> InjectedMessage {
     }
 }
 
+fn policy_fixture(action: Option<&str>) -> BytecodeProgram {
+    let mut bytecode: BytecodeProgram =
+        serde_json::from_str(include_str!("../../../examples/policy_v017.argbc.json")).unwrap();
+    bytecode.policies[1].rules[0].rule = "evidence_bundle_verified".into();
+    bytecode.policies[1].on_violation =
+        action.map(|action| argorix_bytecode::BytecodePolicyViolation {
+            action: action.into(),
+            trace_required: true,
+        });
+    bytecode
+}
+
 #[test]
 fn successful_report_uses_real_runtime_evidence() {
     let bytecode = fixture();
@@ -49,6 +61,24 @@ fn successful_report_uses_real_runtime_evidence() {
     );
     assert!(report.ledger.ledger_digest.starts_with("sha256:"));
     assert_eq!(report.ledger.ledger_digest.len(), 71);
+}
+
+#[test]
+fn policy_v2_review_warn_and_unhandled_violation_have_evidence_based_verdicts() {
+    for (action, severity, reason) in [
+        (Some("review"), "medium", "policy review required"),
+        (Some("warn"), "warning", "policy warning activated"),
+        (None, "medium", "policy block violated"),
+    ] {
+        let bytecode = policy_fixture(action);
+        let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+        let report = SecurityReport::from_outcome(&bytecode, &outcome);
+        assert!(outcome.result.is_ok());
+        assert_eq!(report.verdict.severity, severity);
+        assert_eq!(report.verdict.reasons, [reason]);
+        assert_eq!(report.policy.policy_blocks_failed, 1);
+        assert_eq!(report.policy.violations.len(), 1);
+    }
 }
 
 #[test]

@@ -1,0 +1,5 @@
+module policies.default
+policy ImportedSafety {
+    require no_unhandled_messages
+    deny external_execution
+}

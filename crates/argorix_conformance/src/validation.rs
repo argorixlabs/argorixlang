@@ -23,13 +23,14 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 17] = [
+pub const CATEGORIES: [&str; 18] = [
     "parser",
     "semantics",
     "ir",
     "bytecode",
     "vm",
     "policy",
+    "policy_v2",
     "provider_boundary",
     "adapter_contracts",
     "allowlists",
@@ -54,9 +55,9 @@ pub fn validate_suite(
     suite_path: &Path,
 ) -> Result<(), ConformanceValidationError> {
     let mut errors = Vec::new();
-    if suite.suite_version != "0.16" {
+    if !matches!(suite.suite_version.as_str(), "0.16" | "0.17") {
         errors.push(format!(
-            "suite_version must be `0.16`, found `{}`",
+            "suite_version must be `0.16` or `0.17`, found `{}`",
             suite.suite_version
         ));
     }
@@ -71,6 +72,9 @@ pub fn validate_suite(
         validate_case(case, suite_path, &mut errors);
     }
     for category in CATEGORIES {
+        if suite.suite_version == "0.16" && category == "policy_v2" {
+            continue;
+        }
         if !categories.contains(category) {
             errors.push(format!("missing required category `{category}`"));
         }

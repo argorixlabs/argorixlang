@@ -44,25 +44,24 @@ source language
 
 ## Current status
 
-**Version:** `0.16`
+**Version:** `0.17`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version 0.16 adds a local Module / Package System: multi-file projects with
-deterministic, auditable import resolution. Modules are explicit, never
-implicit — there is no remote registry, no external dependencies, and no
-network. Single-file compilation continues to work unchanged, and external
-providers remain disabled and cannot execute.
+Version 0.17 adds Policy Language v2: named top-level policy blocks compiled as
+intent and evaluated against concrete runtime evidence. Legacy assertions,
+single-file compilation, and the v0.16 Module / Package System remain
+compatible. External providers remain disabled and cannot execute.
 
 ```text
 argorix.toml + src/*.argx
   -> module resolution (deterministic graph)
   -> whole-package semantic and security verification
   -> lexer / parser / AST
-  -> Argorix IR 0.16 (with module metadata)
-  -> Argorix Bytecode 0.16 (with module metadata)
+  -> Argorix IR 0.17 (with policy and module metadata)
+  -> Argorix Bytecode 0.17 (with policy and module metadata)
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -73,7 +72,7 @@ argorix.toml + src/*.argx
   -> provider registry
   -> external adapter contract validation
   -> simulated provider boundary
-  -> global policy verification
+  -> legacy assertion and Policy v2 verification
   -> declared failure modes
   -> trace ledger
   -> deterministic security report
@@ -403,6 +402,118 @@ Conformance paths resolve from the suite, not from the shell.
 ```
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
+
+## Argorix Lang v0.17 Policy Language v2
+
+The v0.17 principle is:
+
+```text
+Security policy must be declared as code, compiled as intent, and enforced as evidence.
+```
+
+Legacy assertions remain intact:
+
+```argx
+assert no_unhandled_messages
+assert all_tool_calls_traced
+assert runtime_status completed
+```
+
+Named policies add explicit `require` and `deny` effects:
+
+```argx
+policy ProviderSafety {
+    require provider_contracts_declared
+    require provider_allowlists_valid
+    deny external_execution
+
+    on violation {
+        action block
+        trace required
+    }
+}
+```
+
+`require X` passes only when the runtime evidence predicate for `X` is true.
+`deny X` passes only when that predicate is false. `runtime_status completed`
+is one rule.
+
+Supported rules are:
+
+```text
+no_unhandled_messages
+all_tool_calls_traced
+all_model_calls_traced
+all_intrinsics_traced
+all_provider_calls_traced
+halt_requires_trace
+runtime_status completed
+provider_contracts_declared
+provider_allowlists_valid
+external_execution
+evidence_bundle_verified
+security_report_generated
+```
+
+Unknown rules and actions are preserved by the parser for precise semantic
+diagnostics. The semantic checker rejects duplicate policy names, duplicate
+rules, contradictory `require`/`deny` effects, invalid actions, and duplicates
+across imported modules.
+
+Violation behavior:
+
+- `action block`: records evidence, preserves the ledger, writes requested
+  reports/bundles, and returns a nonzero VM/CLI result.
+- `action review`: runtime may complete; the report verdict is
+  `medium`/review required.
+- `action warn`: runtime may complete; the report verdict is `warning`.
+- no `on violation`: the policy is `violated` without activating a runtime
+  action.
+
+The trace separates `legacy_assertions` from `policy_blocks`. Policy events are
+recorded as `PolicyDeclared`, `PolicyEvaluated`, `PolicyViolation`, and
+`PolicyActionActivated`. SecurityReport 0.17 summarizes rules, violations and
+actions. EvidenceBundle 0.17 covers the resulting trace, report and ledger
+through the existing digest chain.
+
+Policies can live in imported modules:
+
+```argx
+module main
+import policies.default
+```
+
+Only reachable imported policies enter the merged package. Duplicate names
+across modules fail whole-package checking.
+
+Try the single-file and package examples:
+
+```bash
+cargo run -p argorixc -- check examples/policy_v017.argx
+cargo run -p argorixc -- emit-ir examples/policy_v017.argx
+cargo run -p argorixc -- emit-bytecode examples/policy_v017.argx
+cargo run -p argorixc -- check-package examples/policy_project/argorix.toml
+```
+
+Run and export evidence:
+
+```bash
+cargo run -p argorix-vm -- run examples/policy_v017.argbc.json \
+  --dry-run \
+  --reactive \
+  --inject User:ResearchAgent:tell:UserPrompt \
+  --policy \
+  --security-report reports/policy_v017.security.json \
+  --trace-out reports/policy_v017.trace.json \
+  --evidence-bundle reports/policy_v017.bundle.json
+
+cargo run -p argorix-vm -- verify-evidence reports/policy_v017.bundle.json
+cargo run -p argorix-conformance -- run conformance/suite.v017.json
+```
+
+Policy v2 does not execute external providers, open network connections, call
+OpenAI or Anthropic, connect MCP/A2A, read secrets, or replace evidence with a
+declaration. `simulated` remains the only executable provider.
 
 ## Argorix Lang v0.16 Module / Package System
 
@@ -981,7 +1092,7 @@ Lowering emits declarations and security requirements before protocol message in
 
 The verifier requires:
 
-- Bytecode version `0.16` for newly compiled programs. Versions `0.3`, `0.5`,
+- Bytecode version `0.17` for newly compiled programs. Versions `0.3`, `0.5`,
   `0.6`, `0.7`, `0.8`, `0.9`, `0.10`, `0.11`, `0.12`, `0.13`, `0.14`, and `0.15`
   remain accepted for compatibility. Module metadata (`modules`/`imports`)
   requires version `0.16`.
@@ -1026,7 +1137,7 @@ No network calls, tools, LLMs, or concurrent tasks are executed.
 Example text output:
 
 ```text
-Argorix VM v0.16
+Argorix VM v0.17
 
 Loaded bytecode: examples/prompt_defense.argbc.json
 Execution mode: dry-run
@@ -1079,7 +1190,7 @@ Runtime status progresses through:
 - `completed`
 - `failed`
 
-Reactive JSON uses `vm_version: "0.16"` and
+Reactive JSON uses `vm_version: "0.17"` and
 `mode: "reactive-dry-run"`. Each step records the agent, handled message,
 emitted messages, traced bindings, and whether the handler halted execution.
 
@@ -1165,8 +1276,8 @@ cargo run -p argorixc -- --legacy-capabilities check examples/prompt_defense.arg
 crates/argorixc          Source compiler CLI
 crates/argorix_parser    Lexer, parser, AST, spans, diagnostics
 crates/argorix_semantics Source-level security and protocol verifier
-crates/argorix_ir          Argorix IR 0.16 with module metadata
-crates/argorix_bytecode    IR lowering and Bytecode 0.3 through 0.16 verifier
+crates/argorix_ir          Argorix IR 0.17 with policy and module metadata
+crates/argorix_bytecode    IR lowering and Bytecode 0.3 through 0.17 verifier
 crates/argorix_module      Manifest parsing and deterministic module resolution
 crates/argorix_conformance Official direct-API Conformance Suite runner
 crates/argorix_provider  Executable providers, adapter contracts, and registry
@@ -1206,8 +1317,13 @@ tests                    End-to-end compiler tests
 - `provider_allowlists_v016.argx`: single-file v0.16 source fixture.
 - `provider_allowlists_v016.argbc.json`: generated Bytecode 0.16 fixture.
 - `module_project/`: multi-file v0.16 package (`argorix.toml` + `src/`).
+- `policy_v017.argx`: single-file Policy Language v2 source fixture.
+- `policy_v017.argbc.json`: generated Bytecode 0.17 policy fixture.
+- `policy_project/`: multi-file v0.17 package with an imported policy.
+- `invalid_policies/`: stable parser and semantic policy diagnostics.
 - `invalid_modules/`: package fixtures for each module-resolution failure.
 - `conformance/suite.v016.json`: official portable v0.16 suite.
+- `conformance/suite.v017.json`: official portable v0.17 Policy v2 suite.
 - `provider_allowlists_tools_v012.argx`: valid tool allowlist contract.
 - `provider_allowlists_tools_v012.argbc.json`: generated Bytecode 0.12 tool fixture.
 
@@ -1251,6 +1367,7 @@ tests                    End-to-end compiler tests
 14. `v0.14` — portable Evidence Bundles and offline semantic verification.
 15. `v0.15` — official portable, data-driven Conformance Suite.
 16. `v0.16` — local Module / Package System with deterministic resolution.
+17. `v0.17` — Policy Language v2 with named require/deny rules and evidence-backed actions.
 17. `v0.17+` — sandboxed provider work.
 18. Optional WASM/native backends.
 19. Progressive self-hosting in Argorix Lang.

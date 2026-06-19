@@ -1,0 +1,20 @@
+module conformance.policy_external_attempt
+
+capability model.invoke { level restricted requires approval }
+
+policy ProviderSafety {
+    deny external_execution
+    on violation { action block trace required }
+}
+
+type Ping { content: string }
+type Pong { content: string }
+model Guard { provider simulated capability model.invoke input Ping output Pong }
+agent Worker {
+    security { approval granted }
+    receives Ping
+    capabilities { model.invoke }
+    models { Guard }
+    on Ping as ping { ask Guard with ping }
+}
+protocol Flow { User -> Worker: tell Ping }

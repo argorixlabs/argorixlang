@@ -1,0 +1,5 @@
+module conformance.policy_contradictory
+policy Bad {
+    require external_execution
+    deny external_execution
+}
