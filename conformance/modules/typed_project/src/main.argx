@@ -1,0 +1,5 @@
+module main
+import messages.contracts
+import agents.worker
+type Output { ok: bool }
+protocol Flow { User -> Worker: tell Ping }

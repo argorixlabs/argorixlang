@@ -1,0 +1,2 @@
+module conformance.typed_duplicate
+type Message { value: string value: bool }

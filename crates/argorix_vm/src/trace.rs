@@ -157,6 +157,8 @@ pub struct ReactiveExecutionTrace {
     pub modules: Vec<argorix_bytecode::BytecodeModule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<argorix_bytecode::BytecodeModuleImport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub message_contracts: Vec<argorix_bytecode::BytecodeType>,
     pub injected: InjectedMessage,
     pub steps: Vec<ReactiveStep>,
     pub mailboxes: Vec<MailboxSummary>,

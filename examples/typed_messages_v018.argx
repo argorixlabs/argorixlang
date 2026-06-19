@@ -1,0 +1,37 @@
+module Argorix.TypedMessages
+
+capability trace.write { level safe }
+
+enum RiskLevel { low medium high }
+
+type UserPrompt {
+    content: string
+    risk_level: string
+}
+
+type ReviewResult {
+    approved: bool
+    score: int
+    confidence: float
+}
+
+type LegacyMessage
+
+type CompatibleLegacy {
+    risk: RiskLevel
+}
+
+policy RuntimeSafety {
+    require no_unhandled_messages
+    deny external_execution
+}
+
+agent ResearchAgent {
+    receives UserPrompt
+    capabilities { trace.write }
+    on UserPrompt as prompt { trace prompt }
+}
+
+protocol TypedFlow {
+    User -> ResearchAgent: tell UserPrompt
+}

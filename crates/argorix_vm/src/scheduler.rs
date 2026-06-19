@@ -214,6 +214,8 @@ mod tests {
             providers: vec![],
             assertions: vec![],
             policies: vec![],
+            types: vec![],
+            enums: vec![],
             failures: vec![],
             agents: ["PromptScanner", "PolicyJudge", "RuntimeGate"]
                 .into_iter()

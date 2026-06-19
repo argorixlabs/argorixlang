@@ -20,6 +20,10 @@ pub struct BytecodeProgram {
     #[serde(default)]
     pub policies: Vec<BytecodePolicy>,
     #[serde(default)]
+    pub types: Vec<BytecodeType>,
+    #[serde(default)]
+    pub enums: Vec<String>,
+    #[serde(default)]
     pub failures: Vec<BytecodeFailure>,
     pub agents: Vec<BytecodeAgent>,
     pub capabilities: Vec<BytecodeCapability>,
@@ -79,6 +83,19 @@ pub struct BytecodePolicyRule {
 pub struct BytecodePolicyViolation {
     pub action: String,
     pub trace_required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeType {
+    pub name: String,
+    pub fields: Vec<BytecodeTypeField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeTypeField {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -296,6 +313,10 @@ pub enum BytecodeError {
     DuplicatePolicy(String),
     #[error("invalid policy `{name}`: {reason}")]
     InvalidPolicy { name: String, reason: String },
+    #[error("message contracts require bytecode version 0.18")]
+    MessageContractsRequireV018,
+    #[error("invalid message contract `{name}`: {reason}")]
+    InvalidMessageContract { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -318,6 +339,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.15"
             | "0.16"
             | "0.17"
+            | "0.18"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -328,13 +350,13 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     if !matches!(
         program.bytecode_version.as_str(),
-        "0.17" | "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
+        "0.18" | "0.17" | "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
     }
     if (!program.modules.is_empty() || !program.imports.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.16" | "0.17")
+        && !matches!(program.bytecode_version.as_str(), "0.16" | "0.17" | "0.18")
     {
         errors.push(BytecodeError::ModulesRequireV016);
     }
@@ -350,10 +372,12 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             }
         }
     }
-    if !program.policies.is_empty() && program.bytecode_version != "0.17" {
+    if !program.policies.is_empty() && !matches!(program.bytecode_version.as_str(), "0.17" | "0.18")
+    {
         errors.push(BytecodeError::PoliciesRequireV017);
     }
     validate_policies(program, &mut errors);
+    validate_message_contracts(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -550,7 +574,7 @@ fn validate_contract_allowlists(
         }
         if !matches!(
             program.bytecode_version.as_str(),
-            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17"
+            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17" | "0.18"
         ) {
             continue;
         }
@@ -611,6 +635,48 @@ fn validate_contract_allowlists(
                 errors.push(BytecodeError::InvalidProviderContract {
                     name: contract.name.clone(),
                     reason: format!("unknown allowlist capability `{capability}`"),
+                });
+            }
+        }
+    }
+}
+
+fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    if (!program.types.is_empty() || !program.enums.is_empty())
+        && program.bytecode_version != "0.18"
+    {
+        errors.push(BytecodeError::MessageContractsRequireV018);
+    }
+    let type_names = program
+        .types
+        .iter()
+        .map(|contract| contract.name.as_str())
+        .chain(program.enums.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
+    let mut names = HashSet::new();
+    for contract in &program.types {
+        if !names.insert(contract.name.as_str()) {
+            errors.push(BytecodeError::InvalidMessageContract {
+                name: contract.name.clone(),
+                reason: "duplicate type name".into(),
+            });
+        }
+        let mut fields = HashSet::new();
+        for field in &contract.fields {
+            if !fields.insert(field.name.as_str()) {
+                errors.push(BytecodeError::InvalidMessageContract {
+                    name: contract.name.clone(),
+                    reason: format!("duplicate field `{}`", field.name),
+                });
+            }
+            if !matches!(
+                field.field_type.as_str(),
+                "string" | "bool" | "int" | "float"
+            ) && !type_names.contains(field.field_type.as_str())
+            {
+                errors.push(BytecodeError::InvalidMessageContract {
+                    name: contract.name.clone(),
+                    reason: format!("unknown field type `{}`", field.field_type),
                 });
             }
         }
@@ -729,6 +795,8 @@ mod tests {
             providers: vec![],
             assertions: vec![],
             policies: vec![],
+            types: vec![],
+            enums: vec![],
             failures: vec![],
             agents: vec![BytecodeAgent {
                 name: "Worker".into(),
@@ -1004,5 +1072,30 @@ mod tests {
             BytecodeError::InvalidPolicy { reason, .. }
                 if reason.contains("unknown rule `future_rule`")
         )));
+    }
+
+    #[test]
+    fn validates_v018_message_contracts_and_accepts_v017() {
+        let mut v018 = valid_program();
+        v018.bytecode_version = "0.18".into();
+        v018.enums = vec!["Risk".into()];
+        v018.types = vec![super::BytecodeType {
+            name: "Message".into(),
+            fields: vec![
+                super::BytecodeTypeField {
+                    name: "content".into(),
+                    field_type: "string".into(),
+                },
+                super::BytecodeTypeField {
+                    name: "risk".into(),
+                    field_type: "Risk".into(),
+                },
+            ],
+        }];
+        verify_bytecode(&v018).unwrap();
+
+        let mut v017 = valid_program();
+        v017.bytecode_version = "0.17".into();
+        verify_bytecode(&v017).unwrap();
     }
 }

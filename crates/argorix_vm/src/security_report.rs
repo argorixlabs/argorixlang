@@ -18,6 +18,7 @@ pub struct SecurityReport {
     pub bytecode_version: String,
     pub vm_version: String,
     pub execution: ExecutionSummary,
+    pub message_contracts: MessageContractSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -34,6 +35,14 @@ pub struct ExecutionSummary {
     pub halted: bool,
     pub steps: usize,
     pub injected_message: Option<InjectedMessageSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageContractSummary {
+    pub total: usize,
+    pub typed: usize,
+    pub untyped: usize,
+    pub fields_total: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -204,7 +213,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.17".into(),
+            report_version: "0.18".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -212,8 +221,9 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.17".into()),
+                .unwrap_or_else(|| "0.18".into()),
             execution,
+            message_contracts: message_contract_summary(&bytecode.types),
             policy,
             provider_boundary,
             calls,
@@ -221,6 +231,29 @@ impl SecurityReport {
             ledger,
             verdict,
         }
+    }
+}
+
+fn message_contract_summary(
+    contracts: &[argorix_bytecode::BytecodeType],
+) -> MessageContractSummary {
+    let typed = contracts
+        .iter()
+        .filter(|contract| {
+            !contract.fields.is_empty()
+                && contract.fields.iter().all(|field| {
+                    matches!(
+                        field.field_type.as_str(),
+                        "string" | "bool" | "int" | "float"
+                    )
+                })
+        })
+        .count();
+    MessageContractSummary {
+        total: contracts.len(),
+        typed,
+        untyped: contracts.len() - typed,
+        fields_total: contracts.iter().map(|contract| contract.fields.len()).sum(),
     }
 }
 

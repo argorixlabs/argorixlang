@@ -1,0 +1,5 @@
+module agents.research
+agent ResearchAgent {
+    receives UserPrompt
+    sends DraftAnswer to Reviewer
+}

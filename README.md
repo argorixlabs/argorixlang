@@ -44,24 +44,23 @@ source language
 
 ## Current status
 
-**Version:** `0.17`
+**Version:** `0.18`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version 0.17 adds Policy Language v2: named top-level policy blocks compiled as
-intent and evaluated against concrete runtime evidence. Legacy assertions,
-single-file compilation, and the v0.16 Module / Package System remain
-compatible. External providers remain disabled and cannot execute.
+Version 0.18 adds Typed Message Contracts. Message fields can use `string`,
+`bool`, `int`, and `float`; legacy empty/nominal types and declared enum/type
+references remain compatible. Policy Language v2 and packages are preserved.
 
 ```text
 argorix.toml + src/*.argx
   -> module resolution (deterministic graph)
   -> whole-package semantic and security verification
   -> lexer / parser / AST
-  -> Argorix IR 0.17 (with policy and module metadata)
-  -> Argorix Bytecode 0.17 (with policy and module metadata)
+  -> Argorix IR 0.18 (with typed message, policy and module metadata)
+  -> Argorix Bytecode 0.18 (with typed message, policy and module metadata)
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -402,6 +401,45 @@ Conformance paths resolve from the suite, not from the shell.
 ```
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
+
+## Argorix Lang v0.18 Typed Message Contracts
+
+The v0.18 principle is:
+
+```text
+Agent communication must be typed before it can be trusted.
+```
+
+```argx
+type ReviewResult {
+    approved: bool
+    score: int
+    explanation: string
+    confidence: float
+}
+```
+
+`type Message`, `type Message {}`, and typed contracts are valid. Fields are
+ordered metadata preserved in IR, Bytecode, VM trace, SecurityReport, and the
+EvidenceBundle digest chain. Imported contracts participate in whole-package
+checking.
+
+Declared enum/type field references remain compatible as legacy nominal
+contracts. Unknown references and duplicate fields fail semantic checking.
+SecurityReport records total, typed, untyped, and field counts without treating
+structural typing as proof of real-world safety.
+
+v0.18 does not execute payload values and adds no arrays, maps, generics,
+optional fields, unions, nested literals, validation expressions, network
+access, secrets, or real providers. `simulated` remains the only executable
+provider.
+
+```bash
+cargo run -p argorixc -- check examples/typed_messages_v018.argx
+cargo run -p argorixc -- emit-bytecode examples/typed_messages_v018.argx
+cargo run -p argorixc -- check-package examples/typed_message_project/argorix.toml
+cargo run -p argorix-conformance -- run conformance/suite.v018.json
+```
 
 ## Argorix Lang v0.17 Policy Language v2
 

@@ -1,0 +1,2 @@
+module conformance.missing_send
+agent Worker { sends MissingMessage to User }

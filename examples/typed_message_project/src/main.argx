@@ -1,0 +1,10 @@
+module main
+import messages.contracts
+import agents.research
+import agents.reviewer
+import policies.default
+
+protocol TypedProject {
+    User -> ResearchAgent: tell UserPrompt
+    ResearchAgent -> Reviewer: propose DraftAnswer
+}

@@ -1,0 +1,2 @@
+module agents.reviewer
+agent Reviewer { receives DraftAnswer from ResearchAgent }

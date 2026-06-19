@@ -1,9 +1,10 @@
 use crate::{
     ast::{
         AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
-        FieldDecl, HandlerDecl, HandlerInstruction, ImportDecl, ModelDecl, PolicyDecl, PolicyRule,
-        PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
-        ProtocolStep, ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
+        FieldDecl, HandlerDecl, HandlerInstruction, ImportDecl, MessageFieldType, ModelDecl,
+        PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
+        Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl,
+        ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -473,13 +474,27 @@ impl Parser {
     fn parse_type(&mut self) -> Result<TypeDecl, Diagnostic> {
         self.expect_keyword("type")?;
         let name = self.expect_identifier("type name")?;
+        if !self.check(&TokenKind::LeftBrace) {
+            return Ok(TypeDecl {
+                name,
+                fields: Vec::new(),
+            });
+        }
         self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
         let mut fields = Vec::new();
         while !self.check(&TokenKind::RightBrace) {
             self.ensure_not_eof("unterminated type declaration")?;
             let field_name = self.expect_identifier("field name")?;
             self.expect_symbol(TokenKind::Colon, "`:`")?;
-            let field_type = self.expect_identifier("field type")?;
+            let token = self.expect_identifier("field type")?;
+            let value = match token.value.as_str() {
+                "string" => MessageFieldType::String,
+                "bool" => MessageFieldType::Bool,
+                "int" => MessageFieldType::Int,
+                "float" => MessageFieldType::Float,
+                other => MessageFieldType::Unknown(other.to_owned()),
+            };
+            let field_type = Spanned::new(value, token.span);
             fields.push(FieldDecl {
                 name: field_name,
                 field_type,
@@ -941,5 +956,19 @@ mod tests {
         assert!(diagnostics[0]
             .message
             .contains("duplicate `on violation` block"));
+    }
+
+    #[test]
+    fn parses_primitive_and_legacy_message_contracts() {
+        let program = parse_source(
+            "module main\ntype Empty\ntype Typed { content: string approved: bool score: int confidence: float }\ntype Legacy { risk: RiskLevel }\n",
+        )
+        .unwrap();
+        assert!(program.types[0].fields.is_empty());
+        assert_eq!(program.types[1].fields.len(), 4);
+        assert_eq!(
+            program.types[2].fields[0].field_type.value.source_name(),
+            "RiskLevel"
+        );
     }
 }

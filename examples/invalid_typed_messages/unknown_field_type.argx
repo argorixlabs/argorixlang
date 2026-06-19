@@ -1,0 +1,2 @@
+module invalid.unknown_field
+type Message { value: mystery }

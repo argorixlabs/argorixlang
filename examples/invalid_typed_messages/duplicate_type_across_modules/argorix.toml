@@ -1,0 +1,5 @@
+[package]
+name = "duplicate-type"
+version = "0.18.0"
+[entry]
+main = "src/main.argx"

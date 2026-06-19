@@ -33,9 +33,10 @@ pub fn check_program_with_options(
         let mut field_names = HashSet::new();
         for field in &type_decl.fields {
             report_duplicate(&mut field_names, &field.name, "field", &mut diagnostics);
-            if !symbols.is_field_type(&field.field_type.value) {
+            let field_type = field.field_type.value.source_name();
+            if !field.field_type.value.is_primitive() && !symbols.is_field_type(field_type) {
                 diagnostics.push(Diagnostic::new(
-                    format!("unknown field type `{}`", field.field_type.value),
+                    format!("unknown message field type `{field_type}`"),
                     field.field_type.span,
                 ));
             }
@@ -921,5 +922,28 @@ mod tests {
         "#;
         let program = parse_source(source).unwrap();
         check_program(&program).unwrap();
+    }
+
+    #[test]
+    fn validates_typed_and_nominal_message_fields() {
+        let valid = parse_source(
+            "module main\nenum RiskLevel { low high }\ntype Message { content: string risk: RiskLevel }\n",
+        )
+        .unwrap();
+        check_program(&valid).unwrap();
+
+        let invalid =
+            parse_source("module main\ntype Message { value: future value: string }\n").unwrap();
+        let messages = check_program(&invalid)
+            .unwrap_err()
+            .into_iter()
+            .map(|diagnostic| diagnostic.message)
+            .collect::<Vec<_>>();
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("unknown message field type `future`")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate field `value`")));
     }
 }

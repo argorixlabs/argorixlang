@@ -39,9 +39,9 @@ fn successful_report_uses_real_runtime_evidence() {
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
 
     assert!(outcome.result.is_ok());
-    assert_eq!(report.report_version, "0.17");
+    assert_eq!(report.report_version, "0.18");
     assert_eq!(report.bytecode_version, "0.13");
-    assert_eq!(report.vm_version, "0.17");
+    assert_eq!(report.vm_version, "0.18");
     assert!(report.execution.completed);
     assert!(!report.execution.failed);
     assert_eq!(report.execution.steps, 3);
@@ -79,6 +79,29 @@ fn policy_v2_review_warn_and_unhandled_violation_have_evidence_based_verdicts() 
         assert_eq!(report.policy.policy_blocks_failed, 1);
         assert_eq!(report.policy.violations.len(), 1);
     }
+}
+
+#[test]
+fn typed_message_report_summarizes_contracts_without_payload_execution() {
+    let bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+        "../../../examples/typed_messages_v018.argbc.json"
+    ))
+    .unwrap();
+    let outcome = Vm::new().run_reactive_outcome(
+        &bytecode,
+        InjectedMessage {
+            from: "User".into(),
+            to: "ResearchAgent".into(),
+            act: "tell".into(),
+            message_type: "UserPrompt".into(),
+        },
+    );
+    let report = SecurityReport::from_outcome(&bytecode, &outcome);
+    assert_eq!(report.message_contracts.total, 4);
+    assert_eq!(report.message_contracts.typed, 2);
+    assert_eq!(report.message_contracts.untyped, 2);
+    assert_eq!(report.message_contracts.fields_total, 6);
+    assert_eq!(outcome.result.unwrap().message_contracts, bytecode.types);
 }
 
 #[test]

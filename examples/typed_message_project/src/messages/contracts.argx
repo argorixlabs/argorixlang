@@ -1,0 +1,3 @@
+module messages.contracts
+type UserPrompt { content: string risk_level: string }
+type DraftAnswer { content: string citations_required: bool }

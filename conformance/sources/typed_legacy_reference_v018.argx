@@ -1,0 +1,4 @@
+module conformance.typed_legacy
+enum Risk { low high }
+type Message { content: string risk: Risk }
+agent Worker { receives Message }

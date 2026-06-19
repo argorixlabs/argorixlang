@@ -1,0 +1,26 @@
+{
+  "bytecode_version": "0.17",
+  "language": "Argorix Lang",
+  "module": "compat.policy_v017",
+  "providers": [],
+  "assertions": [],
+  "policies": [
+    {
+      "name": "Compatibility",
+      "rules": [{"effect": "deny", "rule": "external_execution"}],
+      "on_violation": null
+    }
+  ],
+  "failures": [],
+  "agents": [{"name": "Worker", "approval": "denied"}],
+  "capabilities": [],
+  "tools": [],
+  "models": [],
+  "instructions": [
+    {"op": "DeclareAgent", "name": "Worker", "approval": "denied"},
+    {"op": "DeclareProtocol", "name": "Flow"},
+    {"op": "SendMessage", "from": "User", "to": "Worker", "act": "tell", "message_type": "Ping"},
+    {"op": "PolicyReport"},
+    {"op": "End"}
+  ]
+}

@@ -1,0 +1,2 @@
+module invalid.syntax
+type Message { value string }

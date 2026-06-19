@@ -1,0 +1,2 @@
+module invalid.missing_message
+agent Worker { receives MissingMessage }

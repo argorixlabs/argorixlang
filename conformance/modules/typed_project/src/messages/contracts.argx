@@ -1,0 +1,2 @@
+module messages.contracts
+type Ping { content: string }

@@ -182,7 +182,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.17".to_owned(),
+            ir_version: "0.18".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -279,7 +279,7 @@ impl From<&Program> for IrProgram {
                         .iter()
                         .map(|field| IrField {
                             name: field.name.value.clone(),
-                            field_type: field.field_type.value.clone(),
+                            field_type: field.field_type.value.source_name().to_owned(),
                         })
                         .collect(),
                 })
@@ -434,7 +434,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.17");
+        assert_eq!(ir.ir_version, "0.18");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");

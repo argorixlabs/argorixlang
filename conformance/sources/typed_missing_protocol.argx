@@ -1,0 +1,3 @@
+module conformance.missing_protocol
+agent Worker {}
+protocol Flow { User -> Worker: tell MissingMessage }

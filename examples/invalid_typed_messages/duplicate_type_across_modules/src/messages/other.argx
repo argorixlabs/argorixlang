@@ -1,0 +1,2 @@
+module messages.other
+type Shared { value: bool }

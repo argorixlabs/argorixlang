@@ -1,7 +1,8 @@
 use crate::{
     BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeModel,
     BytecodeModule, BytecodeModuleImport, BytecodePolicy, BytecodePolicyRule,
-    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeTool, Instruction,
+    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeTool, BytecodeType,
+    BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -170,7 +171,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.17".to_owned(),
+        bytecode_version: "0.18".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -232,6 +233,22 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 }),
             })
             .collect(),
+        types: ir
+            .types
+            .iter()
+            .map(|contract| BytecodeType {
+                name: contract.name.clone(),
+                fields: contract
+                    .fields
+                    .iter()
+                    .map(|field| BytecodeTypeField {
+                        name: field.name.clone(),
+                        field_type: field.field_type.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        enums: ir.enums.iter().map(|item| item.name.clone()).collect(),
         failures: ir
             .failures
             .iter()
@@ -369,7 +386,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.17");
+        assert_eq!(bytecode.bytecode_version, "0.18");
         assert!(bytecode
             .instructions
             .iter()

@@ -1,0 +1,5 @@
+module conformance.typed
+type Ping { content: string approved: bool score: int confidence: float }
+type Legacy
+agent Worker { receives Ping on Ping as ping { trace ping } }
+protocol Flow { User -> Worker: tell Ping }

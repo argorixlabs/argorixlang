@@ -226,7 +226,32 @@ pub struct TypeDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldDecl {
     pub name: Spanned<String>,
-    pub field_type: Spanned<String>,
+    pub field_type: Spanned<MessageFieldType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageFieldType {
+    String,
+    Bool,
+    Int,
+    Float,
+    Unknown(String),
+}
+
+impl MessageFieldType {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::String => "string",
+            Self::Bool => "bool",
+            Self::Int => "int",
+            Self::Float => "float",
+            Self::Unknown(value) => value,
+        }
+    }
+
+    pub const fn is_primitive(&self) -> bool {
+        !matches!(self, Self::Unknown(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

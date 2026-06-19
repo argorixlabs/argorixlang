@@ -1,0 +1,29 @@
+{
+  "suite_version": "0.18",
+  "cases": [
+    {"id":"parser","name":"Typed message parses","category":"parser","source_path":"sources/typed_messages_v018.argx","stages":["parse"]},
+    {"id":"semantics","name":"Typed message checks","category":"semantics","source_path":"sources/typed_messages_v018.argx","stages":["parse","semantic_check"]},
+    {"id":"ir","name":"IR preserves fields","category":"ir","source_path":"sources/typed_messages_v018.argx","stages":["parse","semantic_check","emit_ir"]},
+    {"id":"bytecode","name":"Bytecode preserves fields","category":"bytecode","source_path":"sources/typed_messages_v018.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode"]},
+    {"id":"vm","name":"VM preserves contracts","category":"vm","source_path":"sources/typed_messages_v018.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode","run_vm"],"injection":"User:Worker:tell:Ping"},
+    {"id":"policy","name":"Legacy policy remains compatible","category":"policy","source_path":"sources/policy_v017.argx","stages":["parse","semantic_check"]},
+    {"id":"policy-v2","name":"Policy v2 remains compatible","category":"policy_v2","source_path":"sources/policy_v017.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode"]},
+    {"id":"provider","name":"Provider boundary remains compatible","category":"provider_boundary","bytecode_path":"bytecode/compat_v010.argbc.json","stages":["verify_bytecode"]},
+    {"id":"contracts","name":"Adapter contracts remain compatible","category":"adapter_contracts","bytecode_path":"bytecode/compat_v011.argbc.json","stages":["verify_bytecode"]},
+    {"id":"allowlists","name":"Allowlists remain compatible","category":"allowlists","bytecode_path":"bytecode/compat_v012.argbc.json","stages":["verify_bytecode"]},
+    {"id":"report","name":"Report summarizes contracts","category":"security_report","source_path":"sources/typed_messages_v018.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode","run_vm","security_report"],"injection":"User:Worker:tell:Ping"},
+    {"id":"bundle","name":"Bundle covers contracts","category":"evidence_bundle","source_path":"sources/typed_messages_v018.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode","run_vm","security_report","trace_out","evidence_bundle","verify_evidence"],"injection":"User:Worker:tell:Ping"},
+    {"id":"offline","name":"Typed evidence verifies offline","category":"offline_verification","source_path":"sources/typed_messages_v018.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode","run_vm","security_report","trace_out","evidence_bundle","verify_evidence"],"injection":"User:Worker:tell:Ping"},
+    {"id":"compatibility","name":"Bytecode 0.17 remains compatible","category":"compatibility","bytecode_path":"bytecode/policy_v017.argbc.json","stages":["verify_bytecode"]},
+    {"id":"modules","name":"Imported contract enters IR","category":"modules","manifest_path":"modules/typed_project/argorix.toml","stages":["resolve_package","check_package","emit_ir_package"]},
+    {"id":"package","name":"Typed package compiles","category":"package","manifest_path":"modules/typed_project/argorix.toml","stages":["resolve_package","check_package","emit_ir_package","emit_bytecode","verify_bytecode"]},
+    {"id":"graph","name":"Typed package graph resolves","category":"module_graph","manifest_path":"modules/typed_project/argorix.toml","stages":["resolve_package","graph_package"]},
+    {"id":"multi-file","name":"Imported typed message works","category":"multi_file_semantics","manifest_path":"modules/typed_project/argorix.toml","stages":["resolve_package","check_package","emit_ir_package","emit_bytecode","verify_bytecode","run_vm"],"injection":"User:Worker:tell:Ping"},
+    {"id":"typed-messages","name":"Typed contracts complete evidence pipeline","category":"typed_messages","source_path":"sources/typed_messages_v018.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode","run_vm","security_report","trace_out","evidence_bundle","verify_evidence"],"injection":"User:Worker:tell:Ping"},
+    {"id":"legacy-reference","name":"Declared enum reference remains compatible","category":"typed_messages","source_path":"sources/typed_legacy_reference_v018.argx","stages":["parse","semantic_check"]},
+    {"id":"duplicate-field","name":"Duplicate field fails","category":"typed_messages","source_path":"sources/typed_duplicate_field.argx","stages":["parse","semantic_check"],"expected_failure_stage":"semantic_check","expected_failure_contains":"duplicate field"},
+    {"id":"unknown-field","name":"Unknown field type fails","category":"typed_messages","source_path":"sources/typed_unknown_field.argx","stages":["parse","semantic_check"],"expected_failure_stage":"semantic_check","expected_failure_contains":"unknown message field type"},
+    {"id":"missing-send","name":"Missing send message fails","category":"typed_messages","source_path":"sources/typed_missing_send.argx","stages":["parse","semantic_check"],"expected_failure_stage":"semantic_check","expected_failure_contains":"unknown message type"},
+    {"id":"missing-protocol","name":"Missing protocol message fails","category":"typed_messages","source_path":"sources/typed_missing_protocol.argx","stages":["parse","semantic_check"],"expected_failure_stage":"semantic_check","expected_failure_contains":"unknown message type"}
+  ]
+}
