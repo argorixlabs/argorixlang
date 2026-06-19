@@ -1,4 +1,5 @@
 /target/
+docs/
 *.pdb
 reports/*.security.json
 reports/*.bundle.json
