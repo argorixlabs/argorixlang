@@ -1,6 +1,9 @@
 use anyhow::{bail, Context, Result};
 use argorix_bytecode::BytecodeProgram;
-use argorix_vm::{InjectedMessage, SecurityReport, Vm, VmError};
+use argorix_vm::{
+    evidence::{verify_evidence, EvidenceBundle},
+    InjectedMessage, ReactiveExecutionTrace, SecurityReport, Vm, VmError,
+};
 use clap::{Parser, Subcommand};
 use std::{fs, path::PathBuf};
 
@@ -39,6 +42,15 @@ enum Command {
         provider_contracts: bool,
         #[arg(long, value_name = "PATH")]
         security_report: Option<PathBuf>,
+        #[arg(long, value_name = "PATH")]
+        trace_out: Option<PathBuf>,
+        #[arg(long, value_name = "PATH")]
+        evidence_bundle: Option<PathBuf>,
+    },
+    VerifyEvidence {
+        bundle: PathBuf,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -65,9 +77,11 @@ fn run() -> Result<()> {
             providers,
             provider_contracts,
             security_report,
+            trace_out,
+            evidence_bundle,
         } => {
             if !dry_run {
-                bail!("v0.13 only supports execution with `--dry-run`");
+                bail!("v0.14 only supports execution with `--dry-run`");
             }
             let source = fs::read_to_string(&file)
                 .with_context(|| format!("failed to read `{}`", file.display()))?;
@@ -79,15 +93,30 @@ fn run() -> Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("`--reactive` requires `--inject`"))
                     .and_then(parse_injection)?;
                 let outcome = Vm::new().run_reactive_outcome(&bytecode, injection);
+                let report = SecurityReport::from_outcome(&bytecode, &outcome);
                 if let Some(path) = security_report.as_deref() {
-                    let report = SecurityReport::from_outcome(&bytecode, &outcome);
                     write_security_report(path, &report)?;
+                }
+                if let (Some(path), Ok(trace)) = (trace_out.as_deref(), outcome.result.as_ref()) {
+                    write_trace(path, trace)?;
+                }
+                if let Some(path) = evidence_bundle.as_deref() {
+                    let bundle = EvidenceBundle::from_outcome(
+                        &bytecode,
+                        &outcome,
+                        &report,
+                        path,
+                        Some(&file),
+                        trace_out.as_deref(),
+                        security_report.as_deref(),
+                    )?;
+                    write_evidence_bundle(path, &bundle)?;
                 }
                 let trace = outcome.result?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&trace)?);
                 } else {
-                    println!("Argorix VM v0.13\n");
+                    println!("Argorix VM v0.14\n");
                     println!("Execution mode: reactive dry-run");
                     println!("Scheduler: {}", trace.scheduler);
                     if providers {
@@ -279,6 +308,12 @@ fn run() -> Result<()> {
                     if let Some(path) = security_report.as_deref() {
                         println!("Security report written: {}", path.display());
                     }
+                    if let Some(path) = trace_out.as_deref() {
+                        println!("Trace written: {}", path.display());
+                    }
+                    if let Some(path) = evidence_bundle.as_deref() {
+                        println!("Evidence bundle written: {}", path.display());
+                    }
                 }
                 return Ok(());
             }
@@ -287,7 +322,7 @@ fn run() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&trace)?);
             } else if mailboxes {
-                println!("Argorix VM v0.13\n");
+                println!("Argorix VM v0.14\n");
                 println!("Execution mode: dry-run");
                 println!("Scheduler: {}", trace.scheduler);
                 println!("Agents: {}\n", trace.mailboxes.len());
@@ -307,7 +342,7 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
                 println!("Trace ledger: generated");
             } else {
-                println!("Argorix VM v0.13\n");
+                println!("Argorix VM v0.14\n");
                 println!("Loaded bytecode: {}", file.display());
                 println!("Execution mode: dry-run\n");
                 for step in &trace.steps {
@@ -321,25 +356,54 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
             }
         }
+        Command::VerifyEvidence { bundle, json } => {
+            let result = verify_evidence(&bundle)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else if result.passed {
+                println!("Evidence verification: passed");
+            } else {
+                println!("Evidence verification: failed");
+                for failure in &result.failures {
+                    println!("- {failure}");
+                }
+            }
+            if !result.passed {
+                bail!("evidence verification failed");
+            }
+        }
     }
     Ok(())
 }
 
 fn write_security_report(path: &std::path::Path, report: &SecurityReport) -> Result<()> {
+    write_pretty_json(path, report, "security report")
+}
+
+fn write_trace(path: &std::path::Path, trace: &ReactiveExecutionTrace) -> Result<()> {
+    write_pretty_json(path, trace, "trace")
+}
+
+fn write_evidence_bundle(path: &std::path::Path, bundle: &EvidenceBundle) -> Result<()> {
+    write_pretty_json(path, bundle, "evidence bundle")
+}
+
+fn write_pretty_json<T: serde::Serialize>(
+    path: &std::path::Path,
+    value: &T,
+    label: &str,
+) -> Result<()> {
     if let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     {
         fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create security report directory `{}`",
-                parent.display()
-            )
+            format!("failed to create {label} directory `{}`", parent.display())
         })?;
     }
-    let json = serde_json::to_string_pretty(report)?;
+    let json = serde_json::to_string_pretty(value)?;
     fs::write(path, format!("{json}\n"))
-        .with_context(|| format!("failed to write security report `{}`", path.display()))
+        .with_context(|| format!("failed to write {label} `{}`", path.display()))
 }
 fn format_allowlist(values: &[String]) -> String {
     if values.is_empty() {
@@ -506,6 +570,47 @@ mod tests {
                 security_report: Some(_),
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn cli_accepts_evidence_and_trace_paths() {
+        let cli = Cli::try_parse_from([
+            "argorix-vm",
+            "run",
+            "program.json",
+            "--dry-run",
+            "--reactive",
+            "--inject",
+            "User:Worker:tell:Ping",
+            "--trace-out",
+            "reports/run.trace.json",
+            "--evidence-bundle",
+            "reports/run.bundle.json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Run {
+                trace_out: Some(_),
+                evidence_bundle: Some(_),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn cli_accepts_verify_evidence_json() {
+        let cli = Cli::try_parse_from([
+            "argorix-vm",
+            "verify-evidence",
+            "reports/run.bundle.json",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::VerifyEvidence { json: true, .. }
         ));
     }
 

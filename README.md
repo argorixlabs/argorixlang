@@ -24,7 +24,6 @@
 
 **Argorix Lang** is a compiled language for secure, verifiable communication between AI agents.
 
-<<<<<<< HEAD
 It is currently implemented in **Rust**, with a long-term path toward progressive self-hosting. The project explores language-level infrastructure for AI-agent systems where security, traceability, provider boundaries, and runtime evidence are part of the execution model rather than afterthoughts.
 
 Argorix Lang is early-stage infrastructure, but the direction is explicit:
@@ -45,25 +44,22 @@ source language
 
 ## Current status
 
-**Version:** `0.12`  
+**Version:** `0.14`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version `0.12` activates declarative target and capability allowlists for external adapter contracts.
-
-External providers remain disabled and cannot execute.
-=======
-Version 0.13 exports deterministic security reports from real VM execution evidence, including failed executions. External providers remain disabled and cannot execute:
->>>>>>> e94f3e3 (feat: implement security report export v0.13)
+Version 0.14 exports portable Evidence Bundles and verifies their semantic
+Bytecode, trace, report, and ledger consistency offline. External providers
+remain disabled and cannot execute.
 
 ```text
 .argx
   -> lexer / parser / AST
   -> semantic and security verification
-  -> Argorix IR 0.13
-  -> Argorix Bytecode 0.13
+  -> Argorix IR 0.14
+  -> Argorix Bytecode 0.14
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -157,7 +153,6 @@ cargo run -p argorixc -- emit-bytecode examples/provider_allowlists_v012.argx
 cargo run -p argorix-vm -- run examples/prompt_defense.argbc.json --dry-run
 cargo run -p argorix-vm -- run examples/prompt_defense.argbc.json --dry-run --json
 cargo run -p argorix-vm -- run examples/prompt_defense.argbc.json --dry-run --mailboxes
-<<<<<<< HEAD
 ```
 
 Reactive execution example:
@@ -220,7 +215,6 @@ cargo run -p argorix-vm -- run examples/provider_allowlists_v012.argbc.json \
   --policy \
   --providers \
   --provider-contracts
-=======
 cargo run -p argorix-vm -- run examples/prompt_defense_v05.argbc.json --dry-run --reactive --inject User:PromptScanner:tell:UserPrompt
 cargo run -p argorix-vm -- run examples/prompt_defense_v05.argbc.json --dry-run --reactive --inject User:PromptScanner:tell:UserPrompt --json
 cargo run -p argorixc -- check examples/prompt_defense_v06.argx
@@ -253,7 +247,6 @@ cargo run -p argorix-vm -- run examples/provider_allowlists_v012.argbc.json --dr
 cargo run -p argorixc -- emit-bytecode examples/provider_allowlists_v013.argx
 cargo run -p argorix-vm -- run examples/provider_allowlists_v013.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --security-report reports/provider-allowlists.security.json
 cargo run -p argorix-vm -- run examples/provider_allowlists_v013.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --json --security-report reports/provider-allowlists.security.json
->>>>>>> e94f3e3 (feat: implement security report export v0.13)
 ```
 
 ## Security report export v0.13
@@ -267,6 +260,55 @@ The public `SecurityReport` includes execution, policy, provider-boundary, call,
 `ledger_digest` is `sha256:` plus SHA-256 of compact JSON for the ordered ledger events. It supports deterministic integrity checks and reproducible audits. It is not a signature, uses no key, and does not prove real-world safety.
 
 Verdicts follow evidence: blocked external execution or runtime/provider-boundary failure is `high`; assertion or completed-runtime denial evidence is `medium`; completion without assertions is `informational`; completion with passing policy is `pass`.
+
+## Argorix Lang v0.14 Evidence Bundle + Offline Verification
+
+An `EvidenceBundle` is a portable manifest connecting the semantic content of
+Argorix Bytecode, a `ReactiveExecutionTrace`, a `SecurityReport`, and its
+ledger digest. It is generated locally and can be checked without network
+access:
+
+```bash
+cargo run -p argorix-vm -- run examples/provider_allowlists_v014.argbc.json \
+  --dry-run \
+  --reactive \
+  --inject User:ResearchAgent:tell:UserPrompt \
+  --state \
+  --tools \
+  --models \
+  --policy \
+  --providers \
+  --provider-contracts \
+  --security-report reports/provider_allowlists_v014.security.json \
+  --trace-out reports/provider_allowlists_v014.trace.json \
+  --evidence-bundle reports/provider_allowlists_v014.bundle.json
+
+cargo run -p argorix-vm -- verify-evidence reports/provider_allowlists_v014.bundle.json
+cargo run -p argorix-vm -- verify-evidence reports/provider_allowlists_v014.bundle.json --json
+```
+
+Artifact paths are stored relative to the bundle directory with `/`
+separators. Verification resolves them from that directory, so a complete
+portable tree can be moved and checked offline.
+
+Digests use `sha256:<hex>` over compact serialization of deserialized Rust
+types. Formatting and whitespace changes do not alter semantic evidence;
+content changes do. These digests are not signatures, use no keys, provide no
+authenticity claim, and do not prove real-world safety.
+
+Failed executions remain reportable. When execution fails before producing a
+reactive trace, the report and bundle are still written when possible,
+`trace_path` and `trace_digest` are `null`, and the process still exits
+nonzero.
+
+The governing rules remain:
+
+```text
+Allowlisted does not mean executable.
+Failed executions must still be reportable.
+Security reports are evidence artifacts, not success receipts.
+Evidence must be exportable and independently checkable.
+```
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
 ## Provider contract allowlists v0.12
@@ -700,12 +742,9 @@ Lowering emits declarations and security requirements before protocol message in
 
 The verifier requires:
 
-<<<<<<< HEAD
-- Bytecode version `0.12` for newly compiled programs.
-- Compatibility with versions `0.3`, `0.5`, `0.6`, `0.7`, `0.8`, `0.9`, and `0.10`.
-=======
-- Bytecode version `0.13` for newly compiled programs. Versions `0.3`, `0.5`, `0.6`, `0.7`, `0.8`, `0.9`, `0.10`, `0.11`, and `0.12` remain accepted for compatibility.
->>>>>>> e94f3e3 (feat: implement security report export v0.13)
+- Bytecode version `0.14` for newly compiled programs. Versions `0.3`, `0.5`,
+  `0.6`, `0.7`, `0.8`, `0.9`, `0.10`, `0.11`, `0.12`, and `0.13` remain
+  accepted for compatibility.
 - At least one agent.
 - At least one protocol or `SendMessage`.
 - Complete, non-empty message fields.
@@ -747,7 +786,7 @@ No network calls, tools, LLMs, or concurrent tasks are executed.
 Example text output:
 
 ```text
-Argorix VM v0.13
+Argorix VM v0.14
 
 Loaded bytecode: examples/prompt_defense.argbc.json
 Execution mode: dry-run
@@ -795,16 +834,14 @@ With `--json`, execution returns runtime state summaries and the complete ledger
 
 Runtime status progresses through:
 
-<<<<<<< HEAD
 - `initialized`
 - `running`
 - `completed`
 - `failed`
-=======
-Reactive JSON uses `vm_version: "0.13"` and
+
+Reactive JSON uses `vm_version: "0.14"` and
 `mode: "reactive-dry-run"`. Each step records the agent, handled message,
 emitted messages, traced bindings, and whether the handler halted execution.
->>>>>>> e94f3e3 (feat: implement security report export v0.13)
 
 The public `RuntimeState` retains:
 
@@ -888,8 +925,8 @@ cargo run -p argorixc -- --legacy-capabilities check examples/prompt_defense.arg
 crates/argorixc          Source compiler CLI
 crates/argorix_parser    Lexer, parser, AST, spans, diagnostics
 crates/argorix_semantics Source-level security and protocol verifier
-crates/argorix_ir        Argorix IR 0.13 with provider contract allowlists
-crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.13 verifier
+crates/argorix_ir        Argorix IR 0.14 with provider contract allowlists
+crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.14 verifier
 crates/argorix_provider  Executable providers, adapter contracts, and registry
 crates/argorix_vm        VM, preserved outcomes, ledger, security reports
 crates/argorix-vm        Bytecode VM CLI
@@ -920,6 +957,8 @@ tests                    End-to-end compiler tests
 - `provider_allowlists_v012.argbc.json`: generated Bytecode 0.12 model fixture.
 - `provider_allowlists_v013.argx`: v0.12-compatible allowlist source compiled by v0.13.
 - `provider_allowlists_v013.argbc.json`: generated Bytecode 0.13 security-report fixture.
+- `provider_allowlists_v014.argx`: Evidence Bundle and offline-verification source fixture.
+- `provider_allowlists_v014.argbc.json`: generated Bytecode 0.14 evidence fixture.
 - `provider_allowlists_tools_v012.argx`: valid tool allowlist contract.
 - `provider_allowlists_tools_v012.argbc.json`: generated Bytecode 0.12 tool fixture.
 
@@ -947,7 +986,6 @@ tests                    End-to-end compiler tests
 
 ## Roadmap
 
-<<<<<<< HEAD
 1. `v0.1` — compiled structure.
 2. `v0.2` — compiled security.
 3. `v0.3` — compiled execution through bytecode and dry-run VM.
@@ -960,9 +998,11 @@ tests                    End-to-end compiler tests
 10. `v0.10` — audited provider boundary and simulated provider registry.
 11. `v0.11` — disabled external adapter contracts and conformance checks.
 12. `v0.12` — declarative provider target/capability allowlists.
-13. `v0.13+` — sandboxed provider work.
-14. Optional WASM/native backends.
-15. Progressive self-hosting in Argorix Lang.
+13. `v0.13` — preserved execution outcomes and deterministic security reports.
+14. `v0.14` — portable Evidence Bundles and offline semantic verification.
+15. `v0.15+` — sandboxed provider work.
+16. Optional WASM/native backends.
+17. Progressive self-hosting in Argorix Lang.
 
 ## Security posture
 
@@ -986,23 +1026,5 @@ Secure AI-agent systems should be:
 - governed at the runtime boundary.
 
 Argorix Lang is an open-source exploration of that direction.
-=======
-1. v0.1: compiled structure
-2. v0.2: compiled security
-3. v0.3: compiled execution through bytecode and dry-run VM
-4. v0.4: agent mailboxes, deterministic scheduling, runtime state, trace ledger
-5. v0.5: declarative handlers and reactive dry-run execution
-6. v0.6: controlled agent state, deterministic checkpoints, causal guards
-7. v0.7: declared, authorized, capability-controlled tool calls
-8. v0.8: declared, authorized, simulated model invocation
-9. v0.9: compiled global policies, failure modes, and runtime reports
-10. v0.10: audited provider boundary and simulated provider registry
-11. v0.11: disabled external adapter contracts and conformance checks
-12. v0.12: declarative provider target/capability allowlists
-13. v0.13: preserved execution outcomes and deterministic security reports
-14. v0.14+: sandboxed provider work
-15. Optional WASM/native backends
-16. Progressive self-hosting in Argorix Lang
->>>>>>> e94f3e3 (feat: implement security report export v0.13)
 
 > Rust is the forge. Argorix Lang is the sword.

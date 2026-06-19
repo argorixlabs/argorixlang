@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ProviderError {
-    #[error("provider calls require dry_run=true in Argorix v0.13")]
+    #[error("provider calls require dry_run=true in Argorix v0.14")]
     DryRunRequired,
     #[error("provider `{0}` is already registered")]
     DuplicateProvider(String),

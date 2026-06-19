@@ -1,9 +1,9 @@
 use crate::{
-    EventType, ExecutionOutcome, InjectedMessage, ProviderContractSummary, RuntimeStatus, VmError,
+    evidence::canonical_digest, EventType, ExecutionOutcome, InjectedMessage,
+    ProviderContractSummary, RuntimeStatus, VmError,
 };
 use argorix_bytecode::BytecodeProgram;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,13 +191,13 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.13".into(),
+            report_version: "0.14".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.13".into()),
+                .unwrap_or_else(|| "0.14".into()),
             execution,
             policy,
             provider_boundary,
@@ -269,14 +269,12 @@ fn ledger_summary(events: &[crate::ExecutionEvent]) -> LedgerSummary {
     for event in events {
         *event_kinds.entry(event_kind(event.event_type)).or_insert(0) += 1;
     }
-    let digest_input = serde_json::to_vec(events).expect("ledger serialization must succeed");
-    let digest = Sha256::digest(digest_input);
     LedgerSummary {
         events_total: events.len(),
         event_kinds,
         first_event: events.first().map(|event| event_kind(event.event_type)),
         last_event: events.last().map(|event| event_kind(event.event_type)),
-        ledger_digest: format!("sha256:{digest:x}"),
+        ledger_digest: canonical_digest(events).expect("ledger serialization must succeed"),
     }
 }
 

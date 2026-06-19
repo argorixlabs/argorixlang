@@ -1,3 +1,5 @@
 /target/
 *.pdb
-
+reports/*.security.json
+reports/*.bundle.json
+reports/*.trace.json

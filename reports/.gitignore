@@ -1,1 +1,3 @@
 *.security.json
+*.bundle.json
+*.trace.json

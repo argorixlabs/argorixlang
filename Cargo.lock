@@ -60,7 +60,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "argorix-lang"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "argorix_bytecode",
  "argorix_ir",
@@ -72,18 +72,19 @@ dependencies = [
 
 [[package]]
 name = "argorix-vm"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "argorix_bytecode",
  "argorix_vm",
  "clap",
+ "serde",
  "serde_json",
 ]
 
 [[package]]
 name = "argorix_bytecode"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "argorix_ir",
  "serde",
@@ -93,7 +94,7 @@ dependencies = [
 
 [[package]]
 name = "argorix_ir"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "argorix_parser",
  "serde",
@@ -101,14 +102,14 @@ dependencies = [
 
 [[package]]
 name = "argorix_parser"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "argorix_provider"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "serde",
  "thiserror",
@@ -116,14 +117,14 @@ dependencies = [
 
 [[package]]
 name = "argorix_semantics"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "argorix_parser",
 ]
 
 [[package]]
 name = "argorix_vm"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "argorix_bytecode",
  "argorix_provider",
@@ -135,7 +136,7 @@ dependencies = [
 
 [[package]]
 name = "argorixc"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "argorix_bytecode",
