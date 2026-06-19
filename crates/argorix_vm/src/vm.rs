@@ -1,8 +1,10 @@
 use crate::{
     AgentStateSummary, AssertionResult, EventFields, EventType, ExecutionTrace, FailureActivation,
-    InjectedMessage, IntrinsicExecution, MailboxSummary, PolicyReport, ReactiveExecutionTrace,
-    ReactiveScheduler, RuntimeState, RuntimeStatus, Scheduler, VmError,
+    InjectedMessage, IntrinsicExecution, MailboxSummary, PolicyActionResult, PolicyBlockResult,
+    PolicyReport, PolicyRuleResult, PolicyViolation, ReactiveExecutionTrace, ReactiveScheduler,
+    RuntimeState, RuntimeStatus, Scheduler, VmError,
 };
+use crate::policy::{evaluate_rule, PolicyEvidenceContext};
 use argorix_bytecode::{verify_bytecode, BytecodeError, BytecodeProgram};
 use argorix_provider::{AdapterContract, ProviderKind, ProviderRegistry};
 
@@ -137,7 +139,24 @@ impl Vm {
         bytecode: &BytecodeProgram,
         injected: InjectedMessage,
     ) -> Result<ReactiveExecutionTrace, VmError> {
-        self.run_reactive_outcome(bytecode, injected).result
+        let outcome = self.run_reactive_outcome(bytecode, injected);
+        match outcome.result {
+            Ok(trace) => {
+                if let Some(action) = trace
+                    .policy_report
+                    .actions
+                    .iter()
+                    .find(|action| action.action == "block")
+                {
+                    Err(VmError::PolicyViolation {
+                        policy: action.policy.clone(),
+                    })
+                } else {
+                    Ok(trace)
+                }
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub fn run_reactive_outcome(
@@ -292,12 +311,14 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.16".into(),
-            status: if policy_report.status == "passed" {
-                "completed".into()
-            } else {
-                "failed".into()
-            },
+            vm_version: "0.17".into(),
+            status: match state.status {
+                RuntimeStatus::Completed => "completed",
+                RuntimeStatus::Failed => "failed",
+                RuntimeStatus::Initialized => "initialized",
+                RuntimeStatus::Running => "running",
+            }
+            .into(),
             mode: "reactive-dry-run".into(),
             scheduler: "deterministic".into(),
             modules: bytecode.modules.clone(),
@@ -330,70 +351,20 @@ impl Vm {
     ) -> PolicyReport {
         let mut results = Vec::new();
         for assertion in &bytecode.assertions {
-            let (passed, reason) = match assertion.name.as_str() {
-                "no_unhandled_messages" => {
-                    let passed = state.pending_messages.is_empty()
-                        && state.mailboxes.values().all(|mailbox| mailbox.is_empty());
-                    (passed, "mailbox contains unprocessed messages")
-                }
-                "all_tool_calls_traced" => (
-                    state
-                        .trace_ledger
-                        .events
-                        .iter()
-                        .filter(|event| event.event_type == EventType::ToolCallDryRunResult)
-                        .count()
-                        == state.tool_calls.len(),
-                    "one or more tool calls lack a dry-run trace result",
-                ),
-                "all_model_calls_traced" => (
-                    state
-                        .trace_ledger
-                        .events
-                        .iter()
-                        .filter(|event| event.event_type == EventType::ModelCallDryRunResult)
-                        .count()
-                        == state.model_calls.len(),
-                    "one or more model calls lack a dry-run trace result",
-                ),
-                "all_intrinsics_traced" => (
-                    state
-                        .trace_ledger
-                        .events
-                        .iter()
-                        .filter(|event| {
-                            matches!(
-                                event.event_type,
-                                EventType::FacuStateCheckpoint | EventType::MarronCausalGuard
-                            )
-                        })
-                        .count()
-                        == steps
-                            .iter()
-                            .map(|step| step.intrinsics.len())
-                            .sum::<usize>(),
-                    "one or more intrinsic invocations lack trace events",
-                ),
-                "halt_requires_trace" => (
-                    !state
-                        .trace_ledger
-                        .events
-                        .iter()
-                        .any(|event| event.event_type == EventType::VmHalted)
-                        || state
-                            .trace_ledger
-                            .events
-                            .iter()
-                            .any(|event| event.event_type == EventType::ValueTraced),
-                    "halt occurred without a preceding trace",
-                ),
-                "runtime_status" => (
-                    assertion.argument.as_deref() == Some("completed")
-                        && state.status == RuntimeStatus::Completed,
-                    "runtime status is not completed",
-                ),
-                _ => (false, "unknown assertion"),
+            let name = if assertion.name == "runtime_status" {
+                "runtime_status completed"
+            } else {
+                assertion.name.as_str()
             };
+            let mut evaluation =
+                evaluate_rule(name, state, steps, PolicyEvidenceContext::default());
+            if assertion.name == "runtime_status"
+                && assertion.argument.as_deref() != Some("completed")
+            {
+                evaluation.passed = false;
+                evaluation.reason = "runtime status assertion requires completed";
+            }
+            let passed = evaluation.passed;
             state.trace_ledger.record(
                 if passed {
                     EventType::AssertionVerified
@@ -408,12 +379,12 @@ impl Vm {
                 name: assertion.name.clone(),
                 argument: assertion.argument.clone(),
                 status: if passed { "passed" } else { "failed" }.into(),
-                reason: (!passed).then(|| reason.to_owned()),
+                reason: (!passed).then(|| evaluation.reason.to_owned()),
             });
         }
-        let failed = results.iter().any(|result| result.status == "failed");
+        let legacy_failed = results.iter().any(|result| result.status == "failed");
         let mut failures = Vec::new();
-        if failed {
+        if legacy_failed {
             state.status = RuntimeStatus::Failed;
             let selected = bytecode
                 .failures
@@ -437,15 +408,149 @@ impl Vm {
                 trace: selected.trace,
             });
         }
+        let mut policy_blocks = Vec::new();
+        let mut actions = Vec::new();
+        for policy in &bytecode.policies {
+            let mut require_rules = Vec::new();
+            let mut deny_rules = Vec::new();
+            let mut violations = Vec::new();
+            for declaration in &policy.rules {
+                let evaluation = evaluate_rule(
+                    &declaration.rule,
+                    state,
+                    steps,
+                    PolicyEvidenceContext::default(),
+                );
+                let passed = if declaration.effect == "deny" {
+                    !evaluation.passed
+                } else {
+                    evaluation.passed
+                };
+                let reason = (!passed).then(|| {
+                    if declaration.effect == "deny"
+                        && declaration.rule == "external_execution"
+                    {
+                        "external provider execution was attempted".to_owned()
+                    } else if declaration.effect == "deny" {
+                        format!("denied condition `{}` occurred", declaration.rule)
+                    } else {
+                        evaluation.reason.to_owned()
+                    }
+                });
+                state.trace_ledger.record(
+                    EventType::PolicyEvaluated,
+                    if passed { "passed" } else { "failed" },
+                    format!(
+                        "policy {} {} {} evaluated",
+                        policy.name, declaration.effect, declaration.rule
+                    ),
+                    EventFields::default(),
+                );
+                let result = PolicyRuleResult {
+                    rule: declaration.rule.clone(),
+                    effect: declaration.effect.clone(),
+                    passed,
+                    reason: reason.clone(),
+                };
+                if declaration.effect == "require" {
+                    require_rules.push(result);
+                } else {
+                    deny_rules.push(result);
+                }
+                if let Some(reason) = reason {
+                    state.trace_ledger.record(
+                        EventType::PolicyViolation,
+                        "violated",
+                        format!(
+                            "policy {} {} {} violated: {}",
+                            policy.name, declaration.effect, declaration.rule, reason
+                        ),
+                        EventFields::default(),
+                    );
+                    violations.push(PolicyViolation {
+                        rule: declaration.rule.clone(),
+                        effect: declaration.effect.clone(),
+                        reason,
+                    });
+                }
+            }
+            let passed = violations.is_empty();
+            let action = (!passed)
+                .then(|| policy.on_violation.as_ref())
+                .flatten()
+                .map(|violation| violation.action.clone());
+            let trace_required = policy
+                .on_violation
+                .as_ref()
+                .is_some_and(|violation| violation.trace_required);
+            let status = if passed {
+                "passed"
+            } else {
+                match action.as_deref() {
+                    Some("block") => "failed",
+                    Some("review") => "review_required",
+                    Some("warn") => "warning",
+                    _ => "violated",
+                }
+            };
+            if let Some(action) = &action {
+                state.trace_ledger.record(
+                    EventType::PolicyActionActivated,
+                    "active",
+                    format!(
+                        "policy {} action {} activated trace_required={trace_required}",
+                        policy.name, action
+                    ),
+                    EventFields::default(),
+                );
+                actions.push(PolicyActionResult {
+                    policy: policy.name.clone(),
+                    action: action.clone(),
+                    trace_required,
+                });
+            }
+            policy_blocks.push(PolicyBlockResult {
+                name: policy.name.clone(),
+                passed,
+                status: status.into(),
+                require_rules,
+                deny_rules,
+                violations,
+                action,
+                trace_required,
+            });
+        }
+        let has_block = actions.iter().any(|action| action.action == "block");
+        let has_review = actions.iter().any(|action| action.action == "review");
+        let has_warn = actions.iter().any(|action| action.action == "warn");
+        let has_unhandled_violation = policy_blocks
+            .iter()
+            .any(|policy| !policy.passed && policy.action.is_none());
+        let status = if legacy_failed || has_block {
+            "failed"
+        } else if has_review {
+            "review_required"
+        } else if has_warn {
+            "warning"
+        } else if has_unhandled_violation {
+            "violated"
+        } else {
+            "passed"
+        };
         state.trace_ledger.record(
             EventType::PolicyReportGenerated,
-            if failed { "failed" } else { "passed" },
+            status,
             "policy report generated",
             EventFields::default(),
         );
+        if has_block {
+            state.fail("policy block action activated");
+        }
         PolicyReport {
-            status: if failed { "failed" } else { "passed" }.into(),
+            status: status.into(),
             assertions: results,
+            policy_blocks,
+            actions,
             failures,
         }
     }
@@ -473,7 +578,10 @@ fn blocked_external_provider<'a>(
 mod tests {
     use super::Vm;
     use crate::{EventType, InjectedMessage, RuntimeStatus, Scheduler};
-    use argorix_bytecode::{BytecodeAgent, BytecodeProgram, BytecodeProviderContract, Instruction};
+    use argorix_bytecode::{
+        BytecodeAgent, BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation,
+        BytecodeProgram, BytecodeProviderContract, Instruction,
+    };
     use serde_json::json;
 
     fn add_external_contract(bytecode: &mut BytecodeProgram, enabled: bool) {
@@ -513,6 +621,7 @@ mod tests {
             imports: vec![],
             providers: vec![],
             assertions: vec![],
+            policies: vec![],
             failures: vec![],
             agents: vec![BytecodeAgent {
                 name: "Worker".into(),
@@ -661,7 +770,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.16");
+        assert_eq!(json["vm_version"], "0.17");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -683,7 +792,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.16");
+        assert_eq!(json["vm_version"], "0.17");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -705,7 +814,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.16");
+        assert_eq!(json["vm_version"], "0.17");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -760,7 +869,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.16");
+        assert_eq!(trace.vm_version, "0.17");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -834,7 +943,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.16");
+        assert_eq!(trace.vm_version, "0.17");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -886,7 +995,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.16");
+        assert_eq!(json["vm_version"], "0.17");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -934,5 +1043,95 @@ mod tests {
             .events
             .iter()
             .any(|event| event.event_type == EventType::FailureModeActivated));
+    }
+
+    #[test]
+    fn policy_v2_separates_legacy_assertions_and_policy_blocks() {
+        let mut bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/policy_assertions_v09.argbc.json"
+        ))
+        .unwrap();
+        bytecode.bytecode_version = "0.17".into();
+        bytecode.policies = vec![BytecodePolicy {
+            name: "ProviderSafety".into(),
+            rules: vec![BytecodePolicyRule {
+                effect: "deny".into(),
+                rule: "external_execution".into(),
+            }],
+            on_violation: Some(BytecodePolicyViolation {
+                action: "block".into(),
+                trace_required: true,
+            }),
+        }];
+        let trace = Vm::new()
+            .run_reactive(
+                &bytecode,
+                InjectedMessage {
+                    from: "User".into(),
+                    to: "ResearchAgent".into(),
+                    act: "tell".into(),
+                    message_type: "UserPrompt".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(trace.policy_report.assertions.len(), 6);
+        assert_eq!(trace.policy_report.policy_blocks.len(), 1);
+        assert!(trace.policy_report.policy_blocks[0].passed);
+        assert!(trace
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::PolicyDeclared));
+        assert!(trace
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::PolicyEvaluated));
+    }
+
+    #[test]
+    fn policy_v2_actions_apply_block_review_warn_and_no_action() {
+        for (action, expected_status, expected_error) in [
+            (Some("block"), "failed", true),
+            (Some("review"), "review_required", false),
+            (Some("warn"), "warning", false),
+            (None, "violated", false),
+        ] {
+            let mut bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+                "../../../examples/policy_assertions_v09.argbc.json"
+            ))
+            .unwrap();
+            bytecode.bytecode_version = "0.17".into();
+            bytecode.policies = vec![BytecodePolicy {
+                name: format!("Policy{expected_status}"),
+                rules: vec![BytecodePolicyRule {
+                    effect: "require".into(),
+                    rule: "evidence_bundle_verified".into(),
+                }],
+                on_violation: action.map(|action| BytecodePolicyViolation {
+                    action: action.into(),
+                    trace_required: true,
+                }),
+            }];
+            let injection = InjectedMessage {
+                from: "User".into(),
+                to: "ResearchAgent".into(),
+                act: "tell".into(),
+                message_type: "UserPrompt".into(),
+            };
+            let outcome = Vm::new().run_reactive_outcome(&bytecode, injection.clone());
+            let trace = outcome.result.unwrap();
+            assert_eq!(trace.policy_report.status, expected_status);
+            assert_eq!(
+                trace.status,
+                if expected_error { "failed" } else { "completed" }
+            );
+            assert_eq!(
+                Vm::new().run_reactive(&bytecode, injection).is_err(),
+                expected_error
+            );
+            assert!(trace
+                .events
+                .iter()
+                .any(|event| event.event_type == EventType::PolicyViolation));
+        }
     }
 }

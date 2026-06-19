@@ -69,6 +69,10 @@ pub enum EventType {
     FailureDeclared,
     AssertionVerified,
     AssertionFailed,
+    PolicyDeclared,
+    PolicyEvaluated,
+    PolicyViolation,
+    PolicyActionActivated,
     PolicyReportGenerated,
     FailureModeActivated,
     VmCompleted,
@@ -199,8 +203,47 @@ pub struct ProviderCallSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyReport {
     pub status: String,
+    #[serde(rename = "legacy_assertions", alias = "assertions")]
     pub assertions: Vec<AssertionResult>,
+    #[serde(default)]
+    pub policy_blocks: Vec<PolicyBlockResult>,
+    #[serde(default)]
+    pub actions: Vec<PolicyActionResult>,
     pub failures: Vec<FailureActivation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyBlockResult {
+    pub name: String,
+    pub passed: bool,
+    pub status: String,
+    pub require_rules: Vec<PolicyRuleResult>,
+    pub deny_rules: Vec<PolicyRuleResult>,
+    pub violations: Vec<PolicyViolation>,
+    pub action: Option<String>,
+    pub trace_required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyRuleResult {
+    pub rule: String,
+    pub effect: String,
+    pub passed: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyViolation {
+    pub rule: String,
+    pub effect: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyActionResult {
+    pub policy: String,
+    pub action: String,
+    pub trace_required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -81,7 +81,7 @@ fn run() -> Result<()> {
             evidence_bundle,
         } => {
             if !dry_run {
-                bail!("v0.16 only supports execution with `--dry-run`");
+                bail!("v0.17 only supports execution with `--dry-run`");
             }
             let source = fs::read_to_string(&file)
                 .with_context(|| format!("failed to read `{}`", file.display()))?;
@@ -113,10 +113,16 @@ fn run() -> Result<()> {
                     write_evidence_bundle(path, &bundle)?;
                 }
                 let trace = outcome.result?;
+                let blocked_policy = trace
+                    .policy_report
+                    .actions
+                    .iter()
+                    .find(|action| action.action == "block")
+                    .map(|action| action.policy.clone());
                 if json {
                     println!("{}", serde_json::to_string_pretty(&trace)?);
                 } else {
-                    println!("Argorix VM v0.16\n");
+                    println!("Argorix VM v0.17\n");
                     println!("Execution mode: reactive dry-run");
                     println!("Scheduler: {}", trace.scheduler);
                     if providers {
@@ -282,7 +288,7 @@ fn run() -> Result<()> {
                         println!();
                     }
                     if policy {
-                        println!("Policy assertions:");
+                        println!("Legacy policy assertions:");
                         for assertion in &trace.policy_report.assertions {
                             let argument = assertion
                                 .argument
@@ -290,6 +296,35 @@ fn run() -> Result<()> {
                                 .map(|value| format!(" {value}"))
                                 .unwrap_or_default();
                             println!("- {}{}: {}", assertion.name, argument, assertion.status);
+                        }
+                        println!();
+                        println!("Policy blocks:");
+                        for block in &trace.policy_report.policy_blocks {
+                            println!("- {}: {}", block.name, block.status);
+                            for rule in block
+                                .require_rules
+                                .iter()
+                                .chain(block.deny_rules.iter())
+                            {
+                                println!(
+                                    "  {} {}: {}",
+                                    rule.effect,
+                                    rule.rule,
+                                    if rule.passed { "passed" } else { "failed" }
+                                );
+                            }
+                            for violation in &block.violations {
+                                println!(
+                                    "  violation: {} {} - {}",
+                                    violation.effect, violation.rule, violation.reason
+                                );
+                            }
+                            if let Some(action) = &block.action {
+                                println!(
+                                    "  action: {}, trace_required={}",
+                                    action, block.trace_required
+                                );
+                            }
                         }
                         println!("\nPolicy report: {}", trace.policy_report.status);
                     }
@@ -315,6 +350,9 @@ fn run() -> Result<()> {
                         println!("Evidence bundle written: {}", path.display());
                     }
                 }
+                if let Some(policy) = blocked_policy {
+                    bail!("policy `{policy}` activated block action");
+                }
                 return Ok(());
             }
             let trace = Vm::new().run_dry(&bytecode)?;
@@ -322,7 +360,7 @@ fn run() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&trace)?);
             } else if mailboxes {
-                println!("Argorix VM v0.16\n");
+                println!("Argorix VM v0.17\n");
                 println!("Execution mode: dry-run");
                 println!("Scheduler: {}", trace.scheduler);
                 println!("Agents: {}\n", trace.mailboxes.len());
@@ -342,7 +380,7 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
                 println!("Trace ledger: generated");
             } else {
-                println!("Argorix VM v0.16\n");
+                println!("Argorix VM v0.17\n");
                 println!("Loaded bytecode: {}", file.display());
                 println!("Execution mode: dry-run\n");
                 for step in &trace.steps {

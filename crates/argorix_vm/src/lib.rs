@@ -2,6 +2,7 @@ pub mod errors;
 pub mod evidence;
 pub mod injection;
 pub mod mailbox;
+pub mod policy;
 pub mod reactive;
 pub mod runtime;
 pub mod scheduler;
@@ -24,7 +25,8 @@ pub use security_report::{
 pub use trace::{
     AgentStateSummary, AssertionResult, EmittedMessage, EventFields, EventType, ExecutionEvent,
     ExecutionTrace, FailureActivation, InjectedMessage, IntrinsicExecution, InvokedIntrinsic,
-    MailboxSummary, ModelCallSummary, PolicyReport, ProviderCallSummary, ProviderContractSummary,
+    MailboxSummary, ModelCallSummary, PolicyActionResult, PolicyBlockResult, PolicyReport,
+    PolicyRuleResult, PolicyViolation, ProviderCallSummary, ProviderContractSummary,
     ProviderSummary, ReactiveExecutionTrace, ReactiveStep, ToolCallSummary, TraceLedger, TraceStep,
 };
 pub use vm::{ExecutionOutcome, Vm};

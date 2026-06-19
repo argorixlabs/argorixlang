@@ -64,6 +64,15 @@ pub struct PolicySummary {
     pub assertions_failed: usize,
     pub failed_assertions: Vec<String>,
     pub activated_failures: Vec<String>,
+    pub policy_blocks_total: usize,
+    pub policy_blocks_passed: usize,
+    pub policy_blocks_failed: usize,
+    pub require_rules_total: usize,
+    pub deny_rules_total: usize,
+    pub violations: Vec<crate::PolicyViolation>,
+    pub actions: Vec<crate::PolicyActionResult>,
+    pub review_required: bool,
+    pub warning: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,7 +204,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.16".into(),
+            report_version: "0.17".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -203,7 +212,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.16".into()),
+                .unwrap_or_else(|| "0.17".into()),
             execution,
             policy,
             provider_boundary,
@@ -231,9 +240,36 @@ fn policy_summary(outcome: &ExecutionOutcome) -> PolicySummary {
             .filter(|assertion| assertion.status == "failed")
             .map(|assertion| assertion.name.clone())
             .collect::<Vec<_>>();
+        let policy_blocks_total = trace.policy_report.policy_blocks.len();
+        let policy_blocks_passed = trace
+            .policy_report
+            .policy_blocks
+            .iter()
+            .filter(|policy| policy.passed)
+            .count();
+        let violations = trace
+            .policy_report
+            .policy_blocks
+            .iter()
+            .flat_map(|policy| policy.violations.iter().cloned())
+            .collect::<Vec<_>>();
+        let require_rules_total = trace
+            .policy_report
+            .policy_blocks
+            .iter()
+            .map(|policy| policy.require_rules.len())
+            .sum();
+        let deny_rules_total = trace
+            .policy_report
+            .policy_blocks
+            .iter()
+            .map(|policy| policy.deny_rules.len())
+            .sum();
         return PolicySummary {
-            evaluated: assertions_total > 0,
-            passed: assertions_total > 0 && failed_assertions.is_empty(),
+            evaluated: assertions_total + policy_blocks_total > 0,
+            passed: assertions_total + policy_blocks_total > 0
+                && failed_assertions.is_empty()
+                && violations.is_empty(),
             assertions_total,
             assertions_passed,
             assertions_failed: failed_assertions.len(),
@@ -244,6 +280,23 @@ fn policy_summary(outcome: &ExecutionOutcome) -> PolicySummary {
                 .iter()
                 .map(|failure| failure.name.clone())
                 .collect(),
+            policy_blocks_total,
+            policy_blocks_passed,
+            policy_blocks_failed: policy_blocks_total - policy_blocks_passed,
+            require_rules_total,
+            deny_rules_total,
+            violations,
+            actions: trace.policy_report.actions.clone(),
+            review_required: trace
+                .policy_report
+                .actions
+                .iter()
+                .any(|action| action.action == "review"),
+            warning: trace
+                .policy_report
+                .actions
+                .iter()
+                .any(|action| action.action == "warn"),
         };
     }
 
@@ -267,6 +320,21 @@ fn policy_summary(outcome: &ExecutionOutcome) -> PolicySummary {
             .filter(|event| event.event_type == EventType::FailureModeActivated)
             .filter_map(|event| extract_name(&event.details, "failure mode ", " activated"))
             .collect(),
+        policy_blocks_total: 0,
+        policy_blocks_passed: 0,
+        policy_blocks_failed: count_event(events, EventType::PolicyViolation),
+        require_rules_total: 0,
+        deny_rules_total: 0,
+        violations: Vec::new(),
+        actions: Vec::new(),
+        review_required: events.iter().any(|event| {
+            event.event_type == EventType::PolicyActionActivated
+                && event.details.contains("action review")
+        }),
+        warning: events.iter().any(|event| {
+            event.event_type == EventType::PolicyActionActivated
+                && event.details.contains("action warn")
+        }),
     }
 }
 
@@ -309,11 +377,36 @@ fn verdict(
             reasons,
         };
     }
+    if policy
+        .actions
+        .iter()
+        .any(|action| action.action == "block")
+    {
+        return SecurityVerdict {
+            passed: false,
+            severity: "high".into(),
+            reasons: vec!["policy block action activated".into()],
+        };
+    }
     if outcome.state.status == RuntimeStatus::Failed {
         return SecurityVerdict {
             passed: false,
             severity: "high".into(),
             reasons: vec!["runtime failed".into()],
+        };
+    }
+    if policy.review_required {
+        return SecurityVerdict {
+            passed: false,
+            severity: "medium".into(),
+            reasons: vec!["policy review required".into()],
+        };
+    }
+    if policy.warning {
+        return SecurityVerdict {
+            passed: false,
+            severity: "warning".into(),
+            reasons: vec!["policy warning activated".into()],
         };
     }
     if policy.assertions_failed > 0 {
@@ -328,6 +421,13 @@ fn verdict(
             passed: false,
             severity: "medium".into(),
             reasons: vec!["tool/model call denied".into()],
+        };
+    }
+    if policy.policy_blocks_failed > 0 {
+        return SecurityVerdict {
+            passed: false,
+            severity: "medium".into(),
+            reasons: vec!["policy block violated".into()],
         };
     }
     if !policy.evaluated {

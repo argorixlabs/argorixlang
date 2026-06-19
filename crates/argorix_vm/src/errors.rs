@@ -51,6 +51,8 @@ pub enum VmError {
     InvalidModelProvider(String),
     #[error("provider boundary denied call through `{provider}`: {reason}")]
     ProviderBoundary { provider: String, reason: String },
+    #[error("policy `{policy}` activated block action")]
+    PolicyViolation { policy: String },
 }
 
 impl VmError {

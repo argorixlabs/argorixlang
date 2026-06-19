@@ -131,6 +131,14 @@ impl RuntimeState {
                 EventFields::default(),
             );
         }
+        for policy in &bytecode.policies {
+            trace_ledger.record(
+                EventType::PolicyDeclared,
+                "ok",
+                format!("policy {} declared", policy.name),
+                EventFields::default(),
+            );
+        }
         for failure in &bytecode.failures {
             trace_ledger.record(
                 EventType::FailureDeclared,
