@@ -18,6 +18,8 @@ pub struct BytecodeProgram {
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
+    pub policies: Vec<BytecodePolicy>,
+    #[serde(default)]
     pub failures: Vec<BytecodeFailure>,
     pub agents: Vec<BytecodeAgent>,
     pub capabilities: Vec<BytecodeCapability>,
@@ -58,6 +60,25 @@ pub struct BytecodeProviderContract {
 pub struct BytecodeAssertion {
     pub name: String,
     pub argument: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodePolicy {
+    pub name: String,
+    pub rules: Vec<BytecodePolicyRule>,
+    pub on_violation: Option<BytecodePolicyViolation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodePolicyRule {
+    pub effect: String,
+    pub rule: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodePolicyViolation {
+    pub action: String,
+    pub trace_required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,6 +290,12 @@ pub enum BytecodeError {
     ModulesRequireV016,
     #[error("module import edge references unknown module `{0}`")]
     UnknownModuleImport(String),
+    #[error("policy metadata requires bytecode version 0.17")]
+    PoliciesRequireV017,
+    #[error("duplicate policy `{0}`")]
+    DuplicatePolicy(String),
+    #[error("invalid policy `{name}`: {reason}")]
+    InvalidPolicy { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -290,6 +317,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.14"
             | "0.15"
             | "0.16"
+            | "0.17"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -300,13 +328,13 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     if !matches!(
         program.bytecode_version.as_str(),
-        "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
+        "0.17" | "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
     }
     if (!program.modules.is_empty() || !program.imports.is_empty())
-        && program.bytecode_version != "0.16"
+        && !matches!(program.bytecode_version.as_str(), "0.16" | "0.17")
     {
         errors.push(BytecodeError::ModulesRequireV016);
     }
@@ -322,6 +350,10 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             }
         }
     }
+    if !program.policies.is_empty() && program.bytecode_version != "0.17" {
+        errors.push(BytecodeError::PoliciesRequireV017);
+    }
+    validate_policies(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -518,7 +550,7 @@ fn validate_contract_allowlists(
         }
         if !matches!(
             program.bytecode_version.as_str(),
-            "0.12" | "0.13" | "0.14" | "0.15" | "0.16"
+            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17"
         ) {
             continue;
         }
@@ -585,6 +617,77 @@ fn validate_contract_allowlists(
     }
 }
 
+fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    const RULES: [&str; 12] = [
+        "no_unhandled_messages",
+        "all_tool_calls_traced",
+        "all_model_calls_traced",
+        "all_intrinsics_traced",
+        "all_provider_calls_traced",
+        "halt_requires_trace",
+        "runtime_status completed",
+        "provider_contracts_declared",
+        "provider_allowlists_valid",
+        "external_execution",
+        "evidence_bundle_verified",
+        "security_report_generated",
+    ];
+    let mut names = HashSet::new();
+    for policy in &program.policies {
+        if policy.name.trim().is_empty() {
+            errors.push(BytecodeError::InvalidPolicy {
+                name: policy.name.clone(),
+                reason: "name must not be empty".into(),
+            });
+        } else if !names.insert(policy.name.as_str()) {
+            errors.push(BytecodeError::DuplicatePolicy(policy.name.clone()));
+        }
+        let mut required = HashSet::new();
+        let mut denied = HashSet::new();
+        for rule in &policy.rules {
+            if !matches!(rule.effect.as_str(), "require" | "deny") {
+                errors.push(BytecodeError::InvalidPolicy {
+                    name: policy.name.clone(),
+                    reason: format!("unknown effect `{}`", rule.effect),
+                });
+                continue;
+            }
+            if !RULES.contains(&rule.rule.as_str()) {
+                errors.push(BytecodeError::InvalidPolicy {
+                    name: policy.name.clone(),
+                    reason: format!("unknown rule `{}`", rule.rule),
+                });
+                continue;
+            }
+            let (current, opposite) = if rule.effect == "require" {
+                (&mut required, &denied)
+            } else {
+                (&mut denied, &required)
+            };
+            if !current.insert(rule.rule.as_str()) {
+                errors.push(BytecodeError::InvalidPolicy {
+                    name: policy.name.clone(),
+                    reason: format!("duplicate {} rule `{}`", rule.effect, rule.rule),
+                });
+            }
+            if opposite.contains(rule.rule.as_str()) {
+                errors.push(BytecodeError::InvalidPolicy {
+                    name: policy.name.clone(),
+                    reason: format!("contradictory rule `{}`", rule.rule),
+                });
+            }
+        }
+        if let Some(violation) = &policy.on_violation {
+            if !matches!(violation.action.as_str(), "block" | "review" | "warn") {
+                errors.push(BytecodeError::InvalidPolicy {
+                    name: policy.name.clone(),
+                    reason: format!("unknown action `{}`", violation.action),
+                });
+            }
+        }
+    }
+}
+
 fn instruction_contract(instruction: &Instruction) -> Option<BytecodeProviderContract> {
     match instruction {
         Instruction::DeclareProviderContract {
@@ -625,6 +728,7 @@ mod tests {
             imports: vec![],
             providers: vec![],
             assertions: vec![],
+            policies: vec![],
             failures: vec![],
             agents: vec![BytecodeAgent {
                 name: "Worker".into(),
@@ -857,5 +961,48 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| matches!(error, BytecodeError::UnknownModuleImport(name) if name == "agents.missing")));
+    }
+
+    #[test]
+    fn accepts_v017_policy_metadata_and_retains_v016_compatibility() {
+        let mut v017 = valid_program();
+        v017.bytecode_version = "0.17".into();
+        v017.policies = vec![super::BytecodePolicy {
+            name: "ProviderSafety".into(),
+            rules: vec![super::BytecodePolicyRule {
+                effect: "deny".into(),
+                rule: "external_execution".into(),
+            }],
+            on_violation: Some(super::BytecodePolicyViolation {
+                action: "block".into(),
+                trace_required: true,
+            }),
+        }];
+        verify_bytecode(&v017).unwrap();
+
+        let mut v016 = valid_program();
+        v016.bytecode_version = "0.16".into();
+        verify_bytecode(&v016).unwrap();
+    }
+
+    #[test]
+    fn rejects_policy_metadata_below_v017_and_invalid_rules() {
+        let mut program = valid_program();
+        program.bytecode_version = "0.16".into();
+        program.policies = vec![super::BytecodePolicy {
+            name: "Bad".into(),
+            rules: vec![super::BytecodePolicyRule {
+                effect: "require".into(),
+                rule: "future_rule".into(),
+            }],
+            on_violation: None,
+        }];
+        let errors = verify_bytecode(&program).unwrap_err();
+        assert!(errors.contains(&BytecodeError::PoliciesRequireV017));
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            BytecodeError::InvalidPolicy { reason, .. }
+                if reason.contains("unknown rule `future_rule`")
+        )));
     }
 }

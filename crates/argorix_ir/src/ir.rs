@@ -12,6 +12,7 @@ pub struct IrProgram {
     pub imports: Vec<IrModuleImport>,
     pub providers: Vec<IrProviderContract>,
     pub assertions: Vec<IrAssertion>,
+    pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
     pub capabilities: Vec<IrCapability>,
     pub enums: Vec<IrEnum>,
@@ -50,6 +51,25 @@ pub struct IrProviderContract {
 pub struct IrAssertion {
     pub name: String,
     pub argument: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrPolicy {
+    pub name: String,
+    pub rules: Vec<IrPolicyRule>,
+    pub on_violation: Option<IrPolicyViolation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrPolicyRule {
+    pub effect: String,
+    pub rule: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrPolicyViolation {
+    pub action: String,
+    pub trace_required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -162,7 +182,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.16".to_owned(),
+            ir_version: "0.17".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -195,6 +215,27 @@ impl From<&Program> for IrProgram {
                 .map(|assertion| IrAssertion {
                     name: assertion.name.value.clone(),
                     argument: assertion.argument.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
+            policies: program
+                .policies
+                .iter()
+                .map(|policy| IrPolicy {
+                    name: policy.name.value.clone(),
+                    rules: policy
+                        .rules
+                        .iter()
+                        .map(|declaration| IrPolicyRule {
+                            effect: declaration.effect().into(),
+                            rule: declaration.rule().value.source_name(),
+                        })
+                        .collect(),
+                    on_violation: policy.violation.as_ref().map(|violation| {
+                        IrPolicyViolation {
+                            action: violation.action.value.source_name(),
+                            trace_required: violation.trace_required,
+                        }
+                    }),
                 })
                 .collect(),
             failures: program
@@ -371,4 +412,40 @@ impl From<&Program> for IrProgram {
 
 pub fn resolved_provider(provider: Option<&str>) -> &str {
     provider.unwrap_or("simulated")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IrProgram;
+    use argorix_parser::parse_source;
+
+    #[test]
+    fn lowers_policy_v2_metadata_to_ir_017() {
+        let program = parse_source(
+            r#"
+            module main
+            assert all_tool_calls_traced
+            policy ProviderSafety {
+                deny external_execution
+                on violation { action block trace required }
+            }
+            "#,
+        )
+        .unwrap();
+        let ir = IrProgram::from(&program);
+        assert_eq!(ir.ir_version, "0.17");
+        assert_eq!(ir.assertions.len(), 1);
+        assert_eq!(ir.policies[0].name, "ProviderSafety");
+        assert_eq!(ir.policies[0].rules[0].effect, "deny");
+        assert_eq!(ir.policies[0].rules[0].rule, "external_execution");
+        assert_eq!(
+            ir.policies[0].on_violation.as_ref().unwrap().action,
+            "block"
+        );
+        assert!(ir.policies[0]
+            .on_violation
+            .as_ref()
+            .unwrap()
+            .trace_required);
+    }
 }

@@ -1,7 +1,7 @@
 use crate::{
     BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeModel,
-    BytecodeModule, BytecodeModuleImport, BytecodeProgram, BytecodeProviderContract, BytecodeTool,
-    Instruction,
+    BytecodeModule, BytecodeModuleImport, BytecodePolicy, BytecodePolicyRule,
+    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeTool, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -170,7 +170,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.16".to_owned(),
+        bytecode_version: "0.17".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -209,6 +209,27 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
             .map(|assertion| BytecodeAssertion {
                 name: assertion.name.clone(),
                 argument: assertion.argument.clone(),
+            })
+            .collect(),
+        policies: ir
+            .policies
+            .iter()
+            .map(|policy| BytecodePolicy {
+                name: policy.name.clone(),
+                rules: policy
+                    .rules
+                    .iter()
+                    .map(|rule| BytecodePolicyRule {
+                        effect: rule.effect.clone(),
+                        rule: rule.rule.clone(),
+                    })
+                    .collect(),
+                on_violation: policy.on_violation.as_ref().map(|violation| {
+                    BytecodePolicyViolation {
+                        action: violation.action.clone(),
+                        trace_required: violation.trace_required,
+                    }
+                }),
             })
             .collect(),
         failures: ir
@@ -288,6 +309,7 @@ mod tests {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
             }],
+            policies: vec![],
             failures: vec![IrFailure {
                 name: "PolicyViolation".into(),
                 action: "block".into(),
@@ -347,7 +369,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.16");
+        assert_eq!(bytecode.bytecode_version, "0.17");
         assert!(bytecode
             .instructions
             .iter()
