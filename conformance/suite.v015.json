@@ -1,0 +1,290 @@
+{
+  "suite_version": "0.15",
+  "cases": [
+    {
+      "id": "minimal-protocol-parses",
+      "name": "Valid minimal protocol parses",
+      "category": "parser",
+      "source_path": "sources/minimal_protocol.argx",
+      "stages": ["parse"]
+    },
+    {
+      "id": "capability-registry-valid",
+      "name": "Capability registry validates",
+      "category": "semantics",
+      "source_path": "sources/capability_registry.argx",
+      "stages": ["parse", "semantic_check"]
+    },
+    {
+      "id": "current-ir-v015",
+      "name": "Current source emits IR 0.15",
+      "category": "ir",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir"]
+    },
+    {
+      "id": "current-bytecode-v015",
+      "name": "Current source emits and verifies Bytecode 0.15",
+      "category": "bytecode",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode"]
+    },
+    {
+      "id": "bytecode-v014-runs",
+      "name": "Bytecode 0.14 verifies and runs",
+      "category": "vm",
+      "bytecode_path": "bytecode/reactive_v014.argbc.json",
+      "stages": ["verify_bytecode", "run_vm"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "policy-assertions-pass",
+      "name": "Policy assertions pass under VM execution",
+      "category": "policy",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report"],
+      "injection": "User:ResearchAgent:tell:UserPrompt"
+    },
+    {
+      "id": "provider-boundary-v010-compatible",
+      "name": "Provider boundary Bytecode 0.10 remains compatible",
+      "category": "provider_boundary",
+      "bytecode_path": "bytecode/compat_v010.argbc.json",
+      "stages": ["verify_bytecode"]
+    },
+    {
+      "id": "adapter-contract-v011-compatible",
+      "name": "External adapter contract Bytecode 0.11 remains compatible",
+      "category": "adapter_contracts",
+      "bytecode_path": "bytecode/compat_v011.argbc.json",
+      "stages": ["verify_bytecode"]
+    },
+    {
+      "id": "provider-allowlists-v012-compatible",
+      "name": "Provider allowlists Bytecode 0.12 remain compatible",
+      "category": "allowlists",
+      "bytecode_path": "bytecode/compat_v012.argbc.json",
+      "stages": ["verify_bytecode"]
+    },
+    {
+      "id": "security-report-v013-compatible",
+      "name": "SecurityReport 0.13 remains parseable in evidence verification",
+      "category": "security_report",
+      "bytecode_path": "bytecode/reactive_v013.argbc.json",
+      "stages": ["verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:Worker:tell:Ping",
+      "mutation": {
+        "before_stage": "evidence_bundle",
+        "artifact": "security_report",
+        "json_pointer": "/report_version",
+        "value": "0.13"
+      }
+    },
+    {
+      "id": "evidence-bundle-v014-compatible",
+      "name": "EvidenceBundle 0.14 remains verifiable",
+      "category": "evidence_bundle",
+      "bytecode_path": "bytecode/reactive_v014.argbc.json",
+      "stages": ["verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:Worker:tell:Ping",
+      "mutation": {
+        "before_stage": "verify_evidence",
+        "artifact": "bundle",
+        "json_pointer": "/bundle_version",
+        "value": "0.14"
+      }
+    },
+    {
+      "id": "offline-verification-intact",
+      "name": "Intact evidence verifies offline",
+      "category": "offline_verification",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:ResearchAgent:tell:UserPrompt"
+    },
+    {
+      "id": "compatibility-v014-full-pipeline",
+      "name": "Bytecode 0.14 completes report and evidence pipeline",
+      "category": "compatibility",
+      "bytecode_path": "bytecode/reactive_v014.argbc.json",
+      "stages": ["verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:Worker:tell:Ping"
+    },
+    {
+      "id": "unknown-capability-rejected",
+      "name": "Unknown capability is rejected",
+      "category": "semantics",
+      "source_path": "sources/unknown_capability.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "Unknown capability"
+    },
+    {
+      "id": "dangerous-without-approval-rejected",
+      "name": "Dangerous capability without approval is rejected",
+      "category": "semantics",
+      "source_path": "sources/dangerous_without_approval.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "without approval"
+    },
+    {
+      "id": "tool-external-provider-rejected",
+      "name": "Tool external provider is rejected",
+      "category": "provider_boundary",
+      "source_path": "sources/tool_external_provider.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "only `simulated` is allowed"
+    },
+    {
+      "id": "model-external-provider-rejected",
+      "name": "Model external provider is rejected",
+      "category": "provider_boundary",
+      "source_path": "sources/model_external_provider.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "only `simulated` is allowed"
+    },
+    {
+      "id": "external-contract-enabled-rejected",
+      "name": "Enabled external contract is rejected",
+      "category": "adapter_contracts",
+      "source_path": "sources/external_enabled.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "must be disabled"
+    },
+    {
+      "id": "external-contract-missing-approval-rejected",
+      "name": "External contract without approval is rejected",
+      "category": "adapter_contracts",
+      "source_path": "sources/external_missing_approval.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "requires approval"
+    },
+    {
+      "id": "allowlist-unknown-target-rejected",
+      "name": "Unknown allowlist target is rejected",
+      "category": "allowlists",
+      "source_path": "sources/allowlist_unknown_target.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "unknown allowlist target"
+    },
+    {
+      "id": "allowlist-unknown-capability-rejected",
+      "name": "Unknown allowlist capability is rejected",
+      "category": "allowlists",
+      "source_path": "sources/allowlist_unknown_capability.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "unknown allowlist capability"
+    },
+    {
+      "id": "allowlist-duplicate-target-rejected",
+      "name": "Duplicate allowlist target is rejected",
+      "category": "allowlists",
+      "source_path": "sources/allowlist_duplicate_target.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "duplicate allowed target"
+    },
+    {
+      "id": "allowlist-duplicate-capability-rejected",
+      "name": "Duplicate allowlist capability is rejected",
+      "category": "allowlists",
+      "source_path": "sources/allowlist_duplicate_capability.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "duplicate allowed capability"
+    },
+    {
+      "id": "allowlist-incompatible-capability-rejected",
+      "name": "Incompatible allowlist capability is rejected",
+      "category": "allowlists",
+      "source_path": "sources/allowlist_incompatible_capability.argx",
+      "stages": ["parse", "semantic_check"],
+      "expected_failure_stage": "semantic_check",
+      "expected_failure_contains": "requires capability `model.invoke`"
+    },
+    {
+      "id": "bytecode-provider-declaration-mismatch",
+      "name": "Mutated provider collection and instruction mismatch is rejected",
+      "category": "bytecode",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode"],
+      "mutation": {
+        "before_stage": "verify_bytecode",
+        "artifact": "bytecode",
+        "json_pointer": "/providers/0/name",
+        "value": "Tampered"
+      },
+      "expected_failure_stage": "verify_bytecode",
+      "expected_failure_contains": "provider contract declarations do not match"
+    },
+    {
+      "id": "external-provider-blocked-reportable",
+      "name": "External provider execution is blocked and remains reportable",
+      "category": "provider_boundary",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:ResearchAgent:tell:UserPrompt",
+      "mutation": {
+        "before_stage": "run_vm",
+        "artifact": "bytecode",
+        "json_pointer": "/models/0/provider",
+        "value": "OpenAI"
+      }
+    },
+    {
+      "id": "evidence-report-tamper",
+      "name": "Evidence verification fails when report changes",
+      "category": "offline_verification",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:ResearchAgent:tell:UserPrompt",
+      "mutation": {
+        "before_stage": "verify_evidence",
+        "artifact": "security_report",
+        "json_pointer": "/module",
+        "value": "Tampered"
+      },
+      "expected_failure_stage": "verify_evidence",
+      "expected_failure_contains": "report_digest mismatch"
+    },
+    {
+      "id": "evidence-bytecode-tamper",
+      "name": "Evidence verification fails when Bytecode changes",
+      "category": "offline_verification",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:ResearchAgent:tell:UserPrompt",
+      "mutation": {
+        "before_stage": "verify_evidence",
+        "artifact": "bytecode",
+        "json_pointer": "/module",
+        "value": "Tampered"
+      },
+      "expected_failure_stage": "verify_evidence",
+      "expected_failure_contains": "bytecode_digest mismatch"
+    },
+    {
+      "id": "evidence-ledger-tamper",
+      "name": "Evidence verification fails when ledger digest changes",
+      "category": "offline_verification",
+      "source_path": "sources/provider_allowlists_v015.argx",
+      "stages": ["parse", "semantic_check", "emit_ir", "emit_bytecode", "verify_bytecode", "run_vm", "security_report", "trace_out", "evidence_bundle", "verify_evidence"],
+      "injection": "User:ResearchAgent:tell:UserPrompt",
+      "mutation": {
+        "before_stage": "verify_evidence",
+        "artifact": "bundle",
+        "json_pointer": "/ledger_digest",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected_failure_stage": "verify_evidence",
+      "expected_failure_contains": "ledger_digest mismatch"
+    }
+  ]
+}

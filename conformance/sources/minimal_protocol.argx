@@ -1,0 +1,11 @@
+module Conformance.Minimal
+
+type Ping { value: string }
+
+agent Worker {
+    receives Ping from User
+}
+
+protocol Flow {
+    User -> Worker: tell Ping
+}

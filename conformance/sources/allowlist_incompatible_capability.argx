@@ -1,0 +1,15 @@
+module Invalid.IncompatibleCapability
+provider OpenAI {
+    kind external
+    enabled false
+    dry_run_only true
+    requires feature_flag
+    requires approval
+    allowed_targets { Guard }
+    allowed_capabilities { web.search }
+}
+capability model.invoke { level safe }
+capability web.search { level safe }
+type Input { value: string }
+type Output { value: string }
+model Guard { provider simulated capability model.invoke input Input output Output }

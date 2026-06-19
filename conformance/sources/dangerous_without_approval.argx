@@ -1,0 +1,7 @@
+module Invalid.Dangerous
+capability shell.execute { level dangerous requires approval }
+type Job { command: string }
+agent Runner {
+    receives Job
+    capabilities { shell.execute }
+}

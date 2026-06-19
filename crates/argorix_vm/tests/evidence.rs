@@ -91,7 +91,7 @@ fn bundle_preserves_metadata_digests_and_relative_paths() {
     )
     .unwrap();
 
-    assert_eq!(bundle.bundle_version, "0.14");
+    assert_eq!(bundle.bundle_version, "0.15");
     assert_eq!(bundle.language, bytecode.language);
     assert_eq!(bundle.module, bytecode.module);
     assert_eq!(bundle.bytecode_version, bytecode.bytecode_version);
@@ -272,5 +272,76 @@ fn offline_verification_reports_tampering_missing_artifacts_and_bad_ledger() {
         .failures
         .iter()
         .any(|failure| failure.contains("ledger_digest")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn offline_verification_accepts_v014_bundle_and_report() {
+    let root = temp_root("compat-v014");
+    let bundle_path = root.join("reports/run.bundle.json");
+    let bytecode_path = root.join("examples/program.argbc.json");
+    let trace_path = root.join("reports/run.trace.json");
+    let report_path = root.join("reports/run.security.json");
+    let bytecode = fixture();
+    let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+    let trace = outcome.result.as_ref().unwrap();
+    let mut report = SecurityReport::from_outcome(&bytecode, &outcome);
+    report.report_version = "0.14".into();
+    let mut bundle = EvidenceBundle::from_outcome(
+        &bytecode,
+        &outcome,
+        &report,
+        &bundle_path,
+        Some(&bytecode_path),
+        Some(&trace_path),
+        Some(&report_path),
+    )
+    .unwrap();
+    bundle.bundle_version = "0.14".into();
+    write_json(&bytecode_path, &bytecode);
+    write_json(&trace_path, trace);
+    write_json(&report_path, &report);
+    write_json(&bundle_path, &bundle);
+
+    let result = verify_evidence(&bundle_path).unwrap();
+
+    assert!(result.passed, "{:?}", result.failures);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn offline_verification_rejects_unsupported_bundle_version() {
+    let root = temp_root("unsupported-bundle");
+    let bundle_path = root.join("reports/run.bundle.json");
+    let bytecode_path = root.join("examples/program.argbc.json");
+    let trace_path = root.join("reports/run.trace.json");
+    let report_path = root.join("reports/run.security.json");
+    let bytecode = fixture();
+    let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+    let trace = outcome.result.as_ref().unwrap();
+    let report = SecurityReport::from_outcome(&bytecode, &outcome);
+    let mut bundle = EvidenceBundle::from_outcome(
+        &bytecode,
+        &outcome,
+        &report,
+        &bundle_path,
+        Some(&bytecode_path),
+        Some(&trace_path),
+        Some(&report_path),
+    )
+    .unwrap();
+    bundle.bundle_version = "0.13".into();
+    write_json(&bytecode_path, &bytecode);
+    write_json(&trace_path, trace);
+    write_json(&report_path, &report);
+    write_json(&bundle_path, &bundle);
+
+    let result = verify_evidence(&bundle_path).unwrap();
+
+    assert!(!result.passed);
+    assert!(result
+        .failures
+        .iter()
+        .any(|failure| failure.contains("unsupported bundle_version")));
     fs::remove_dir_all(root).unwrap();
 }

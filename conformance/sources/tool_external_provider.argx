@@ -1,0 +1,14 @@
+module Invalid.ToolExternal
+provider OpenAI {
+    kind external
+    enabled false
+    dry_run_only true
+    requires feature_flag
+    requires approval
+    allowed_targets { Search }
+    allowed_capabilities { web.search }
+}
+capability web.search { level safe }
+type Input { value: string }
+type Output { value: string }
+tool Search { provider OpenAI capability web.search input Input output Output }

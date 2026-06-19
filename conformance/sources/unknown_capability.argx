@@ -1,0 +1,6 @@
+module Invalid.UnknownCapability
+type Ping { value: string }
+agent Worker {
+    receives Ping
+    capabilities { missing.capability }
+}

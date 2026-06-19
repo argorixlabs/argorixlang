@@ -1,0 +1,16 @@
+module Conformance.Capabilities
+
+capability trace.write { level safe }
+type Ping { value: string }
+
+agent Worker {
+    receives Ping from User
+    capabilities { trace.write }
+    on Ping as ping {
+        trace ping
+    }
+}
+
+protocol Flow {
+    User -> Worker: tell Ping
+}

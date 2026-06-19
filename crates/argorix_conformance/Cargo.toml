@@ -1,0 +1,25 @@
+[package]
+name = "argorix-conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "argorix_conformance"
+path = "src/lib.rs"
+
+[[bin]]
+name = "argorix-conformance"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+argorix_bytecode.workspace = true
+argorix_ir.workspace = true
+argorix_parser.workspace = true
+argorix_semantics.workspace = true
+argorix_vm.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

@@ -27,9 +27,9 @@ fn successful_report_uses_real_runtime_evidence() {
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
 
     assert!(outcome.result.is_ok());
-    assert_eq!(report.report_version, "0.14");
+    assert_eq!(report.report_version, "0.15");
     assert_eq!(report.bytecode_version, "0.13");
-    assert_eq!(report.vm_version, "0.14");
+    assert_eq!(report.vm_version, "0.15");
     assert!(report.execution.completed);
     assert!(!report.execution.failed);
     assert_eq!(report.execution.steps, 3);
@@ -220,4 +220,23 @@ fn failed_execution_reconstructs_policy_only_from_ledger_evidence() {
     assert!(report.policy.evaluated);
     assert_eq!(report.policy.failed_assertions, ["runtime_status"]);
     assert_eq!(report.policy.activated_failures, ["PolicyViolation"]);
+}
+
+#[test]
+fn early_external_provider_rejection_records_blocked_evidence_for_reports() {
+    let mut bytecode = fixture();
+    bytecode.models[0].provider = "OpenAI".into();
+
+    let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+    let report = SecurityReport::from_outcome(&bytecode, &outcome);
+
+    assert!(outcome.result.is_err());
+    assert!(outcome
+        .state
+        .trace_ledger
+        .events
+        .iter()
+        .any(|event| event.event_type == EventType::ExternalProviderExecutionBlocked));
+    assert!(report.provider_boundary.external_execution_blocked);
+    assert_eq!(report.provider_boundary.blocked_attempts, 1);
 }

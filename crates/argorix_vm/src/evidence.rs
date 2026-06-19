@@ -68,7 +68,7 @@ impl EvidenceBundle {
     ) -> Result<Self, EvidenceError> {
         let trace = outcome.result.as_ref().ok();
         Ok(Self {
-            bundle_version: "0.14".into(),
+            bundle_version: "0.15".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             bytecode_version: bytecode.bytecode_version.clone(),
@@ -100,12 +100,21 @@ pub fn canonical_digest<T: Serialize + ?Sized>(value: &T) -> Result<String, Evid
 pub fn verify_evidence(bundle_path: &Path) -> Result<EvidenceVerificationResult, EvidenceError> {
     let source = read(bundle_path)?;
     let bundle: EvidenceBundle = serde_json::from_slice(&source)?;
-    let base = bundle_path
+    let cwd = std::env::current_dir().map_err(|source| EvidenceError::Io {
+        path: PathBuf::from("."),
+        source,
+    })?;
+    let absolute_bundle_path = absolute_lexical(&cwd, bundle_path);
+    let base = absolute_bundle_path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
-        .ok_or_else(|| EvidenceError::MissingBundleParent(bundle_path.to_path_buf()))?;
+        .ok_or_else(|| EvidenceError::MissingBundleParent(absolute_bundle_path.clone()))?;
     let mut checks = Checks::default();
 
+    checks.record(
+        matches!(bundle.bundle_version.as_str(), "0.14" | "0.15"),
+        "unsupported bundle_version",
+    );
     checks.record(
         valid_digest(&bundle.bytecode_digest),
         "bytecode_digest has invalid sha256 format",

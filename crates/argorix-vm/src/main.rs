@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use argorix_bytecode::BytecodeProgram;
 use argorix_vm::{
     evidence::{verify_evidence, EvidenceBundle},
-    InjectedMessage, ReactiveExecutionTrace, SecurityReport, Vm, VmError,
+    parse_injection, ReactiveExecutionTrace, SecurityReport, Vm,
 };
 use clap::{Parser, Subcommand};
 use std::{fs, path::PathBuf};
@@ -81,7 +81,7 @@ fn run() -> Result<()> {
             evidence_bundle,
         } => {
             if !dry_run {
-                bail!("v0.14 only supports execution with `--dry-run`");
+                bail!("v0.15 only supports execution with `--dry-run`");
             }
             let source = fs::read_to_string(&file)
                 .with_context(|| format!("failed to read `{}`", file.display()))?;
@@ -91,7 +91,7 @@ fn run() -> Result<()> {
                 let injection = inject
                     .as_deref()
                     .ok_or_else(|| anyhow::anyhow!("`--reactive` requires `--inject`"))
-                    .and_then(parse_injection)?;
+                    .and_then(|value| parse_injection(value).map_err(Into::into))?;
                 let outcome = Vm::new().run_reactive_outcome(&bytecode, injection);
                 let report = SecurityReport::from_outcome(&bytecode, &outcome);
                 if let Some(path) = security_report.as_deref() {
@@ -116,7 +116,7 @@ fn run() -> Result<()> {
                 if json {
                     println!("{}", serde_json::to_string_pretty(&trace)?);
                 } else {
-                    println!("Argorix VM v0.14\n");
+                    println!("Argorix VM v0.15\n");
                     println!("Execution mode: reactive dry-run");
                     println!("Scheduler: {}", trace.scheduler);
                     if providers {
@@ -322,7 +322,7 @@ fn run() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&trace)?);
             } else if mailboxes {
-                println!("Argorix VM v0.14\n");
+                println!("Argorix VM v0.15\n");
                 println!("Execution mode: dry-run");
                 println!("Scheduler: {}", trace.scheduler);
                 println!("Agents: {}\n", trace.mailboxes.len());
@@ -342,7 +342,7 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
                 println!("Trace ledger: generated");
             } else {
-                println!("Argorix VM v0.14\n");
+                println!("Argorix VM v0.15\n");
                 println!("Loaded bytecode: {}", file.display());
                 println!("Execution mode: dry-run\n");
                 for step in &trace.steps {
@@ -412,19 +412,6 @@ fn format_allowlist(values: &[String]) -> String {
         values.join(", ")
     }
 }
-fn parse_injection(value: &str) -> Result<InjectedMessage> {
-    let parts = value.split(':').collect::<Vec<_>>();
-    if parts.len() != 4 || parts.iter().any(|part| part.trim().is_empty()) {
-        return Err(VmError::InvalidInjection(value.to_owned()).into());
-    }
-    Ok(InjectedMessage {
-        from: parts[0].to_owned(),
-        to: parts[1].to_owned(),
-        act: parts[2].to_owned(),
-        message_type: parts[3].to_owned(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{format_allowlist, parse_injection, Cli, Command};

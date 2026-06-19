@@ -1,0 +1,8 @@
+module Invalid.ExternalEnabled
+provider OpenAI {
+    kind external
+    enabled true
+    dry_run_only true
+    requires feature_flag
+    requires approval
+}

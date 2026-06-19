@@ -44,22 +44,22 @@ source language
 
 ## Current status
 
-**Version:** `0.14`
+**Version:** `0.15`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version 0.14 exports portable Evidence Bundles and verifies their semantic
-Bytecode, trace, report, and ledger consistency offline. External providers
-remain disabled and cannot execute.
+Version 0.15 adds an official, portable Conformance Suite for the compiler,
+Bytecode verifier, VM, security reports, and evidence pipeline. External
+providers remain disabled and cannot execute.
 
 ```text
 .argx
   -> lexer / parser / AST
   -> semantic and security verification
-  -> Argorix IR 0.14
-  -> Argorix Bytecode 0.14
+  -> Argorix IR 0.15
+  -> Argorix Bytecode 0.15
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -308,6 +308,84 @@ Allowlisted does not mean executable.
 Failed executions must still be reportable.
 Security reports are evidence artifacts, not success receipts.
 Evidence must be exportable and independently checkable.
+```
+
+## Argorix Lang v0.15 Conformance Suite
+
+The official Conformance Suite validates the Argorix stack directly through
+library APIs:
+
+```text
+source -> parser -> semantics -> IR -> Bytecode -> verifier -> VM
+       -> SecurityReport -> EvidenceBundle -> offline verification
+```
+
+Run it in text or JSON mode:
+
+```bash
+cargo run -p argorix-conformance -- run conformance/suite.v015.json
+cargo run -p argorix-conformance -- run conformance/suite.v015.json --json
+cargo run -p argorix-conformance -- run conformance/suite.v015.json \
+  --workdir target/custom-conformance
+```
+
+The suite is local, deterministic, data-driven, and offline. It does not use
+network access, secrets, environment variables, real tools, real models,
+OpenAI, Anthropic, MCP, A2A, or executable external providers. Passing the
+suite demonstrates conformance with the declared Argorix behavior; it does not
+prove real-world security.
+
+Each case declares:
+
+```json
+{
+  "id": "unknown-capability-rejected",
+  "name": "Unknown capability is rejected",
+  "category": "semantics",
+  "source_path": "sources/unknown_capability.argx",
+  "stages": ["parse", "semantic_check"],
+  "expected_failure_stage": "semantic_check",
+  "expected_failure_contains": "Unknown capability"
+}
+```
+
+`stages` defines what executes. `expected_failure_stage` explicitly defines
+where a negative case must fail. The expected stage remains `failed`, later
+stages become `skipped`, and the case passes when the diagnostic matches.
+
+VM-dependent cases declare an explicit injection:
+
+```json
+"injection": "User:ResearchAgent:tell:UserPrompt"
+```
+
+Evidence-tampering cases use a declarative mutation applied only to the case
+copy under the workdir:
+
+```json
+"mutation": {
+  "before_stage": "verify_evidence",
+  "artifact": "security_report",
+  "json_pointer": "/module",
+  "value": "Tampered"
+}
+```
+
+Fixture paths resolve from the directory containing `suite.v015.json`, not
+from the shell working directory. Generated artifacts are isolated under
+`<workdir>/<case-id>/`. To add a case, add a portable fixture under
+`conformance/sources` or `conformance/bytecode`, then add a JSON case with a
+category, ordered stages, and any explicit injection, expected failure, or
+mutation.
+
+The v0.15 principles are:
+
+```text
+A secure language must be independently testable.
+Conformance must make expected failure explicit.
+Conformance must not depend on fixture-specific inference.
+Conformance cases must be data-driven, not runner-driven.
+Conformance paths resolve from the suite, not from the shell.
 ```
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
@@ -742,9 +820,9 @@ Lowering emits declarations and security requirements before protocol message in
 
 The verifier requires:
 
-- Bytecode version `0.14` for newly compiled programs. Versions `0.3`, `0.5`,
-  `0.6`, `0.7`, `0.8`, `0.9`, `0.10`, `0.11`, `0.12`, and `0.13` remain
-  accepted for compatibility.
+- Bytecode version `0.15` for newly compiled programs. Versions `0.3`, `0.5`,
+  `0.6`, `0.7`, `0.8`, `0.9`, `0.10`, `0.11`, `0.12`, `0.13`, and `0.14`
+  remain accepted for compatibility.
 - At least one agent.
 - At least one protocol or `SendMessage`.
 - Complete, non-empty message fields.
@@ -786,7 +864,7 @@ No network calls, tools, LLMs, or concurrent tasks are executed.
 Example text output:
 
 ```text
-Argorix VM v0.14
+Argorix VM v0.15
 
 Loaded bytecode: examples/prompt_defense.argbc.json
 Execution mode: dry-run
@@ -839,7 +917,7 @@ Runtime status progresses through:
 - `completed`
 - `failed`
 
-Reactive JSON uses `vm_version: "0.14"` and
+Reactive JSON uses `vm_version: "0.15"` and
 `mode: "reactive-dry-run"`. Each step records the agent, handled message,
 emitted messages, traced bindings, and whether the handler halted execution.
 
@@ -925,8 +1003,9 @@ cargo run -p argorixc -- --legacy-capabilities check examples/prompt_defense.arg
 crates/argorixc          Source compiler CLI
 crates/argorix_parser    Lexer, parser, AST, spans, diagnostics
 crates/argorix_semantics Source-level security and protocol verifier
-crates/argorix_ir        Argorix IR 0.14 with provider contract allowlists
-crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.14 verifier
+crates/argorix_ir          Argorix IR 0.15 with provider contract allowlists
+crates/argorix_bytecode    IR lowering and Bytecode 0.3 through 0.15 verifier
+crates/argorix_conformance Official direct-API Conformance Suite runner
 crates/argorix_provider  Executable providers, adapter contracts, and registry
 crates/argorix_vm        VM, preserved outcomes, ledger, security reports
 crates/argorix-vm        Bytecode VM CLI
@@ -959,6 +1038,9 @@ tests                    End-to-end compiler tests
 - `provider_allowlists_v013.argbc.json`: generated Bytecode 0.13 security-report fixture.
 - `provider_allowlists_v014.argx`: Evidence Bundle and offline-verification source fixture.
 - `provider_allowlists_v014.argbc.json`: generated Bytecode 0.14 evidence fixture.
+- `provider_allowlists_v015.argx`: Conformance Suite release source fixture.
+- `provider_allowlists_v015.argbc.json`: generated Bytecode 0.15 fixture.
+- `conformance/suite.v015.json`: official portable v0.15 suite.
 - `provider_allowlists_tools_v012.argx`: valid tool allowlist contract.
 - `provider_allowlists_tools_v012.argbc.json`: generated Bytecode 0.12 tool fixture.
 
@@ -1000,9 +1082,10 @@ tests                    End-to-end compiler tests
 12. `v0.12` — declarative provider target/capability allowlists.
 13. `v0.13` — preserved execution outcomes and deterministic security reports.
 14. `v0.14` — portable Evidence Bundles and offline semantic verification.
-15. `v0.15+` — sandboxed provider work.
-16. Optional WASM/native backends.
-17. Progressive self-hosting in Argorix Lang.
+15. `v0.15` — official portable, data-driven Conformance Suite.
+16. `v0.16+` — sandboxed provider work.
+17. Optional WASM/native backends.
+18. Progressive self-hosting in Argorix Lang.
 
 ## Security posture
 

@@ -1,5 +1,6 @@
 pub mod errors;
 pub mod evidence;
+pub mod injection;
 pub mod mailbox;
 pub mod reactive;
 pub mod runtime;
@@ -9,6 +10,7 @@ pub mod trace;
 pub mod vm;
 
 pub use errors::VmError;
+pub use injection::parse_injection;
 pub use mailbox::{AgentMailbox, MessageEnvelope};
 pub use reactive::ReactiveScheduler;
 pub use runtime::{

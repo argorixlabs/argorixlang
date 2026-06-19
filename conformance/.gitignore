@@ -1,0 +1,3 @@
+reports/*.security.json
+traces/*.trace.json
+bundles/*.bundle.json

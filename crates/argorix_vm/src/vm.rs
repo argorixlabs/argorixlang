@@ -3,7 +3,7 @@ use crate::{
     InjectedMessage, IntrinsicExecution, MailboxSummary, PolicyReport, ReactiveExecutionTrace,
     ReactiveScheduler, RuntimeState, RuntimeStatus, Scheduler, VmError,
 };
-use argorix_bytecode::{verify_bytecode, BytecodeProgram};
+use argorix_bytecode::{verify_bytecode, BytecodeError, BytecodeProgram};
 use argorix_provider::{AdapterContract, ProviderKind, ProviderRegistry};
 
 pub struct Vm {
@@ -148,6 +148,20 @@ impl Vm {
         let mut state = RuntimeState::from_bytecode(bytecode)
             .expect("runtime state initialization is infallible for decoded bytecode");
         if let Err(errors) = verify_bytecode(bytecode) {
+            if let Some(provider) = blocked_external_provider(bytecode, &errors) {
+                state.trace_ledger.record(
+                    EventType::ExternalProviderExecutionBlocked,
+                    "blocked",
+                    format!("external provider execution through {provider} blocked"),
+                    EventFields::default(),
+                );
+                state.trace_ledger.record(
+                    EventType::ProviderBoundaryDenied,
+                    "denied",
+                    format!("provider boundary denied external provider {provider}"),
+                    EventFields::default(),
+                );
+            }
             let error = VmError::from_verification(errors);
             state.fail(error.to_string());
             return ExecutionOutcome {
@@ -278,7 +292,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.14".into(),
+            vm_version: "0.15".into(),
             status: if policy_report.status == "passed" {
                 "completed".into()
             } else {
@@ -433,6 +447,24 @@ impl Vm {
             failures,
         }
     }
+}
+
+fn blocked_external_provider<'a>(
+    bytecode: &'a BytecodeProgram,
+    errors: &'a [BytecodeError],
+) -> Option<&'a str> {
+    errors.iter().find_map(|error| {
+        let provider = match error {
+            BytecodeError::UnknownToolProvider(provider)
+            | BytecodeError::UnknownModelProvider(provider) => provider.as_str(),
+            _ => return None,
+        };
+        bytecode
+            .providers
+            .iter()
+            .any(|contract| contract.name == provider && contract.kind == "external")
+            .then_some(provider)
+    })
 }
 
 #[cfg(test)]
@@ -625,7 +657,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.14");
+        assert_eq!(json["vm_version"], "0.15");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -647,7 +679,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.14");
+        assert_eq!(json["vm_version"], "0.15");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -669,7 +701,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.14");
+        assert_eq!(json["vm_version"], "0.15");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -724,7 +756,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.14");
+        assert_eq!(trace.vm_version, "0.15");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -798,7 +830,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.14");
+        assert_eq!(trace.vm_version, "0.15");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -850,7 +882,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.14");
+        assert_eq!(json["vm_version"], "0.15");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");

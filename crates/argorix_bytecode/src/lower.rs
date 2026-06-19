@@ -169,7 +169,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.14".to_owned(),
+        bytecode_version: "0.15".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         providers: ir
@@ -328,7 +328,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.14");
+        assert_eq!(bytecode.bytecode_version, "0.15");
         assert!(bytecode
             .instructions
             .iter()

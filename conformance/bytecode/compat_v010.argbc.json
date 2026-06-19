@@ -1,0 +1,1 @@
+{"bytecode_version":"0.10","language":"Argorix Lang","module":"Compat.V010","providers":[],"assertions":[],"failures":[],"agents":[{"name":"Worker","approval":"denied"}],"capabilities":[],"tools":[],"models":[],"instructions":[{"op":"DeclareProtocol","name":"Flow"},{"op":"SendMessage","from":"User","to":"Worker","act":"tell","message_type":"Ping"},{"op":"End"}]}

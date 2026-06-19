@@ -241,7 +241,7 @@ pub enum BytecodeError {
     UnknownModel(String),
     #[error("unsupported model provider `{0}`")]
     UnknownModelProvider(String),
-    #[error("provider contracts require bytecode version 0.11, 0.12, 0.13, or 0.14")]
+    #[error("provider contracts require bytecode version 0.11 through 0.15")]
     ContractsRequireV011,
     #[error("duplicate provider contract `{0}`")]
     DuplicateProviderContract(String),
@@ -257,7 +257,18 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         errors.push(BytecodeError::MissingVersion);
     } else if !matches!(
         program.bytecode_version.as_str(),
-        "0.3" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9" | "0.10" | "0.11" | "0.12" | "0.13" | "0.14"
+        "0.3"
+            | "0.5"
+            | "0.6"
+            | "0.7"
+            | "0.8"
+            | "0.9"
+            | "0.10"
+            | "0.11"
+            | "0.12"
+            | "0.13"
+            | "0.14"
+            | "0.15"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -268,7 +279,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     if !matches!(
         program.bytecode_version.as_str(),
-        "0.11" | "0.12" | "0.13" | "0.14"
+        "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -467,7 +478,10 @@ fn validate_contract_allowlists(
             });
             continue;
         }
-        if !matches!(program.bytecode_version.as_str(), "0.12" | "0.13" | "0.14") {
+        if !matches!(
+            program.bytecode_version.as_str(),
+            "0.12" | "0.13" | "0.14" | "0.15"
+        ) {
             continue;
         }
         let mut seen_targets = HashSet::new();
@@ -699,6 +713,22 @@ mod tests {
         ))
         .unwrap();
         verify_bytecode(&v013).unwrap();
+    }
+
+    #[test]
+    fn accepts_v015_and_retains_v014_compatibility() {
+        let mut v015: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_allowlists_v014.argbc.json"
+        ))
+        .unwrap();
+        v015.bytecode_version = "0.15".into();
+        verify_bytecode(&v015).unwrap();
+
+        let v014: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_allowlists_v014.argbc.json"
+        ))
+        .unwrap();
+        verify_bytecode(&v014).unwrap();
     }
 
     #[test]

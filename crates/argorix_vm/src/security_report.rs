@@ -191,13 +191,13 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.14".into(),
+            report_version: "0.15".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.14".into()),
+                .unwrap_or_else(|| "0.15".into()),
             execution,
             policy,
             provider_boundary,
