@@ -10,6 +10,12 @@ pub struct Vm {
     providers: ProviderRegistry,
 }
 
+#[derive(Debug)]
+pub struct ExecutionOutcome {
+    pub state: RuntimeState,
+    pub result: Result<ReactiveExecutionTrace, VmError>,
+}
+
 impl Default for Vm {
     fn default() -> Self {
         Self::new()
@@ -131,13 +137,33 @@ impl Vm {
         bytecode: &BytecodeProgram,
         injected: InjectedMessage,
     ) -> Result<ReactiveExecutionTrace, VmError> {
-        let mut state = RuntimeState::from_bytecode(bytecode)?;
+        self.run_reactive_outcome(bytecode, injected).result
+    }
+
+    pub fn run_reactive_outcome(
+        &self,
+        bytecode: &BytecodeProgram,
+        injected: InjectedMessage,
+    ) -> ExecutionOutcome {
+        let mut state = RuntimeState::from_bytecode(bytecode)
+            .expect("runtime state initialization is infallible for decoded bytecode");
         if let Err(errors) = verify_bytecode(bytecode) {
             let error = VmError::from_verification(errors);
             state.fail(error.to_string());
-            return Err(error);
+            return ExecutionOutcome {
+                state,
+                result: Err(error),
+            };
         }
-        let execution_providers = self.load_provider_contracts(bytecode, &mut state)?;
+        let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
+            Ok(providers) => providers,
+            Err(error) => {
+                return ExecutionOutcome {
+                    state,
+                    result: Err(error),
+                };
+            }
+        };
         for (name, kind) in execution_providers.entries() {
             state.trace_ledger.record(
                 EventType::ProviderRegistered,
@@ -146,12 +172,51 @@ impl Vm {
                 EventFields::default(),
             );
         }
-        let steps = ReactiveScheduler::new().run_with_registry(
+        state.executable_providers = execution_providers
+            .entries()
+            .into_iter()
+            .map(|(name, kind)| crate::ProviderSummary {
+                name: name.to_owned(),
+                kind: match kind {
+                    ProviderKind::Simulated => "simulated",
+                    ProviderKind::External => "external",
+                }
+                .into(),
+                enabled: true,
+            })
+            .collect();
+        state.provider_contracts = execution_providers
+            .contract_entries()
+            .into_iter()
+            .map(|contract| crate::ProviderContractSummary {
+                name: contract.name.clone(),
+                kind: match contract.kind {
+                    ProviderKind::Simulated => "simulated",
+                    ProviderKind::External => "external",
+                }
+                .into(),
+                enabled: contract.enabled,
+                dry_run_only: contract.dry_run_only,
+                requires_feature_flag: contract.requires_feature_flag,
+                requires_explicit_approval: contract.requires_explicit_approval,
+                allowed_targets: contract.allowed_targets.clone(),
+                allowed_capabilities: contract.allowed_capabilities.clone(),
+            })
+            .collect();
+        let steps = match ReactiveScheduler::new().run_with_registry(
             bytecode,
             &mut state,
             &injected,
             &execution_providers,
-        )?;
+        ) {
+            Ok(steps) => steps,
+            Err(error) => {
+                return ExecutionOutcome {
+                    state,
+                    result: Err(error),
+                };
+            }
+        };
         let policy_report = self.evaluate_policy(bytecode, &mut state, &steps);
         let mailboxes = state
             .agents
@@ -209,40 +274,11 @@ impl Vm {
                 mode: "dry-run".into(),
             })
             .collect();
-        let providers = execution_providers
-            .entries()
-            .into_iter()
-            .map(|(name, kind)| crate::ProviderSummary {
-                name: name.to_owned(),
-                kind: match kind {
-                    argorix_provider::ProviderKind::Simulated => "simulated",
-                    argorix_provider::ProviderKind::External => "external",
-                }
-                .into(),
-                enabled: true,
-            })
-            .collect();
-        let provider_contracts = execution_providers
-            .contract_entries()
-            .into_iter()
-            .map(|contract| crate::ProviderContractSummary {
-                name: contract.name.clone(),
-                kind: match contract.kind {
-                    ProviderKind::Simulated => "simulated",
-                    ProviderKind::External => "external",
-                }
-                .into(),
-                enabled: contract.enabled,
-                dry_run_only: contract.dry_run_only,
-                requires_feature_flag: contract.requires_feature_flag,
-                requires_explicit_approval: contract.requires_explicit_approval,
-                allowed_targets: contract.allowed_targets.clone(),
-                allowed_capabilities: contract.allowed_capabilities.clone(),
-            })
-            .collect();
+        let providers = state.executable_providers.clone();
+        let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
-        Ok(ReactiveExecutionTrace {
-            vm_version: "0.12".into(),
+        let trace = ReactiveExecutionTrace {
+            vm_version: "0.13".into(),
             status: if policy_report.status == "passed" {
                 "completed".into()
             } else {
@@ -261,9 +297,13 @@ impl Vm {
             provider_contracts,
             provider_calls,
             policy_report,
-            events: state.trace_ledger.events,
+            events: state.trace_ledger.events.clone(),
             security_checks: "passed".into(),
-        })
+        };
+        ExecutionOutcome {
+            state,
+            result: Ok(trace),
+        }
     }
 
     fn evaluate_policy(
@@ -509,6 +549,34 @@ mod tests {
     }
 
     #[test]
+    fn reactive_outcome_preserves_failed_runtime_state_and_ledger() {
+        let mut bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/prompt_defense_v05.argbc.json"
+        ))
+        .unwrap();
+        bytecode.instructions.pop();
+
+        let outcome = Vm::new().run_reactive_outcome(
+            &bytecode,
+            InjectedMessage {
+                from: "User".into(),
+                to: "PromptScanner".into(),
+                act: "tell".into(),
+                message_type: "UserPrompt".into(),
+            },
+        );
+
+        assert!(outcome.result.is_err());
+        assert_eq!(outcome.state.status, RuntimeStatus::Failed);
+        assert!(outcome
+            .state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::VmFailed));
+    }
+
+    #[test]
     fn json_trace_contains_mailboxes() {
         let trace = Vm::new().run_dry(&valid_bytecode()).unwrap();
         let json = serde_json::to_value(trace).unwrap();
@@ -557,7 +625,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.12");
+        assert_eq!(json["vm_version"], "0.13");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -579,7 +647,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.12");
+        assert_eq!(json["vm_version"], "0.13");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -601,7 +669,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.12");
+        assert_eq!(json["vm_version"], "0.13");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -656,7 +724,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.12");
+        assert_eq!(trace.vm_version, "0.13");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -730,7 +798,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.12");
+        assert_eq!(trace.vm_version, "0.13");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -782,7 +850,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.12");
+        assert_eq!(json["vm_version"], "0.13");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");

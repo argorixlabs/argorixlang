@@ -4,14 +4,14 @@ Argorix Lang is a compiled language for secure, verifiable communication
 between AI agents. Rust bootstraps the compiler; Argorix Lang remains its own
 language with a path toward progressive self-hosting.
 
-Version 0.12 activates declarative target and capability allowlists for external adapter contracts. External providers remain disabled and cannot execute:
+Version 0.13 exports deterministic security reports from real VM execution evidence, including failed executions. External providers remain disabled and cannot execute:
 
 ```text
 .argx
   -> lexer / parser / AST
   -> semantic and security verification
-  -> Argorix IR 0.12
-  -> Argorix Bytecode 0.12
+  -> Argorix IR 0.13
+  -> Argorix Bytecode 0.13
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -25,6 +25,7 @@ Version 0.12 activates declarative target and capability allowlists for external
   -> global policy verification
   -> declared failure modes
   -> trace ledger
+  -> deterministic security report
 ```
 
 The VM does not call LLMs, tools, MCP, A2A, networks, shells, or other external
@@ -92,8 +93,24 @@ cargo run -p argorixc -- check examples/provider_allowlists_v012.argx
 cargo run -p argorixc -- emit-ir examples/provider_allowlists_v012.argx
 cargo run -p argorixc -- emit-bytecode examples/provider_allowlists_v012.argx
 cargo run -p argorix-vm -- run examples/provider_allowlists_v012.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --state --tools --models --policy --providers --provider-contracts
+cargo run -p argorixc -- emit-bytecode examples/provider_allowlists_v013.argx
+cargo run -p argorix-vm -- run examples/provider_allowlists_v013.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --security-report reports/provider-allowlists.security.json
+cargo run -p argorix-vm -- run examples/provider_allowlists_v013.argbc.json --dry-run --reactive --inject User:ResearchAgent:tell:UserPrompt --json --security-report reports/provider-allowlists.security.json
 ```
 
+## Security report export v0.13
+
+Reactive execution now uses `run_reactive_outcome()`, which always preserves the final `RuntimeState` and ordered trace ledger. `run_reactive()` remains a compatibility wrapper.
+
+Use `run --security-report <path>` to write a pretty JSON evidence artifact. The CLI creates the required parent directory and writes the report before propagating a VM error. Failed executions therefore still exit nonzero, keep stderr diagnostics, and remain reportable. In `--json` mode stdout remains exactly the existing trace JSON; failed executions without a trace print no partial JSON.
+
+The public `SecurityReport` includes execution, policy, provider-boundary, call, intrinsic, ledger, and verdict summaries. Counts come from actual runtime evidence. For the three-agent v0.13 fixture, the intrinsic summary is `facu_checkpoints: 3`, `marron_guards: 3`, and `intrinsic_events_total: 6`.
+
+`ledger_digest` is `sha256:` plus SHA-256 of compact JSON for the ordered ledger events. It supports deterministic integrity checks and reproducible audits. It is not a signature, uses no key, and does not prove real-world safety.
+
+Verdicts follow evidence: blocked external execution or runtime/provider-boundary failure is `high`; assertion or completed-runtime denial evidence is `medium`; completion without assertions is `informational`; completion with passing policy is `pass`.
+
+Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
 ## Provider contract allowlists v0.12
 
 External provider contracts may now declare future target and capability permissions:
@@ -404,8 +421,7 @@ because a capability happens to be named `runtime.halt`.
 
 The verifier requires:
 
-- Bytecode version `0.12` for newly compiled programs. Versions `0.3`, `0.5`,
-  `0.6`, `0.7`, `0.8`, `0.9`, and `0.10` remain accepted for compatibility.
+- Bytecode version `0.13` for newly compiled programs. Versions `0.3`, `0.5`, `0.6`, `0.7`, `0.8`, `0.9`, `0.10`, `0.11`, and `0.12` remain accepted for compatibility.
 - At least one agent.
 - At least one protocol or `SendMessage`.
 - Complete, non-empty message fields.
@@ -440,7 +456,7 @@ mailboxes. No network calls, tools, LLMs, or concurrent tasks are executed.
 Text output:
 
 ```text
-Argorix VM v0.12
+Argorix VM v0.13
 
 Loaded bytecode: examples/prompt_defense.argbc.json
 Execution mode: dry-run
@@ -493,7 +509,7 @@ The ledger records `VmStarted`, declarations, message scheduling, delivery and
 processing, then `VmCompleted` or `VmFailed`. Because the scheduler mutates a
 caller-owned state, failure diagnostics do not discard the ledger.
 
-Reactive JSON uses `vm_version: "0.12"` and
+Reactive JSON uses `vm_version: "0.13"` and
 `mode: "reactive-dry-run"`. Each step records the agent, handled message,
 emitted messages, traced bindings, and whether the handler halted execution.
 
@@ -534,10 +550,10 @@ cargo run -p argorixc -- --legacy-capabilities check examples/prompt_defense.arg
 crates/argorixc          Source compiler CLI
 crates/argorix_parser    Lexer, parser, AST, spans, diagnostics
 crates/argorix_semantics Source-level security and protocol verifier
-crates/argorix_ir        Argorix IR 0.12 with provider contract allowlists
-crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.12 verifier
+crates/argorix_ir        Argorix IR 0.13 with provider contract allowlists
+crates/argorix_bytecode  IR lowering and Bytecode 0.3 through 0.13 verifier
 crates/argorix_provider  Executable providers, adapter contracts, and registry
-crates/argorix_vm        Linear/reactive schedulers, mailboxes, VM, ledger
+crates/argorix_vm        VM, preserved outcomes, ledger, security reports
 crates/argorix-vm        Bytecode VM CLI
 examples                 Source and bytecode fixtures
 tests                    End-to-end compiler tests
@@ -562,6 +578,8 @@ tests                    End-to-end compiler tests
 - `provider_contracts_v011.argbc.json`: generated Bytecode 0.11 fixture.
 - `provider_allowlists_v012.argx`: valid model allowlist contract.
 - `provider_allowlists_v012.argbc.json`: generated Bytecode 0.12 model fixture.
+- `provider_allowlists_v013.argx`: v0.12-compatible allowlist source compiled by v0.13.
+- `provider_allowlists_v013.argbc.json`: generated Bytecode 0.13 security-report fixture.
 - `provider_allowlists_tools_v012.argx`: valid tool allowlist contract.
 - `provider_allowlists_tools_v012.argbc.json`: generated Bytecode 0.12 tool fixture.
 - `provider_allowlist_unknown_target.argx`: unknown target failure.
@@ -599,8 +617,9 @@ tests                    End-to-end compiler tests
 10. v0.10: audited provider boundary and simulated provider registry
 11. v0.11: disabled external adapter contracts and conformance checks
 12. v0.12: declarative provider target/capability allowlists
-13. v0.13+: sandboxed provider work
-14. Optional WASM/native backends
-15. Progressive self-hosting in Argorix Lang
+13. v0.13: preserved execution outcomes and deterministic security reports
+14. v0.14+: sandboxed provider work
+15. Optional WASM/native backends
+16. Progressive self-hosting in Argorix Lang
 
 > Rust is the forge. Argorix Lang is the sword.

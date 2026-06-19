@@ -241,7 +241,7 @@ pub enum BytecodeError {
     UnknownModel(String),
     #[error("unsupported model provider `{0}`")]
     UnknownModelProvider(String),
-    #[error("provider contracts require bytecode version 0.11 or 0.12")]
+    #[error("provider contracts require bytecode version 0.11, 0.12, or 0.13")]
     ContractsRequireV011,
     #[error("duplicate provider contract `{0}`")]
     DuplicateProviderContract(String),
@@ -257,7 +257,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         errors.push(BytecodeError::MissingVersion);
     } else if !matches!(
         program.bytecode_version.as_str(),
-        "0.3" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9" | "0.10" | "0.11" | "0.12"
+        "0.3" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9" | "0.10" | "0.11" | "0.12" | "0.13"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -266,7 +266,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if program.agents.is_empty() {
         errors.push(BytecodeError::NoAgents);
     }
-    if !matches!(program.bytecode_version.as_str(), "0.11" | "0.12")
+    if !matches!(program.bytecode_version.as_str(), "0.11" | "0.12" | "0.13")
         && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -465,7 +465,7 @@ fn validate_contract_allowlists(
             });
             continue;
         }
-        if program.bytecode_version != "0.12" {
+        if !matches!(program.bytecode_version.as_str(), "0.12" | "0.13") {
             continue;
         }
         let mut seen_targets = HashSet::new();
@@ -664,6 +664,23 @@ mod tests {
             program.providers[0].allowed_capabilities,
             vec!["model.invoke"]
         );
+    }
+
+    #[test]
+    fn accepts_v013_populated_provider_allowlists_and_retains_v012_compatibility() {
+        let v013: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_allowlists_v013.argbc.json"
+        ))
+        .unwrap();
+        verify_bytecode(&v013).unwrap();
+        assert_eq!(v013.bytecode_version, "0.13");
+
+        let v012: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/provider_allowlists_v012.argbc.json"
+        ))
+        .unwrap();
+        verify_bytecode(&v012).unwrap();
+        assert_eq!(v012.bytecode_version, "0.12");
     }
 
     #[test]
