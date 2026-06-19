@@ -3,6 +3,7 @@ pub mod mailbox;
 pub mod reactive;
 pub mod runtime;
 pub mod scheduler;
+pub mod security_report;
 pub mod trace;
 pub mod vm;
 
@@ -13,10 +14,14 @@ pub use runtime::{
     AgentState, ModelCallEnvelope, RuntimeState, RuntimeStatus, StateCheckpoint, ToolCallEnvelope,
 };
 pub use scheduler::Scheduler;
+pub use security_report::{
+    CallSummary, ExecutionSummary, InjectedMessageSummary, IntrinsicSummary, LedgerSummary,
+    PolicySummary, ProviderBoundarySummary, SecurityReport, SecurityVerdict,
+};
 pub use trace::{
     AgentStateSummary, AssertionResult, EmittedMessage, EventFields, EventType, ExecutionEvent,
     ExecutionTrace, FailureActivation, InjectedMessage, IntrinsicExecution, InvokedIntrinsic,
     MailboxSummary, ModelCallSummary, PolicyReport, ProviderCallSummary, ProviderContractSummary,
     ProviderSummary, ReactiveExecutionTrace, ReactiveStep, ToolCallSummary, TraceLedger, TraceStep,
 };
-pub use vm::Vm;
+pub use vm::{ExecutionOutcome, Vm};

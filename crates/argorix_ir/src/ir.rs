@@ -146,7 +146,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.12".to_owned(),
+            ir_version: "0.13".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             providers: program

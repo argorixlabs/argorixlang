@@ -72,7 +72,7 @@ impl ProviderRegistry {
             Some("provider contract name must not be empty")
         } else {
             match contract.kind {
-                ProviderKind::Simulated => Some("only external contracts are declarative in v0.12"),
+                ProviderKind::Simulated => Some("only external contracts are declarative in v0.13"),
                 ProviderKind::External if contract.enabled => {
                     Some("external provider contracts must be disabled")
                 }

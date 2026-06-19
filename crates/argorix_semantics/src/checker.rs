@@ -107,7 +107,7 @@ fn check_provider_contracts(
         if provider.kind.value.as_str() != "external" {
             diagnostics.push(Diagnostic::new(
                 format!(
-                    "provider contract `{}` must use kind `external` in v0.12",
+                    "provider contract `{}` must use kind `external` in v0.13",
                     provider.name.value
                 ),
                 provider.kind.span,
