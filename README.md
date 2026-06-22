@@ -44,13 +44,15 @@ source language
 
 ## Current status
 
-**Version:** `0.19`
+**Version:** `0.20`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version 0.19 adds the Agent Passport / Sovereign Agent Identity block: a
+Version 0.20 adds Sandboxed Provider Harness declarations: metadata-first
+containment evidence for external provider contracts. Version 0.19 added the
+Agent Passport / Sovereign Agent Identity block: a
 top-level `passport` declaring an agent's identity, sovereignty, jurisdiction,
 data residency, infrastructure, intent, risk, and attestations. Passports are
 compilable, verifiable, auditable metadata only — there is no network access,
@@ -62,8 +64,8 @@ argorix.toml + src/*.argx
   -> module resolution (deterministic graph)
   -> whole-package semantic and security verification
   -> lexer / parser / AST
-  -> Argorix IR 0.19 (with passport, typed message, policy and module metadata)
-  -> Argorix Bytecode 0.19 (with passport, typed message, policy and module metadata)
+  -> Argorix IR 0.20 (with harness, passport, typed message, policy and module metadata)
+  -> Argorix Bytecode 0.20 (with harness, passport, typed message, policy and module metadata)
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -404,6 +406,95 @@ Conformance paths resolve from the suite, not from the shell.
 ```
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
+
+## Argorix Lang v0.20 Sandboxed Provider Harness
+
+The v0.20 principle is:
+
+> Before execution comes containment.
+
+A provider contract declares what an external integration would be allowed to
+target. A provider harness separately declares how that provider must be
+contained during offline preparation and audit:
+
+```argx
+harness OpenAIHarness {
+  provider OpenAI
+  mode dry_run
+  network denied
+  secrets denied
+  filesystem none
+  max_steps 10
+  timeout_ms 1000
+  input_contract UserPrompt
+  output_contract DraftAnswer
+  attestations ["dry-run", "policy-check", "evidence-bundle"]
+}
+```
+
+Required fields are `provider`, `mode`, `network`, `secrets`, and `filesystem`.
+No required field receives a silent default. Supported values are:
+
+- `mode dry_run` or `mode simulated`;
+- `network denied`;
+- `secrets denied`;
+- `filesystem none` or `filesystem read_only`.
+
+`max_steps` and `timeout_ms` are optional positive integers.
+`input_contract` and `output_contract` optionally reference declared message
+types. `attestations` may be absent or empty, but every supplied string must be
+non-empty.
+
+### Provider contract, harness, and executable provider
+
+- A **provider contract** describes a disabled external boundary, future
+  allowlists, feature-flag requirement, and explicit approval requirement.
+- A **provider harness** is containment/governance metadata associated with a
+  declared provider contract.
+- The **simulated provider** is the only executable provider implementation.
+- An **external provider** remains non-executable even when a valid harness is
+  present.
+
+Harnesses are top-level IR and Bytecode 0.20 metadata. They do not emit
+`DeclareHarness`, `SandboxProvider`, or any other VM instruction.
+
+### Policy v2 integration
+
+The following offline rules inspect verified Bytecode metadata:
+
+```txt
+provider_harness_declared
+provider_harness_sandboxed
+provider_network_denied
+provider_secrets_denied
+provider_filesystem_restricted
+external_provider_harnessed
+```
+
+Dimension-specific rules use universal evaluation. To require at least one
+harness, also require `provider_harness_declared`.
+
+### Trace, SecurityReport, and EvidenceBundle
+
+Reactive traces preserve `provider_harnesses` and ledger events record
+declaration, validation, and structural sandbox acceptance. SecurityReport
+0.20 summarizes providers, modes, network/secrets/filesystem declarations,
+contract references, and attestation totals. This is structural containment
+evidence; it is not proof of real-world sandbox security.
+
+EvidenceBundle 0.20 covers harness metadata through the existing canonical
+digests of Bytecode, trace, SecurityReport, and trace ledger. Offline
+verification remains compatible with bundle version 0.19.
+
+### Hard boundary
+
+The harness does not execute external providers. It does not call APIs, open
+network connections, resolve DNS, read secrets, load API keys from environment
+variables, create processes, or access files on behalf of a provider. Version
+0.20 adds no real OpenAI, Anthropic, MCP, A2A, or NANDA adapter.
+
+See `examples/provider_harness_v020.argx` and
+`examples/provider_harness_project/`.
 
 ## Argorix Lang v0.19 Agent Passport / Sovereign Agent Identity
 

@@ -674,12 +674,8 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
                 && harness.secrets == "denied"
                 && matches!(harness.filesystem.as_str(), "none" | "read_only")
         }),
-        provider_network_denied: harnesses
-            .iter()
-            .all(|harness| harness.network == "denied"),
-        provider_secrets_denied: harnesses
-            .iter()
-            .all(|harness| harness.secrets == "denied"),
+        provider_network_denied: harnesses.iter().all(|harness| harness.network == "denied"),
+        provider_secrets_denied: harnesses.iter().all(|harness| harness.secrets == "denied"),
         provider_filesystem_restricted: harnesses
             .iter()
             .all(|harness| matches!(harness.filesystem.as_str(), "none" | "read_only")),
@@ -1394,16 +1390,13 @@ mod tests {
         bytecode.bytecode_version = "0.20".into();
         bytecode.policies = vec![BytecodePolicy {
             name: "HarnessPolicy".into(),
-            rules: [
-                "provider_harness_declared",
-                "external_provider_harnessed",
-            ]
-            .into_iter()
-            .map(|rule| BytecodePolicyRule {
-                effect: "require".into(),
-                rule: rule.into(),
-            })
-            .collect(),
+            rules: ["provider_harness_declared", "external_provider_harnessed"]
+                .into_iter()
+                .map(|rule| BytecodePolicyRule {
+                    effect: "require".into(),
+                    rule: rule.into(),
+                })
+                .collect(),
             on_violation: Some(BytecodePolicyViolation {
                 action: "review".into(),
                 trace_required: true,

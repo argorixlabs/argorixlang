@@ -1,0 +1,3 @@
+module invalid.network
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+harness H { provider OpenAI mode dry_run network allowed secrets denied filesystem none }

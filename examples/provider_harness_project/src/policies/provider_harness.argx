@@ -1,0 +1,14 @@
+module policies.provider_harness
+
+policy ProviderHarnessPolicy {
+    require provider_harness_declared
+    require provider_harness_sandboxed
+    require provider_network_denied
+    require provider_secrets_denied
+    require provider_filesystem_restricted
+    require external_provider_harnessed
+    on violation {
+        action review
+        trace required
+    }
+}

@@ -130,7 +130,7 @@ fn emits_versioned_v02_ir_with_capabilities() {
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
 
-    assert_eq!(json["ir_version"], "0.19");
+    assert_eq!(json["ir_version"], "0.20");
     assert_eq!(json["language"], "Argorix Lang");
     assert_eq!(json["capabilities"][3]["name"], "runtime.halt");
     assert_eq!(json["capabilities"][3]["requires_approval"], true);
@@ -258,7 +258,7 @@ fn ir_includes_intrinsic_instructions() {
     let ast = parse_source(include_str!("../examples/prompt_defense_v06.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.19");
+    assert_eq!(json["ir_version"], "0.20");
     assert_eq!(
         json["agents"][0]["handlers"][0]["instructions"][0]["op"],
         "intrinsic"
@@ -561,7 +561,7 @@ fn ir_preserves_populated_provider_allowlists() {
     .unwrap();
     check_program(&ast).unwrap();
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.19");
+    assert_eq!(ir.ir_version, "0.20");
     assert_eq!(
         ir.providers[0].allowed_targets,
         vec!["GuardModel", "WebSearch"]
@@ -571,7 +571,7 @@ fn ir_preserves_populated_provider_allowlists() {
         vec!["model.invoke", "web.search"]
     );
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.19");
+    assert_eq!(bytecode.bytecode_version, "0.20");
     assert_eq!(
         bytecode.providers[0].allowed_targets,
         vec!["GuardModel", "WebSearch"]
@@ -600,14 +600,14 @@ fn ir_and_bytecode_include_declarative_provider_contracts() {
     let ast = parse_source(source).unwrap();
     check_program(&ast).unwrap();
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.19");
+    assert_eq!(ir.ir_version, "0.20");
     assert_eq!(ir.providers[0].name, "OpenAI");
     assert_eq!(ir.providers[0].kind, "external");
     assert!(ir.providers[0].allowed_targets.is_empty());
     assert!(ir.providers[0].allowed_capabilities.is_empty());
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.19");
+    assert_eq!(bytecode.bytecode_version, "0.20");
     assert_eq!(bytecode.providers[0].name, "OpenAI");
     assert!(bytecode.providers[0].allowed_targets.is_empty());
     assert!(bytecode.providers[0].allowed_capabilities.is_empty());
@@ -637,12 +637,12 @@ fn ir_and_bytecode_make_tool_provider_explicit() {
     assert!(ast.tools[0].provider.is_none());
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.19");
+    assert_eq!(ir.ir_version, "0.20");
     assert_eq!(ir.tools[0].provider, "simulated");
     assert_eq!(ir.models.len(), 0);
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.19");
+    assert_eq!(bytecode.bytecode_version, "0.20");
     assert_eq!(bytecode.tools[0].provider, "simulated");
     assert!(bytecode.instructions.iter().any(|instruction| matches!(
         instruction,
@@ -749,7 +749,7 @@ fn ir_includes_tools_and_call_instruction() {
     let ast = parse_source(include_str!("../examples/tool_call_v07.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.19");
+    assert_eq!(json["ir_version"], "0.20");
     assert_eq!(json["tools"][0]["name"], "WebSearch");
     assert_eq!(json["agents"][0]["tools"][0], "WebSearch");
     assert_eq!(
@@ -831,7 +831,7 @@ fn ir_includes_models_and_ask() {
     let ast = parse_source(include_str!("../examples/model_call_v08.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.19");
+    assert_eq!(json["ir_version"], "0.20");
     assert_eq!(json["models"][0]["name"], "GuardModel");
     assert_eq!(json["agents"][1]["models"][0], "GuardModel");
     assert_eq!(
@@ -881,7 +881,7 @@ fn parses_and_emits_v09_policies() {
     assert!(ast.failures[0].trace_required);
 
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.19");
+    assert_eq!(json["ir_version"], "0.20");
     assert_eq!(json["assertions"][0]["name"], "no_unhandled_messages");
     assert_eq!(json["failures"][0]["trace"], "required");
 }
@@ -932,7 +932,7 @@ fn v016_fixture_remains_verifiable_after_v017_default_emission() {
     ))
     .unwrap();
 
-    assert_eq!(emitted.bytecode_version, "0.19");
+    assert_eq!(emitted.bytecode_version, "0.20");
     assert_eq!(fixture.bytecode_version, "0.16");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
 }
@@ -946,7 +946,7 @@ fn v017_policy_fixture_remains_verifiable_after_v018_default_emission() {
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/policy_v017.argbc.json")).unwrap();
 
-    assert_eq!(emitted.bytecode_version, "0.19");
+    assert_eq!(emitted.bytecode_version, "0.20");
     assert_eq!(fixture.bytecode_version, "0.17");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.policies.len(), 2);
@@ -959,21 +959,34 @@ fn v018_typed_message_fixture_remains_verifiable_after_v019_default_emission() {
     let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/typed_messages_v018.argbc.json")).unwrap();
-    assert_eq!(emitted.bytecode_version, "0.19");
+    assert_eq!(emitted.bytecode_version, "0.20");
     assert_eq!(fixture.bytecode_version, "0.18");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.types[0].fields[0].field_type, "string");
 }
 
 #[test]
-fn v019_passport_fixture_matches_fresh_output() {
+fn v019_passport_fixture_remains_verifiable_after_v020_default_emission() {
     let ast = parse_source(include_str!("../examples/agent_passport_v019.argx")).unwrap();
     check_program(&ast).unwrap();
     let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/agent_passport_v019.argbc.json")).unwrap();
-    assert_eq!(emitted, fixture);
-    assert_eq!(emitted.bytecode_version, "0.19");
+    assert_eq!(emitted.bytecode_version, "0.20");
+    assert_eq!(fixture.bytecode_version, "0.19");
+    argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.passports[0].agent, "ResearchAgent");
     assert_eq!(emitted.passports[0].risk_level, "high");
+}
+
+#[test]
+fn v020_provider_harness_fixture_matches_fresh_output() {
+    let ast = parse_source(include_str!("../examples/provider_harness_v020.argx")).unwrap();
+    check_program(&ast).unwrap();
+    let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+    let fixture: argorix_bytecode::BytecodeProgram =
+        serde_json::from_str(include_str!("../examples/provider_harness_v020.argbc.json")).unwrap();
+    assert_eq!(emitted, fixture);
+    assert_eq!(emitted.bytecode_version, "0.20");
+    assert_eq!(emitted.provider_harnesses[0].name, "OpenAIHarness");
 }

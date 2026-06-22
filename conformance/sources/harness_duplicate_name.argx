@@ -1,0 +1,4 @@
+module invalid.duplicate
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+harness H { provider OpenAI mode dry_run network denied secrets denied filesystem none }
+harness H { provider OpenAI mode dry_run network denied secrets denied filesystem none }

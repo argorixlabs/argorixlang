@@ -1,0 +1,6 @@
+[package]
+name = "provider-harness-project"
+version = "0.20.0"
+
+[entry]
+main = "src/main.argx"

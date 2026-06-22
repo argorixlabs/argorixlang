@@ -1,0 +1,6 @@
+module policies.provider_harness
+policy HarnessPolicy {
+    require provider_harness_declared
+    require external_provider_harnessed
+    on violation { action block trace required }
+}

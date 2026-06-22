@@ -1,0 +1,11 @@
+module harnesses.openai
+harness OpenAIHarness {
+    provider OpenAI
+    mode dry_run
+    network denied
+    secrets denied
+    filesystem read_only
+    input_contract UserPrompt
+    output_contract DraftAnswer
+    attestations []
+}

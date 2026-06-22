@@ -2,8 +2,7 @@ use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
     ast::{
         Approval, CapabilityLevel, HandlerInstruction, HarnessFilesystem, HarnessMode,
-        HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction,
-        Program,
+        HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program,
     },
     diagnostics::Diagnostic,
     span::Spanned,

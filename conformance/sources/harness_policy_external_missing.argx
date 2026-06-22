@@ -1,0 +1,14 @@
+module invalid.policy_coverage
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+type Ping { content: string }
+capability trace.write { level safe }
+policy HarnessCoverage {
+    require external_provider_harnessed
+    on violation { action block trace required }
+}
+agent Worker {
+    receives Ping
+    capabilities { trace.write }
+    on Ping as ping { trace ping }
+}
+protocol Flow { User -> Worker: tell Ping }

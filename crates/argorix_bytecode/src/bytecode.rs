@@ -723,10 +723,7 @@ fn validate_contract_allowlists(
 
 fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     if (!program.types.is_empty() || !program.enums.is_empty())
-        && !matches!(
-            program.bytecode_version.as_str(),
-            "0.18" | "0.19" | "0.20"
-        )
+        && !matches!(program.bytecode_version.as_str(), "0.18" | "0.19" | "0.20")
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
     }
@@ -879,16 +876,10 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
         if harness.provider.trim().is_empty() {
             invalid("provider must not be empty".into(), errors);
         } else if !providers.contains(harness.provider.as_str()) {
-            invalid(
-                format!("unknown provider `{}`", harness.provider),
-                errors,
-            );
+            invalid(format!("unknown provider `{}`", harness.provider), errors);
         }
         if !matches!(harness.mode.as_str(), "dry_run" | "simulated") {
-            invalid(
-                format!("invalid mode `{}`", harness.mode),
-                errors,
-            );
+            invalid(format!("invalid mode `{}`", harness.mode), errors);
         }
         if harness.network != "denied" {
             invalid("network must be denied".into(), errors);

@@ -1,11 +1,11 @@
 use crate::{
     ast::{
         AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
-        FieldDecl, HandlerDecl, HandlerInstruction, ImportDecl, MessageFieldType, ModelDecl,
-        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PassportAsnDecl,
-        PassportDecl, PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction,
-        PolicyViolationDecl, Program, ProtocolDecl, ProtocolStep, ProviderDecl,
-        ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
+        FieldDecl, HandlerDecl, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
+        HarnessSecrets, ImportDecl, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl,
+        PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
+        Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
+        ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -254,9 +254,11 @@ impl Parser {
         while !self.check(&TokenKind::RightBrace) {
             self.ensure_not_eof("unterminated harness declaration")?;
             match self.peek_identifier() {
-                Some("provider") => self.set_harness_field(&mut provider, "provider", |parser| {
-                    parser.expect_identifier("harness provider reference")
-                })?,
+                Some("provider") => {
+                    self.set_harness_field(&mut provider, "provider", |parser| {
+                        parser.expect_identifier("harness provider reference")
+                    })?
+                }
                 Some("mode") => self.set_harness_field(&mut mode, "mode", |parser| {
                     let token = parser.expect_identifier("harness mode")?;
                     let value = match token.value.as_str() {
@@ -266,26 +268,22 @@ impl Parser {
                     };
                     Ok(Spanned::new(value, token.span))
                 })?,
-                Some("network") => {
-                    self.set_harness_field(&mut network, "network", |parser| {
-                        let token = parser.expect_identifier("harness network mode")?;
-                        let value = match token.value.as_str() {
-                            "denied" => HarnessNetwork::Denied,
-                            other => HarnessNetwork::Unknown(other.to_owned()),
-                        };
-                        Ok(Spanned::new(value, token.span))
-                    })?
-                }
-                Some("secrets") => {
-                    self.set_harness_field(&mut secrets, "secrets", |parser| {
-                        let token = parser.expect_identifier("harness secrets mode")?;
-                        let value = match token.value.as_str() {
-                            "denied" => HarnessSecrets::Denied,
-                            other => HarnessSecrets::Unknown(other.to_owned()),
-                        };
-                        Ok(Spanned::new(value, token.span))
-                    })?
-                }
+                Some("network") => self.set_harness_field(&mut network, "network", |parser| {
+                    let token = parser.expect_identifier("harness network mode")?;
+                    let value = match token.value.as_str() {
+                        "denied" => HarnessNetwork::Denied,
+                        other => HarnessNetwork::Unknown(other.to_owned()),
+                    };
+                    Ok(Spanned::new(value, token.span))
+                })?,
+                Some("secrets") => self.set_harness_field(&mut secrets, "secrets", |parser| {
+                    let token = parser.expect_identifier("harness secrets mode")?;
+                    let value = match token.value.as_str() {
+                        "denied" => HarnessSecrets::Denied,
+                        other => HarnessSecrets::Unknown(other.to_owned()),
+                    };
+                    Ok(Spanned::new(value, token.span))
+                })?,
                 Some("filesystem") => {
                     self.set_harness_field(&mut filesystem, "filesystem", |parser| {
                         let token = parser.expect_identifier("harness filesystem mode")?;
@@ -341,8 +339,7 @@ impl Parser {
         let fallback_span = name.span;
         Ok(ProviderHarnessDecl {
             name,
-            provider: provider
-                .unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            provider: provider.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
             mode: mode.unwrap_or_else(|| {
                 Spanned::new(HarnessMode::Unknown(String::new()), fallback_span)
             }),
@@ -1232,8 +1229,8 @@ impl Parser {
 mod tests {
     use super::parse_source;
     use crate::ast::{
-        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule,
-        PolicyRuleDecl, PolicyViolationAction,
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl,
+        PolicyViolationAction,
     };
 
     #[test]
@@ -1483,10 +1480,7 @@ mod tests {
         assert_eq!(harness.filesystem.value, HarnessFilesystem::ReadOnly);
         assert_eq!(harness.max_steps.as_ref().unwrap().value, 10);
         assert_eq!(harness.timeout_ms.as_ref().unwrap().value, 1000);
-        assert_eq!(
-            harness.input_contract.as_ref().unwrap().value,
-            "UserPrompt"
-        );
+        assert_eq!(harness.input_contract.as_ref().unwrap().value, "UserPrompt");
         assert_eq!(
             harness.output_contract.as_ref().unwrap().value,
             "DraftAnswer"
@@ -1509,8 +1503,14 @@ mod tests {
         .unwrap();
         let harness = &program.harnesses[0];
         assert_eq!(harness.mode.value, HarnessMode::Unknown("live".into()));
-        assert_eq!(harness.network.value, HarnessNetwork::Unknown(String::new()));
-        assert_eq!(harness.secrets.value, HarnessSecrets::Unknown(String::new()));
+        assert_eq!(
+            harness.network.value,
+            HarnessNetwork::Unknown(String::new())
+        );
+        assert_eq!(
+            harness.secrets.value,
+            HarnessSecrets::Unknown(String::new())
+        );
         assert_eq!(
             harness.filesystem.value,
             HarnessFilesystem::Unknown(String::new())

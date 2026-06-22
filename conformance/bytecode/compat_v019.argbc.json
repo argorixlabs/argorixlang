@@ -1,0 +1,163 @@
+{
+  "bytecode_version": "0.19",
+  "language": "Argorix Lang",
+  "module": "Argorix.AgentPassport",
+  "providers": [],
+  "assertions": [],
+  "policies": [
+    {
+      "name": "SovereignAgentPolicy",
+      "rules": [
+        {
+          "effect": "require",
+          "rule": "agent_passport_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "agent_identity_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "agent_data_residency_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "agent_passport_attested"
+        }
+      ],
+      "on_violation": {
+        "action": "review",
+        "trace_required": true
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "UserPrompt",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        },
+        {
+          "name": "risk_level",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "passports": [
+    {
+      "name": "RiskAnalyzerPassport",
+      "agent": "ResearchAgent",
+      "agent_name": "Risk Analyzer",
+      "global_id": "argx:agent:01HZX9RISKANALYZER",
+      "identity": "did:argorix:risk-analyzer-v1",
+      "provider": "Argorix",
+      "version": "1.0.0",
+      "ans_name": "argx://riskAnalyzer.RiskAnalysis.Argorix.v1.sovereign",
+      "country": "CL",
+      "jurisdiction": "CL",
+      "data_residency": [
+        "CL",
+        "EU"
+      ],
+      "asn": {
+        "registry": "LACNIC",
+        "number": "AS-PLACEHOLDER",
+        "holder": "Argorix Labs",
+        "country": "CL"
+      },
+      "model": "frontier-compatible",
+      "risk_level": "high",
+      "data_scope": [
+        "internal",
+        "confidential"
+      ],
+      "intent": "risk_analysis",
+      "intended_use": [
+        "policy-review",
+        "risk-assessment"
+      ],
+      "prohibited_use": [
+        "external-execution",
+        "credential-access"
+      ],
+      "attestations": [
+        "redteam",
+        "policy-check",
+        "evidence-bundle"
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "name": "ResearchAgent",
+      "approval": "denied"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    }
+  ],
+  "tools": [],
+  "models": [],
+  "instructions": [
+    {
+      "op": "DeclareCapability",
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "ResearchAgent",
+      "approval": "denied"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "ResearchAgent",
+      "capability": "trace.write"
+    },
+    {
+      "op": "DeclareHandler",
+      "agent": "ResearchAgent",
+      "message_type": "UserPrompt",
+      "binding": "prompt"
+    },
+    {
+      "op": "TraceValue",
+      "agent": "ResearchAgent",
+      "binding": "prompt"
+    },
+    {
+      "op": "EndHandler"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "RiskFlow"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol RiskFlow completed"
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}
