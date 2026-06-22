@@ -1,0 +1,5 @@
+module providers.contracts
+
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+provider Anthropic { kind external enabled false dry_run_only true requires feature_flag requires approval }
+provider GenericProvider { kind external enabled false dry_run_only true requires feature_flag requires approval }

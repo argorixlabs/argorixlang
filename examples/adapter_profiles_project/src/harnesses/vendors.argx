@@ -1,0 +1,4 @@
+module harnesses.vendors
+harness OpenAIHarness { provider OpenAI feature OpenAIFeature secret OpenAISecret mode dry_run network denied secrets denied filesystem none }
+harness AnthropicHarness { provider Anthropic feature AnthropicFeature secret AnthropicSecret mode dry_run network denied secrets denied filesystem none }
+harness GenericHarness { provider GenericProvider feature GenericFeature secret GenericSecret mode dry_run network denied secrets denied filesystem none }

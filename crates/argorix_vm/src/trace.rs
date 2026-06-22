@@ -178,6 +178,8 @@ pub struct ReactiveExecutionTrace {
     pub secrets: Vec<argorix_bytecode::BytecodeSecret>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapters: Vec<argorix_bytecode::BytecodeAdapter>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adapter_profiles: Vec<argorix_bytecode::BytecodeAdapterProfile>,
     pub injected: InjectedMessage,
     pub steps: Vec<ReactiveStep>,
     pub mailboxes: Vec<MailboxSummary>,

@@ -9,6 +9,7 @@ pub struct Program {
     pub features: Vec<FeatureDecl>,
     pub secrets: Vec<SecretDecl>,
     pub adapters: Vec<AdapterDecl>,
+    pub adapter_profiles: Vec<AdapterProfileDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -401,6 +402,158 @@ impl AdapterFilesystem {
     }
 }
 
+/// A top-level `adapter_profile` block declaring a declarative vendor/protocol profile.
+///
+/// v0.23 adapter profiles are governance metadata describing expected vendor integrations
+/// (e.g. OpenAI, Anthropic, generic). They declare contracts, capabilities, auth style,
+/// and conformance requirements. Profiles do not execute, do not call APIs, and do not
+/// read secrets or environment variables. `simulated` remains the only executable provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterProfileDecl {
+    pub name: Spanned<String>,
+    pub adapter: Spanned<String>,
+    pub provider: Spanned<String>,
+    pub vendor: Spanned<String>,
+    pub family: Spanned<AdapterProfileFamily>,
+    pub api_style: Spanned<AdapterProfileApiStyle>,
+    pub auth: Spanned<AdapterProfileAuth>,
+    pub execution: Spanned<AdapterProfileExecution>,
+    pub network: Spanned<AdapterProfileNetwork>,
+    pub secrets: Spanned<AdapterProfileSecrets>,
+    pub request_contract: Option<Spanned<String>>,
+    pub response_contract: Option<Spanned<String>>,
+    pub capabilities: Vec<Spanned<String>>,
+    pub required_conformance: Vec<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterProfileFamily {
+    Llm,
+    Tool,
+    Bridge,
+    Registry,
+    Identity,
+    Payment,
+    Storage,
+    Custom,
+    Unknown(String),
+}
+
+impl AdapterProfileFamily {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Llm => "llm",
+            Self::Tool => "tool",
+            Self::Bridge => "bridge",
+            Self::Registry => "registry",
+            Self::Identity => "identity",
+            Self::Payment => "payment",
+            Self::Storage => "storage",
+            Self::Custom => "custom",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterProfileApiStyle {
+    Responses,
+    Messages,
+    Chat,
+    Completion,
+    ToolCall,
+    Mcp,
+    A2a,
+    Rest,
+    Custom,
+    Unknown(String),
+}
+
+impl AdapterProfileApiStyle {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Responses => "responses",
+            Self::Messages => "messages",
+            Self::Chat => "chat",
+            Self::Completion => "completion",
+            Self::ToolCall => "tool_call",
+            Self::Mcp => "mcp",
+            Self::A2a => "a2a",
+            Self::Rest => "rest",
+            Self::Custom => "custom",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterProfileAuth {
+    None,
+    SecretBoundary,
+    Did,
+    Credential,
+    Custom,
+    Unknown(String),
+}
+
+impl AdapterProfileAuth {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::None => "none",
+            Self::SecretBoundary => "secret_boundary",
+            Self::Did => "did",
+            Self::Credential => "credential",
+            Self::Custom => "custom",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterProfileExecution {
+    Disabled,
+    Unknown(String),
+}
+
+impl AdapterProfileExecution {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterProfileNetwork {
+    Denied,
+    Unknown(String),
+}
+
+impl AdapterProfileNetwork {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterProfileSecrets {
+    Denied,
+    Unknown(String),
+}
+
+impl AdapterProfileSecrets {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssertionDecl {
     pub name: Spanned<String>,
@@ -476,6 +629,13 @@ pub enum PolicyRule {
     AdaptersSecretBoundaried,
     AdaptersConformanceDeclared,
     AdaptersEvidenceRequired,
+    AdapterProfilesDeclared,
+    AdapterProfilesExecutionDisabled,
+    AdapterProfilesNetworkDenied,
+    AdapterProfilesSecretsDenied,
+    AdapterProfilesLinked,
+    AdapterProfilesConformanceDeclared,
+    VendorProfilesDeclared,
     Unknown(String),
 }
 
@@ -523,6 +683,13 @@ impl PolicyRule {
             Self::AdaptersSecretBoundaried => "adapters_secret_boundaried",
             Self::AdaptersConformanceDeclared => "adapters_conformance_declared",
             Self::AdaptersEvidenceRequired => "adapters_evidence_required",
+            Self::AdapterProfilesDeclared => "adapter_profiles_declared",
+            Self::AdapterProfilesExecutionDisabled => "adapter_profiles_execution_disabled",
+            Self::AdapterProfilesNetworkDenied => "adapter_profiles_network_denied",
+            Self::AdapterProfilesSecretsDenied => "adapter_profiles_secrets_denied",
+            Self::AdapterProfilesLinked => "adapter_profiles_linked",
+            Self::AdapterProfilesConformanceDeclared => "adapter_profiles_conformance_declared",
+            Self::VendorProfilesDeclared => "vendor_profiles_declared",
             Self::Unknown(value) => value,
         }
         .to_owned()

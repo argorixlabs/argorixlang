@@ -1,14 +1,15 @@
 use crate::{
     ast::{
         AdapterDecl, AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
-        AdapterSecrets, AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel,
-        EnumDecl, FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl,
-        HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
-        ImportDecl, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl,
-        PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program,
-        ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
-        ReceiveDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl,
-        TypeDecl,
+        AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution,
+        AdapterProfileFamily, AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets,
+        AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
+        FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl,
+        MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule,
+        PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
+        ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl,
+        SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -69,6 +70,7 @@ impl Parser {
             features: Vec::new(),
             secrets: Vec::new(),
             adapters: Vec::new(),
+            adapter_profiles: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -90,6 +92,7 @@ impl Parser {
                 Some("feature") => program.features.push(self.parse_feature()?),
                 Some("secret") => program.secrets.push(self.parse_secret()?),
                 Some("adapter") => program.adapters.push(self.parse_adapter()?),
+                Some("adapter_profile") => program.adapter_profiles.push(self.parse_adapter_profile()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -109,7 +112,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -776,6 +779,205 @@ impl Parser {
         })
     }
 
+    fn parse_adapter_profile(&mut self) -> Result<AdapterProfileDecl, Diagnostic> {
+        self.expect_keyword("adapter_profile")?;
+        let name = self.expect_identifier("adapter profile name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut adapter = None;
+        let mut provider = None;
+        let mut vendor = None;
+        let mut family = None;
+        let mut api_style = None;
+        let mut auth = None;
+        let mut execution = None;
+        let mut network = None;
+        let mut secrets = None;
+        let mut request_contract = None;
+        let mut response_contract = None;
+        let mut capabilities: Option<Vec<Spanned<String>>> = None;
+        let mut required_conformance: Option<Vec<Spanned<String>>> = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated adapter_profile declaration")?;
+            match self.peek_identifier() {
+                Some("adapter") => {
+                    self.set_block_field(&mut adapter, "adapter_profile", "adapter", |parser| {
+                        parser.expect_identifier("adapter reference")
+                    })?
+                }
+                Some("provider") => {
+                    self.set_block_field(&mut provider, "adapter_profile", "provider", |parser| {
+                        parser.expect_identifier("provider reference")
+                    })?
+                }
+                Some("vendor") => {
+                    self.set_block_field(&mut vendor, "adapter_profile", "vendor", |parser| {
+                        parser.expect_string("vendor name")
+                    })?
+                }
+                Some("family") => {
+                    self.set_block_field(&mut family, "adapter_profile", "family", |parser| {
+                        let token = parser.expect_identifier("profile family")?;
+                        let value = match token.value.as_str() {
+                            "llm" => AdapterProfileFamily::Llm,
+                            "tool" => AdapterProfileFamily::Tool,
+                            "bridge" => AdapterProfileFamily::Bridge,
+                            "registry" => AdapterProfileFamily::Registry,
+                            "identity" => AdapterProfileFamily::Identity,
+                            "payment" => AdapterProfileFamily::Payment,
+                            "storage" => AdapterProfileFamily::Storage,
+                            "custom" => AdapterProfileFamily::Custom,
+                            other => AdapterProfileFamily::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("api_style") => self.set_block_field(
+                    &mut api_style,
+                    "adapter_profile",
+                    "api_style",
+                    |parser| {
+                        let token = parser.expect_identifier("profile api_style")?;
+                        let value = match token.value.as_str() {
+                            "responses" => AdapterProfileApiStyle::Responses,
+                            "messages" => AdapterProfileApiStyle::Messages,
+                            "chat" => AdapterProfileApiStyle::Chat,
+                            "completion" => AdapterProfileApiStyle::Completion,
+                            "tool_call" => AdapterProfileApiStyle::ToolCall,
+                            "mcp" => AdapterProfileApiStyle::Mcp,
+                            "a2a" => AdapterProfileApiStyle::A2a,
+                            "rest" => AdapterProfileApiStyle::Rest,
+                            "custom" => AdapterProfileApiStyle::Custom,
+                            other => AdapterProfileApiStyle::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("auth") => {
+                    self.set_block_field(&mut auth, "adapter_profile", "auth", |parser| {
+                        let token = parser.expect_identifier("profile auth")?;
+                        let value = match token.value.as_str() {
+                            "none" => AdapterProfileAuth::None,
+                            "secret_boundary" => AdapterProfileAuth::SecretBoundary,
+                            "did" => AdapterProfileAuth::Did,
+                            "credential" => AdapterProfileAuth::Credential,
+                            "custom" => AdapterProfileAuth::Custom,
+                            other => AdapterProfileAuth::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("execution") => self.set_block_field(
+                    &mut execution,
+                    "adapter_profile",
+                    "execution",
+                    |parser| {
+                        let token = parser.expect_identifier("profile execution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => AdapterProfileExecution::Disabled,
+                            other => AdapterProfileExecution::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("network") => {
+                    self.set_block_field(&mut network, "adapter_profile", "network", |parser| {
+                        let token = parser.expect_identifier("profile network")?;
+                        let value = match token.value.as_str() {
+                            "denied" => AdapterProfileNetwork::Denied,
+                            other => AdapterProfileNetwork::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("secrets") => {
+                    self.set_block_field(&mut secrets, "adapter_profile", "secrets", |parser| {
+                        let token = parser.expect_identifier("profile secrets")?;
+                        let value = match token.value.as_str() {
+                            "denied" => AdapterProfileSecrets::Denied,
+                            other => AdapterProfileSecrets::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("request_contract") => self.set_block_field(
+                    &mut request_contract,
+                    "adapter_profile",
+                    "request_contract",
+                    |parser| parser.expect_identifier("request contract type"),
+                )?,
+                Some("response_contract") => self.set_block_field(
+                    &mut response_contract,
+                    "adapter_profile",
+                    "response_contract",
+                    |parser| parser.expect_identifier("response contract type"),
+                )?,
+                Some("capabilities") => self.set_block_field(
+                    &mut capabilities,
+                    "adapter_profile",
+                    "capabilities",
+                    |parser| parser.parse_string_array("profile capability"),
+                )?,
+                Some("required_conformance") => self.set_block_field(
+                    &mut required_conformance,
+                    "adapter_profile",
+                    "required_conformance",
+                    |parser| parser.parse_string_array("profile required conformance item"),
+                )?,
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected adapter_profile item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected an adapter_profile field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        Ok(AdapterProfileDecl {
+            name,
+            adapter: adapter.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            provider: provider.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            vendor: vendor.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            family: family.unwrap_or_else(|| {
+                Spanned::new(AdapterProfileFamily::Unknown(String::new()), fallback_span)
+            }),
+            api_style: api_style.unwrap_or_else(|| {
+                Spanned::new(
+                    AdapterProfileApiStyle::Unknown(String::new()),
+                    fallback_span,
+                )
+            }),
+            auth: auth.unwrap_or_else(|| {
+                Spanned::new(AdapterProfileAuth::Unknown(String::new()), fallback_span)
+            }),
+            execution: execution.unwrap_or_else(|| {
+                Spanned::new(
+                    AdapterProfileExecution::Unknown(String::new()),
+                    fallback_span,
+                )
+            }),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(AdapterProfileNetwork::Unknown(String::new()), fallback_span)
+            }),
+            secrets: secrets.unwrap_or_else(|| {
+                Spanned::new(AdapterProfileSecrets::Unknown(String::new()), fallback_span)
+            }),
+            request_contract,
+            response_contract,
+            capabilities: capabilities.unwrap_or_default(),
+            required_conformance: required_conformance.unwrap_or_default(),
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -917,6 +1119,15 @@ impl Parser {
             "adapters_secret_boundaried" => PolicyRule::AdaptersSecretBoundaried,
             "adapters_conformance_declared" => PolicyRule::AdaptersConformanceDeclared,
             "adapters_evidence_required" => PolicyRule::AdaptersEvidenceRequired,
+            "adapter_profiles_declared" => PolicyRule::AdapterProfilesDeclared,
+            "adapter_profiles_execution_disabled" => PolicyRule::AdapterProfilesExecutionDisabled,
+            "adapter_profiles_network_denied" => PolicyRule::AdapterProfilesNetworkDenied,
+            "adapter_profiles_secrets_denied" => PolicyRule::AdapterProfilesSecretsDenied,
+            "adapter_profiles_linked" => PolicyRule::AdapterProfilesLinked,
+            "adapter_profiles_conformance_declared" => {
+                PolicyRule::AdapterProfilesConformanceDeclared
+            }
+            "vendor_profiles_declared" => PolicyRule::VendorProfilesDeclared,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

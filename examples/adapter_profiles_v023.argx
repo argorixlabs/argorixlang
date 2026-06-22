@@ -1,0 +1,247 @@
+module app.main
+
+capability model.invoke { level safe }
+
+type UserPrompt { content: string }
+type DraftAnswer { content: string }
+
+provider OpenAI {
+  kind external
+  enabled false
+  dry_run_only true
+  requires feature_flag
+  requires approval
+}
+
+provider Anthropic {
+  kind external
+  enabled false
+  dry_run_only true
+  requires feature_flag
+  requires approval
+}
+
+provider GenericProvider {
+  kind external
+  enabled false
+  dry_run_only true
+  requires feature_flag
+  requires approval
+}
+
+adapter OpenAIAdapter {
+  provider OpenAI
+  feature OpenAIFeature
+  secret OpenAISecret
+  harness OpenAIHarness
+  mode experimental
+  execution disabled
+  network denied
+  secrets denied
+  filesystem none
+}
+
+adapter AnthropicAdapter {
+  provider Anthropic
+  feature AnthropicFeature
+  secret AnthropicSecret
+  harness AnthropicHarness
+  mode experimental
+  execution disabled
+  network denied
+  secrets denied
+  filesystem none
+}
+
+adapter GenericAdapter {
+  provider GenericProvider
+  feature GenericFeature
+  secret GenericSecret
+  harness GenericHarness
+  mode experimental
+  execution disabled
+  network denied
+  secrets denied
+  filesystem none
+}
+
+feature OpenAIFeature {
+  provider OpenAI
+  status experimental
+  default disabled
+  requires approval
+}
+
+feature AnthropicFeature {
+  provider Anthropic
+  status experimental
+  default disabled
+  requires approval
+}
+
+feature GenericFeature {
+  provider GenericProvider
+  status experimental
+  default disabled
+  requires approval
+}
+
+secret OpenAISecret {
+  handle "OPENAI_API_KEY"
+  provider OpenAI
+  required_by OpenAIFeature
+  scope adapter
+  access denied
+  source none
+}
+
+secret AnthropicSecret {
+  handle "ANTHROPIC_API_KEY"
+  provider Anthropic
+  required_by AnthropicFeature
+  scope adapter
+  access denied
+  source none
+}
+
+secret GenericSecret {
+  handle "GENERIC_KEY"
+  provider GenericProvider
+  required_by GenericFeature
+  scope adapter
+  access denied
+  source none
+}
+
+harness OpenAIHarness {
+  provider OpenAI
+  feature OpenAIFeature
+  secret OpenAISecret
+  mode dry_run
+  network denied
+  secrets denied
+  filesystem none
+}
+
+harness AnthropicHarness {
+  provider Anthropic
+  feature AnthropicFeature
+  secret AnthropicSecret
+  mode dry_run
+  network denied
+  secrets denied
+  filesystem none
+}
+
+harness GenericHarness {
+  provider GenericProvider
+  feature GenericFeature
+  secret GenericSecret
+  mode dry_run
+  network denied
+  secrets denied
+  filesystem none
+}
+
+adapter_profile OpenAIProfile {
+  adapter OpenAIAdapter
+  provider OpenAI
+  vendor "openai"
+
+  family llm
+  api_style responses
+  auth secret_boundary
+
+  execution disabled
+  network denied
+  secrets denied
+
+  request_contract UserPrompt
+  response_contract DraftAnswer
+
+  capabilities ["text-generation", "reasoning"]
+  required_conformance [
+    "adapter-declared",
+    "feature-gated",
+    "secret-boundary",
+    "provider-harnessed",
+    "execution-disabled",
+    "network-denied",
+    "secrets-denied",
+    "evidence-required"
+  ]
+}
+
+adapter_profile AnthropicProfile {
+  adapter AnthropicAdapter
+  provider Anthropic
+  vendor "anthropic"
+
+  family llm
+  api_style messages
+  auth secret_boundary
+
+  execution disabled
+  network denied
+  secrets denied
+
+  request_contract UserPrompt
+  response_contract DraftAnswer
+
+  capabilities ["text-generation", "tool-use"]
+  required_conformance [
+    "adapter-declared",
+    "feature-gated",
+    "secret-boundary",
+    "provider-harnessed",
+    "execution-disabled",
+    "network-denied",
+    "secrets-denied",
+    "evidence-required"
+  ]
+}
+
+adapter_profile GenericExternalProfile {
+  adapter GenericAdapter
+  provider GenericProvider
+  vendor "generic"
+
+  family custom
+  api_style custom
+  auth none
+
+  execution disabled
+  network denied
+  secrets denied
+
+  request_contract UserPrompt
+  response_contract DraftAnswer
+
+  capabilities ["custom"]
+  required_conformance [
+    "adapter-declared",
+    "execution-disabled",
+    "network-denied",
+    "secrets-denied",
+    "evidence-required"
+  ]
+}
+
+agent User { sends UserPrompt to ResearchAgent }
+agent ResearchAgent { receives UserPrompt }
+
+policy ProfilesPolicy {
+  require adapter_profiles_declared
+  require adapter_profiles_execution_disabled
+  require adapter_profiles_network_denied
+  require adapter_profiles_secrets_denied
+  require adapter_profiles_linked
+  require adapter_profiles_conformance_declared
+  require vendor_profiles_declared
+
+  on violation { action review trace required }
+}
+
+protocol P {
+  User -> ResearchAgent: tell UserPrompt
+}

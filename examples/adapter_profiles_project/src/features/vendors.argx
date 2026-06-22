@@ -1,0 +1,4 @@
+module features.vendors
+feature OpenAIFeature { provider OpenAI status experimental default disabled requires approval }
+feature AnthropicFeature { provider Anthropic status experimental default disabled requires approval }
+feature GenericFeature { provider GenericProvider status experimental default disabled requires approval }

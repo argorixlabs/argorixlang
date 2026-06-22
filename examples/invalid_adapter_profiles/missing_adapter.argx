@@ -1,0 +1,7 @@
+module m
+adapter_profile P {
+  provider P
+  vendor "x"
+  family llm api_style custom auth none
+  execution disabled network denied secrets denied
+}

@@ -1,9 +1,9 @@
 use crate::{
-    BytecodeAdapter, BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure,
-    BytecodeFeature, BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport,
-    BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation,
-    BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness, BytecodeSecret,
-    BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability,
+    BytecodeFailure, BytecodeFeature, BytecodeModel, BytecodeModule, BytecodeModuleImport,
+    BytecodePassport, BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule,
+    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness,
+    BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -172,7 +172,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.22".to_owned(),
+        bytecode_version: "0.23".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -246,6 +246,26 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 input_contract: adapter.input_contract.clone(),
                 output_contract: adapter.output_contract.clone(),
                 conformance: adapter.conformance.clone(),
+            })
+            .collect(),
+        adapter_profiles: ir
+            .adapter_profiles
+            .iter()
+            .map(|p| BytecodeAdapterProfile {
+                name: p.name.clone(),
+                adapter: p.adapter.clone(),
+                provider: p.provider.clone(),
+                vendor: p.vendor.clone(),
+                family: p.family.clone(),
+                api_style: p.api_style.clone(),
+                auth: p.auth.clone(),
+                execution: p.execution.clone(),
+                network: p.network.clone(),
+                secrets: p.secrets.clone(),
+                request_contract: p.request_contract.clone(),
+                response_contract: p.response_contract.clone(),
+                capabilities: p.capabilities.clone(),
+                required_conformance: p.required_conformance.clone(),
             })
             .collect(),
         imports: ir

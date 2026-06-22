@@ -31,6 +31,13 @@ pub struct PolicyEvidenceContext {
     pub adapters_secret_boundaried: bool,
     pub adapters_conformance_declared: bool,
     pub adapters_evidence_required: bool,
+    pub adapter_profiles_declared: bool,
+    pub adapter_profiles_execution_disabled: bool,
+    pub adapter_profiles_network_denied: bool,
+    pub adapter_profiles_secrets_denied: bool,
+    pub adapter_profiles_linked: bool,
+    pub adapter_profiles_conformance_declared: bool,
+    pub vendor_profiles_declared: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,6 +227,34 @@ pub fn evaluate_rule(
         "adapters_evidence_required" => (
             context.adapters_evidence_required,
             "one or more adapters with conformance do not require evidence",
+        ),
+        "adapter_profiles_declared" => (
+            context.adapter_profiles_declared,
+            "no adapter profile is declared",
+        ),
+        "adapter_profiles_execution_disabled" => (
+            context.adapter_profiles_execution_disabled,
+            "one or more adapter profiles do not have execution disabled",
+        ),
+        "adapter_profiles_network_denied" => (
+            context.adapter_profiles_network_denied,
+            "one or more adapter profiles do not deny network access",
+        ),
+        "adapter_profiles_secrets_denied" => (
+            context.adapter_profiles_secrets_denied,
+            "one or more adapter profiles do not deny secret access",
+        ),
+        "adapter_profiles_linked" => (
+            context.adapter_profiles_linked,
+            "one or more adapter profiles have mismatched or missing adapter/provider links",
+        ),
+        "adapter_profiles_conformance_declared" => (
+            context.adapter_profiles_conformance_declared,
+            "one or more adapter profiles lack required_conformance",
+        ),
+        "vendor_profiles_declared" => (
+            context.vendor_profiles_declared,
+            "no vendor profile is declared",
         ),
         _ => (false, "unknown policy rule"),
     };

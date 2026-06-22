@@ -1,0 +1,17 @@
+module profiles.openai
+
+adapter_profile OpenAIProfile {
+  adapter OpenAIAdapter
+  provider OpenAI
+  vendor "openai"
+  family llm
+  api_style responses
+  auth secret_boundary
+  execution disabled
+  network denied
+  secrets denied
+  request_contract UserPrompt
+  response_contract DraftAnswer
+  capabilities ["text-generation"]
+  required_conformance ["adapter-declared", "execution-disabled"]
+}

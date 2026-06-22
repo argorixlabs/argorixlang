@@ -28,6 +28,8 @@ pub struct SecurityReport {
     pub secret_boundaries: SecretBoundariesSummary,
     #[serde(default)]
     pub adapters: AdapterSummary,
+    #[serde(default)]
+    pub adapter_profiles: AdapterProfileSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -126,6 +128,60 @@ pub struct AdapterSummary {
     pub secrets_access: BTreeMap<String, usize>,
     pub filesystem: BTreeMap<String, usize>,
     pub conformance_total: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AdapterProfileSummary {
+    pub total: usize,
+    pub vendors: Vec<String>,
+    pub families: BTreeMap<String, usize>,
+    pub api_styles: BTreeMap<String, usize>,
+    pub auth: BTreeMap<String, usize>,
+    pub execution: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub secrets: BTreeMap<String, usize>,
+    pub capabilities_total: usize,
+    pub required_conformance_total: usize,
+}
+
+fn adapter_profile_summary(
+    profiles: &[argorix_bytecode::BytecodeAdapterProfile],
+) -> AdapterProfileSummary {
+    use std::collections::BTreeSet;
+    let mut vendors = BTreeSet::new();
+    let mut families = BTreeMap::new();
+    let mut api_styles = BTreeMap::new();
+    let mut auth = BTreeMap::new();
+    let mut execution = BTreeMap::new();
+    let mut network = BTreeMap::new();
+    let mut secrets = BTreeMap::new();
+    let mut caps_total = 0usize;
+    let mut req_conf_total = 0usize;
+
+    for p in profiles {
+        vendors.insert(p.vendor.clone());
+        *families.entry(p.family.clone()).or_insert(0) += 1;
+        *api_styles.entry(p.api_style.clone()).or_insert(0) += 1;
+        *auth.entry(p.auth.clone()).or_insert(0) += 1;
+        *execution.entry(p.execution.clone()).or_insert(0) += 1;
+        *network.entry(p.network.clone()).or_insert(0) += 1;
+        *secrets.entry(p.secrets.clone()).or_insert(0) += 1;
+        caps_total += p.capabilities.len();
+        req_conf_total += p.required_conformance.len();
+    }
+
+    AdapterProfileSummary {
+        total: profiles.len(),
+        vendors: vendors.into_iter().collect(),
+        families,
+        api_styles,
+        auth,
+        execution,
+        network,
+        secrets,
+        capabilities_total: caps_total,
+        required_conformance_total: req_conf_total,
+    }
 }
 
 fn adapter_summary(adapters: &[argorix_bytecode::BytecodeAdapter]) -> AdapterSummary {
@@ -348,7 +404,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.22".into(),
+            report_version: "0.23".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -364,6 +420,7 @@ impl SecurityReport {
             feature_flags: feature_flags_summary(&bytecode.features),
             secret_boundaries: secret_boundaries_summary(&bytecode.secrets),
             adapters: adapter_summary(&bytecode.adapters),
+            adapter_profiles: adapter_profile_summary(&bytecode.adapter_profiles),
             policy,
             provider_boundary,
             calls,

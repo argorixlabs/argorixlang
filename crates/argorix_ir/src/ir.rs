@@ -18,6 +18,8 @@ pub struct IrProgram {
     pub secrets: Vec<IrSecret>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapters: Vec<IrAdapter>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adapter_profiles: Vec<IrAdapterProfile>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -139,6 +141,26 @@ pub struct IrAdapter {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_contract: Option<String>,
     pub conformance: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrAdapterProfile {
+    pub name: String,
+    pub adapter: String,
+    pub provider: String,
+    pub vendor: String,
+    pub family: String,
+    pub api_style: String,
+    pub auth: String,
+    pub execution: String,
+    pub network: String,
+    pub secrets: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_contract: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_contract: Option<String>,
+    pub capabilities: Vec<String>,
+    pub required_conformance: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -295,7 +317,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.22".to_owned(),
+            ir_version: "0.23".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -395,6 +417,30 @@ impl From<&Program> for IrProgram {
                     output_contract: adapter.output_contract.as_ref().map(|v| v.value.clone()),
                     conformance: adapter
                         .conformance
+                        .iter()
+                        .map(|v| v.value.clone())
+                        .collect(),
+                })
+                .collect(),
+            adapter_profiles: program
+                .adapter_profiles
+                .iter()
+                .map(|p| IrAdapterProfile {
+                    name: p.name.value.clone(),
+                    adapter: p.adapter.value.clone(),
+                    provider: p.provider.value.clone(),
+                    vendor: p.vendor.value.clone(),
+                    family: p.family.value.source_name().to_owned(),
+                    api_style: p.api_style.value.source_name().to_owned(),
+                    auth: p.auth.value.source_name().to_owned(),
+                    execution: p.execution.value.source_name().to_owned(),
+                    network: p.network.value.source_name().to_owned(),
+                    secrets: p.secrets.value.source_name().to_owned(),
+                    request_contract: p.request_contract.as_ref().map(|v| v.value.clone()),
+                    response_contract: p.response_contract.as_ref().map(|v| v.value.clone()),
+                    capabilities: p.capabilities.iter().map(|v| v.value.clone()).collect(),
+                    required_conformance: p
+                        .required_conformance
                         .iter()
                         .map(|v| v.value.clone())
                         .collect(),

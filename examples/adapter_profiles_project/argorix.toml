@@ -1,0 +1,6 @@
+[package]
+name = "adapter-profiles-v023"
+version = "0.23.0"
+
+[entry]
+main = "src/main.argx"

@@ -1,0 +1,3 @@
+module agents.research
+agent User { sends UserPrompt }
+agent ResearchAgent { receives UserPrompt }

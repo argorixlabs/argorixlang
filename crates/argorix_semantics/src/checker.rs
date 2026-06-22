@@ -2,10 +2,11 @@ use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
     ast::{
         AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
-        AdapterSecrets, Approval, CapabilityLevel, FeatureDefault, FeatureStatus,
-        HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
-        PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program, SecretAccess, SecretScope,
-        SecretSource,
+        AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileExecution, AdapterProfileFamily,
+        AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, Approval, CapabilityLevel,
+        FeatureDefault, FeatureStatus, HandlerInstruction, HarnessFilesystem, HarnessMode,
+        HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program,
+        SecretAccess, SecretScope, SecretSource,
     },
     diagnostics::Diagnostic,
     span::Spanned,
@@ -32,6 +33,7 @@ pub fn check_program_with_options(
     check_features(program, &symbols, &mut diagnostics);
     check_secrets(program, &symbols, &mut diagnostics);
     check_adapters(program, &symbols, &mut diagnostics);
+    check_adapter_profiles(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -909,6 +911,353 @@ fn check_adapters(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Di
     }
 }
 
+fn check_adapter_profiles(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+    let mut names = HashSet::new();
+    for profile in &program.adapter_profiles {
+        report_duplicate(&mut names, &profile.name, "adapter_profile", diagnostics);
+        let profile_name = &profile.name.value;
+
+        // required fields
+        if profile.adapter.value.trim().is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` is missing required field `adapter`"),
+                profile.adapter.span,
+            ));
+        } else if !symbols.adapters.contains(&profile.adapter.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "adapter_profile `{profile_name}` references unknown adapter `{}`",
+                    profile.adapter.value
+                ),
+                profile.adapter.span,
+            ));
+        }
+
+        if profile.provider.value.trim().is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` is missing required field `provider`"),
+                profile.provider.span,
+            ));
+        } else if !symbols.providers.contains(&profile.provider.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "adapter_profile `{profile_name}` references unknown provider `{}`",
+                    profile.provider.value
+                ),
+                profile.provider.span,
+            ));
+        }
+
+        if profile.vendor.value.trim().is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` is missing required field `vendor`"),
+                profile.vendor.span,
+            ));
+        }
+
+        // family / api_style / auth (required, allowed values)
+        match &profile.family.value {
+            AdapterProfileFamily::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter_profile `{profile_name}` is missing required field `family`"),
+                    profile.family.span,
+                ))
+            }
+            AdapterProfileFamily::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` has invalid family `{value}`"),
+                profile.family.span,
+            )),
+            _ => {}
+        }
+
+        match &profile.api_style.value {
+            AdapterProfileApiStyle::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter_profile `{profile_name}` is missing required field `api_style`"
+                    ),
+                    profile.api_style.span,
+                ))
+            }
+            AdapterProfileApiStyle::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` has invalid api_style `{value}`"),
+                profile.api_style.span,
+            )),
+            _ => {}
+        }
+
+        match &profile.auth.value {
+            AdapterProfileAuth::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter_profile `{profile_name}` is missing required field `auth`"),
+                    profile.auth.span,
+                ))
+            }
+            AdapterProfileAuth::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` has invalid auth `{value}`"),
+                profile.auth.span,
+            )),
+            _ => {}
+        }
+
+        // execution / network / secrets (required + strict values)
+        match &profile.execution.value {
+            AdapterProfileExecution::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter_profile `{profile_name}` is missing required field `execution`"
+                    ),
+                    profile.execution.span,
+                ))
+            }
+            AdapterProfileExecution::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` has invalid execution `{value}`"),
+                profile.execution.span,
+            )),
+            AdapterProfileExecution::Disabled => {}
+        }
+
+        match &profile.network.value {
+            AdapterProfileNetwork::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter_profile `{profile_name}` is missing required field `network`"),
+                    profile.network.span,
+                ))
+            }
+            AdapterProfileNetwork::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` has invalid network `{value}`"),
+                profile.network.span,
+            )),
+            AdapterProfileNetwork::Denied => {}
+        }
+
+        match &profile.secrets.value {
+            AdapterProfileSecrets::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter_profile `{profile_name}` is missing required field `secrets`"),
+                    profile.secrets.span,
+                ))
+            }
+            AdapterProfileSecrets::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{profile_name}` has invalid secrets `{value}`"),
+                profile.secrets.span,
+            )),
+            AdapterProfileSecrets::Denied => {}
+        }
+
+        // optional contract references
+        if let Some(rc) = &profile.request_contract {
+            if !symbols.is_field_type(&rc.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter_profile `{profile_name}` request_contract references unknown type `{}`",
+                        rc.value
+                    ),
+                    rc.span,
+                ));
+            }
+        }
+        if let Some(rc) = &profile.response_contract {
+            if !symbols.is_field_type(&rc.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter_profile `{profile_name}` response_contract references unknown type `{}`",
+                        rc.value
+                    ),
+                    rc.span,
+                ));
+            }
+        }
+
+        // empty items
+        for c in &profile.capabilities {
+            if c.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter_profile `{profile_name}` has empty capability"),
+                    c.span,
+                ));
+            }
+        }
+        for c in &profile.required_conformance {
+            if c.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter_profile `{profile_name}` has empty required_conformance item"),
+                    c.span,
+                ));
+            }
+        }
+    }
+
+    // link + coherence validations
+    for profile in &program.adapter_profiles {
+        let profile_name = &profile.name.value;
+        let p_adapter = &profile.adapter.value;
+        let p_provider = &profile.provider.value;
+
+        if let Some(adapter_decl) = program.adapters.iter().find(|a| a.name.value == *p_adapter) {
+            if &adapter_decl.provider.value != p_provider {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter_profile `{}` provider `{}` does not match adapter `{}` provider `{}`",
+                        profile_name, p_provider, p_adapter, adapter_decl.provider.value
+                    ),
+                    profile.adapter.span,
+                ));
+            }
+        }
+
+        // when auth == secret_boundary and adapter has secret reference
+        if matches!(&profile.auth.value, AdapterProfileAuth::SecretBoundary) {
+            if let Some(adapter_decl) = program.adapters.iter().find(|a| a.name.value == *p_adapter)
+            {
+                if adapter_decl.secret.is_none() {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "adapter_profile `{profile_name}` uses auth secret_boundary but linked adapter has no secret boundary"
+                        ),
+                        profile.auth.span,
+                    ));
+                }
+            }
+        }
+    }
+
+    // external provider + profile/adapter boundary rules
+    for profile in &program.adapter_profiles {
+        if let Some(prov) = program
+            .providers
+            .iter()
+            .find(|p| p.name.value == profile.provider.value)
+        {
+            if prov.kind.value.as_str() == "external" {
+                let pname = &profile.name.value;
+                let adapter_opt = program
+                    .adapters
+                    .iter()
+                    .find(|a| a.name.value == profile.adapter.value);
+
+                if let Some(ad) = adapter_opt {
+                    if ad.feature.is_none() {
+                        diagnostics.push(Diagnostic::new(
+                            format!("adapter_profile `{pname}` for external provider requires linked adapter to declare feature"),
+                            profile.adapter.span,
+                        ));
+                    }
+                    if ad.secret.is_none() {
+                        diagnostics.push(Diagnostic::new(
+                            format!("adapter_profile `{pname}` for external provider requires linked adapter to declare secret"),
+                            profile.adapter.span,
+                        ));
+                    }
+                    if ad.harness.is_none() {
+                        diagnostics.push(Diagnostic::new(
+                            format!("adapter_profile `{pname}` for external provider requires linked adapter to declare harness"),
+                            profile.adapter.span,
+                        ));
+                    }
+                } else {
+                    // unknown adapter already reported
+                }
+
+                // feature / secret / harness details on the referenced adapter
+                if let Some(ad) = adapter_opt {
+                    if let Some(fref) = &ad.feature {
+                        if let Some(feat) =
+                            program.features.iter().find(|f| f.name.value == fref.value)
+                        {
+                            if let FeatureDefault::Enabled = &feat.default.value {
+                                diagnostics.push(Diagnostic::new(
+                                    format!("adapter_profile `{pname}` requires feature `{}` default disabled for external provider", fref.value),
+                                    feat.default.span,
+                                ));
+                            }
+                            if !feat.requires_approval {
+                                diagnostics.push(Diagnostic::new(
+                                    format!("adapter_profile `{pname}` requires feature `{}` to require approval", fref.value),
+                                    feat.name.span,
+                                ));
+                            }
+                        }
+                    }
+                    if let Some(sref) = &ad.secret {
+                        if let Some(sec) =
+                            program.secrets.iter().find(|s| s.name.value == sref.value)
+                        {
+                            if !matches!(&sec.access.value, SecretAccess::Denied) {
+                                diagnostics.push(Diagnostic::new(
+                                    format!(
+                                        "adapter_profile `{pname}` requires secret access denied"
+                                    ),
+                                    sec.access.span,
+                                ));
+                            }
+                            if !matches!(&sec.source.value, SecretSource::None) {
+                                diagnostics.push(Diagnostic::new(
+                                    format!(
+                                        "adapter_profile `{pname}` requires secret source none"
+                                    ),
+                                    sec.source.span,
+                                ));
+                            }
+                        }
+                    }
+                    if let Some(href) = &ad.harness {
+                        if let Some(h) = program
+                            .harnesses
+                            .iter()
+                            .find(|hh| hh.name.value == href.value)
+                        {
+                            if !matches!(&h.network.value, HarnessNetwork::Denied) {
+                                diagnostics.push(Diagnostic::new(
+                                    format!(
+                                        "adapter_profile `{pname}` requires harness network denied"
+                                    ),
+                                    h.network.span,
+                                ));
+                            }
+                            if !matches!(&h.secrets.value, HarnessSecrets::Denied) {
+                                diagnostics.push(Diagnostic::new(
+                                    format!(
+                                        "adapter_profile `{pname}` requires harness secrets denied"
+                                    ),
+                                    h.secrets.span,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // vendor-specific loose structural hints (OpenAI / Anthropic)
+    for profile in &program.adapter_profiles {
+        let pname = &profile.name.value;
+        if profile.vendor.value == "openai" {
+            if !matches!(
+                &profile.family.value,
+                AdapterProfileFamily::Llm | AdapterProfileFamily::Custom
+            ) {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter_profile `{pname}` for vendor openai should use family llm (or custom)"),
+                    profile.family.span,
+                ));
+            }
+        }
+        if profile.vendor.value == "anthropic" {
+            if !matches!(
+                &profile.family.value,
+                AdapterProfileFamily::Llm | AdapterProfileFamily::Custom
+            ) {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter_profile `{pname}` for vendor anthropic should use family llm (or custom)"),
+                    profile.family.span,
+                ));
+            }
+        }
+    }
+}
+
 fn check_provider_contracts(
     program: &Program,
     symbols: &Symbols,
@@ -1662,6 +2011,14 @@ fn collect_symbols(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> Symb
     }
     for adapter in &program.adapters {
         report_duplicate(&mut symbols.adapters, &adapter.name, "adapter", diagnostics);
+    }
+    for profile in &program.adapter_profiles {
+        report_duplicate(
+            &mut symbols.adapter_profiles,
+            &profile.name,
+            "adapter_profile",
+            diagnostics,
+        );
     }
     for capability in &program.capabilities {
         if symbols

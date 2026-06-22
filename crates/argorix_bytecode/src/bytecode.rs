@@ -23,6 +23,8 @@ pub struct BytecodeProgram {
     pub secrets: Vec<BytecodeSecret>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapters: Vec<BytecodeAdapter>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adapter_profiles: Vec<BytecodeAdapterProfile>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -120,6 +122,28 @@ pub struct BytecodeAdapter {
     pub output_contract: Option<String>,
     #[serde(default)]
     pub conformance: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeAdapterProfile {
+    pub name: String,
+    pub adapter: String,
+    pub provider: String,
+    pub vendor: String,
+    pub family: String,
+    pub api_style: String,
+    pub auth: String,
+    pub execution: String,
+    pub network: String,
+    pub secrets: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_contract: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_contract: Option<String>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub required_conformance: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -466,6 +490,12 @@ pub enum BytecodeError {
     DuplicateAdapter(String),
     #[error("invalid adapter `{name}`: {reason}")]
     InvalidAdapter { name: String, reason: String },
+    #[error("adapter profile metadata requires bytecode version 0.23")]
+    AdapterProfilesRequireV023,
+    #[error("duplicate adapter profile `{0}`")]
+    DuplicateAdapterProfile(String),
+    #[error("invalid adapter profile `{name}`: {reason}")]
+    InvalidAdapterProfile { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -493,6 +523,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.20"
             | "0.21"
             | "0.22"
+            | "0.23"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -515,6 +546,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.14"
             | "0.15"
             | "0.22"
+            | "0.23"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -522,7 +554,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.modules.is_empty() || !program.imports.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22"
+            "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -542,7 +574,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.policies.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22"
+            "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -553,10 +585,15 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     validate_provider_harnesses(program, &mut errors);
     validate_features(program, &mut errors);
     validate_secrets(program, &mut errors);
-    if !program.adapters.is_empty() && program.bytecode_version != "0.22" {
+    if !program.adapters.is_empty() && !matches!(program.bytecode_version.as_str(), "0.22" | "0.23")
+    {
         errors.push(BytecodeError::AdaptersRequireV022);
     }
+    if !program.adapter_profiles.is_empty() && program.bytecode_version != "0.23" {
+        errors.push(BytecodeError::AdapterProfilesRequireV023);
+    }
     validate_adapters(program, &mut errors);
+    validate_adapter_profiles(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -824,7 +861,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
     if (!program.types.is_empty() || !program.enums.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.18" | "0.19" | "0.20" | "0.21" | "0.22"
+            "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -950,7 +987,10 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
 
 fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     if !program.provider_harnesses.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.20" | "0.21" | "0.22")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.20" | "0.21" | "0.22" | "0.23"
+        )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
     }
@@ -1047,7 +1087,8 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
 }
 
 fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    if !program.features.is_empty() && !matches!(program.bytecode_version.as_str(), "0.21" | "0.22")
+    if !program.features.is_empty()
+        && !matches!(program.bytecode_version.as_str(), "0.21" | "0.22" | "0.23")
     {
         errors.push(BytecodeError::FeaturesRequireV021);
     }
@@ -1103,7 +1144,8 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
 }
 
 fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    if !program.secrets.is_empty() && !matches!(program.bytecode_version.as_str(), "0.21" | "0.22")
+    if !program.secrets.is_empty()
+        && !matches!(program.bytecode_version.as_str(), "0.21" | "0.22" | "0.23")
     {
         errors.push(BytecodeError::SecretsRequireV021);
     }
@@ -1264,8 +1306,83 @@ fn validate_adapters(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
     }
 }
 
+fn validate_adapter_profiles(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    let adapter_names: HashSet<_> = program.adapters.iter().map(|a| a.name.as_str()).collect();
+    let provider_names: HashSet<_> = program.providers.iter().map(|p| p.name.as_str()).collect();
+
+    for p in &program.adapter_profiles {
+        if !names.insert(p.name.as_str()) {
+            errors.push(BytecodeError::DuplicateAdapterProfile(p.name.clone()));
+            continue;
+        }
+        if p.adapter.trim().is_empty() {
+            errors.push(BytecodeError::InvalidAdapterProfile {
+                name: p.name.clone(),
+                reason: "missing adapter".into(),
+            });
+        } else if !adapter_names.contains(p.adapter.as_str()) {
+            errors.push(BytecodeError::InvalidAdapterProfile {
+                name: p.name.clone(),
+                reason: format!("unknown adapter `{}`", p.adapter),
+            });
+        }
+        if p.provider.trim().is_empty() {
+            errors.push(BytecodeError::InvalidAdapterProfile {
+                name: p.name.clone(),
+                reason: "missing provider".into(),
+            });
+        } else if !provider_names.contains(p.provider.as_str()) {
+            errors.push(BytecodeError::InvalidAdapterProfile {
+                name: p.name.clone(),
+                reason: format!("unknown provider `{}`", p.provider),
+            });
+        }
+        if p.vendor.trim().is_empty() {
+            errors.push(BytecodeError::InvalidAdapterProfile {
+                name: p.name.clone(),
+                reason: "missing vendor".into(),
+            });
+        }
+        if p.execution != "disabled" {
+            errors.push(BytecodeError::InvalidAdapterProfile {
+                name: p.name.clone(),
+                reason: "execution must be disabled".into(),
+            });
+        }
+        if p.network != "denied" {
+            errors.push(BytecodeError::InvalidAdapterProfile {
+                name: p.name.clone(),
+                reason: "network must be denied".into(),
+            });
+        }
+        if p.secrets != "denied" {
+            errors.push(BytecodeError::InvalidAdapterProfile {
+                name: p.name.clone(),
+                reason: "secrets must be denied".into(),
+            });
+        }
+        for c in &p.capabilities {
+            if c.trim().is_empty() {
+                errors.push(BytecodeError::InvalidAdapterProfile {
+                    name: p.name.clone(),
+                    reason: "empty capability".into(),
+                });
+            }
+        }
+        for c in &p.required_conformance {
+            if c.trim().is_empty() {
+                errors.push(BytecodeError::InvalidAdapterProfile {
+                    name: p.name.clone(),
+                    reason: "empty required_conformance item".into(),
+                });
+            }
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    const RULES: [&str; 39] = [
+    const RULES: [&str; 46] = [
         "no_unhandled_messages",
         "all_tool_calls_traced",
         "all_model_calls_traced",
@@ -1305,6 +1422,13 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "adapters_secret_boundaried",
         "adapters_conformance_declared",
         "adapters_evidence_required",
+        "adapter_profiles_declared",
+        "adapter_profiles_execution_disabled",
+        "adapter_profiles_network_denied",
+        "adapter_profiles_secrets_denied",
+        "adapter_profiles_linked",
+        "adapter_profiles_conformance_declared",
+        "vendor_profiles_declared",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {

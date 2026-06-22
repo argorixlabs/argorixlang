@@ -387,7 +387,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.22".into(),
+            vm_version: "0.23".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -405,6 +405,7 @@ impl Vm {
             features: bytecode.features.clone(),
             secrets: bytecode.secrets.clone(),
             adapters: bytecode.adapters.clone(),
+            adapter_profiles: bytecode.adapter_profiles.clone(),
             injected,
             steps,
             mailboxes,
@@ -837,6 +838,37 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
                 .iter()
                 .filter(|a| !a.conformance.is_empty())
                 .all(|a| a.conformance.iter().any(|c| c == "evidence-required")),
+        adapter_profiles_declared: !bytecode.adapter_profiles.is_empty(),
+        adapter_profiles_execution_disabled: !bytecode.adapter_profiles.is_empty()
+            && bytecode
+                .adapter_profiles
+                .iter()
+                .all(|p| p.execution == "disabled"),
+        adapter_profiles_network_denied: !bytecode.adapter_profiles.is_empty()
+            && bytecode
+                .adapter_profiles
+                .iter()
+                .all(|p| p.network == "denied"),
+        adapter_profiles_secrets_denied: !bytecode.adapter_profiles.is_empty()
+            && bytecode
+                .adapter_profiles
+                .iter()
+                .all(|p| p.secrets == "denied"),
+        adapter_profiles_linked: !bytecode.adapter_profiles.is_empty()
+            && bytecode.adapter_profiles.iter().all(|p| {
+                bytecode.adapters.iter().any(|a| a.name == p.adapter)
+                    && bytecode.providers.iter().any(|pr| pr.name == p.provider)
+            }),
+        adapter_profiles_conformance_declared: !bytecode.adapter_profiles.is_empty()
+            && bytecode
+                .adapter_profiles
+                .iter()
+                .all(|p| !p.required_conformance.is_empty()),
+        vendor_profiles_declared: !bytecode.adapter_profiles.is_empty()
+            && bytecode
+                .adapter_profiles
+                .iter()
+                .any(|p| !p.vendor.trim().is_empty()),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -891,6 +923,7 @@ mod tests {
             features: vec![],
             secrets: vec![],
             adapters: vec![],
+            adapter_profiles: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

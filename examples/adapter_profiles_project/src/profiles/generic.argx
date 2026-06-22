@@ -1,0 +1,17 @@
+module profiles.generic
+
+adapter_profile GenericExternalProfile {
+  adapter GenericAdapter
+  provider GenericProvider
+  vendor "generic"
+  family custom
+  api_style custom
+  auth none
+  execution disabled
+  network denied
+  secrets denied
+  request_contract UserPrompt
+  response_contract DraftAnswer
+  capabilities ["custom"]
+  required_conformance ["adapter-declared", "execution-disabled"]
+}

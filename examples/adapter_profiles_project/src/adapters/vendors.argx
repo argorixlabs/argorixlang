@@ -1,0 +1,25 @@
+module adapters.vendors
+
+adapter OpenAIAdapter {
+  provider OpenAI
+  feature OpenAIFeature
+  secret OpenAISecret
+  harness OpenAIHarness
+  mode experimental execution disabled network denied secrets denied filesystem none
+}
+
+adapter AnthropicAdapter {
+  provider Anthropic
+  feature AnthropicFeature
+  secret AnthropicSecret
+  harness AnthropicHarness
+  mode experimental execution disabled network denied secrets denied filesystem none
+}
+
+adapter GenericAdapter {
+  provider GenericProvider
+  feature GenericFeature
+  secret GenericSecret
+  harness GenericHarness
+  mode experimental execution disabled network denied secrets denied filesystem none
+}

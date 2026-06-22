@@ -1,0 +1,11 @@
+module policies.profiles
+policy ProfilesPolicy {
+  require adapter_profiles_declared
+  require adapter_profiles_execution_disabled
+  require adapter_profiles_network_denied
+  require adapter_profiles_secrets_denied
+  require adapter_profiles_linked
+  require adapter_profiles_conformance_declared
+  require vendor_profiles_declared
+  on violation { action review trace required }
+}

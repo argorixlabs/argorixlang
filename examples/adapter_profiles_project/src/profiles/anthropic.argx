@@ -1,0 +1,17 @@
+module profiles.anthropic
+
+adapter_profile AnthropicProfile {
+  adapter AnthropicAdapter
+  provider Anthropic
+  vendor "anthropic"
+  family llm
+  api_style messages
+  auth secret_boundary
+  execution disabled
+  network denied
+  secrets denied
+  request_contract UserPrompt
+  response_contract DraftAnswer
+  capabilities ["text-generation"]
+  required_conformance ["adapter-declared", "execution-disabled"]
+}

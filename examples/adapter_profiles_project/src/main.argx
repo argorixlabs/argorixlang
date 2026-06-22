@@ -1,0 +1,17 @@
+module app.main
+
+import providers.contracts
+import features.vendors
+import secrets.vendors
+import harnesses.vendors
+import adapters.vendors
+import profiles.openai
+import profiles.anthropic
+import profiles.generic
+import messages.contracts
+import agents.research
+import policies.profiles
+
+protocol Flow {
+  User -> ResearchAgent: tell UserPrompt
+}

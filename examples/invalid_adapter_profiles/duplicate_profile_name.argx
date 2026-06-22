@@ -1,0 +1,5 @@
+module m
+provider P { kind external enabled false dry_run_only true requires feature_flag requires approval }
+adapter A { provider P mode experimental execution disabled network denied secrets denied filesystem none }
+adapter_profile Dup { adapter A provider P vendor "x" family llm api_style custom auth none execution disabled network denied secrets denied }
+adapter_profile Dup { adapter A provider P vendor "x" family llm api_style custom auth none execution disabled network denied secrets denied }
