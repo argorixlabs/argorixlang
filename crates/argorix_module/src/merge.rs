@@ -14,6 +14,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         module: dummy_module(&package.graph.entry),
         imports: Vec::new(),
         providers: Vec::new(),
+        harnesses: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -40,6 +41,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
             continue;
         };
         merged.providers.extend(program.providers.iter().cloned());
+        merged.harnesses.extend(program.harnesses.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());
@@ -155,5 +157,43 @@ mod tests {
         assert!(messages
             .iter()
             .any(|message| message.contains("duplicate policy `Shared`")));
+    }
+
+    #[test]
+    fn merges_imported_harnesses_deterministically_and_rejects_duplicates() {
+        let harness_package = package(&[
+            (
+                "main",
+                "module main\nprovider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }\nharness MainHarness { provider OpenAI mode dry_run network denied secrets denied filesystem none }",
+            ),
+            (
+                "harnesses.openai",
+                "module harnesses.openai\nharness ImportedHarness { provider OpenAI mode simulated network denied secrets denied filesystem read_only }",
+            ),
+        ]);
+        let merged = merge_package(&harness_package);
+        assert_eq!(
+            merged
+                .harnesses
+                .iter()
+                .map(|harness| harness.name.value.as_str())
+                .collect::<Vec<_>>(),
+            vec!["MainHarness", "ImportedHarness"]
+        );
+
+        let duplicate = package(&[
+            (
+                "main",
+                "module main\nprovider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }\nharness Shared { provider OpenAI mode dry_run network denied secrets denied filesystem none }",
+            ),
+            (
+                "harnesses.openai",
+                "module harnesses.openai\nharness Shared { provider OpenAI mode dry_run network denied secrets denied filesystem none }",
+            ),
+        ]);
+        let messages = check_package(&duplicate).unwrap_err();
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate harness `Shared`")));
     }
 }

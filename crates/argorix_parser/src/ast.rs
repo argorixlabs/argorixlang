@@ -5,6 +5,7 @@ pub struct Program {
     pub module: Spanned<String>,
     pub imports: Vec<ImportDecl>,
     pub providers: Vec<ProviderDecl>,
+    pub harnesses: Vec<ProviderHarnessDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -48,6 +49,88 @@ pub struct ProviderDecl {
     pub requires_explicit_approval: bool,
     pub allowed_targets: Vec<Spanned<String>>,
     pub allowed_capabilities: Vec<Spanned<String>>,
+}
+
+/// A top-level `harness` block describing declarative provider containment.
+///
+/// Harnesses are metadata only. They do not make providers executable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderHarnessDecl {
+    pub name: Spanned<String>,
+    pub provider: Spanned<String>,
+    pub mode: Spanned<HarnessMode>,
+    pub network: Spanned<HarnessNetwork>,
+    pub secrets: Spanned<HarnessSecrets>,
+    pub filesystem: Spanned<HarnessFilesystem>,
+    pub max_steps: Option<Spanned<u64>>,
+    pub timeout_ms: Option<Spanned<u64>>,
+    pub input_contract: Option<Spanned<String>>,
+    pub output_contract: Option<Spanned<String>>,
+    pub attestations: Vec<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HarnessMode {
+    DryRun,
+    Simulated,
+    Unknown(String),
+}
+
+impl HarnessMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::DryRun => "dry_run",
+            Self::Simulated => "simulated",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HarnessNetwork {
+    Denied,
+    Unknown(String),
+}
+
+impl HarnessNetwork {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HarnessSecrets {
+    Denied,
+    Unknown(String),
+}
+
+impl HarnessSecrets {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HarnessFilesystem {
+    None,
+    ReadOnly,
+    Unknown(String),
+}
+
+impl HarnessFilesystem {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::None => "none",
+            Self::ReadOnly => "read_only",
+            Self::Unknown(value) => value,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

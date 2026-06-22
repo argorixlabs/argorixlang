@@ -2,9 +2,10 @@ use crate::{
     ast::{
         AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
         FieldDecl, HandlerDecl, HandlerInstruction, ImportDecl, MessageFieldType, ModelDecl,
-        PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule, PolicyRuleDecl,
-        PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl, ProtocolStep,
-        ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PassportAsnDecl,
+        PassportDecl, PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction,
+        PolicyViolationDecl, Program, ProtocolDecl, ProtocolStep, ProviderDecl,
+        ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -61,6 +62,7 @@ impl Parser {
             module,
             imports: Vec::new(),
             providers: Vec::new(),
+            harnesses: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -78,6 +80,7 @@ impl Parser {
             match self.peek_identifier() {
                 Some("import") => program.imports.push(self.parse_import()?),
                 Some("provider") => program.providers.push(self.parse_provider()?),
+                Some("harness") => program.harnesses.push(self.parse_harness()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -97,7 +100,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -230,6 +233,152 @@ impl Parser {
             allowed_targets: allowed_targets.unwrap_or_default(),
             allowed_capabilities: allowed_capabilities.unwrap_or_default(),
         })
+    }
+
+    fn parse_harness(&mut self) -> Result<ProviderHarnessDecl, Diagnostic> {
+        self.expect_keyword("harness")?;
+        let name = self.expect_identifier("harness name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut provider = None;
+        let mut mode = None;
+        let mut network = None;
+        let mut secrets = None;
+        let mut filesystem = None;
+        let mut max_steps = None;
+        let mut timeout_ms = None;
+        let mut input_contract = None;
+        let mut output_contract = None;
+        let mut attestations = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated harness declaration")?;
+            match self.peek_identifier() {
+                Some("provider") => self.set_harness_field(&mut provider, "provider", |parser| {
+                    parser.expect_identifier("harness provider reference")
+                })?,
+                Some("mode") => self.set_harness_field(&mut mode, "mode", |parser| {
+                    let token = parser.expect_identifier("harness mode")?;
+                    let value = match token.value.as_str() {
+                        "dry_run" => HarnessMode::DryRun,
+                        "simulated" => HarnessMode::Simulated,
+                        other => HarnessMode::Unknown(other.to_owned()),
+                    };
+                    Ok(Spanned::new(value, token.span))
+                })?,
+                Some("network") => {
+                    self.set_harness_field(&mut network, "network", |parser| {
+                        let token = parser.expect_identifier("harness network mode")?;
+                        let value = match token.value.as_str() {
+                            "denied" => HarnessNetwork::Denied,
+                            other => HarnessNetwork::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("secrets") => {
+                    self.set_harness_field(&mut secrets, "secrets", |parser| {
+                        let token = parser.expect_identifier("harness secrets mode")?;
+                        let value = match token.value.as_str() {
+                            "denied" => HarnessSecrets::Denied,
+                            other => HarnessSecrets::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("filesystem") => {
+                    self.set_harness_field(&mut filesystem, "filesystem", |parser| {
+                        let token = parser.expect_identifier("harness filesystem mode")?;
+                        let value = match token.value.as_str() {
+                            "none" => HarnessFilesystem::None,
+                            "read_only" => HarnessFilesystem::ReadOnly,
+                            other => HarnessFilesystem::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("max_steps") => {
+                    self.set_harness_field(&mut max_steps, "max_steps", |parser| {
+                        parser.expect_integer("harness max_steps integer")
+                    })?
+                }
+                Some("timeout_ms") => {
+                    self.set_harness_field(&mut timeout_ms, "timeout_ms", |parser| {
+                        parser.expect_integer("harness timeout_ms integer")
+                    })?
+                }
+                Some("input_contract") => {
+                    self.set_harness_field(&mut input_contract, "input_contract", |parser| {
+                        parser.expect_identifier("harness input contract")
+                    })?
+                }
+                Some("output_contract") => {
+                    self.set_harness_field(&mut output_contract, "output_contract", |parser| {
+                        parser.expect_identifier("harness output contract")
+                    })?
+                }
+                Some("attestations") => {
+                    self.set_harness_field(&mut attestations, "attestations", |parser| {
+                        parser.parse_string_array("harness attestation")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected harness item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected a harness field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        Ok(ProviderHarnessDecl {
+            name,
+            provider: provider
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            mode: mode.unwrap_or_else(|| {
+                Spanned::new(HarnessMode::Unknown(String::new()), fallback_span)
+            }),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(HarnessNetwork::Unknown(String::new()), fallback_span)
+            }),
+            secrets: secrets.unwrap_or_else(|| {
+                Spanned::new(HarnessSecrets::Unknown(String::new()), fallback_span)
+            }),
+            filesystem: filesystem.unwrap_or_else(|| {
+                Spanned::new(HarnessFilesystem::Unknown(String::new()), fallback_span)
+            }),
+            max_steps,
+            timeout_ms,
+            input_contract,
+            output_contract,
+            attestations: attestations.unwrap_or_default(),
+        })
+    }
+
+    fn set_harness_field<T>(
+        &mut self,
+        slot: &mut Option<T>,
+        key: &str,
+        parse_value: impl FnOnce(&mut Self) -> Result<T, Diagnostic>,
+    ) -> Result<(), Diagnostic> {
+        let span = self.peek().span;
+        self.advance();
+        if slot.is_some() {
+            return Err(Diagnostic::new(
+                format!("duplicate harness field `{key}`"),
+                span,
+            ));
+        }
+        *slot = Some(parse_value(self)?);
+        Ok(())
     }
 
     fn parse_identifier_block(
@@ -960,6 +1109,19 @@ impl Parser {
         }
     }
 
+    fn expect_integer(&mut self, description: &str) -> Result<Spanned<u64>, Diagnostic> {
+        let token = self.peek().clone();
+        if let TokenKind::IntegerLiteral(value) = token.kind {
+            self.advance();
+            Ok(Spanned::new(value, token.span))
+        } else {
+            Err(Diagnostic::new(
+                format!("expected {description}"),
+                token.span,
+            ))
+        }
+    }
+
     fn expect_keyword(&mut self, expected: &str) -> Result<(), Diagnostic> {
         if self.match_keyword(expected) {
             Ok(())
@@ -1063,7 +1225,10 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::parse_source;
-    use crate::ast::{PolicyRule, PolicyRuleDecl, PolicyViolationAction};
+    use crate::ast::{
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule,
+        PolicyRuleDecl, PolicyViolationAction,
+    };
 
     #[test]
     fn parses_minimal_program() {
@@ -1281,5 +1446,86 @@ mod tests {
             program.types[2].fields[0].field_type.value.source_name(),
             "RiskLevel"
         );
+    }
+
+    #[test]
+    fn parses_provider_harness_with_optional_metadata() {
+        let program = parse_source(
+            r#"
+            module main
+            harness OpenAIHarness {
+                provider OpenAI
+                mode dry_run
+                network denied
+                secrets denied
+                filesystem read_only
+                max_steps 10
+                timeout_ms 1000
+                input_contract UserPrompt
+                output_contract DraftAnswer
+                attestations ["dry-run", "policy-check"]
+            }
+            "#,
+        )
+        .unwrap();
+        let harness = &program.harnesses[0];
+        assert_eq!(harness.name.value, "OpenAIHarness");
+        assert_eq!(harness.provider.value, "OpenAI");
+        assert_eq!(harness.mode.value, HarnessMode::DryRun);
+        assert_eq!(harness.network.value, HarnessNetwork::Denied);
+        assert_eq!(harness.secrets.value, HarnessSecrets::Denied);
+        assert_eq!(harness.filesystem.value, HarnessFilesystem::ReadOnly);
+        assert_eq!(harness.max_steps.as_ref().unwrap().value, 10);
+        assert_eq!(harness.timeout_ms.as_ref().unwrap().value, 1000);
+        assert_eq!(
+            harness.input_contract.as_ref().unwrap().value,
+            "UserPrompt"
+        );
+        assert_eq!(
+            harness.output_contract.as_ref().unwrap().value,
+            "DraftAnswer"
+        );
+        assert_eq!(harness.attestations.len(), 2);
+    }
+
+    #[test]
+    fn preserves_unknown_harness_values_and_missing_required_sentinels() {
+        let program = parse_source(
+            r#"
+            module main
+            harness FutureHarness {
+                provider OpenAI
+                mode live
+                attestations []
+            }
+            "#,
+        )
+        .unwrap();
+        let harness = &program.harnesses[0];
+        assert_eq!(harness.mode.value, HarnessMode::Unknown("live".into()));
+        assert_eq!(harness.network.value, HarnessNetwork::Unknown(String::new()));
+        assert_eq!(harness.secrets.value, HarnessSecrets::Unknown(String::new()));
+        assert_eq!(
+            harness.filesystem.value,
+            HarnessFilesystem::Unknown(String::new())
+        );
+        assert!(harness.attestations.is_empty());
+    }
+
+    #[test]
+    fn rejects_malformed_harness_syntax() {
+        let duplicate = parse_source(
+            "module main\nharness H { provider OpenAI provider Anthropic mode dry_run network denied secrets denied filesystem none }\n",
+        )
+        .unwrap_err();
+        assert!(duplicate[0]
+            .message
+            .contains("duplicate harness field `provider`"));
+
+        let malformed = parse_source(
+            "module main\nharness H { provider OpenAI mode dry_run network denied secrets denied filesystem none max_steps \"ten\" }\n",
+        )
+        .unwrap_err();
+        assert!(malformed[0].message.contains("integer"));
     }
 }

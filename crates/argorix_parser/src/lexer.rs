@@ -4,6 +4,7 @@ use crate::{diagnostics::Diagnostic, span::Span};
 pub enum TokenKind {
     Ident(String),
     StringLiteral(String),
+    IntegerLiteral(u64),
     LeftBrace,
     RightBrace,
     LeftParen,
@@ -68,6 +69,7 @@ impl<'source> Lexer<'source> {
                 ':' => self.single(TokenKind::Colon),
                 '"' => self.string(),
                 '-' if self.peek_next() == Some('>') => self.arrow(),
+                character if character.is_ascii_digit() => self.integer(),
                 character if is_ident_start(character) => self.identifier(),
                 unexpected => {
                     let span = Span::new(
@@ -185,6 +187,26 @@ impl<'source> Lexer<'source> {
             span: Span::new(start, self.offset, line, column),
         });
     }
+
+    fn integer(&mut self) {
+        let start = self.offset;
+        let line = self.line;
+        let column = self.column;
+        while matches!(self.peek(), Some(character) if character.is_ascii_digit()) {
+            self.advance();
+        }
+        let source = &self.source[start..self.offset];
+        match source.parse::<u64>() {
+            Ok(value) => self.tokens.push(Token {
+                kind: TokenKind::IntegerLiteral(value),
+                span: Span::new(start, self.offset, line, column),
+            }),
+            Err(_) => self.diagnostics.push(Diagnostic::new(
+                "integer literal exceeds u64 range",
+                Span::new(start, self.offset, line, column),
+            )),
+        }
+    }
 }
 
 fn is_ident_start(character: char) -> bool {
@@ -206,5 +228,16 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|token| token.kind == TokenKind::Ident("regex.match".into())));
+    }
+
+    #[test]
+    fn lexes_unsigned_integer_literals() {
+        let tokens = lex("max_steps 10 timeout_ms 1000").unwrap();
+        assert!(tokens
+            .iter()
+            .any(|token| token.kind == TokenKind::IntegerLiteral(10)));
+        assert!(tokens
+            .iter()
+            .any(|token| token.kind == TokenKind::IntegerLiteral(1000)));
     }
 }

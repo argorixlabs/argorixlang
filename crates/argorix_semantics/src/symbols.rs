@@ -9,6 +9,7 @@ pub const PRIMITIVE_TYPES: [&str; 4] = ["string", "bool", "int", "float"];
 
 #[derive(Debug, Default)]
 pub struct Symbols {
+    pub providers: HashSet<String>,
     pub types: HashSet<String>,
     pub enums: HashSet<String>,
     pub agents: HashSet<String>,

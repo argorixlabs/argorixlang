@@ -1,8 +1,9 @@
 use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
     ast::{
-        Approval, CapabilityLevel, HandlerInstruction, PolicyRule, PolicyRuleDecl,
-        PolicyViolationAction, Program,
+        Approval, CapabilityLevel, HandlerInstruction, HarnessFilesystem, HarnessMode,
+        HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction,
+        Program,
     },
     diagnostics::Diagnostic,
     span::Spanned,
@@ -25,6 +26,7 @@ pub fn check_program_with_options(
     let mut diagnostics = Vec::new();
     let symbols = collect_symbols(program, &mut diagnostics);
     check_provider_contracts(program, &symbols, &mut diagnostics);
+    check_provider_harnesses(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -92,6 +94,124 @@ pub fn check_program_with_options(
         Ok(())
     } else {
         Err(diagnostics)
+    }
+}
+
+fn check_provider_harnesses(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut names = HashSet::new();
+    for harness in &program.harnesses {
+        report_duplicate(&mut names, &harness.name, "harness", diagnostics);
+        let harness_name = &harness.name.value;
+
+        if harness.provider.value.trim().is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("harness `{harness_name}` is missing required field `provider`"),
+                harness.provider.span,
+            ));
+        } else if !symbols.providers.contains(&harness.provider.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "harness `{harness_name}` references unknown provider `{}`",
+                    harness.provider.value
+                ),
+                harness.provider.span,
+            ));
+        }
+
+        match &harness.mode.value {
+            HarnessMode::Unknown(value) if value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!("harness `{harness_name}` is missing required field `mode`"),
+                harness.mode.span,
+            )),
+            HarnessMode::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("harness `{harness_name}` has invalid mode `{value}`"),
+                harness.mode.span,
+            )),
+            HarnessMode::DryRun | HarnessMode::Simulated => {}
+        }
+        match &harness.network.value {
+            HarnessNetwork::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("harness `{harness_name}` is missing required field `network`"),
+                    harness.network.span,
+                ))
+            }
+            HarnessNetwork::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("harness `{harness_name}` has invalid network `{value}`"),
+                harness.network.span,
+            )),
+            HarnessNetwork::Denied => {}
+        }
+        match &harness.secrets.value {
+            HarnessSecrets::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("harness `{harness_name}` is missing required field `secrets`"),
+                    harness.secrets.span,
+                ))
+            }
+            HarnessSecrets::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("harness `{harness_name}` has invalid secrets `{value}`"),
+                harness.secrets.span,
+            )),
+            HarnessSecrets::Denied => {}
+        }
+        match &harness.filesystem.value {
+            HarnessFilesystem::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("harness `{harness_name}` is missing required field `filesystem`"),
+                    harness.filesystem.span,
+                ))
+            }
+            HarnessFilesystem::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("harness `{harness_name}` has invalid filesystem `{value}`"),
+                harness.filesystem.span,
+            )),
+            HarnessFilesystem::None | HarnessFilesystem::ReadOnly => {}
+        }
+
+        for (label, limit) in [
+            ("max_steps", harness.max_steps.as_ref()),
+            ("timeout_ms", harness.timeout_ms.as_ref()),
+        ] {
+            if let Some(limit) = limit {
+                if limit.value == 0 {
+                    diagnostics.push(Diagnostic::new(
+                        format!("harness `{harness_name}` {label} must be positive"),
+                        limit.span,
+                    ));
+                }
+            }
+        }
+
+        for (label, contract) in [
+            ("input_contract", harness.input_contract.as_ref()),
+            ("output_contract", harness.output_contract.as_ref()),
+        ] {
+            if let Some(contract) = contract {
+                if !symbols.types.contains(&contract.value) {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "harness `{harness_name}` references unknown {label} `{}`",
+                            contract.value
+                        ),
+                        contract.span,
+                    ));
+                }
+            }
+        }
+
+        for attestation in &harness.attestations {
+            if attestation.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("harness `{harness_name}` attestation entries must not be empty"),
+                    attestation.span,
+                ));
+            }
+        }
     }
 }
 
@@ -822,6 +942,9 @@ fn check_handlers(
 
 fn collect_symbols(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> Symbols {
     let mut symbols = Symbols::default();
+    for provider in &program.providers {
+        symbols.providers.insert(provider.name.value.clone());
+    }
     for type_decl in &program.types {
         report_duplicate(&mut symbols.types, &type_decl.name, "type", diagnostics);
     }
@@ -1171,5 +1294,105 @@ mod tests {
         assert!(messages
             .iter()
             .any(|message| message.contains("duplicate field `value`")));
+    }
+
+    fn harness_messages(body: &str) -> Vec<String> {
+        let source = format!(
+            "module main\nprovider OpenAI {{ kind external enabled false dry_run_only true requires feature_flag requires approval }}\ntype UserPrompt {{ content: string }}\ntype DraftAnswer {{ content: string }}\n{body}\n"
+        );
+        check_program(&parse_source(&source).unwrap())
+            .unwrap_err()
+            .into_iter()
+            .map(|diagnostic| diagnostic.message)
+            .collect()
+    }
+
+    #[test]
+    fn accepts_valid_provider_harness_and_empty_attestations() {
+        let source = r#"
+            module main
+            provider OpenAI {
+                kind external
+                enabled false
+                dry_run_only true
+                requires feature_flag
+                requires approval
+            }
+            type UserPrompt { content: string }
+            type DraftAnswer { content: string }
+            harness OpenAIHarness {
+                provider OpenAI
+                mode dry_run
+                network denied
+                secrets denied
+                filesystem none
+                max_steps 10
+                timeout_ms 1000
+                input_contract UserPrompt
+                output_contract DraftAnswer
+                attestations []
+            }
+        "#;
+        check_program(&parse_source(source).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn rejects_missing_and_unknown_harness_fields() {
+        let missing = harness_messages("harness H {}");
+        for field in ["provider", "mode", "network", "secrets", "filesystem"] {
+            assert!(missing
+                .iter()
+                .any(|message| message.contains(&format!("missing required field `{field}`"))));
+        }
+
+        let invalid = harness_messages(
+            "harness H { provider Missing mode live network allowed secrets env filesystem write }",
+        );
+        for expected in [
+            "unknown provider `Missing`",
+            "invalid mode `live`",
+            "invalid network `allowed`",
+            "invalid secrets `env`",
+            "invalid filesystem `write`",
+        ] {
+            assert!(invalid.iter().any(|message| message.contains(expected)));
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_harness_limits_contracts_and_empty_entries() {
+        let messages = harness_messages(
+            r#"
+            harness H {
+                provider OpenAI
+                mode simulated
+                network denied
+                secrets denied
+                filesystem read_only
+                max_steps 0
+                timeout_ms 0
+                input_contract MissingInput
+                output_contract MissingOutput
+                attestations [""]
+            }
+            harness H {
+                provider OpenAI
+                mode dry_run
+                network denied
+                secrets denied
+                filesystem none
+            }
+            "#,
+        );
+        for expected in [
+            "duplicate harness `H`",
+            "max_steps must be positive",
+            "timeout_ms must be positive",
+            "unknown input_contract `MissingInput`",
+            "unknown output_contract `MissingOutput`",
+            "attestation entries must not be empty",
+        ] {
+            assert!(messages.iter().any(|message| message.contains(expected)));
+        }
     }
 }
