@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 29] = [
+pub const CATEGORIES: [&str; 30] = [
     "parser",
     "semantics",
     "ir",
@@ -53,6 +53,7 @@ pub const CATEGORIES: [&str; 29] = [
     "did_methods",
     "atrust_boundaries",
     "atrust_identities",
+    "atrust_credential_contracts",
 ];
 
 #[derive(Debug, Error)]
@@ -80,9 +81,10 @@ pub fn validate_suite(
             | "0.25"
             | "0.26"
             | "0.27"
+            | "0.28"
     ) {
         errors.push(format!(
-            "suite_version must be `0.16`..`0.27`, found `{}`",
+            "suite_version must be `0.16`..`0.28`, found `{}`",
             suite.suite_version
         ));
     }
@@ -137,6 +139,9 @@ pub fn validate_suite(
             continue;
         }
         if suite.suite_version != "0.27" && category == "atrust_identities" {
+            continue;
+        }
+        if suite.suite_version != "0.28" && category == "atrust_credential_contracts" {
             continue;
         }
         if !categories.contains(category) && category != "adapter_framework" {

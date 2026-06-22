@@ -15,6 +15,7 @@ pub struct Program {
     pub did_methods: Vec<DidMethodDecl>,
     pub atrust_boundaries: Vec<ATrustBoundaryDecl>,
     pub atrust_identities: Vec<ATrustIdentityDecl>,
+    pub atrust_credential_contracts: Vec<ATrustCredentialContractDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -794,6 +795,20 @@ pub enum PolicyRule {
     ATrustIdentityEvidenceRequired,
     ATrustIdentitySecurityClaimsAbsent,
     ATrustIdentityPassportConsistent,
+    ATrustCredentialContractDeclared,
+    ATrustCredentialIssuerDidDeclared,
+    ATrustCredentialHolderDidDeclared,
+    ATrustCredentialTypeDeclared,
+    ATrustCredentialSchemaDeclared,
+    ATrustCredentialClaimsDeclared,
+    ATrustCredentialVerificationDeclaredOnly,
+    ATrustCredentialPresentationDisabled,
+    ATrustCredentialResolutionDisabled,
+    ATrustCredentialKeyMaterialDenied,
+    ATrustCredentialSecretMaterialDenied,
+    ATrustCredentialExecutionDisabled,
+    ATrustCredentialEvidenceRequired,
+    ATrustCredentialSecurityClaimsAbsent,
     Unknown(String),
 }
 
@@ -882,6 +897,26 @@ impl PolicyRule {
             Self::ATrustIdentityEvidenceRequired => "atrust_identity_evidence_required",
             Self::ATrustIdentitySecurityClaimsAbsent => "atrust_identity_security_claims_absent",
             Self::ATrustIdentityPassportConsistent => "atrust_identity_passport_consistent",
+            Self::ATrustCredentialContractDeclared => "atrust_credential_contract_declared",
+            Self::ATrustCredentialIssuerDidDeclared => "atrust_credential_issuer_did_declared",
+            Self::ATrustCredentialHolderDidDeclared => "atrust_credential_holder_did_declared",
+            Self::ATrustCredentialTypeDeclared => "atrust_credential_type_declared",
+            Self::ATrustCredentialSchemaDeclared => "atrust_credential_schema_declared",
+            Self::ATrustCredentialClaimsDeclared => "atrust_credential_claims_declared",
+            Self::ATrustCredentialVerificationDeclaredOnly => {
+                "atrust_credential_verification_declared_only"
+            }
+            Self::ATrustCredentialPresentationDisabled => "atrust_credential_presentation_disabled",
+            Self::ATrustCredentialResolutionDisabled => "atrust_credential_resolution_disabled",
+            Self::ATrustCredentialKeyMaterialDenied => "atrust_credential_key_material_denied",
+            Self::ATrustCredentialSecretMaterialDenied => {
+                "atrust_credential_secret_material_denied"
+            }
+            Self::ATrustCredentialExecutionDisabled => "atrust_credential_execution_disabled",
+            Self::ATrustCredentialEvidenceRequired => "atrust_credential_evidence_required",
+            Self::ATrustCredentialSecurityClaimsAbsent => {
+                "atrust_credential_security_claims_absent"
+            }
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -1436,6 +1471,87 @@ impl ATrustEvidenceRequirement {
     pub fn source_name(&self) -> &str {
         match self {
             Self::Required => "required",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+/// A top-level `atrust_credential_contract` block declaring an ATrust credential contract.
+/// v0.28 is credential contract metadata only. No VC parsing, no credential verification,
+/// no signing, no DID resolution, no network.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ATrustCredentialContractDecl {
+    pub name: Spanned<String>,
+    pub subject: Spanned<String>,
+    pub identity: Spanned<String>,
+    pub boundary: Spanned<String>,
+    pub method: Spanned<String>,
+    pub issuer_did: Spanned<String>,
+    pub holder_did: Spanned<String>,
+    pub credential_type: Spanned<String>,
+    pub schema: Spanned<String>,
+    pub status: Spanned<ATrustCredentialStatus>,
+    pub verification: Spanned<ATrustCredentialVerification>,
+    pub presentation: Spanned<ATrustCredentialPresentation>,
+    pub resolution: Spanned<ATrustResolutionMode>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub evidence: Spanned<ATrustEvidenceRequirement>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub claims: Vec<Spanned<String>>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustCredentialStatus {
+    Declared,
+    Active,
+    Suspended,
+    Revoked,
+    Unknown(String),
+}
+
+impl ATrustCredentialStatus {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Declared => "declared",
+            Self::Active => "active",
+            Self::Suspended => "suspended",
+            Self::Revoked => "revoked",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustCredentialVerification {
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl ATrustCredentialVerification {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustCredentialPresentation {
+    Disabled,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl ATrustCredentialPresentation {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::DeclaredOnly => "declared_only",
             Self::Unknown(value) => value,
         }
     }

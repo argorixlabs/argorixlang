@@ -2,12 +2,13 @@ pub mod bytecode;
 pub mod lower;
 
 pub use bytecode::{
-    verify_bytecode, BytecodeATrustBoundary, BytecodeATrustIdentity, BytecodeAdapter,
-    BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeCrypto,
-    BytecodeCryptoBoundary, BytecodeDidMethod, BytecodeError, BytecodeFailure, BytecodeFeature,
-    BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn,
-    BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram,
-    BytecodeProviderContract, BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType,
-    BytecodeTypeField, Instruction,
+    verify_bytecode, BytecodeATrustBoundary, BytecodeATrustCredentialContract,
+    BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent,
+    BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
+    BytecodeDidMethod, BytecodeError, BytecodeFailure, BytecodeFeature, BytecodeModel,
+    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
+    BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField,
+    Instruction,
 };
 pub use lower::lower_ir;

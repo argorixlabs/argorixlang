@@ -1,21 +1,22 @@
 use crate::{
     ast::{
-        ATrustBoundaryDecl, ATrustCredentialMode, ATrustEvidenceRequirement, ATrustExecution,
-        ATrustHandshakeMode, ATrustIdentityDecl, ATrustIdentityFormat, ATrustIdentityStatus,
-        ATrustIdentityValidation, ATrustMaterialBoundary, ATrustPostQuantumRequirement,
-        ATrustResolutionMode, ATrustSecurityClaims, AdapterDecl, AdapterExecution,
-        AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork, AdapterProfileApiStyle,
-        AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution, AdapterProfileFamily,
-        AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, AgentDecl, Approval,
-        AssertionDecl, CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind,
-        CryptoStatus, CryptoStrength, DidLedgerMode, DidMethodDecl, DidMethodStatus,
-        DidResolutionMode, EnumDecl, FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus,
-        FieldDecl, HandlerDecl, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
-        HarnessSecrets, ImportDecl, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl,
-        PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
-        Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
-        ReceiveDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl,
-        TypeDecl,
+        ATrustBoundaryDecl, ATrustCredentialContractDecl, ATrustCredentialMode,
+        ATrustCredentialPresentation, ATrustCredentialStatus, ATrustCredentialVerification,
+        ATrustEvidenceRequirement, ATrustExecution, ATrustHandshakeMode, ATrustIdentityDecl,
+        ATrustIdentityFormat, ATrustIdentityStatus, ATrustIdentityValidation,
+        ATrustMaterialBoundary, ATrustPostQuantumRequirement, ATrustResolutionMode,
+        ATrustSecurityClaims, AdapterDecl, AdapterExecution, AdapterFilesystem, AdapterKind,
+        AdapterMode, AdapterNetwork, AdapterProfileApiStyle, AdapterProfileAuth,
+        AdapterProfileDecl, AdapterProfileExecution, AdapterProfileFamily, AdapterProfileNetwork,
+        AdapterProfileSecrets, AdapterSecrets, AgentDecl, Approval, AssertionDecl, CapabilityDecl,
+        CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind, CryptoStatus, CryptoStrength,
+        DidLedgerMode, DidMethodDecl, DidMethodStatus, DidResolutionMode, EnumDecl, FailureDecl,
+        FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl,
+        MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule,
+        PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
+        ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl,
+        SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -82,6 +83,7 @@ impl Parser {
             did_methods: Vec::new(),
             atrust_boundaries: Vec::new(),
             atrust_identities: Vec::new(),
+            atrust_credential_contracts: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -111,6 +113,7 @@ impl Parser {
                 Some("did_method") => program.did_methods.push(self.parse_did_method()?),
                 Some("atrust_boundary") => program.atrust_boundaries.push(self.parse_atrust_boundary()?),
                 Some("atrust_identity") => program.atrust_identities.push(self.parse_atrust_identity()?),
+                Some("atrust_credential_contract") => program.atrust_credential_contracts.push(self.parse_atrust_credential_contract()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -130,7 +133,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -1797,6 +1800,322 @@ impl Parser {
         })
     }
 
+    fn parse_atrust_credential_contract(
+        &mut self,
+    ) -> Result<ATrustCredentialContractDecl, Diagnostic> {
+        self.expect_keyword("atrust_credential_contract")?;
+        let name = self.expect_identifier("atrust credential contract name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut subject = None;
+        let mut identity = None;
+        let mut boundary = None;
+        let mut method = None;
+        let mut issuer_did = None;
+        let mut holder_did = None;
+        let mut credential_type = None;
+        let mut schema = None;
+        let mut status = None;
+        let mut verification = None;
+        let mut presentation = None;
+        let mut resolution = None;
+        let mut key_material = None;
+        let mut secret_material = None;
+        let mut execution = None;
+        let mut evidence = None;
+        let mut security_claims = None;
+        let mut claims: Option<Vec<Spanned<String>>> = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated atrust_credential_contract declaration")?;
+            match self.peek_identifier() {
+                Some("subject") => self.set_block_field(
+                    &mut subject,
+                    "atrust_credential_contract",
+                    "subject",
+                    |parser| parser.expect_identifier("atrust_credential_contract subject agent"),
+                )?,
+                Some("identity") => self.set_block_field(
+                    &mut identity,
+                    "atrust_credential_contract",
+                    "identity",
+                    |parser| {
+                        parser.expect_identifier("atrust_credential_contract identity reference")
+                    },
+                )?,
+                Some("boundary") => self.set_block_field(
+                    &mut boundary,
+                    "atrust_credential_contract",
+                    "boundary",
+                    |parser| {
+                        parser.expect_identifier(
+                            "atrust_credential_contract atrust_boundary reference",
+                        )
+                    },
+                )?,
+                Some("method") => self.set_block_field(
+                    &mut method,
+                    "atrust_credential_contract",
+                    "method",
+                    |parser| {
+                        parser.expect_identifier("atrust_credential_contract did_method reference")
+                    },
+                )?,
+                Some("issuer_did") => self.set_block_field(
+                    &mut issuer_did,
+                    "atrust_credential_contract",
+                    "issuer_did",
+                    |parser| parser.expect_string("atrust_credential_contract issuer_did"),
+                )?,
+                Some("holder_did") => self.set_block_field(
+                    &mut holder_did,
+                    "atrust_credential_contract",
+                    "holder_did",
+                    |parser| parser.expect_string("atrust_credential_contract holder_did"),
+                )?,
+                Some("credential_type") => self.set_block_field(
+                    &mut credential_type,
+                    "atrust_credential_contract",
+                    "credential_type",
+                    |parser| parser.expect_string("atrust_credential_contract credential_type"),
+                )?,
+                Some("schema") => self.set_block_field(
+                    &mut schema,
+                    "atrust_credential_contract",
+                    "schema",
+                    |parser| parser.expect_string("atrust_credential_contract schema"),
+                )?,
+                Some("status") => self.set_block_field(
+                    &mut status,
+                    "atrust_credential_contract",
+                    "status",
+                    |parser| {
+                        let token =
+                            parser.expect_identifier("atrust_credential_contract status")?;
+                        let value = match token.value.as_str() {
+                            "declared" => ATrustCredentialStatus::Declared,
+                            "active" => ATrustCredentialStatus::Active,
+                            "suspended" => ATrustCredentialStatus::Suspended,
+                            "revoked" => ATrustCredentialStatus::Revoked,
+                            other => ATrustCredentialStatus::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("verification") => self.set_block_field(
+                    &mut verification,
+                    "atrust_credential_contract",
+                    "verification",
+                    |parser| {
+                        let token =
+                            parser.expect_identifier("atrust_credential_contract verification")?;
+                        let value = match token.value.as_str() {
+                            "declared_only" => ATrustCredentialVerification::DeclaredOnly,
+                            other => ATrustCredentialVerification::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("presentation") => self.set_block_field(
+                    &mut presentation,
+                    "atrust_credential_contract",
+                    "presentation",
+                    |parser| {
+                        let token =
+                            parser.expect_identifier("atrust_credential_contract presentation")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustCredentialPresentation::Disabled,
+                            "declared_only" => ATrustCredentialPresentation::DeclaredOnly,
+                            other => ATrustCredentialPresentation::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("resolution") => self.set_block_field(
+                    &mut resolution,
+                    "atrust_credential_contract",
+                    "resolution",
+                    |parser| {
+                        let token =
+                            parser.expect_identifier("atrust_credential_contract resolution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustResolutionMode::Disabled,
+                            "embedded" => ATrustResolutionMode::Embedded,
+                            "local" => ATrustResolutionMode::Local,
+                            other => ATrustResolutionMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "atrust_credential_contract",
+                    "key_material",
+                    |parser| {
+                        let token =
+                            parser.expect_identifier("atrust_credential_contract key_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "atrust_credential_contract",
+                    "secret_material",
+                    |parser| {
+                        let token = parser
+                            .expect_identifier("atrust_credential_contract secret_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("execution") => self.set_block_field(
+                    &mut execution,
+                    "atrust_credential_contract",
+                    "execution",
+                    |parser| {
+                        let token =
+                            parser.expect_identifier("atrust_credential_contract execution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustExecution::Disabled,
+                            other => ATrustExecution::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("evidence") => self.set_block_field(
+                    &mut evidence,
+                    "atrust_credential_contract",
+                    "evidence",
+                    |parser| {
+                        let token =
+                            parser.expect_identifier("atrust_credential_contract evidence")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "atrust_credential_contract",
+                    "security_claims",
+                    |parser| {
+                        let token = parser
+                            .expect_identifier("atrust_credential_contract security_claims")?;
+                        let value = match token.value.as_str() {
+                            "none" => ATrustSecurityClaims::None,
+                            other => ATrustSecurityClaims::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("claims") => self.set_block_field(
+                    &mut claims,
+                    "atrust_credential_contract",
+                    "claims",
+                    |parser| parser.parse_string_array("atrust_credential_contract claims"),
+                )?,
+                Some("purpose") => self.set_block_field(
+                    &mut purpose,
+                    "atrust_credential_contract",
+                    "purpose",
+                    |parser| parser.parse_string_array("atrust_credential_contract purpose"),
+                )?,
+                Some("notes") => self.set_block_field(
+                    &mut notes,
+                    "atrust_credential_contract",
+                    "notes",
+                    |parser| parser.expect_string("atrust_credential_contract notes"),
+                )?,
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected atrust_credential_contract item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected an atrust_credential_contract field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        let unknown_status = || {
+            Spanned::new(
+                ATrustCredentialStatus::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_verification = || {
+            Spanned::new(
+                ATrustCredentialVerification::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_presentation = || {
+            Spanned::new(
+                ATrustCredentialPresentation::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_material = || {
+            Spanned::new(
+                ATrustMaterialBoundary::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_exec = || Spanned::new(ATrustExecution::Unknown(String::new()), fallback_span);
+        let unknown_evidence = || {
+            Spanned::new(
+                ATrustEvidenceRequirement::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_claims =
+            || Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback_span);
+
+        Ok(ATrustCredentialContractDecl {
+            name,
+            subject: subject.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            identity: identity.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            boundary: boundary.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            method: method.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            issuer_did: issuer_did.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            holder_did: holder_did.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            credential_type: credential_type
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            schema: schema.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            status: status.unwrap_or_else(unknown_status),
+            verification: verification.unwrap_or_else(unknown_verification),
+            presentation: presentation.unwrap_or_else(unknown_presentation),
+            resolution: resolution.unwrap_or_else(|| {
+                Spanned::new(ATrustResolutionMode::Unknown(String::new()), fallback_span)
+            }),
+            key_material: key_material.unwrap_or_else(unknown_material),
+            secret_material: secret_material.unwrap_or_else(unknown_material),
+            execution: execution.unwrap_or_else(unknown_exec),
+            evidence: evidence.unwrap_or_else(unknown_evidence),
+            security_claims: security_claims.unwrap_or_else(unknown_claims),
+            claims: claims.unwrap_or_default(),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -1989,6 +2308,36 @@ impl Parser {
                 PolicyRule::ATrustIdentitySecurityClaimsAbsent
             }
             "atrust_identity_passport_consistent" => PolicyRule::ATrustIdentityPassportConsistent,
+            "atrust_credential_contract_declared" => PolicyRule::ATrustCredentialContractDeclared,
+            "atrust_credential_issuer_did_declared" => {
+                PolicyRule::ATrustCredentialIssuerDidDeclared
+            }
+            "atrust_credential_holder_did_declared" => {
+                PolicyRule::ATrustCredentialHolderDidDeclared
+            }
+            "atrust_credential_type_declared" => PolicyRule::ATrustCredentialTypeDeclared,
+            "atrust_credential_schema_declared" => PolicyRule::ATrustCredentialSchemaDeclared,
+            "atrust_credential_claims_declared" => PolicyRule::ATrustCredentialClaimsDeclared,
+            "atrust_credential_verification_declared_only" => {
+                PolicyRule::ATrustCredentialVerificationDeclaredOnly
+            }
+            "atrust_credential_presentation_disabled" => {
+                PolicyRule::ATrustCredentialPresentationDisabled
+            }
+            "atrust_credential_resolution_disabled" => {
+                PolicyRule::ATrustCredentialResolutionDisabled
+            }
+            "atrust_credential_key_material_denied" => {
+                PolicyRule::ATrustCredentialKeyMaterialDenied
+            }
+            "atrust_credential_secret_material_denied" => {
+                PolicyRule::ATrustCredentialSecretMaterialDenied
+            }
+            "atrust_credential_execution_disabled" => PolicyRule::ATrustCredentialExecutionDisabled,
+            "atrust_credential_evidence_required" => PolicyRule::ATrustCredentialEvidenceRequired,
+            "atrust_credential_security_claims_absent" => {
+                PolicyRule::ATrustCredentialSecurityClaimsAbsent
+            }
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

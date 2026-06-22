@@ -34,6 +34,8 @@ pub struct SecurityReport {
     pub crypto_registry: CryptoRegistrySummary,
     #[serde(default)]
     pub crypto_boundaries: CryptoBoundariesSummary,
+    #[serde(default)]
+    pub atrust_credential_contracts: usize,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -531,7 +533,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.27".into(),
+            report_version: "0.28".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -539,7 +541,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.27".into()),
+                .unwrap_or_else(|| "0.28".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -550,6 +552,7 @@ impl SecurityReport {
             adapter_profiles: adapter_profile_summary(&bytecode.adapter_profiles),
             crypto_registry: crypto_registry_summary(&bytecode.cryptos),
             crypto_boundaries: crypto_boundaries_summary(&bytecode.crypto_boundaries),
+            atrust_credential_contracts: bytecode.atrust_credential_contracts.len(),
             policy,
             provider_boundary,
             calls,
