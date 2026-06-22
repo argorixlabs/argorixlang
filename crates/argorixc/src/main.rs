@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use argorix_bytecode::{lower_ir, verify_bytecode, Instruction};
+use argorix_bytecode::{lower_ir, verify_bytecode, BytecodeProgram, Instruction};
 use argorix_ir::IrProgram;
 use argorix_module::{check_package, package_ir, resolve_package, ModuleGraph, ResolvedPackage};
 use argorix_parser::{parse_source, Diagnostic, Program};
@@ -116,9 +116,7 @@ fn run() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&bytecode)?);
         }
         Command::VerifyBytecode { file } => {
-            let compiled = compile(&file, options)?;
-            let ir = IrProgram::from(&compiled.program);
-            let bytecode = lower_ir(&ir);
+            let bytecode = load_bytecode_for_verification(&file, options)?;
             verify_bytecode(&bytecode).map_err(bytecode_errors)?;
             let protocols = bytecode
                 .instructions
@@ -165,6 +163,22 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn load_bytecode_for_verification(path: &Path, options: CheckOptions) -> Result<BytecodeProgram> {
+    let is_serialized_bytecode = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".argbc.json"));
+    if is_serialized_bytecode {
+        let source = fs::read_to_string(path)
+            .with_context(|| format!("failed to read `{}`", path.display()))?;
+        serde_json::from_str(&source)
+            .with_context(|| format!("invalid Argorix Bytecode JSON in `{}`", path.display()))
+    } else {
+        let compiled = compile(path, options)?;
+        Ok(lower_ir(&IrProgram::from(&compiled.program)))
+    }
 }
 
 /// Resolve a package from a manifest path or a directory containing `argorix.toml`.
@@ -241,12 +255,13 @@ fn diagnostics_error(diagnostics: &[Diagnostic], file: &str, source: &str) -> an
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command};
+    use super::{load_bytecode_for_verification, Cli, Command};
     use argorix_bytecode::{lower_ir, verify_bytecode};
     use argorix_ir::IrProgram;
     use argorix_parser::parse_source;
     use argorix_semantics::check_program;
     use clap::Parser;
+    use std::path::Path;
 
     const SOURCE: &str = include_str!("../../../examples/prompt_defense_v02.argx");
 
@@ -280,5 +295,15 @@ mod tests {
         let program = parse_source(SOURCE).unwrap();
         check_program(&program).unwrap();
         verify_bytecode(&lower_ir(&IrProgram::from(&program))).unwrap();
+    }
+
+    #[test]
+    fn verify_bytecode_command_accepts_serialized_bytecode() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/provider_harness_v020.argbc.json");
+        let bytecode = load_bytecode_for_verification(&fixture, Default::default()).unwrap();
+        assert_eq!(bytecode.bytecode_version, "0.20");
+        assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
+        verify_bytecode(&bytecode).unwrap();
     }
 }
