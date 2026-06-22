@@ -4,7 +4,7 @@ use argorix_parser::{
         AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
         AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileExecution, AdapterProfileFamily,
         AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, Approval, CapabilityLevel,
-        CryptoDecl, CryptoKind, CryptoStatus, CryptoStrength, FeatureDefault, FeatureStatus,
+        CryptoKind, CryptoStatus, CryptoStrength, FeatureDefault, FeatureStatus,
         HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
         PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program, SecretAccess, SecretScope,
         SecretSource,
@@ -1235,32 +1235,34 @@ fn check_adapter_profiles(program: &Program, symbols: &Symbols, diagnostics: &mu
     // vendor-specific loose structural hints (OpenAI / Anthropic)
     for profile in &program.adapter_profiles {
         let pname = &profile.name.value;
-        if profile.vendor.value == "openai" {
-            if !matches!(
+        if profile.vendor.value == "openai"
+            && !matches!(
                 &profile.family.value,
                 AdapterProfileFamily::Llm | AdapterProfileFamily::Custom
-            ) {
-                diagnostics.push(Diagnostic::new(
-                    format!("adapter_profile `{pname}` for vendor openai should use family llm (or custom)"),
-                    profile.family.span,
-                ));
-            }
+            )
+        {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "adapter_profile `{pname}` for vendor openai should use family llm (or custom)"
+                ),
+                profile.family.span,
+            ));
         }
-        if profile.vendor.value == "anthropic" {
-            if !matches!(
+        if profile.vendor.value == "anthropic"
+            && !matches!(
                 &profile.family.value,
                 AdapterProfileFamily::Llm | AdapterProfileFamily::Custom
-            ) {
-                diagnostics.push(Diagnostic::new(
-                    format!("adapter_profile `{pname}` for vendor anthropic should use family llm (or custom)"),
-                    profile.family.span,
-                ));
-            }
+            )
+        {
+            diagnostics.push(Diagnostic::new(
+                format!("adapter_profile `{pname}` for vendor anthropic should use family llm (or custom)"),
+                profile.family.span,
+            ));
         }
     }
 }
 
-fn check_cryptos(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+fn check_cryptos(program: &Program, _symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
     let mut names = HashSet::new();
     for crypto in &program.cryptos {
         report_duplicate(&mut names, &crypto.name, "crypto", diagnostics);

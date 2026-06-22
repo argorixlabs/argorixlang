@@ -11,6 +11,7 @@ pub struct Program {
     pub adapters: Vec<AdapterDecl>,
     pub adapter_profiles: Vec<AdapterProfileDecl>,
     pub cryptos: Vec<CryptoDecl>,
+    pub crypto_boundaries: Vec<CryptoBoundaryDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -576,6 +577,27 @@ pub struct CryptoDecl {
     pub notes: Option<Spanned<String>>,
 }
 
+/// A declared cryptographic trust boundary: which primitives are allowed/denied
+/// across a perimeter, and whether key material, secret material, or execution
+/// may cross it. Declarative only — no key material is stored or read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CryptoBoundaryDecl {
+    pub name: Spanned<String>,
+    pub allowed_hashes: Vec<Spanned<String>>,
+    pub allowed_signatures: Vec<Spanned<String>>,
+    pub allowed_kems: Vec<Spanned<String>>,
+    pub allowed_aeads: Vec<Spanned<String>>,
+    pub legacy_allowed: Vec<Spanned<String>>,
+    pub denied: Vec<Spanned<String>>,
+    pub purpose: Vec<Spanned<String>>,
+    pub min_hash_bits: Option<Spanned<u64>>,
+    pub post_quantum_ready: Option<Spanned<bool>>,
+    pub hybrid_allowed: Option<Spanned<bool>>,
+    pub key_material: Spanned<String>,
+    pub secret_material: Spanned<String>,
+    pub execution: Spanned<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CryptoKind {
     Hash,
@@ -742,6 +764,8 @@ pub enum PolicyRule {
     CryptoKeyMaterialAbsent,
     CryptoSecretMaterialAbsent,
     CryptoExecutionAbsent,
+    CryptoBoundariesDeclared,
+    PostQuantumReadinessDeclared,
     Unknown(String),
 }
 
@@ -803,6 +827,8 @@ impl PolicyRule {
             Self::CryptoKeyMaterialAbsent => "crypto_key_material_absent",
             Self::CryptoSecretMaterialAbsent => "crypto_secret_material_absent",
             Self::CryptoExecutionAbsent => "crypto_execution_absent",
+            Self::CryptoBoundariesDeclared => "crypto_boundaries_declared",
+            Self::PostQuantumReadinessDeclared => "post_quantum_readiness_declared",
             Self::Unknown(value) => value,
         }
         .to_owned()
