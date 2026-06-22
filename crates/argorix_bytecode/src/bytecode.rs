@@ -27,6 +27,8 @@ pub struct BytecodeProgram {
     pub adapter_profiles: Vec<BytecodeAdapterProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cryptos: Vec<BytecodeCrypto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub crypto_boundaries: Vec<BytecodeCryptoBoundary>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -163,6 +165,34 @@ pub struct BytecodeCrypto {
     pub security_level: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeCryptoBoundary {
+    pub name: String,
+    #[serde(default)]
+    pub allowed_hashes: Vec<String>,
+    #[serde(default)]
+    pub allowed_signatures: Vec<String>,
+    #[serde(default)]
+    pub allowed_kems: Vec<String>,
+    #[serde(default)]
+    pub allowed_aeads: Vec<String>,
+    #[serde(default)]
+    pub legacy_allowed: Vec<String>,
+    #[serde(default)]
+    pub denied: Vec<String>,
+    #[serde(default)]
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_hash_bits: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_quantum_ready: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hybrid_allowed: Option<bool>,
+    pub key_material: String,
+    pub secret_material: String,
+    pub execution: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -521,6 +551,12 @@ pub enum BytecodeError {
     DuplicateCrypto(String),
     #[error("invalid crypto `{name}`: {reason}")]
     InvalidCrypto { name: String, reason: String },
+    #[error("crypto boundary metadata requires bytecode version 0.25")]
+    CryptoBoundariesRequireV025,
+    #[error("duplicate crypto boundary `{0}`")]
+    DuplicateCryptoBoundary(String),
+    #[error("invalid crypto boundary `{name}`: {reason}")]
+    InvalidCryptoBoundary { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -549,6 +585,8 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.21"
             | "0.22"
             | "0.23"
+            | "0.24"
+            | "0.25"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -572,6 +610,8 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.15"
             | "0.22"
             | "0.23"
+            | "0.24"
+            | "0.25"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -579,7 +619,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.modules.is_empty() || !program.imports.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23"
+            "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -599,7 +639,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.policies.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24"
+            "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -610,21 +650,30 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     validate_provider_harnesses(program, &mut errors);
     validate_features(program, &mut errors);
     validate_secrets(program, &mut errors);
-    if !program.adapters.is_empty() && !matches!(program.bytecode_version.as_str(), "0.22" | "0.23")
+    if !program.adapters.is_empty()
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.22" | "0.23" | "0.24" | "0.25"
+        )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
     }
     if !program.adapter_profiles.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.23" | "0.24")
+        && !matches!(program.bytecode_version.as_str(), "0.23" | "0.24" | "0.25")
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
     }
-    if !program.cryptos.is_empty() && program.bytecode_version != "0.24" {
+    if !program.cryptos.is_empty() && !matches!(program.bytecode_version.as_str(), "0.24" | "0.25")
+    {
         errors.push(BytecodeError::CryptosRequireV024);
+    }
+    if !program.crypto_boundaries.is_empty() && program.bytecode_version != "0.25" {
+        errors.push(BytecodeError::CryptoBoundariesRequireV025);
     }
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
+    validate_crypto_boundaries(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -892,7 +941,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
     if (!program.types.is_empty() || !program.enums.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23"
+            "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -940,7 +989,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
     if !program.passports.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.19" | "0.20" | "0.21" | "0.22"
+            "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1020,7 +1069,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
     if !program.provider_harnesses.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.20" | "0.21" | "0.22" | "0.23"
+            "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1119,7 +1168,10 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
 
 fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     if !program.features.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.21" | "0.22" | "0.23")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
+        )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
     }
@@ -1176,7 +1228,10 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
 
 fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     if !program.secrets.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.21" | "0.22" | "0.23")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
+        )
     {
         errors.push(BytecodeError::SecretsRequireV021);
     }
@@ -1471,6 +1526,69 @@ fn validate_cryptos(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
     }
 }
 
+fn validate_crypto_boundaries(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    const DISPOSITIONS: [&str; 3] = ["denied", "allowed", "required"];
+    let mut names = HashSet::new();
+    for b in &program.crypto_boundaries {
+        if !names.insert(b.name.as_str()) {
+            errors.push(BytecodeError::DuplicateCryptoBoundary(b.name.clone()));
+            continue;
+        }
+        if b.name.trim().is_empty() {
+            errors.push(BytecodeError::InvalidCryptoBoundary {
+                name: b.name.clone(),
+                reason: "name must not be empty".into(),
+            });
+        }
+        // A trust boundary must not let key or secret material cross, and must
+        // keep crypto execution disabled — the declarative-only guarantee.
+        if !DISPOSITIONS.contains(&b.key_material.as_str()) {
+            errors.push(BytecodeError::InvalidCryptoBoundary {
+                name: b.name.clone(),
+                reason: format!("invalid key_material `{}`", b.key_material),
+            });
+        }
+        if !DISPOSITIONS.contains(&b.secret_material.as_str()) {
+            errors.push(BytecodeError::InvalidCryptoBoundary {
+                name: b.name.clone(),
+                reason: format!("invalid secret_material `{}`", b.secret_material),
+            });
+        }
+        if b.execution != "disabled" {
+            errors.push(BytecodeError::InvalidCryptoBoundary {
+                name: b.name.clone(),
+                reason: "execution must be disabled".into(),
+            });
+        }
+        if let Some(bits) = b.min_hash_bits {
+            if bits == 0 {
+                errors.push(BytecodeError::InvalidCryptoBoundary {
+                    name: b.name.clone(),
+                    reason: "min_hash_bits must be > 0".into(),
+                });
+            }
+        }
+        for list in [
+            &b.allowed_hashes,
+            &b.allowed_signatures,
+            &b.allowed_kems,
+            &b.allowed_aeads,
+            &b.legacy_allowed,
+            &b.denied,
+            &b.purpose,
+        ] {
+            for item in list {
+                if item.trim().is_empty() {
+                    errors.push(BytecodeError::InvalidCryptoBoundary {
+                        name: b.name.clone(),
+                        reason: "empty list item".into(),
+                    });
+                }
+            }
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -1526,6 +1644,8 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "crypto_key_material_absent",
         "crypto_secret_material_absent",
         "crypto_execution_absent",
+        "crypto_boundaries_declared",
+        "post_quantum_readiness_declared",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -1626,6 +1746,9 @@ mod tests {
             features: vec![],
             secrets: vec![],
             adapters: vec![],
+            adapter_profiles: vec![],
+            cryptos: vec![],
+            crypto_boundaries: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

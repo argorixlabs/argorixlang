@@ -1,7 +1,7 @@
 use crate::{
     BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability,
-    BytecodeCrypto, BytecodeFailure, BytecodeFeature, BytecodeModel, BytecodeModule,
-    BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodeCrypto, BytecodeCryptoBoundary, BytecodeFailure, BytecodeFeature, BytecodeModel,
+    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
     BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField,
     Instruction,
@@ -173,7 +173,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.24".to_owned(),
+        bytecode_version: "0.25".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -282,6 +282,26 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 min_key_bits: c.min_key_bits,
                 security_level: c.security_level.clone(),
                 notes: c.notes.clone(),
+            })
+            .collect(),
+        crypto_boundaries: ir
+            .crypto_boundaries
+            .iter()
+            .map(|b| BytecodeCryptoBoundary {
+                name: b.name.clone(),
+                allowed_hashes: b.allowed_hashes.clone(),
+                allowed_signatures: b.allowed_signatures.clone(),
+                allowed_kems: b.allowed_kems.clone(),
+                allowed_aeads: b.allowed_aeads.clone(),
+                legacy_allowed: b.legacy_allowed.clone(),
+                denied: b.denied.clone(),
+                purpose: b.purpose.clone(),
+                min_hash_bits: b.min_hash_bits,
+                post_quantum_ready: b.post_quantum_ready,
+                hybrid_allowed: b.hybrid_allowed,
+                key_material: b.key_material.clone(),
+                secret_material: b.secret_material.clone(),
+                execution: b.execution.clone(),
             })
             .collect(),
         imports: ir
@@ -458,6 +478,9 @@ mod tests {
             features: vec![],
             secrets: vec![],
             adapters: vec![],
+            adapter_profiles: vec![],
+            cryptos: vec![],
+            crypto_boundaries: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -523,7 +546,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.21");
+        assert_eq!(bytecode.bytecode_version, "0.25");
         assert!(bytecode
             .instructions
             .iter()
@@ -610,6 +633,9 @@ mod tests {
             features: vec![],
             secrets: vec![],
             adapters: vec![],
+            adapter_profiles: vec![],
+            cryptos: vec![],
+            crypto_boundaries: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -623,7 +649,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.21");
+        assert_eq!(bytecode.bytecode_version, "0.25");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(
