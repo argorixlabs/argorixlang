@@ -6,6 +6,8 @@ pub struct Program {
     pub imports: Vec<ImportDecl>,
     pub providers: Vec<ProviderDecl>,
     pub harnesses: Vec<ProviderHarnessDecl>,
+    pub features: Vec<FeatureDecl>,
+    pub secrets: Vec<SecretDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -58,6 +60,8 @@ pub struct ProviderDecl {
 pub struct ProviderHarnessDecl {
     pub name: Spanned<String>,
     pub provider: Spanned<String>,
+    pub feature: Option<Spanned<String>>,
+    pub secret: Option<Spanned<String>>,
     pub mode: Spanned<HarnessMode>,
     pub network: Spanned<HarnessNetwork>,
     pub secrets: Spanned<HarnessSecrets>,
@@ -133,6 +137,132 @@ impl HarnessFilesystem {
     }
 }
 
+/// A top-level `feature` block declaring an experimental or future capability.
+///
+/// v0.21 feature flags are governance metadata only. A feature flag never makes a
+/// provider executable; it records that an experimental capability exists, whether
+/// it is disabled by default, and whether it requires approval.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureDecl {
+    pub name: Spanned<String>,
+    pub provider: Option<Spanned<String>>,
+    pub status: Spanned<FeatureStatus>,
+    pub default: Spanned<FeatureDefault>,
+    pub requires_approval: bool,
+    pub purpose: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeatureStatus {
+    Experimental,
+    Preview,
+    Stable,
+    Deprecated,
+    Unknown(String),
+}
+
+impl FeatureStatus {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Experimental => "experimental",
+            Self::Preview => "preview",
+            Self::Stable => "stable",
+            Self::Deprecated => "deprecated",
+            Self::Unknown(value) => value,
+        }
+    }
+
+    pub const fn is_gated(&self) -> bool {
+        matches!(self, Self::Experimental | Self::Preview)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeatureDefault {
+    Disabled,
+    Enabled,
+    Unknown(String),
+}
+
+impl FeatureDefault {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Enabled => "enabled",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+/// A top-level `secret` block declaring a secret boundary.
+///
+/// v0.21 secret declarations record only the boundary metadata of a future secret:
+/// its handle, scope, denied access, and `none` source. They never contain secret
+/// material, never read environment variables, and never open a vault.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecretDecl {
+    pub name: Spanned<String>,
+    pub handle: Spanned<String>,
+    pub provider: Option<Spanned<String>>,
+    pub required_by: Option<Spanned<String>>,
+    pub scope: Spanned<SecretScope>,
+    pub access: Spanned<SecretAccess>,
+    pub source: Spanned<SecretSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecretScope {
+    Provider,
+    Adapter,
+    Model,
+    Tool,
+    Runtime,
+    Unknown(String),
+}
+
+impl SecretScope {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Provider => "provider",
+            Self::Adapter => "adapter",
+            Self::Model => "model",
+            Self::Tool => "tool",
+            Self::Runtime => "runtime",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecretAccess {
+    Denied,
+    Unknown(String),
+}
+
+impl SecretAccess {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecretSource {
+    None,
+    Unknown(String),
+}
+
+impl SecretSource {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::None => "none",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssertionDecl {
     pub name: Spanned<String>,
@@ -191,6 +321,14 @@ pub enum PolicyRule {
     ProviderSecretsDenied,
     ProviderFilesystemRestricted,
     ExternalProviderHarnessed,
+    FeatureFlagsDeclared,
+    FeaturesDefaultDisabled,
+    ExperimentalFeaturesRequireApproval,
+    SecretBoundariesDeclared,
+    SecretAccessDenied,
+    SecretValuesAbsent,
+    ExternalProviderFeatureGated,
+    ExternalProviderSecretBoundaryDeclared,
     Unknown(String),
 }
 
@@ -219,6 +357,16 @@ impl PolicyRule {
             Self::ProviderSecretsDenied => "provider_secrets_denied",
             Self::ProviderFilesystemRestricted => "provider_filesystem_restricted",
             Self::ExternalProviderHarnessed => "external_provider_harnessed",
+            Self::FeatureFlagsDeclared => "feature_flags_declared",
+            Self::FeaturesDefaultDisabled => "features_default_disabled",
+            Self::ExperimentalFeaturesRequireApproval => "experimental_features_require_approval",
+            Self::SecretBoundariesDeclared => "secret_boundaries_declared",
+            Self::SecretAccessDenied => "secret_access_denied",
+            Self::SecretValuesAbsent => "secret_values_absent",
+            Self::ExternalProviderFeatureGated => "external_provider_feature_gated",
+            Self::ExternalProviderSecretBoundaryDeclared => {
+                "external_provider_secret_boundary_declared"
+            }
             Self::Unknown(value) => value,
         }
         .to_owned()

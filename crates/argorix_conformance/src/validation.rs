@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 21] = [
+pub const CATEGORIES: [&str; 23] = [
     "parser",
     "semantics",
     "ir",
@@ -45,6 +45,8 @@ pub const CATEGORIES: [&str; 21] = [
     "typed_messages",
     "agent_passport",
     "provider_harness",
+    "feature_flags",
+    "secret_boundary",
 ];
 
 #[derive(Debug, Error)]
@@ -60,10 +62,10 @@ pub fn validate_suite(
     let mut errors = Vec::new();
     if !matches!(
         suite.suite_version.as_str(),
-        "0.16" | "0.17" | "0.18" | "0.19" | "0.20"
+        "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21"
     ) {
         errors.push(format!(
-            "suite_version must be `0.16`, `0.17`, `0.18`, `0.19`, or `0.20`, found `{}`",
+            "suite_version must be `0.16`, `0.17`, `0.18`, `0.19`, `0.20`, or `0.21`, found `{}`",
             suite.suite_version
         ));
     }
@@ -81,16 +83,25 @@ pub fn validate_suite(
         if suite.suite_version == "0.16" && category == "policy_v2" {
             continue;
         }
-        if !matches!(suite.suite_version.as_str(), "0.18" | "0.19" | "0.20")
-            && category == "typed_messages"
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.18" | "0.19" | "0.20" | "0.21"
+        ) && category == "typed_messages"
         {
             continue;
         }
-        if !matches!(suite.suite_version.as_str(), "0.19" | "0.20") && category == "agent_passport"
+        if !matches!(suite.suite_version.as_str(), "0.19" | "0.20" | "0.21")
+            && category == "agent_passport"
         {
             continue;
         }
-        if suite.suite_version != "0.20" && category == "provider_harness" {
+        if !matches!(suite.suite_version.as_str(), "0.20" | "0.21")
+            && category == "provider_harness"
+        {
+            continue;
+        }
+        if suite.suite_version != "0.21" && matches!(category, "feature_flags" | "secret_boundary")
+        {
             continue;
         }
         if !categories.contains(category) {

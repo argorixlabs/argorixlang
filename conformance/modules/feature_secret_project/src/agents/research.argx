@@ -1,0 +1,16 @@
+module agents.research
+
+agent ResearchAgent {
+    security { approval granted }
+    receives UserPrompt
+    capabilities { model.invoke trace.write }
+    models { GuardModel }
+    on UserPrompt as prompt {
+        ask GuardModel with prompt
+        trace prompt
+    }
+}
+
+protocol Flow {
+    User -> ResearchAgent: tell UserPrompt
+}

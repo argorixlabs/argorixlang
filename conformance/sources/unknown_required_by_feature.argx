@@ -1,0 +1,3 @@
+module invalid.unknown_required_by_feature
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+secret S { handle "OPENAI_API_KEY" provider OpenAI required_by GhostFeature scope adapter access denied source none }

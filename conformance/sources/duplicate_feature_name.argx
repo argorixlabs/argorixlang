@@ -1,0 +1,4 @@
+module invalid.duplicate_feature_name
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+feature F { provider OpenAI status experimental default disabled requires approval }
+feature F { provider OpenAI status preview default disabled requires approval }

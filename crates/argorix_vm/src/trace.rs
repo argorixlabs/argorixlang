@@ -68,6 +68,11 @@ pub enum EventType {
     ProviderHarnessValidated,
     ProviderHarnessSandboxed,
     ProviderHarnessRejected,
+    FeatureDeclared,
+    FeatureValidated,
+    SecretBoundaryDeclared,
+    SecretBoundaryValidated,
+    SecretAccessDenied,
     ExternalProviderExecutionBlocked,
     AssertionDeclared,
     FailureDeclared,
@@ -167,6 +172,10 @@ pub struct ReactiveExecutionTrace {
     pub passports: Vec<argorix_bytecode::BytecodePassport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub provider_harnesses: Vec<argorix_bytecode::BytecodeProviderHarness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<argorix_bytecode::BytecodeFeature>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<argorix_bytecode::BytecodeSecret>,
     pub injected: InjectedMessage,
     pub steps: Vec<ReactiveStep>,
     pub mailboxes: Vec<MailboxSummary>,

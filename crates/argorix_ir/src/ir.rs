@@ -12,6 +12,10 @@ pub struct IrProgram {
     pub imports: Vec<IrModuleImport>,
     pub providers: Vec<IrProviderContract>,
     pub provider_harnesses: Vec<IrProviderHarness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<IrFeature>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<IrSecret>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -85,9 +89,38 @@ pub struct IrProviderContract {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrFeature {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    pub status: String,
+    pub default: String,
+    pub requires_approval: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrSecret {
+    pub name: String,
+    pub handle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_by: Option<String>,
+    pub scope: String,
+    pub access: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
     pub mode: String,
     pub network: String,
     pub secrets: String,
@@ -234,7 +267,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.20".to_owned(),
+            ir_version: "0.21".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -267,6 +300,8 @@ impl From<&Program> for IrProgram {
                 .map(|harness| IrProviderHarness {
                     name: harness.name.value.clone(),
                     provider: harness.provider.value.clone(),
+                    feature: harness.feature.as_ref().map(|value| value.value.clone()),
+                    secret: harness.secret.as_ref().map(|value| value.value.clone()),
                     mode: harness.mode.value.source_name().to_owned(),
                     network: harness.network.value.source_name().to_owned(),
                     secrets: harness.secrets.value.source_name().to_owned(),
@@ -282,6 +317,31 @@ impl From<&Program> for IrProgram {
                         .as_ref()
                         .map(|value| value.value.clone()),
                     attestations: spanned_values(&harness.attestations),
+                })
+                .collect(),
+            features: program
+                .features
+                .iter()
+                .map(|feature| IrFeature {
+                    name: feature.name.value.clone(),
+                    provider: feature.provider.as_ref().map(|value| value.value.clone()),
+                    status: feature.status.value.source_name().to_owned(),
+                    default: feature.default.value.source_name().to_owned(),
+                    requires_approval: feature.requires_approval,
+                    purpose: feature.purpose.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
+            secrets: program
+                .secrets
+                .iter()
+                .map(|secret| IrSecret {
+                    name: secret.name.value.clone(),
+                    handle: secret.handle.value.clone(),
+                    provider: secret.provider.as_ref().map(|value| value.value.clone()),
+                    required_by: secret.required_by.as_ref().map(|value| value.value.clone()),
+                    scope: secret.scope.value.source_name().to_owned(),
+                    access: secret.access.value.source_name().to_owned(),
+                    source: secret.source.value.source_name().to_owned(),
                 })
                 .collect(),
             assertions: program
@@ -543,7 +603,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.20");
+        assert_eq!(ir.ir_version, "0.21");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -581,7 +641,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.20");
+        assert_eq!(ir.ir_version, "0.21");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -616,7 +676,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.20");
+        assert_eq!(ir.ir_version, "0.21");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");

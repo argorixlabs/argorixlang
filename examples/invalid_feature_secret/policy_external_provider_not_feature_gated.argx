@@ -1,0 +1,14 @@
+module invalid.policy_external_provider_not_feature_gated
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+type Ping { content: string }
+capability trace.write { level safe }
+policy FeatureGated {
+    require external_provider_feature_gated
+    on violation { action block trace required }
+}
+agent Worker {
+    receives Ping
+    capabilities { trace.write }
+    on Ping as ping { trace ping }
+}
+protocol Flow { User -> Worker: tell Ping }

@@ -1,0 +1,2 @@
+module invalid.unknown_feature_provider
+feature F { provider Ghost status experimental default disabled requires approval }

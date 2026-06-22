@@ -14,6 +14,14 @@ pub struct PolicyEvidenceContext {
     pub provider_secrets_denied: bool,
     pub provider_filesystem_restricted: bool,
     pub external_provider_harnessed: bool,
+    pub feature_flags_declared: bool,
+    pub features_default_disabled: bool,
+    pub experimental_features_require_approval: bool,
+    pub secret_boundaries_declared: bool,
+    pub secret_access_denied: bool,
+    pub secret_values_absent: bool,
+    pub external_provider_feature_gated: bool,
+    pub external_provider_secret_boundary_declared: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +146,38 @@ pub fn evaluate_rule(
         "external_provider_harnessed" => (
             context.external_provider_harnessed,
             "one or more external providers lack an associated harness",
+        ),
+        "feature_flags_declared" => (
+            context.feature_flags_declared,
+            "no feature flag is declared",
+        ),
+        "features_default_disabled" => (
+            context.features_default_disabled,
+            "one or more features do not default to disabled",
+        ),
+        "experimental_features_require_approval" => (
+            context.experimental_features_require_approval,
+            "one or more experimental or preview features lack required approval",
+        ),
+        "secret_boundaries_declared" => (
+            context.secret_boundaries_declared,
+            "no secret boundary is declared",
+        ),
+        "secret_access_denied" => (
+            context.secret_access_denied,
+            "one or more secret boundaries do not deny access",
+        ),
+        "secret_values_absent" => (
+            context.secret_values_absent,
+            "one or more secret declarations contain secret material",
+        ),
+        "external_provider_feature_gated" => (
+            context.external_provider_feature_gated,
+            "one or more external providers lack a disabled, approval-gated feature",
+        ),
+        "external_provider_secret_boundary_declared" => (
+            context.external_provider_secret_boundary_declared,
+            "one or more external providers lack a denied/none secret boundary",
         ),
         _ => (false, "unknown policy rule"),
     };

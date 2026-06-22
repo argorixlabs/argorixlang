@@ -1,8 +1,9 @@
 use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
     ast::{
-        Approval, CapabilityLevel, HandlerInstruction, HarnessFilesystem, HarnessMode,
-        HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program,
+        Approval, CapabilityLevel, FeatureDefault, FeatureStatus, HandlerInstruction,
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl,
+        PolicyViolationAction, Program, SecretAccess, SecretScope, SecretSource,
     },
     diagnostics::Diagnostic,
     span::Spanned,
@@ -26,6 +27,8 @@ pub fn check_program_with_options(
     let symbols = collect_symbols(program, &mut diagnostics);
     check_provider_contracts(program, &symbols, &mut diagnostics);
     check_provider_harnesses(program, &symbols, &mut diagnostics);
+    check_features(program, &symbols, &mut diagnostics);
+    check_secrets(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -209,6 +212,277 @@ fn check_provider_harnesses(
                     format!("harness `{harness_name}` attestation entries must not be empty"),
                     attestation.span,
                 ));
+            }
+        }
+
+        // v0.21 boundary links: feature/secret references and provider coherence.
+        let feature_decl = harness.feature.as_ref().and_then(|reference| {
+            if !symbols.features.contains(&reference.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "harness `{harness_name}` references unknown feature `{}`",
+                        reference.value
+                    ),
+                    reference.span,
+                ));
+                None
+            } else {
+                program
+                    .features
+                    .iter()
+                    .find(|feature| feature.name.value == reference.value)
+            }
+        });
+        let secret_decl = harness.secret.as_ref().and_then(|reference| {
+            if !symbols.secrets.contains(&reference.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "harness `{harness_name}` references unknown secret `{}`",
+                        reference.value
+                    ),
+                    reference.span,
+                ));
+                None
+            } else {
+                program
+                    .secrets
+                    .iter()
+                    .find(|secret| secret.name.value == reference.value)
+            }
+        });
+
+        let harness_provider =
+            (!harness.provider.value.trim().is_empty()).then_some(harness.provider.value.as_str());
+        if let (Some(harness_provider), Some(feature)) = (harness_provider, feature_decl) {
+            if let Some(feature_provider) = &feature.provider {
+                if feature_provider.value != harness_provider {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "harness `{harness_name}` provider `{harness_provider}` does not match feature `{}` provider `{}`",
+                            feature.name.value, feature_provider.value
+                        ),
+                        harness.provider.span,
+                    ));
+                }
+            }
+        }
+        if let (Some(harness_provider), Some(secret)) = (harness_provider, secret_decl) {
+            if let Some(secret_provider) = &secret.provider {
+                if secret_provider.value != harness_provider {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "harness `{harness_name}` provider `{harness_provider}` does not match secret `{}` provider `{}`",
+                            secret.name.value, secret_provider.value
+                        ),
+                        harness.provider.span,
+                    ));
+                }
+            }
+        }
+        if let (Some(feature_ref), Some(secret)) = (harness.feature.as_ref(), secret_decl) {
+            if let Some(required_by) = &secret.required_by {
+                if required_by.value != feature_ref.value {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "harness `{harness_name}` feature `{}` does not match secret `{}` required_by `{}`",
+                            feature_ref.value, secret.name.value, required_by.value
+                        ),
+                        feature_ref.span,
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Validate v0.21 feature flag declarations.
+///
+/// Feature flags are governance metadata. Validation is structural and offline:
+/// it never enables a provider, reads a secret, or performs network access.
+fn check_features(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+    for feature in &program.features {
+        let feature_name = &feature.name.value;
+
+        if let Some(provider) = &feature.provider {
+            if !symbols.providers.contains(&provider.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "feature `{feature_name}` references unknown provider `{}`",
+                        provider.value
+                    ),
+                    provider.span,
+                ));
+            }
+        }
+
+        match &feature.status.value {
+            FeatureStatus::Unknown(value) if value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!("feature `{feature_name}` is missing required field `status`"),
+                feature.status.span,
+            )),
+            FeatureStatus::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("feature `{feature_name}` has invalid status `{value}`"),
+                feature.status.span,
+            )),
+            _ => {}
+        }
+
+        match &feature.default.value {
+            FeatureDefault::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("feature `{feature_name}` is missing required field `default`"),
+                    feature.default.span,
+                ))
+            }
+            FeatureDefault::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("feature `{feature_name}` has invalid default `{value}`"),
+                feature.default.span,
+            )),
+            _ => {}
+        }
+
+        if let Some(purpose) = &feature.purpose {
+            if purpose.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("feature `{feature_name}` purpose must not be empty"),
+                    purpose.span,
+                ));
+            }
+        }
+
+        if feature.status.value.is_gated() && !feature.requires_approval {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "feature `{feature_name}` is `{}` and requires `requires approval`",
+                    feature.status.value.source_name()
+                ),
+                feature.status.span,
+            ));
+        }
+
+        // A feature linked to an external provider must default to disabled.
+        if let Some(provider) = &feature.provider {
+            let is_external = program.providers.iter().any(|declared| {
+                declared.name.value == provider.value && declared.kind.value.as_str() == "external"
+            });
+            if is_external && feature.default.value != FeatureDefault::Disabled {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "feature `{feature_name}` is linked to external provider `{}` and must default to disabled",
+                        provider.value
+                    ),
+                    feature.default.span,
+                ));
+            }
+        }
+    }
+}
+
+/// Validate v0.21 secret boundary declarations.
+///
+/// Secret declarations record boundary metadata only. They never contain secret
+/// material; the parser already rejects forbidden value fields. This pass enforces
+/// required fields and the denied/none invariants.
+fn check_secrets(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+    for secret in &program.secrets {
+        let secret_name = &secret.name.value;
+
+        if secret.handle.value.trim().is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("secret `{secret_name}` is missing required field `handle`"),
+                secret.handle.span,
+            ));
+        }
+
+        if let Some(provider) = &secret.provider {
+            if !symbols.providers.contains(&provider.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "secret `{secret_name}` references unknown provider `{}`",
+                        provider.value
+                    ),
+                    provider.span,
+                ));
+            }
+        }
+
+        if let Some(required_by) = &secret.required_by {
+            if !symbols.features.contains(&required_by.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "secret `{secret_name}` required_by references unknown feature `{}`",
+                        required_by.value
+                    ),
+                    required_by.span,
+                ));
+            }
+        }
+
+        match &secret.scope.value {
+            SecretScope::Unknown(value) if value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!("secret `{secret_name}` is missing required field `scope`"),
+                secret.scope.span,
+            )),
+            SecretScope::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("secret `{secret_name}` has invalid scope `{value}`"),
+                secret.scope.span,
+            )),
+            _ => {}
+        }
+
+        match &secret.access.value {
+            SecretAccess::Denied => {}
+            SecretAccess::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("secret `{secret_name}` is missing required field `access`"),
+                    secret.access.span,
+                ))
+            }
+            SecretAccess::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!(
+                    "secret `{secret_name}` has invalid access `{value}`; only `denied` is allowed in v0.21"
+                ),
+                secret.access.span,
+            )),
+        }
+
+        match &secret.source.value {
+            SecretSource::None => {}
+            SecretSource::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("secret `{secret_name}` is missing required field `source`"),
+                    secret.source.span,
+                ))
+            }
+            SecretSource::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!(
+                    "secret `{secret_name}` has invalid source `{value}`; only `none` is allowed in v0.21"
+                ),
+                secret.source.span,
+            )),
+        }
+
+        // Link coherence: if both providers exist and required_by points at a
+        // feature with a provider, the secret/feature providers must match.
+        if let (Some(secret_provider), Some(required_by)) =
+            (secret.provider.as_ref(), secret.required_by.as_ref())
+        {
+            if let Some(feature) = program
+                .features
+                .iter()
+                .find(|feature| feature.name.value == required_by.value)
+            {
+                if let Some(feature_provider) = &feature.provider {
+                    if feature_provider.value != secret_provider.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "secret `{secret_name}` provider `{}` does not match feature `{}` provider `{}`",
+                                secret_provider.value, feature.name.value, feature_provider.value
+                            ),
+                            secret_provider.span,
+                        ));
+                    }
+                }
             }
         }
     }
@@ -959,6 +1233,12 @@ fn collect_symbols(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> Symb
     for model in &program.models {
         report_duplicate(&mut symbols.models, &model.name, "model", diagnostics);
     }
+    for feature in &program.features {
+        report_duplicate(&mut symbols.features, &feature.name, "feature", diagnostics);
+    }
+    for secret in &program.secrets {
+        report_duplicate(&mut symbols.secrets, &secret.name, "secret", diagnostics);
+    }
     for capability in &program.capabilities {
         if symbols
             .capabilities
@@ -1393,5 +1673,113 @@ mod tests {
         ] {
             assert!(messages.iter().any(|message| message.contains(expected)));
         }
+    }
+
+    fn boundary_messages(body: &str) -> Vec<String> {
+        let source = format!(
+            "module main\nprovider OpenAI {{ kind external enabled false dry_run_only true requires feature_flag requires approval }}\n{body}\n"
+        );
+        check_program(&parse_source(&source).unwrap())
+            .unwrap_err()
+            .into_iter()
+            .map(|diagnostic| diagnostic.message)
+            .collect()
+    }
+
+    fn boundary_ok(body: &str) {
+        let source = format!(
+            "module main\nprovider OpenAI {{ kind external enabled false dry_run_only true requires feature_flag requires approval }}\n{body}\n"
+        );
+        check_program(&parse_source(&source).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn accepts_valid_feature_and_secret() {
+        boundary_ok(
+            r#"
+            feature OpenAIAdapter { provider OpenAI status experimental default disabled requires approval purpose "p" }
+            secret OpenAISecret { handle "OPENAI_API_KEY" provider OpenAI required_by OpenAIAdapter scope adapter access denied source none }
+            "#,
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_features() {
+        assert!(boundary_messages(
+            "feature F { provider OpenAI default disabled requires approval }"
+        )
+        .iter()
+        .any(|m| m.contains("missing required field `status`")));
+        assert!(boundary_messages(
+            "feature F { provider OpenAI status experimental requires approval }"
+        )
+        .iter()
+        .any(|m| m.contains("missing required field `default`")));
+        assert!(boundary_messages(
+            "feature F { provider OpenAI status legendary default disabled requires approval }"
+        )
+        .iter()
+        .any(|m| m.contains("invalid status")));
+        assert!(boundary_messages(
+            "feature F { provider OpenAI status experimental default disabled }"
+        )
+        .iter()
+        .any(|m| m.contains("requires approval")));
+        assert!(
+            boundary_messages("feature F { provider OpenAI status stable default enabled }")
+                .iter()
+                .any(|m| m.contains("must default to disabled"))
+        );
+        assert!(boundary_messages(
+            "feature F { provider Ghost status experimental default disabled requires approval }"
+        )
+        .iter()
+        .any(|m| m.contains("unknown provider")));
+    }
+
+    #[test]
+    fn rejects_invalid_secrets() {
+        assert!(boundary_messages(
+            "secret S { provider OpenAI scope adapter access denied source none }"
+        )
+        .iter()
+        .any(|m| m.contains("missing required field `handle`")));
+        assert!(boundary_messages(
+            "secret S { handle \"H\" provider OpenAI scope galaxy access denied source none }"
+        )
+        .iter()
+        .any(|m| m.contains("invalid scope")));
+        assert!(boundary_messages(
+            "secret S { handle \"H\" provider OpenAI scope adapter access allowed source none }"
+        )
+        .iter()
+        .any(|m| m.contains("invalid access")));
+        assert!(boundary_messages(
+            "secret S { handle \"H\" provider OpenAI scope adapter access denied source env }"
+        )
+        .iter()
+        .any(|m| m.contains("invalid source")));
+        assert!(boundary_messages("secret S { handle \"H\" provider OpenAI required_by Ghost scope adapter access denied source none }")
+            .iter()
+            .any(|m| m.contains("unknown feature")));
+    }
+
+    #[test]
+    fn rejects_harness_link_mismatches() {
+        let messages = boundary_messages(
+            r#"
+            provider OtherProv { kind external enabled false dry_run_only true requires feature_flag requires approval }
+            feature OpenAIAdapter { provider OtherProv status experimental default disabled requires approval }
+            harness H { provider OpenAI feature OpenAIAdapter mode dry_run network denied secrets denied filesystem none }
+            "#,
+        );
+        assert!(messages
+            .iter()
+            .any(|m| m.contains("does not match feature")));
+
+        let unknown = boundary_messages(
+            "harness H { provider OpenAI feature Ghost mode dry_run network denied secrets denied filesystem none }",
+        );
+        assert!(unknown.iter().any(|m| m.contains("unknown feature")));
     }
 }

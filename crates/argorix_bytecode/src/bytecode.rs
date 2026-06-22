@@ -17,6 +17,10 @@ pub struct BytecodeProgram {
     pub providers: Vec<BytecodeProviderContract>,
     #[serde(default)]
     pub provider_harnesses: Vec<BytecodeProviderHarness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<BytecodeFeature>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<BytecodeSecret>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -65,9 +69,38 @@ pub struct BytecodeProviderContract {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeFeature {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    pub status: String,
+    pub default: String,
+    pub requires_approval: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeSecret {
+    pub name: String,
+    pub handle: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_by: Option<String>,
+    pub scope: String,
+    pub access: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BytecodeProviderHarness {
     pub name: String,
     pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
     pub mode: String,
     pub network: String,
     pub secrets: String,
@@ -380,12 +413,24 @@ pub enum BytecodeError {
     PassportsRequireV019,
     #[error("invalid passport `{name}`: {reason}")]
     InvalidPassport { name: String, reason: String },
-    #[error("provider harness metadata requires bytecode version 0.20")]
+    #[error("provider harness metadata requires bytecode version 0.20 or later")]
     HarnessesRequireV020,
     #[error("duplicate provider harness `{0}`")]
     DuplicateProviderHarness(String),
     #[error("invalid provider harness `{name}`: {reason}")]
     InvalidProviderHarness { name: String, reason: String },
+    #[error("feature flag metadata requires bytecode version 0.21")]
+    FeaturesRequireV021,
+    #[error("duplicate feature `{0}`")]
+    DuplicateFeature(String),
+    #[error("invalid feature `{name}`: {reason}")]
+    InvalidFeature { name: String, reason: String },
+    #[error("secret boundary metadata requires bytecode version 0.21")]
+    SecretsRequireV021,
+    #[error("duplicate secret `{0}`")]
+    DuplicateSecret(String),
+    #[error("invalid secret `{name}`: {reason}")]
+    InvalidSecret { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -411,6 +456,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.18"
             | "0.19"
             | "0.20"
+            | "0.21"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -421,7 +467,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     if !matches!(
         program.bytecode_version.as_str(),
-        "0.20" | "0.19" | "0.18" | "0.17" | "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
+        "0.21"
+            | "0.20"
+            | "0.19"
+            | "0.18"
+            | "0.17"
+            | "0.16"
+            | "0.11"
+            | "0.12"
+            | "0.13"
+            | "0.14"
+            | "0.15"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -429,7 +485,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.modules.is_empty() || !program.imports.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.16" | "0.17" | "0.18" | "0.19" | "0.20"
+            "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -449,7 +505,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.policies.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.17" | "0.18" | "0.19" | "0.20"
+            "0.17" | "0.18" | "0.19" | "0.20" | "0.21"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -458,6 +514,8 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     validate_message_contracts(program, &mut errors);
     validate_passports(program, &mut errors);
     validate_provider_harnesses(program, &mut errors);
+    validate_features(program, &mut errors);
+    validate_secrets(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -654,7 +712,7 @@ fn validate_contract_allowlists(
         }
         if !matches!(
             program.bytecode_version.as_str(),
-            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17" | "0.18" | "0.19" | "0.20"
+            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21"
         ) {
             continue;
         }
@@ -723,7 +781,10 @@ fn validate_contract_allowlists(
 
 fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     if (!program.types.is_empty() || !program.enums.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.18" | "0.19" | "0.20")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.18" | "0.19" | "0.20" | "0.21"
+        )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
     }
@@ -768,7 +829,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
     const ASN_REGISTRIES: [&str; 6] = ["LACNIC", "ARIN", "RIPE", "APNIC", "AFRINIC", "UNKNOWN"];
 
     if !program.passports.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.19" | "0.20")
+        && !matches!(program.bytecode_version.as_str(), "0.19" | "0.20" | "0.21")
     {
         errors.push(BytecodeError::PassportsRequireV019);
     }
@@ -844,13 +905,25 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
 }
 
 fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    if !program.provider_harnesses.is_empty() && program.bytecode_version != "0.20" {
+    if !program.provider_harnesses.is_empty()
+        && !matches!(program.bytecode_version.as_str(), "0.20" | "0.21")
+    {
         errors.push(BytecodeError::HarnessesRequireV020);
     }
     let providers = program
         .providers
         .iter()
         .map(|provider| provider.name.as_str())
+        .collect::<HashSet<_>>();
+    let feature_names = program
+        .features
+        .iter()
+        .map(|feature| feature.name.as_str())
+        .collect::<HashSet<_>>();
+    let secret_names = program
+        .secrets
+        .iter()
+        .map(|secret| secret.name.as_str())
         .collect::<HashSet<_>>();
     let types = program
         .types
@@ -877,6 +950,16 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
             invalid("provider must not be empty".into(), errors);
         } else if !providers.contains(harness.provider.as_str()) {
             invalid(format!("unknown provider `{}`", harness.provider), errors);
+        }
+        if let Some(feature) = &harness.feature {
+            if !feature_names.is_empty() && !feature_names.contains(feature.as_str()) {
+                invalid(format!("unknown feature `{feature}`"), errors);
+            }
+        }
+        if let Some(secret) = &harness.secret {
+            if !secret_names.is_empty() && !secret_names.contains(secret.as_str()) {
+                invalid(format!("unknown secret `{secret}`"), errors);
+            }
         }
         if !matches!(harness.mode.as_str(), "dry_run" | "simulated") {
             invalid(format!("invalid mode `{}`", harness.mode), errors);
@@ -919,8 +1002,112 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
     }
 }
 
+fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    if !program.features.is_empty() && program.bytecode_version != "0.21" {
+        errors.push(BytecodeError::FeaturesRequireV021);
+    }
+    let providers = program
+        .providers
+        .iter()
+        .map(|provider| (provider.name.as_str(), provider.kind.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut names = HashSet::new();
+    for feature in &program.features {
+        if !names.insert(feature.name.as_str()) {
+            errors.push(BytecodeError::DuplicateFeature(feature.name.clone()));
+        }
+        let invalid = |reason: String, errors: &mut Vec<BytecodeError>| {
+            errors.push(BytecodeError::InvalidFeature {
+                name: feature.name.clone(),
+                reason,
+            });
+        };
+        if feature.name.trim().is_empty() {
+            invalid("name must not be empty".into(), errors);
+        }
+        if !matches!(
+            feature.status.as_str(),
+            "experimental" | "preview" | "stable" | "deprecated"
+        ) {
+            invalid(format!("invalid status `{}`", feature.status), errors);
+        }
+        if !matches!(feature.default.as_str(), "disabled" | "enabled") {
+            invalid(format!("invalid default `{}`", feature.default), errors);
+        }
+        if matches!(feature.status.as_str(), "experimental" | "preview")
+            && !feature.requires_approval
+        {
+            invalid(
+                format!("status `{}` requires approval", feature.status),
+                errors,
+            );
+        }
+        if let Some(provider) = &feature.provider {
+            if providers.get(provider.as_str()) == Some(&"external")
+                && feature.default != "disabled"
+            {
+                invalid(
+                    format!(
+                        "feature linked to external provider `{provider}` must default to disabled"
+                    ),
+                    errors,
+                );
+            }
+        }
+    }
+}
+
+fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    if !program.secrets.is_empty() && program.bytecode_version != "0.21" {
+        errors.push(BytecodeError::SecretsRequireV021);
+    }
+    let feature_names = program
+        .features
+        .iter()
+        .map(|feature| feature.name.as_str())
+        .collect::<HashSet<_>>();
+    let mut names = HashSet::new();
+    for secret in &program.secrets {
+        if !names.insert(secret.name.as_str()) {
+            errors.push(BytecodeError::DuplicateSecret(secret.name.clone()));
+        }
+        let invalid = |reason: String, errors: &mut Vec<BytecodeError>| {
+            errors.push(BytecodeError::InvalidSecret {
+                name: secret.name.clone(),
+                reason,
+            });
+        };
+        if secret.name.trim().is_empty() {
+            invalid("name must not be empty".into(), errors);
+        }
+        if secret.handle.trim().is_empty() {
+            invalid("handle must not be empty".into(), errors);
+        }
+        if !matches!(
+            secret.scope.as_str(),
+            "provider" | "adapter" | "model" | "tool" | "runtime"
+        ) {
+            invalid(format!("invalid scope `{}`", secret.scope), errors);
+        }
+        if secret.access != "denied" {
+            invalid("access must be denied".into(), errors);
+        }
+        if secret.source != "none" {
+            invalid("source must be none".into(), errors);
+        }
+        if let Some(required_by) = &secret.required_by {
+            if !feature_names.is_empty() && !feature_names.contains(required_by.as_str()) {
+                invalid(
+                    format!("unknown required_by feature `{required_by}`"),
+                    errors,
+                );
+            }
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    const RULES: [&str; 22] = [
+    const RULES: [&str; 30] = [
         "no_unhandled_messages",
         "all_tool_calls_traced",
         "all_model_calls_traced",
@@ -943,6 +1130,14 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "provider_secrets_denied",
         "provider_filesystem_restricted",
         "external_provider_harnessed",
+        "feature_flags_declared",
+        "features_default_disabled",
+        "experimental_features_require_approval",
+        "secret_boundaries_declared",
+        "secret_access_denied",
+        "secret_values_absent",
+        "external_provider_feature_gated",
+        "external_provider_secret_boundary_declared",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -1040,6 +1235,8 @@ mod tests {
             imports: vec![],
             providers: vec![],
             provider_harnesses: vec![],
+            features: vec![],
+            secrets: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -1436,6 +1633,8 @@ mod tests {
         v020.provider_harnesses = vec![super::BytecodeProviderHarness {
             name: "OpenAIHarness".into(),
             provider: "OpenAI".into(),
+            feature: None,
+            secret: None,
             mode: "dry_run".into(),
             network: "denied".into(),
             secrets: "denied".into(),

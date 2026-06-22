@@ -44,13 +44,18 @@ source language
 
 ## Current status
 
-**Version:** `0.20`
+**Version:** `0.21`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version 0.20 adds Sandboxed Provider Harness declarations: metadata-first
+Version 0.21 adds Feature Flags + Secret Boundary declarations: governance-only
+metadata that declares which experimental capability exists, whether it is
+disabled by default, whether it requires approval, and which future secret would
+be required by a provider — without ever storing secret material, reading
+environment variables, opening a vault, or making a network call. Version 0.20
+added Sandboxed Provider Harness declarations: metadata-first
 containment evidence for external provider contracts. Version 0.19 added the
 Agent Passport / Sovereign Agent Identity block: a
 top-level `passport` declaring an agent's identity, sovereignty, jurisdiction,
@@ -64,8 +69,8 @@ argorix.toml + src/*.argx
   -> module resolution (deterministic graph)
   -> whole-package semantic and security verification
   -> lexer / parser / AST
-  -> Argorix IR 0.20 (with harness, passport, typed message, policy and module metadata)
-  -> Argorix Bytecode 0.20 (with harness, passport, typed message, policy and module metadata)
+  -> Argorix IR 0.21 (with feature, secret, harness, passport, typed message, policy and module metadata)
+  -> Argorix Bytecode 0.21 (with feature, secret, harness, passport, typed message, policy and module metadata)
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -406,6 +411,140 @@ Conformance paths resolve from the suite, not from the shell.
 ```
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
+
+## Argorix Lang v0.21 Feature Flags + Secret Boundary
+
+The v0.21 principle is:
+
+> Secrets must be declared before they can be accessed.
+
+Extended:
+
+> No secret crosses a boundary without evidence.
+
+v0.21 adds two top-level declarations — `feature` and `secret` — that prepare
+Argorix for future real adapters **without executing any provider**. They declare
+and audit a frontier; they do not cross it. External providers remain
+non-executable, `simulated` remains the only executable provider, and the VM
+still makes no network calls, reads no environment variables, reads no API keys,
+and opens no vaults.
+
+### Feature flags
+
+A `feature` declares an experimental or future capability, typically tied to an
+external provider adapter:
+
+```argx
+feature OpenAIAdapter {
+  provider OpenAI            // optional: links the feature to a declared provider
+  status experimental        // experimental | preview | stable | deprecated
+  default disabled           // disabled | enabled
+  requires approval          // required when status is experimental or preview
+  purpose "future-openai-adapter"
+}
+```
+
+Required fields: `status`, `default`. Optional: `provider`, `requires approval`,
+`purpose`. Rules:
+
+- A feature linked to an **external** provider must declare `default disabled`.
+- A feature whose `status` is `experimental` or `preview` must declare
+  `requires approval`.
+- Unknown values fail in semantics; missing required fields fail as
+  `missing required field` (no silent defaults).
+
+A feature flag never enables real execution in v0.21. It is governance metadata.
+
+### Secret boundaries
+
+A `secret` declares the **boundary** of a future secret. It records the handle,
+scope, and denied access — never the secret value:
+
+```argx
+secret OpenAISecret {
+  handle "OPENAI_API_KEY"     // expected future handle — metadata, not a value
+  provider OpenAI             // optional link to a declared provider
+  required_by OpenAIAdapter   // optional link to a declared feature
+  scope adapter               // provider | adapter | model | tool | runtime
+  access denied               // only `denied` is allowed in v0.21
+  source none                 // only `none` is allowed in v0.21
+}
+```
+
+Required fields: `handle`, `scope`, `access`, `source`. Optional: `provider`,
+`required_by`.
+
+**Secret handle vs secret value.** The `handle` is the *name* of a secret that
+*would* be needed in the future (e.g. `OPENAI_API_KEY`). It is metadata. Argorix
+stores no secret material: the fields `value`, `secret_value`, `token`,
+`api_key_value`, `raw`, and `plaintext` are forbidden inside a `secret` and cause
+a compile error. `access` may only be `denied` and `source` may only be `none` in
+v0.21 — `allowed`, `guarded`, `approved`, `env`, `vault`, `file`, and `remote`
+are intentionally not yet accepted.
+
+### Harness links
+
+A `harness` may optionally reference a declared feature and secret:
+
+```argx
+harness OpenAIHarness {
+  provider OpenAI
+  feature OpenAIAdapter
+  secret OpenAISecret
+  mode dry_run
+  network denied
+  secrets denied
+  filesystem none
+}
+```
+
+The semantic checker enforces coherence: referenced feature/secret must be
+declared, and when providers are present on the harness, feature, and secret they
+must agree; when a harness names both a feature and a secret whose `required_by`
+is set, they must match.
+
+### Policy v2 integration
+
+v0.21 adds eight Policy v2 rules, evaluated offline against declared metadata:
+
+- `feature_flags_declared` — at least one feature is declared.
+- `features_default_disabled` — every feature defaults to disabled.
+- `experimental_features_require_approval` — every experimental/preview feature
+  requires approval.
+- `secret_boundaries_declared` — at least one secret boundary is declared.
+- `secret_access_denied` — every secret denies access.
+- `secret_values_absent` — no secret declaration contains secret material
+  (always true by construction; the schema has no value field).
+- `external_provider_feature_gated` — every external provider is referenced by a
+  disabled, approval-gated feature.
+- `external_provider_secret_boundary_declared` — every external provider is
+  referenced by a `denied`/`none` secret boundary.
+
+All earlier rules (provider harness, agent passport, provider boundary) are
+preserved.
+
+### SecurityReport and EvidenceBundle integration
+
+The SecurityReport (now `0.21`) gains a `feature_flags` summary (totals, statuses,
+defaults, approval count, linked providers) and a `secret_boundaries` summary
+(totals, scopes, access, sources, linked providers, `required_by`, and
+`values_present` which is always `false`). The handle is reported as metadata; no
+secret value, environment-variable content, or real material ever appears. Having
+a feature flag or secret boundary does **not** inflate the verdict — it only
+proves the frontier was declared, validated, and preserved as evidence.
+
+The EvidenceBundle (now `0.21`) covers features and secrets through digests of the
+bytecode, trace, and security report. Offline verification still accepts bundles
+back to `0.14`, so older bundles continue to verify.
+
+### Hard boundary
+
+Feature flags do not enable real provider execution in v0.21. Secret boundaries
+do not contain secret values. Argorix does not read environment variables, does
+not read API keys, does not read vaults, and does not open network connections.
+External providers remain non-executable; `simulated` remains the only executable
+provider. First the boundary is declared. Then, some day, it is crossed with
+evidence.
 
 ## Argorix Lang v0.20 Sandboxed Provider Harness
 

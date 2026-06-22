@@ -1,0 +1,13 @@
+module invalid.policy_missing_feature
+type Ping { content: string }
+capability trace.write { level safe }
+policy FeatureRequired {
+    require feature_flags_declared
+    on violation { action block trace required }
+}
+agent Worker {
+    receives Ping
+    capabilities { trace.write }
+    on Ping as ping { trace ping }
+}
+protocol Flow { User -> Worker: tell Ping }

@@ -1,0 +1,267 @@
+{
+  "bytecode_version": "0.20",
+  "language": "Argorix Lang",
+  "module": "Argorix.ProviderHarness",
+  "providers": [
+    {
+      "name": "OpenAI",
+      "kind": "external",
+      "enabled": false,
+      "dry_run_only": true,
+      "requires_feature_flag": true,
+      "requires_explicit_approval": true,
+      "allowed_targets": [
+        "GuardModel"
+      ],
+      "allowed_capabilities": [
+        "model.invoke"
+      ]
+    }
+  ],
+  "provider_harnesses": [
+    {
+      "name": "OpenAIHarness",
+      "provider": "OpenAI",
+      "mode": "dry_run",
+      "network": "denied",
+      "secrets": "denied",
+      "filesystem": "none",
+      "max_steps": 10,
+      "timeout_ms": 1000,
+      "input_contract": "UserPrompt",
+      "output_contract": "DraftAnswer",
+      "attestations": [
+        "dry-run",
+        "policy-check",
+        "evidence-bundle"
+      ]
+    }
+  ],
+  "assertions": [],
+  "policies": [
+    {
+      "name": "ProviderHarnessPolicy",
+      "rules": [
+        {
+          "effect": "require",
+          "rule": "provider_harness_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "provider_harness_sandboxed"
+        },
+        {
+          "effect": "require",
+          "rule": "provider_network_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "provider_secrets_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "provider_filesystem_restricted"
+        },
+        {
+          "effect": "require",
+          "rule": "external_provider_harnessed"
+        }
+      ],
+      "on_violation": {
+        "action": "review",
+        "trace_required": true
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "UserPrompt",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        },
+        {
+          "name": "risk_level",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "DraftAnswer",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        },
+        {
+          "name": "citations_required",
+          "type": "bool"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "passports": [
+    {
+      "name": "ResearchPassport",
+      "agent": "ResearchAgent",
+      "agent_name": "Research Agent",
+      "global_id": "argx:agent:01HZX9RESEARCH",
+      "identity": "did:argorix:research-agent-v1",
+      "provider": "Argorix",
+      "version": "1.0.0",
+      "country": "CL",
+      "jurisdiction": "CL",
+      "data_residency": [
+        "CL"
+      ],
+      "risk_level": "high",
+      "data_scope": [],
+      "intent": "risk_analysis",
+      "intended_use": [
+        "provider-containment-review"
+      ],
+      "prohibited_use": [
+        "external-execution"
+      ],
+      "attestations": [
+        "redteam",
+        "policy-check",
+        "evidence-bundle"
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "name": "ResearchAgent",
+      "approval": "granted"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "model.invoke",
+      "level": "restricted",
+      "requires_approval": true
+    },
+    {
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    }
+  ],
+  "tools": [],
+  "models": [
+    {
+      "name": "GuardModel",
+      "provider": "simulated",
+      "capability": "model.invoke",
+      "input": "UserPrompt",
+      "output": "DraftAnswer"
+    }
+  ],
+  "instructions": [
+    {
+      "op": "DeclareProviderContract",
+      "name": "OpenAI",
+      "kind": "external",
+      "enabled": false,
+      "dry_run_only": true,
+      "requires_feature_flag": true,
+      "requires_explicit_approval": true,
+      "allowed_targets": [
+        "GuardModel"
+      ],
+      "allowed_capabilities": [
+        "model.invoke"
+      ]
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "model.invoke",
+      "level": "restricted",
+      "requires_approval": true
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareModel",
+      "name": "GuardModel",
+      "provider": "simulated",
+      "capability": "model.invoke",
+      "input": "UserPrompt",
+      "output": "DraftAnswer"
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "ResearchAgent",
+      "approval": "granted"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "ResearchAgent",
+      "capability": "model.invoke"
+    },
+    {
+      "op": "RequireApproval",
+      "agent": "ResearchAgent",
+      "capability": "model.invoke"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "ResearchAgent",
+      "capability": "trace.write"
+    },
+    {
+      "op": "AuthorizeModel",
+      "agent": "ResearchAgent",
+      "model": "GuardModel"
+    },
+    {
+      "op": "DeclareHandler",
+      "agent": "ResearchAgent",
+      "message_type": "UserPrompt",
+      "binding": "prompt"
+    },
+    {
+      "op": "AskModel",
+      "agent": "ResearchAgent",
+      "model": "GuardModel",
+      "binding": "prompt"
+    },
+    {
+      "op": "TraceValue",
+      "agent": "ResearchAgent",
+      "binding": "prompt"
+    },
+    {
+      "op": "EndHandler"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "Flow"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol Flow completed"
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}

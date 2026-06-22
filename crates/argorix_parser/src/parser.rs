@@ -1,11 +1,12 @@
 use crate::{
     ast::{
         AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
-        FieldDecl, HandlerDecl, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
-        HarnessSecrets, ImportDecl, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl,
-        PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
-        Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
-        ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
+        FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl,
+        MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule,
+        PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
+        ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl,
+        SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -63,6 +64,8 @@ impl Parser {
             imports: Vec::new(),
             providers: Vec::new(),
             harnesses: Vec::new(),
+            features: Vec::new(),
+            secrets: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -81,6 +84,8 @@ impl Parser {
                 Some("import") => program.imports.push(self.parse_import()?),
                 Some("provider") => program.providers.push(self.parse_provider()?),
                 Some("harness") => program.harnesses.push(self.parse_harness()?),
+                Some("feature") => program.features.push(self.parse_feature()?),
+                Some("secret") => program.secrets.push(self.parse_secret()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -100,7 +105,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -241,6 +246,8 @@ impl Parser {
         self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
 
         let mut provider = None;
+        let mut feature = None;
+        let mut secret = None;
         let mut mode = None;
         let mut network = None;
         let mut secrets = None;
@@ -259,6 +266,12 @@ impl Parser {
                         parser.expect_identifier("harness provider reference")
                     })?
                 }
+                Some("feature") => self.set_harness_field(&mut feature, "feature", |parser| {
+                    parser.expect_identifier("harness feature reference")
+                })?,
+                Some("secret") => self.set_harness_field(&mut secret, "secret", |parser| {
+                    parser.expect_identifier("harness secret reference")
+                })?,
                 Some("mode") => self.set_harness_field(&mut mode, "mode", |parser| {
                     let token = parser.expect_identifier("harness mode")?;
                     let value = match token.value.as_str() {
@@ -340,6 +353,8 @@ impl Parser {
         Ok(ProviderHarnessDecl {
             name,
             provider: provider.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            feature,
+            secret,
             mode: mode.unwrap_or_else(|| {
                 Spanned::new(HarnessMode::Unknown(String::new()), fallback_span)
             }),
@@ -371,6 +386,227 @@ impl Parser {
         if slot.is_some() {
             return Err(Diagnostic::new(
                 format!("duplicate harness field `{key}`"),
+                span,
+            ));
+        }
+        *slot = Some(parse_value(self)?);
+        Ok(())
+    }
+
+    fn parse_feature(&mut self) -> Result<FeatureDecl, Diagnostic> {
+        self.expect_keyword("feature")?;
+        let name = self.expect_identifier("feature name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut provider = None;
+        let mut status = None;
+        let mut default = None;
+        let mut purpose = None;
+        let mut requires_approval = false;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated feature declaration")?;
+            match self.peek_identifier() {
+                Some("provider") => {
+                    self.set_block_field(&mut provider, "feature", "provider", |parser| {
+                        parser.expect_identifier("feature provider reference")
+                    })?
+                }
+                Some("status") => {
+                    self.set_block_field(&mut status, "feature", "status", |parser| {
+                        let token = parser.expect_identifier("feature status")?;
+                        let value = match token.value.as_str() {
+                            "experimental" => FeatureStatus::Experimental,
+                            "preview" => FeatureStatus::Preview,
+                            "stable" => FeatureStatus::Stable,
+                            "deprecated" => FeatureStatus::Deprecated,
+                            other => FeatureStatus::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("default") => {
+                    self.set_block_field(&mut default, "feature", "default", |parser| {
+                        let token = parser.expect_identifier("feature default")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => FeatureDefault::Disabled,
+                            "enabled" => FeatureDefault::Enabled,
+                            other => FeatureDefault::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("requires") => {
+                    let span = self.peek().span;
+                    self.advance();
+                    self.expect_keyword("approval")?;
+                    if requires_approval {
+                        return Err(Diagnostic::new(
+                            "duplicate feature field `requires approval`",
+                            span,
+                        ));
+                    }
+                    requires_approval = true;
+                }
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "feature", "purpose", |parser| {
+                        parser.expect_string("feature purpose value")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected feature item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected a feature field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        Ok(FeatureDecl {
+            name,
+            provider,
+            status: status.unwrap_or_else(|| {
+                Spanned::new(FeatureStatus::Unknown(String::new()), fallback_span)
+            }),
+            default: default.unwrap_or_else(|| {
+                Spanned::new(FeatureDefault::Unknown(String::new()), fallback_span)
+            }),
+            requires_approval,
+            purpose,
+        })
+    }
+
+    fn parse_secret(&mut self) -> Result<SecretDecl, Diagnostic> {
+        self.expect_keyword("secret")?;
+        let name = self.expect_identifier("secret name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        const FORBIDDEN: [&str; 6] = [
+            "value",
+            "secret_value",
+            "token",
+            "api_key_value",
+            "raw",
+            "plaintext",
+        ];
+
+        let mut handle = None;
+        let mut provider = None;
+        let mut required_by = None;
+        let mut scope = None;
+        let mut access = None;
+        let mut source = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated secret declaration")?;
+            match self.peek_identifier() {
+                Some("handle") => {
+                    self.set_block_field(&mut handle, "secret", "handle", |parser| {
+                        parser.expect_string("secret handle value")
+                    })?
+                }
+                Some("provider") => {
+                    self.set_block_field(&mut provider, "secret", "provider", |parser| {
+                        parser.expect_identifier("secret provider reference")
+                    })?
+                }
+                Some("required_by") => {
+                    self.set_block_field(&mut required_by, "secret", "required_by", |parser| {
+                        parser.expect_identifier("secret required_by reference")
+                    })?
+                }
+                Some("scope") => {
+                    self.set_block_field(&mut scope, "secret", "scope", |parser| {
+                        let token = parser.expect_identifier("secret scope")?;
+                        let value = match token.value.as_str() {
+                            "provider" => SecretScope::Provider,
+                            "adapter" => SecretScope::Adapter,
+                            "model" => SecretScope::Model,
+                            "tool" => SecretScope::Tool,
+                            "runtime" => SecretScope::Runtime,
+                            other => SecretScope::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("access") => {
+                    self.set_block_field(&mut access, "secret", "access", |parser| {
+                        let token = parser.expect_identifier("secret access")?;
+                        let value = match token.value.as_str() {
+                            "denied" => SecretAccess::Denied,
+                            other => SecretAccess::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("source") => {
+                    self.set_block_field(&mut source, "secret", "source", |parser| {
+                        let token = parser.expect_identifier("secret source")?;
+                        let value = match token.value.as_str() {
+                            "none" => SecretSource::None,
+                            other => SecretSource::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some(other) if FORBIDDEN.contains(&other) => {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "secret declarations must not contain secret material; field `{other}` is forbidden"
+                        ),
+                        self.peek().span,
+                    ))
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected secret item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => return Err(Diagnostic::new("expected a secret field", self.peek().span)),
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        Ok(SecretDecl {
+            name,
+            handle: handle.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            provider,
+            required_by,
+            scope: scope.unwrap_or_else(|| {
+                Spanned::new(SecretScope::Unknown(String::new()), fallback_span)
+            }),
+            access: access.unwrap_or_else(|| {
+                Spanned::new(SecretAccess::Unknown(String::new()), fallback_span)
+            }),
+            source: source.unwrap_or_else(|| {
+                Spanned::new(SecretSource::Unknown(String::new()), fallback_span)
+            }),
+        })
+    }
+
+    /// Consume a block key keyword and parse its value, rejecting duplicates.
+    fn set_block_field<T>(
+        &mut self,
+        slot: &mut Option<T>,
+        block: &str,
+        key: &str,
+        parse_value: impl FnOnce(&mut Self) -> Result<T, Diagnostic>,
+    ) -> Result<(), Diagnostic> {
+        let span = self.peek().span;
+        self.advance();
+        if slot.is_some() {
+            return Err(Diagnostic::new(
+                format!("duplicate {block} field `{key}`"),
                 span,
             ));
         }
@@ -478,6 +714,18 @@ impl Parser {
             "provider_secrets_denied" => PolicyRule::ProviderSecretsDenied,
             "provider_filesystem_restricted" => PolicyRule::ProviderFilesystemRestricted,
             "external_provider_harnessed" => PolicyRule::ExternalProviderHarnessed,
+            "feature_flags_declared" => PolicyRule::FeatureFlagsDeclared,
+            "features_default_disabled" => PolicyRule::FeaturesDefaultDisabled,
+            "experimental_features_require_approval" => {
+                PolicyRule::ExperimentalFeaturesRequireApproval
+            }
+            "secret_boundaries_declared" => PolicyRule::SecretBoundariesDeclared,
+            "secret_access_denied" => PolicyRule::SecretAccessDenied,
+            "secret_values_absent" => PolicyRule::SecretValuesAbsent,
+            "external_provider_feature_gated" => PolicyRule::ExternalProviderFeatureGated,
+            "external_provider_secret_boundary_declared" => {
+                PolicyRule::ExternalProviderSecretBoundaryDeclared
+            }
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {
@@ -1229,8 +1477,9 @@ impl Parser {
 mod tests {
     use super::parse_source;
     use crate::ast::{
-        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl,
-        PolicyViolationAction,
+        FeatureDefault, FeatureStatus, HarnessFilesystem, HarnessMode, HarnessNetwork,
+        HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, SecretAccess,
+        SecretScope, SecretSource,
     };
 
     #[test]
@@ -1559,6 +1808,112 @@ mod tests {
         assert!(matches!(
             program.policies[0].rules[5].rule().value,
             PolicyRule::ExternalProviderHarnessed
+        ));
+    }
+
+    #[test]
+    fn parses_feature_and_secret_blocks() {
+        let program = parse_source(
+            r#"
+            module main
+            feature OpenAIAdapter {
+                provider OpenAI
+                status experimental
+                default disabled
+                requires approval
+                purpose "future-openai-adapter"
+            }
+            secret OpenAISecret {
+                handle "OPENAI_API_KEY"
+                provider OpenAI
+                required_by OpenAIAdapter
+                scope adapter
+                access denied
+                source none
+            }
+            "#,
+        )
+        .unwrap();
+        let feature = &program.features[0];
+        assert_eq!(feature.name.value, "OpenAIAdapter");
+        assert_eq!(feature.provider.as_ref().unwrap().value, "OpenAI");
+        assert!(matches!(feature.status.value, FeatureStatus::Experimental));
+        assert!(matches!(feature.default.value, FeatureDefault::Disabled));
+        assert!(feature.requires_approval);
+        assert_eq!(
+            feature.purpose.as_ref().unwrap().value,
+            "future-openai-adapter"
+        );
+
+        let secret = &program.secrets[0];
+        assert_eq!(secret.name.value, "OpenAISecret");
+        assert_eq!(secret.handle.value, "OPENAI_API_KEY");
+        assert_eq!(secret.required_by.as_ref().unwrap().value, "OpenAIAdapter");
+        assert!(matches!(secret.scope.value, SecretScope::Adapter));
+        assert!(matches!(secret.access.value, SecretAccess::Denied));
+        assert!(matches!(secret.source.value, SecretSource::None));
+    }
+
+    #[test]
+    fn parses_harness_feature_and_secret_references() {
+        let program = parse_source(
+            r#"
+            module main
+            harness H {
+                provider OpenAI
+                feature OpenAIAdapter
+                secret OpenAISecret
+                mode dry_run
+                network denied
+                secrets denied
+                filesystem none
+            }
+            "#,
+        )
+        .unwrap();
+        let harness = &program.harnesses[0];
+        assert_eq!(harness.feature.as_ref().unwrap().value, "OpenAIAdapter");
+        assert_eq!(harness.secret.as_ref().unwrap().value, "OpenAISecret");
+    }
+
+    #[test]
+    fn rejects_secret_material_fields() {
+        let error = parse_source(
+            r#"
+            module main
+            secret S { handle "H" scope adapter access denied source none value "sk-leak" }
+            "#,
+        )
+        .unwrap_err();
+        assert!(error[0].message.contains("secret material"));
+    }
+
+    #[test]
+    fn parses_feature_and_secret_policy_rules() {
+        let program = parse_source(
+            r#"
+            module main
+            policy P {
+                require feature_flags_declared
+                require features_default_disabled
+                require experimental_features_require_approval
+                require secret_boundaries_declared
+                require secret_access_denied
+                require secret_values_absent
+                require external_provider_feature_gated
+                require external_provider_secret_boundary_declared
+            }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(program.policies[0].rules.len(), 8);
+        assert!(matches!(
+            program.policies[0].rules[0].rule().value,
+            PolicyRule::FeatureFlagsDeclared
+        ));
+        assert!(matches!(
+            program.policies[0].rules[7].rule().value,
+            PolicyRule::ExternalProviderSecretBoundaryDeclared
         ));
     }
 }

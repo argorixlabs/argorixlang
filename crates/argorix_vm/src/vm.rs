@@ -221,6 +221,49 @@ impl Vm {
                 EventFields::default(),
             );
         }
+        for feature in &bytecode.features {
+            state.trace_ledger.record(
+                EventType::FeatureDeclared,
+                "declared",
+                format!("feature {} declared", feature.name),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::FeatureValidated,
+                "validated",
+                format!(
+                    "feature {} validated as governance metadata without execution",
+                    feature.name
+                ),
+                EventFields::default(),
+            );
+        }
+        for secret in &bytecode.secrets {
+            state.trace_ledger.record(
+                EventType::SecretBoundaryDeclared,
+                "declared",
+                format!("secret boundary {} declared", secret.name),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::SecretBoundaryValidated,
+                "validated",
+                format!(
+                    "secret boundary {} validated; handle is metadata, no secret value present",
+                    secret.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::SecretAccessDenied,
+                "denied",
+                format!(
+                    "secret boundary {} access denied; no env, vault, or network lookup performed",
+                    secret.name
+                ),
+                EventFields::default(),
+            );
+        }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
             Err(error) => {
@@ -344,7 +387,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.20".into(),
+            vm_version: "0.21".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -359,6 +402,8 @@ impl Vm {
             message_contracts: bytecode.types.clone(),
             passports: bytecode.passports.clone(),
             provider_harnesses: bytecode.provider_harnesses.clone(),
+            features: bytecode.features.clone(),
+            secrets: bytecode.secrets.clone(),
             injected,
             steps,
             mailboxes,
@@ -653,6 +698,8 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
                 .any(|passport| passport.agent == agent.name)
         });
     let harnesses = &bytecode.provider_harnesses;
+    let features = &bytecode.features;
+    let secrets = &bytecode.secrets;
     PolicyEvidenceContext {
         agent_passport_declared,
         agent_passport_attested: !passports.is_empty()
@@ -687,6 +734,41 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
                 harnesses
                     .iter()
                     .any(|harness| harness.provider == provider.name)
+            }),
+        feature_flags_declared: !features.is_empty(),
+        features_default_disabled: !features.is_empty()
+            && features.iter().all(|feature| feature.default == "disabled"),
+        experimental_features_require_approval: features
+            .iter()
+            .filter(|feature| matches!(feature.status.as_str(), "experimental" | "preview"))
+            .all(|feature| feature.requires_approval),
+        secret_boundaries_declared: !secrets.is_empty(),
+        secret_access_denied: !secrets.is_empty()
+            && secrets.iter().all(|secret| secret.access == "denied"),
+        // Secret declarations never carry secret material in v0.21; the bytecode
+        // schema has no value field, so by construction values are always absent.
+        secret_values_absent: true,
+        external_provider_feature_gated: bytecode
+            .providers
+            .iter()
+            .filter(|provider| provider.kind == "external")
+            .all(|provider| {
+                features.iter().any(|feature| {
+                    feature.provider.as_deref() == Some(provider.name.as_str())
+                        && feature.default == "disabled"
+                        && feature.requires_approval
+                })
+            }),
+        external_provider_secret_boundary_declared: bytecode
+            .providers
+            .iter()
+            .filter(|provider| provider.kind == "external")
+            .all(|provider| {
+                secrets.iter().any(|secret| {
+                    secret.provider.as_deref() == Some(provider.name.as_str())
+                        && secret.access == "denied"
+                        && secret.source == "none"
+                })
             }),
         ..PolicyEvidenceContext::default()
     }
@@ -739,6 +821,8 @@ mod tests {
             imports: vec![],
             providers: vec![],
             provider_harnesses: vec![],
+            features: vec![],
+            secrets: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -892,7 +976,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.20");
+        assert_eq!(json["vm_version"], "0.21");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -914,7 +998,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.20");
+        assert_eq!(json["vm_version"], "0.21");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -936,7 +1020,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.20");
+        assert_eq!(json["vm_version"], "0.21");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -991,7 +1075,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.20");
+        assert_eq!(trace.vm_version, "0.21");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -1065,7 +1149,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.20");
+        assert_eq!(trace.vm_version, "0.21");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1117,7 +1201,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.20");
+        assert_eq!(json["vm_version"], "0.21");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -1321,6 +1405,8 @@ mod tests {
         bytecode.provider_harnesses = vec![BytecodeProviderHarness {
             name: "OpenAIHarness".into(),
             provider: "OpenAI".into(),
+            feature: None,
+            secret: None,
             mode: "dry_run".into(),
             network: "denied".into(),
             secrets: "denied".into(),
@@ -1365,7 +1451,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.20");
+        assert_eq!(trace.vm_version, "0.21");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [
@@ -1434,6 +1520,8 @@ mod tests {
         bytecode.provider_harnesses = vec![BytecodeProviderHarness {
             name: "OpenAIHarness".into(),
             provider: "OpenAI".into(),
+            feature: None,
+            secret: None,
             mode: "dry_run".into(),
             network: "denied".into(),
             secrets: "denied".into(),

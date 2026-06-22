@@ -22,6 +22,10 @@ pub struct SecurityReport {
     pub agent_passports: AgentPassportSummary,
     #[serde(default)]
     pub provider_harnesses: ProviderHarnessSummary,
+    #[serde(default)]
+    pub feature_flags: FeatureFlagsSummary,
+    #[serde(default)]
+    pub secret_boundaries: SecretBoundariesSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -76,6 +80,34 @@ pub struct ProviderHarnessSummary {
     pub attestations_total: usize,
     pub input_contracts: Vec<String>,
     pub output_contracts: Vec<String>,
+}
+
+/// Summary of declared v0.21 feature flags.
+///
+/// Feature flags are governance metadata. Their presence does not enable real
+/// provider execution; the verdict is not inflated by their declaration.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureFlagsSummary {
+    pub total: usize,
+    pub statuses: BTreeMap<String, usize>,
+    pub defaults: BTreeMap<String, usize>,
+    pub requires_approval: usize,
+    pub linked_providers: Vec<String>,
+}
+
+/// Summary of declared v0.21 secret boundaries.
+///
+/// Secret boundaries record handles and denied access only. `values_present` is
+/// always false: Argorix declares boundaries, never secret material.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretBoundariesSummary {
+    pub total: usize,
+    pub scopes: BTreeMap<String, usize>,
+    pub access: BTreeMap<String, usize>,
+    pub sources: BTreeMap<String, usize>,
+    pub linked_providers: Vec<String>,
+    pub required_by: Vec<String>,
+    pub values_present: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,7 +278,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.20".into(),
+            report_version: "0.21".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -254,11 +286,13 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.20".into()),
+                .unwrap_or_else(|| "0.21".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
             provider_harnesses: provider_harness_summary(&bytecode.provider_harnesses),
+            feature_flags: feature_flags_summary(&bytecode.features),
+            secret_boundaries: secret_boundaries_summary(&bytecode.secrets),
             policy,
             provider_boundary,
             calls,
@@ -305,6 +339,63 @@ fn provider_harness_summary(
         attestations_total,
         input_contracts: input_contracts.into_iter().collect(),
         output_contracts: output_contracts.into_iter().collect(),
+    }
+}
+
+fn feature_flags_summary(features: &[argorix_bytecode::BytecodeFeature]) -> FeatureFlagsSummary {
+    use std::collections::BTreeSet;
+    let mut statuses = BTreeMap::new();
+    let mut defaults = BTreeMap::new();
+    let mut linked_providers = BTreeSet::new();
+    let mut requires_approval = 0;
+    for feature in features {
+        *statuses.entry(feature.status.clone()).or_insert(0) += 1;
+        *defaults.entry(feature.default.clone()).or_insert(0) += 1;
+        if feature.requires_approval {
+            requires_approval += 1;
+        }
+        if let Some(provider) = &feature.provider {
+            linked_providers.insert(provider.clone());
+        }
+    }
+    FeatureFlagsSummary {
+        total: features.len(),
+        statuses,
+        defaults,
+        requires_approval,
+        linked_providers: linked_providers.into_iter().collect(),
+    }
+}
+
+fn secret_boundaries_summary(
+    secrets: &[argorix_bytecode::BytecodeSecret],
+) -> SecretBoundariesSummary {
+    use std::collections::BTreeSet;
+    let mut scopes = BTreeMap::new();
+    let mut access = BTreeMap::new();
+    let mut sources = BTreeMap::new();
+    let mut linked_providers = BTreeSet::new();
+    let mut required_by = BTreeSet::new();
+    for secret in secrets {
+        *scopes.entry(secret.scope.clone()).or_insert(0) += 1;
+        *access.entry(secret.access.clone()).or_insert(0) += 1;
+        *sources.entry(secret.source.clone()).or_insert(0) += 1;
+        if let Some(provider) = &secret.provider {
+            linked_providers.insert(provider.clone());
+        }
+        if let Some(feature) = &secret.required_by {
+            required_by.insert(feature.clone());
+        }
+    }
+    SecretBoundariesSummary {
+        total: secrets.len(),
+        scopes,
+        access,
+        sources,
+        linked_providers: linked_providers.into_iter().collect(),
+        required_by: required_by.into_iter().collect(),
+        // Argorix v0.21 declares secret boundaries, never secret material.
+        values_present: false,
     }
 }
 

@@ -1,0 +1,9 @@
+module features.openai
+
+feature OpenAIAdapter {
+    provider OpenAI
+    status experimental
+    default disabled
+    requires approval
+    purpose "future-openai-adapter"
+}

@@ -94,3 +94,19 @@ fn official_v020_suite_passes_with_provider_harness_cases() {
         .all(|case| case.passed));
     fs::remove_dir_all(workdir).unwrap();
 }
+
+#[test]
+fn official_v021_suite_passes_with_feature_and_secret_cases() {
+    let suite_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../conformance/suite.v021.json");
+    let suite: ConformanceSuite = serde_json::from_slice(&fs::read(&suite_path).unwrap()).unwrap();
+    let workdir = temp_workdir().join("v021");
+    let result = run_suite(&suite, &suite_path, &workdir).unwrap();
+    assert!(result.passed, "{:?}", result.failures);
+    assert!(result
+        .case_results
+        .iter()
+        .filter(|case| matches!(case.category.as_str(), "feature_flags" | "secret_boundary"))
+        .all(|case| case.passed));
+    fs::remove_dir_all(workdir).unwrap();
+}

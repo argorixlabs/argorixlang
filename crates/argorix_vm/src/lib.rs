@@ -19,9 +19,10 @@ pub use runtime::{
 };
 pub use scheduler::Scheduler;
 pub use security_report::{
-    AgentPassportSummary, CallSummary, ExecutionSummary, InjectedMessageSummary, IntrinsicSummary,
-    LedgerSummary, MessageContractSummary, PolicySummary, ProviderBoundarySummary,
-    ProviderHarnessSummary, SecurityReport, SecurityVerdict,
+    AgentPassportSummary, CallSummary, ExecutionSummary, FeatureFlagsSummary,
+    InjectedMessageSummary, IntrinsicSummary, LedgerSummary, MessageContractSummary, PolicySummary,
+    ProviderBoundarySummary, ProviderHarnessSummary, SecretBoundariesSummary, SecurityReport,
+    SecurityVerdict,
 };
 pub use trace::{
     AgentStateSummary, AssertionResult, EmittedMessage, EventFields, EventType, ExecutionEvent,

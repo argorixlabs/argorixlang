@@ -1,0 +1,3 @@
+module invalid.missing_feature_status
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+feature F { provider OpenAI default disabled requires approval }

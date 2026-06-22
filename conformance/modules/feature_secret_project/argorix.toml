@@ -1,0 +1,6 @@
+[package]
+name = "feature-secret-project"
+version = "0.21.0"
+
+[entry]
+main = "src/main.argx"

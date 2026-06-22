@@ -16,6 +16,8 @@ pub struct Symbols {
     pub capabilities: HashMap<String, CapabilityLevel>,
     pub tools: HashSet<String>,
     pub models: HashSet<String>,
+    pub features: HashSet<String>,
+    pub secrets: HashSet<String>,
 }
 
 impl Symbols {

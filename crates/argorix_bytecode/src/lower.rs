@@ -1,8 +1,9 @@
 use crate::{
-    BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeModel,
-    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
-    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
-    BytecodeProviderHarness, BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeFeature,
+    BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn,
+    BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram,
+    BytecodeProviderContract, BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType,
+    BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -171,7 +172,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.20".to_owned(),
+        bytecode_version: "0.21".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -188,6 +189,8 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
             .map(|harness| BytecodeProviderHarness {
                 name: harness.name.clone(),
                 provider: harness.provider.clone(),
+                feature: harness.feature.clone(),
+                secret: harness.secret.clone(),
                 mode: harness.mode.clone(),
                 network: harness.network.clone(),
                 secrets: harness.secrets.clone(),
@@ -197,6 +200,31 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 input_contract: harness.input_contract.clone(),
                 output_contract: harness.output_contract.clone(),
                 attestations: harness.attestations.clone(),
+            })
+            .collect(),
+        features: ir
+            .features
+            .iter()
+            .map(|feature| BytecodeFeature {
+                name: feature.name.clone(),
+                provider: feature.provider.clone(),
+                status: feature.status.clone(),
+                default: feature.default.clone(),
+                requires_approval: feature.requires_approval,
+                purpose: feature.purpose.clone(),
+            })
+            .collect(),
+        secrets: ir
+            .secrets
+            .iter()
+            .map(|secret| BytecodeSecret {
+                name: secret.name.clone(),
+                handle: secret.handle.clone(),
+                provider: secret.provider.clone(),
+                required_by: secret.required_by.clone(),
+                scope: secret.scope.clone(),
+                access: secret.access.clone(),
+                source: secret.source.clone(),
             })
             .collect(),
         imports: ir
@@ -370,6 +398,8 @@ mod tests {
             imports: vec![],
             providers: vec![],
             provider_harnesses: vec![],
+            features: vec![],
+            secrets: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -435,7 +465,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.20");
+        assert_eq!(bytecode.bytecode_version, "0.21");
         assert!(bytecode
             .instructions
             .iter()
@@ -507,6 +537,8 @@ mod tests {
             provider_harnesses: vec![IrProviderHarness {
                 name: "OpenAIHarness".into(),
                 provider: "OpenAI".into(),
+                feature: None,
+                secret: None,
                 mode: "dry_run".into(),
                 network: "denied".into(),
                 secrets: "denied".into(),
@@ -517,6 +549,8 @@ mod tests {
                 output_contract: None,
                 attestations: vec![],
             }],
+            features: vec![],
+            secrets: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -530,7 +564,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.20");
+        assert_eq!(bytecode.bytecode_version, "0.21");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

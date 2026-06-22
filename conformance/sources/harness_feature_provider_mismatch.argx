@@ -1,0 +1,5 @@
+module invalid.harness_feature_provider_mismatch
+provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+provider OtherProv { kind external enabled false dry_run_only true requires feature_flag requires approval }
+feature OpenAIAdapter { provider OtherProv status experimental default disabled requires approval }
+harness H { provider OpenAI feature OpenAIAdapter mode dry_run network denied secrets denied filesystem none }

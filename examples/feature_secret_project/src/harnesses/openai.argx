@@ -1,0 +1,16 @@
+module harnesses.openai
+
+harness OpenAIHarness {
+    provider OpenAI
+    feature OpenAIAdapter
+    secret OpenAISecret
+    mode dry_run
+    network denied
+    secrets denied
+    filesystem none
+    max_steps 10
+    timeout_ms 1000
+    input_contract UserPrompt
+    output_contract DraftAnswer
+    attestations ["dry-run", "policy-check"]
+}
