@@ -13,7 +13,7 @@
 - [ ] `cargo test --workspace` passes
 - [ ] Conformance suite updated/passing if language behavior changed
 - [ ] Bytecode artifacts (`examples/*.argbc.json`) regenerated if the format changed
-- [ ] I have signed the CLA (see the CLA Assistant comment below)
+- [ ] All my commits are signed off (`git commit -s`) per the DCO
 
 ## Notes for reviewers
 

@@ -35,14 +35,23 @@ If you change language behavior, update the conformance suite under
 - Keep PRs focused; one logical change per PR.
 - Fill out the PR template and check off the checklist.
 
-## Contributor License Agreement (CLA)
+## Developer Certificate of Origin (DCO)
 
-We require all contributors to sign our [CLA](CLA.md). When you open your first
-PR, the **CLA Assistant** bot will comment with instructions. Simply reply with:
+Contributions are accepted under the [Developer Certificate of Origin](https://developercertificate.org/).
+You certify the DCO by signing off every commit:
 
-> I have read the CLA Document and I hereby sign the CLA
+```sh
+git commit -s -m "your message"
+```
 
-Your signature is recorded once and applies to all future contributions.
+This appends a `Signed-off-by: Your Name <your@email>` trailer. The **DCO**
+check verifies every commit in your PR is signed off. If you forgot, add it to
+your existing commits with:
+
+```sh
+git rebase --signoff origin/main
+git push --force-with-lease
+```
 
 ## Review process
 
