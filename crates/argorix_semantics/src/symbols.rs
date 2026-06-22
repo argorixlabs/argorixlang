@@ -23,6 +23,7 @@ pub struct Symbols {
     pub cryptos: HashSet<String>,
     pub did_methods: HashSet<String>,
     pub atrust_boundaries: HashSet<String>,
+    pub atrust_identities: HashSet<String>,
 }
 
 impl Symbols {

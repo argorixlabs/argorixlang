@@ -28,6 +28,8 @@ pub struct IrProgram {
     pub did_methods: Vec<IrDidMethod>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub atrust_boundaries: Vec<IrATrustBoundary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atrust_identities: Vec<IrATrustIdentity>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -251,6 +253,26 @@ pub struct IrATrustBoundary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrATrustIdentity {
+    pub name: String,
+    pub subject: String,
+    pub did: String,
+    pub method: String,
+    pub boundary: String,
+    pub status: String,
+    pub validation: String,
+    pub resolution: String,
+    pub key_material: String,
+    pub secret_material: String,
+    pub execution: String,
+    pub evidence: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
@@ -404,7 +426,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.26".to_owned(),
+            ir_version: "0.27".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -607,6 +629,27 @@ impl From<&Program> for IrProgram {
                     security_claims: a.security_claims.value.source_name().to_owned(),
                     purpose: a.purpose.iter().map(|v| v.value.clone()).collect(),
                     notes: a.notes.as_ref().map(|v| v.value.clone()),
+                })
+                .collect(),
+            atrust_identities: program
+                .atrust_identities
+                .iter()
+                .map(|i| IrATrustIdentity {
+                    name: i.name.value.clone(),
+                    subject: i.subject.value.clone(),
+                    did: i.did.value.clone(),
+                    method: i.method.value.clone(),
+                    boundary: i.boundary.value.clone(),
+                    status: i.status.value.source_name().to_owned(),
+                    validation: i.validation.value.source_name().to_owned(),
+                    resolution: i.resolution.value.source_name().to_owned(),
+                    key_material: i.key_material.value.source_name().to_owned(),
+                    secret_material: i.secret_material.value.source_name().to_owned(),
+                    execution: i.execution.value.source_name().to_owned(),
+                    evidence: i.evidence.value.source_name().to_owned(),
+                    security_claims: i.security_claims.value.source_name().to_owned(),
+                    purpose: i.purpose.iter().map(|v| v.value.clone()).collect(),
+                    notes: i.notes.as_ref().map(|v| v.value.clone()),
                 })
                 .collect(),
             assertions: program
@@ -868,7 +911,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.26");
+        assert_eq!(ir.ir_version, "0.27");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -906,7 +949,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.26");
+        assert_eq!(ir.ir_version, "0.27");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -941,7 +984,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.26");
+        assert_eq!(ir.ir_version, "0.27");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");

@@ -279,7 +279,7 @@ mod tests {
         check_program(&program).unwrap();
         let json = serde_json::to_string(&lower_ir(&IrProgram::from(&program))).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["bytecode_version"], "0.26");
+        assert_eq!(parsed["bytecode_version"], "0.27");
     }
 
     #[test]

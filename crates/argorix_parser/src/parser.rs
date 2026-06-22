@@ -1,7 +1,8 @@
 use crate::{
     ast::{
-        ATrustBoundaryDecl, ATrustCredentialMode, ATrustExecution, ATrustHandshakeMode,
-        ATrustIdentityFormat, ATrustMaterialBoundary, ATrustPostQuantumRequirement,
+        ATrustBoundaryDecl, ATrustCredentialMode, ATrustEvidenceRequirement, ATrustExecution,
+        ATrustHandshakeMode, ATrustIdentityDecl, ATrustIdentityFormat, ATrustIdentityStatus,
+        ATrustIdentityValidation, ATrustMaterialBoundary, ATrustPostQuantumRequirement,
         ATrustResolutionMode, ATrustSecurityClaims, AdapterDecl, AdapterExecution,
         AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork, AdapterProfileApiStyle,
         AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution, AdapterProfileFamily,
@@ -80,6 +81,7 @@ impl Parser {
             crypto_boundaries: Vec::new(),
             did_methods: Vec::new(),
             atrust_boundaries: Vec::new(),
+            atrust_identities: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -108,6 +110,7 @@ impl Parser {
                 Some("crypto") => program.cryptos.push(self.parse_crypto()?),
                 Some("did_method") => program.did_methods.push(self.parse_did_method()?),
                 Some("atrust_boundary") => program.atrust_boundaries.push(self.parse_atrust_boundary()?),
+                Some("atrust_identity") => program.atrust_identities.push(self.parse_atrust_identity()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -127,7 +130,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -1577,6 +1580,223 @@ impl Parser {
         })
     }
 
+    fn parse_atrust_identity(&mut self) -> Result<ATrustIdentityDecl, Diagnostic> {
+        self.expect_keyword("atrust_identity")?;
+        let name = self.expect_identifier("atrust identity name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut subject = None;
+        let mut did = None;
+        let mut method = None;
+        let mut boundary = None;
+        let mut status = None;
+        let mut validation = None;
+        let mut resolution = None;
+        let mut key_material = None;
+        let mut secret_material = None;
+        let mut execution = None;
+        let mut evidence = None;
+        let mut security_claims = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated atrust_identity declaration")?;
+            match self.peek_identifier() {
+                Some("subject") => {
+                    self.set_block_field(&mut subject, "atrust_identity", "subject", |parser| {
+                        parser.expect_identifier("atrust_identity subject agent")
+                    })?
+                }
+                Some("did") => {
+                    self.set_block_field(&mut did, "atrust_identity", "did", |parser| {
+                        parser.expect_string("atrust_identity did")
+                    })?
+                }
+                Some("method") => {
+                    self.set_block_field(&mut method, "atrust_identity", "method", |parser| {
+                        parser.expect_identifier("atrust_identity did_method reference")
+                    })?
+                }
+                Some("boundary") => {
+                    self.set_block_field(&mut boundary, "atrust_identity", "boundary", |parser| {
+                        parser.expect_identifier("atrust_identity atrust_boundary reference")
+                    })?
+                }
+                Some("status") => {
+                    self.set_block_field(&mut status, "atrust_identity", "status", |parser| {
+                        let token = parser.expect_identifier("atrust_identity status")?;
+                        let value = match token.value.as_str() {
+                            "active" => ATrustIdentityStatus::Active,
+                            "suspended" => ATrustIdentityStatus::Suspended,
+                            "revoked" => ATrustIdentityStatus::Revoked,
+                            other => ATrustIdentityStatus::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("validation") => self.set_block_field(
+                    &mut validation,
+                    "atrust_identity",
+                    "validation",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_identity validation")?;
+                        let value = match token.value.as_str() {
+                            "dry_run" => ATrustIdentityValidation::DryRun,
+                            other => ATrustIdentityValidation::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("resolution") => self.set_block_field(
+                    &mut resolution,
+                    "atrust_identity",
+                    "resolution",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_identity resolution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustResolutionMode::Disabled,
+                            "embedded" => ATrustResolutionMode::Embedded,
+                            "local" => ATrustResolutionMode::Local,
+                            other => ATrustResolutionMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "atrust_identity",
+                    "key_material",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_identity key_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "atrust_identity",
+                    "secret_material",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_identity secret_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("execution") => self.set_block_field(
+                    &mut execution,
+                    "atrust_identity",
+                    "execution",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_identity execution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustExecution::Disabled,
+                            other => ATrustExecution::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("evidence") => {
+                    self.set_block_field(&mut evidence, "atrust_identity", "evidence", |parser| {
+                        let token = parser.expect_identifier("atrust_identity evidence")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "atrust_identity",
+                    "security_claims",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_identity security_claims")?;
+                        let value = match token.value.as_str() {
+                            "none" => ATrustSecurityClaims::None,
+                            other => ATrustSecurityClaims::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "atrust_identity", "purpose", |parser| {
+                        parser.parse_string_array("atrust_identity purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "atrust_identity", "notes", |parser| {
+                        parser.expect_string("atrust_identity notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected atrust_identity item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected an atrust_identity field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        let unknown_status =
+            || Spanned::new(ATrustIdentityStatus::Unknown(String::new()), fallback_span);
+        let unknown_validation = || {
+            Spanned::new(
+                ATrustIdentityValidation::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_material = || {
+            Spanned::new(
+                ATrustMaterialBoundary::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_exec = || Spanned::new(ATrustExecution::Unknown(String::new()), fallback_span);
+        let unknown_evidence = || {
+            Spanned::new(
+                ATrustEvidenceRequirement::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_claims =
+            || Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback_span);
+
+        Ok(ATrustIdentityDecl {
+            name,
+            subject: subject.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            did: did.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            method: method.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            boundary: boundary.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            status: status.unwrap_or_else(unknown_status),
+            validation: validation.unwrap_or_else(unknown_validation),
+            resolution: resolution.unwrap_or_else(|| {
+                Spanned::new(ATrustResolutionMode::Unknown(String::new()), fallback_span)
+            }),
+            key_material: key_material.unwrap_or_else(unknown_material),
+            secret_material: secret_material.unwrap_or_else(unknown_material),
+            execution: execution.unwrap_or_else(unknown_exec),
+            evidence: evidence.unwrap_or_else(unknown_evidence),
+            security_claims: security_claims.unwrap_or_else(unknown_claims),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -1752,6 +1972,23 @@ impl Parser {
                 PolicyRule::ATrustPostQuantumReadinessDeclared
             }
             "atrust_security_claims_none" => PolicyRule::ATrustSecurityClaimsNone,
+            "atrust_identity_declared" => PolicyRule::ATrustIdentityDeclared,
+            "atrust_identity_subject_valid" => PolicyRule::ATrustIdentitySubjectValid,
+            "atrust_identity_did_method_valid" => PolicyRule::ATrustIdentityDidMethodValid,
+            "atrust_identity_boundary_valid" => PolicyRule::ATrustIdentityBoundaryValid,
+            "atrust_identity_status_active" => PolicyRule::ATrustIdentityStatusActive,
+            "atrust_identity_validation_dry_run" => PolicyRule::ATrustIdentityValidationDryRun,
+            "atrust_identity_resolution_disabled" => PolicyRule::ATrustIdentityResolutionDisabled,
+            "atrust_identity_key_material_denied" => PolicyRule::ATrustIdentityKeyMaterialDenied,
+            "atrust_identity_secret_material_denied" => {
+                PolicyRule::ATrustIdentitySecretMaterialDenied
+            }
+            "atrust_identity_execution_disabled" => PolicyRule::ATrustIdentityExecutionDisabled,
+            "atrust_identity_evidence_required" => PolicyRule::ATrustIdentityEvidenceRequired,
+            "atrust_identity_security_claims_absent" => {
+                PolicyRule::ATrustIdentitySecurityClaimsAbsent
+            }
+            "atrust_identity_passport_consistent" => PolicyRule::ATrustIdentityPassportConsistent,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

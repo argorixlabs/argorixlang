@@ -65,7 +65,7 @@ fn package_ir_carries_module_metadata() {
     let package = resolve_package(&manifest("module_project/argorix.toml")).unwrap();
     let merged = check_package(&package).unwrap();
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.26");
+    assert_eq!(ir.ir_version, "0.27");
     assert_eq!(ir.module, "app.main");
     assert_eq!(ir.modules.len(), 6);
     assert_eq!(ir.imports.len(), 5);

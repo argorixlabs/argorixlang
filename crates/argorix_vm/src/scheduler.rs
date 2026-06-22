@@ -221,6 +221,7 @@ mod tests {
             crypto_boundaries: vec![],
             did_methods: vec![],
             atrust_boundaries: vec![],
+            atrust_identities: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

@@ -1,0 +1,59 @@
+module ATrustIdentityDemo
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["identity"]
+}
+
+did_method argorix {
+  status experimental
+  resolution embedded
+  ledger local
+  crypto_boundary TrustBoundary
+  purpose ["identity"]
+}
+
+atrust_boundary AgentTrustBoundary {
+  crypto_boundary TrustBoundary
+  did_methods ["argorix"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity ResearchIdentity {
+  subject ResearchAgent
+  did "did:argorix:research-agent-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity", "dry-run"]
+}
+
+type UserPrompt { content: string }
+agent ResearchAgent { receives UserPrompt }
+
+protocol Demo {
+  User -> ResearchAgent: tell UserPrompt
+}
+
+policy IdentityPolicy {
+  require atrust_identity_declared
+  require atrust_identity_evidence_required
+}

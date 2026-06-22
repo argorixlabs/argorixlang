@@ -14,6 +14,7 @@ pub struct Program {
     pub crypto_boundaries: Vec<CryptoBoundaryDecl>,
     pub did_methods: Vec<DidMethodDecl>,
     pub atrust_boundaries: Vec<ATrustBoundaryDecl>,
+    pub atrust_identities: Vec<ATrustIdentityDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -780,6 +781,19 @@ pub enum PolicyRule {
     ATrustExecutionDisabled,
     ATrustPostQuantumReadinessDeclared,
     ATrustSecurityClaimsNone,
+    ATrustIdentityDeclared,
+    ATrustIdentitySubjectValid,
+    ATrustIdentityDidMethodValid,
+    ATrustIdentityBoundaryValid,
+    ATrustIdentityStatusActive,
+    ATrustIdentityValidationDryRun,
+    ATrustIdentityResolutionDisabled,
+    ATrustIdentityKeyMaterialDenied,
+    ATrustIdentitySecretMaterialDenied,
+    ATrustIdentityExecutionDisabled,
+    ATrustIdentityEvidenceRequired,
+    ATrustIdentitySecurityClaimsAbsent,
+    ATrustIdentityPassportConsistent,
     Unknown(String),
 }
 
@@ -855,6 +869,19 @@ impl PolicyRule {
             Self::ATrustExecutionDisabled => "atrust_execution_disabled",
             Self::ATrustPostQuantumReadinessDeclared => "atrust_post_quantum_readiness_declared",
             Self::ATrustSecurityClaimsNone => "atrust_security_claims_none",
+            Self::ATrustIdentityDeclared => "atrust_identity_declared",
+            Self::ATrustIdentitySubjectValid => "atrust_identity_subject_valid",
+            Self::ATrustIdentityDidMethodValid => "atrust_identity_did_method_valid",
+            Self::ATrustIdentityBoundaryValid => "atrust_identity_boundary_valid",
+            Self::ATrustIdentityStatusActive => "atrust_identity_status_active",
+            Self::ATrustIdentityValidationDryRun => "atrust_identity_validation_dry_run",
+            Self::ATrustIdentityResolutionDisabled => "atrust_identity_resolution_disabled",
+            Self::ATrustIdentityKeyMaterialDenied => "atrust_identity_key_material_denied",
+            Self::ATrustIdentitySecretMaterialDenied => "atrust_identity_secret_material_denied",
+            Self::ATrustIdentityExecutionDisabled => "atrust_identity_execution_disabled",
+            Self::ATrustIdentityEvidenceRequired => "atrust_identity_evidence_required",
+            Self::ATrustIdentitySecurityClaimsAbsent => "atrust_identity_security_claims_absent",
+            Self::ATrustIdentityPassportConsistent => "atrust_identity_passport_consistent",
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -1338,6 +1365,77 @@ impl ATrustSecurityClaims {
     pub fn source_name(&self) -> &str {
         match self {
             Self::None => "none",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+/// A top-level `atrust_identity` block declaring a dry-run ATrust identity for an agent.
+/// v0.27 is simulation + evidence only. No real DID resolution, VC verification,
+/// signing, or network access.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ATrustIdentityDecl {
+    pub name: Spanned<String>,
+    pub subject: Spanned<String>,
+    pub did: Spanned<String>,
+    pub method: Spanned<String>,
+    pub boundary: Spanned<String>,
+    pub status: Spanned<ATrustIdentityStatus>,
+    pub validation: Spanned<ATrustIdentityValidation>,
+    pub resolution: Spanned<ATrustResolutionMode>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub evidence: Spanned<ATrustEvidenceRequirement>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustIdentityStatus {
+    Active,
+    Suspended,
+    Revoked,
+    Unknown(String),
+}
+
+impl ATrustIdentityStatus {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Active => "active",
+            Self::Suspended => "suspended",
+            Self::Revoked => "revoked",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustIdentityValidation {
+    DryRun,
+    Unknown(String),
+}
+
+impl ATrustIdentityValidation {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::DryRun => "dry_run",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustEvidenceRequirement {
+    Required,
+    Unknown(String),
+}
+
+impl ATrustEvidenceRequirement {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Required => "required",
             Self::Unknown(value) => value,
         }
     }
