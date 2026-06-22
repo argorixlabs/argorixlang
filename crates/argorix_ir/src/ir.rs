@@ -11,6 +11,7 @@ pub struct IrProgram {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<IrModuleImport>,
     pub providers: Vec<IrProviderContract>,
+    pub provider_harnesses: Vec<IrProviderHarness>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -81,6 +82,21 @@ pub struct IrProviderContract {
     pub requires_explicit_approval: bool,
     pub allowed_targets: Vec<String>,
     pub allowed_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrProviderHarness {
+    pub name: String,
+    pub provider: String,
+    pub mode: String,
+    pub network: String,
+    pub secrets: String,
+    pub filesystem: String,
+    pub max_steps: Option<u64>,
+    pub timeout_ms: Option<u64>,
+    pub input_contract: Option<String>,
+    pub output_contract: Option<String>,
+    pub attestations: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -218,7 +234,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.19".to_owned(),
+            ir_version: "0.20".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -243,6 +259,29 @@ impl From<&Program> for IrProgram {
                         .iter()
                         .map(|item| item.value.clone())
                         .collect(),
+                })
+                .collect(),
+            provider_harnesses: program
+                .harnesses
+                .iter()
+                .map(|harness| IrProviderHarness {
+                    name: harness.name.value.clone(),
+                    provider: harness.provider.value.clone(),
+                    mode: harness.mode.value.source_name().to_owned(),
+                    network: harness.network.value.source_name().to_owned(),
+                    secrets: harness.secrets.value.source_name().to_owned(),
+                    filesystem: harness.filesystem.value.source_name().to_owned(),
+                    max_steps: harness.max_steps.as_ref().map(|value| value.value),
+                    timeout_ms: harness.timeout_ms.as_ref().map(|value| value.value),
+                    input_contract: harness
+                        .input_contract
+                        .as_ref()
+                        .map(|value| value.value.clone()),
+                    output_contract: harness
+                        .output_contract
+                        .as_ref()
+                        .map(|value| value.value.clone()),
+                    attestations: spanned_values(&harness.attestations),
                 })
                 .collect(),
             assertions: program
@@ -504,7 +543,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.19");
+        assert_eq!(ir.ir_version, "0.20");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -542,7 +581,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.19");
+        assert_eq!(ir.ir_version, "0.20");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -551,5 +590,39 @@ mod tests {
             ir.passports[0].ans_name.as_deref(),
             Some("argx://risk.v1.sovereign")
         );
+    }
+
+    #[test]
+    fn ir_020_preserves_provider_harness_metadata() {
+        let program = parse_source(
+            r#"
+            module main
+            provider OpenAI { kind external enabled false dry_run_only true requires feature_flag requires approval }
+            type UserPrompt { content: string }
+            type DraftAnswer { content: string }
+            harness OpenAIHarness {
+                provider OpenAI
+                mode dry_run
+                network denied
+                secrets denied
+                filesystem none
+                max_steps 10
+                timeout_ms 1000
+                input_contract UserPrompt
+                output_contract DraftAnswer
+                attestations ["dry-run"]
+            }
+            "#,
+        )
+        .unwrap();
+        let ir = IrProgram::from(&program);
+        assert_eq!(ir.ir_version, "0.20");
+        assert_eq!(ir.provider_harnesses.len(), 1);
+        let harness = &ir.provider_harnesses[0];
+        assert_eq!(harness.name, "OpenAIHarness");
+        assert_eq!(harness.mode, "dry_run");
+        assert_eq!(harness.max_steps, Some(10));
+        assert_eq!(harness.input_contract.as_deref(), Some("UserPrompt"));
+        assert_eq!(harness.attestations, vec!["dry-run"]);
     }
 }

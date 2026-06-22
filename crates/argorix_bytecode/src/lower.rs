@@ -2,7 +2,7 @@ use crate::{
     BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeModel,
     BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
-    BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeProviderHarness, BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -171,7 +171,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.19".to_owned(),
+        bytecode_version: "0.20".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -180,6 +180,23 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
             .map(|module| BytecodeModule {
                 name: module.name.clone(),
                 path: module.path.clone(),
+            })
+            .collect(),
+        provider_harnesses: ir
+            .provider_harnesses
+            .iter()
+            .map(|harness| BytecodeProviderHarness {
+                name: harness.name.clone(),
+                provider: harness.provider.clone(),
+                mode: harness.mode.clone(),
+                network: harness.network.clone(),
+                secrets: harness.secrets.clone(),
+                filesystem: harness.filesystem.clone(),
+                max_steps: harness.max_steps,
+                timeout_ms: harness.timeout_ms,
+                input_contract: harness.input_contract.clone(),
+                output_contract: harness.output_contract.clone(),
+                attestations: harness.attestations.clone(),
             })
             .collect(),
         imports: ir
@@ -338,7 +355,7 @@ mod tests {
     use argorix_ir::{
         ir::{
             IrAgent, IrAssertion, IrCapability, IrFailure, IrHandler, IrHandlerInstruction,
-            IrProtocol, IrProtocolStep, IrTool,
+            IrProtocol, IrProtocolStep, IrProviderContract, IrProviderHarness, IrTool,
         },
         IrProgram,
     };
@@ -352,6 +369,7 @@ mod tests {
             modules: vec![],
             imports: vec![],
             providers: vec![],
+            provider_harnesses: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -417,7 +435,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.19");
+        assert_eq!(bytecode.bytecode_version, "0.20");
         assert!(bytecode
             .instructions
             .iter()
@@ -466,5 +484,62 @@ mod tests {
             bytecode.instructions.last(),
             Some(Instruction::End)
         ));
+    }
+
+    #[test]
+    fn lowers_provider_harness_as_top_level_metadata_only() {
+        let ir = IrProgram {
+            ir_version: "0.20".into(),
+            language: "Argorix Lang".into(),
+            module: "main".into(),
+            modules: vec![],
+            imports: vec![],
+            providers: vec![IrProviderContract {
+                name: "OpenAI".into(),
+                kind: "external".into(),
+                enabled: false,
+                dry_run_only: true,
+                requires_feature_flag: true,
+                requires_explicit_approval: true,
+                allowed_targets: vec![],
+                allowed_capabilities: vec![],
+            }],
+            provider_harnesses: vec![IrProviderHarness {
+                name: "OpenAIHarness".into(),
+                provider: "OpenAI".into(),
+                mode: "dry_run".into(),
+                network: "denied".into(),
+                secrets: "denied".into(),
+                filesystem: "none".into(),
+                max_steps: None,
+                timeout_ms: None,
+                input_contract: None,
+                output_contract: None,
+                attestations: vec![],
+            }],
+            assertions: vec![],
+            policies: vec![],
+            failures: vec![],
+            capabilities: vec![],
+            enums: vec![],
+            types: vec![],
+            tools: vec![],
+            models: vec![],
+            agents: vec![],
+            protocols: vec![],
+            passports: vec![],
+        };
+        let bytecode = lower_ir(&ir);
+        assert_eq!(bytecode.bytecode_version, "0.20");
+        assert_eq!(bytecode.provider_harnesses.len(), 1);
+        assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
+        assert_eq!(
+            bytecode
+                .instructions
+                .iter()
+                .filter(|instruction| matches!(instruction, Instruction::Unknown))
+                .count(),
+            0
+        );
     }
 }

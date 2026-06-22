@@ -5,7 +5,7 @@ pub use bytecode::{
     verify_bytecode, BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeError,
     BytecodeFailure, BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport,
     BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation,
-    BytecodeProgram, BytecodeProviderContract, BytecodeTool, BytecodeType, BytecodeTypeField,
-    Instruction,
+    BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness, BytecodeTool, BytecodeType,
+    BytecodeTypeField, Instruction,
 };
 pub use lower::lower_ir;

@@ -16,6 +16,8 @@ pub struct BytecodeProgram {
     #[serde(default)]
     pub providers: Vec<BytecodeProviderContract>,
     #[serde(default)]
+    pub provider_harnesses: Vec<BytecodeProviderHarness>,
+    #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
     pub policies: Vec<BytecodePolicy>,
@@ -60,6 +62,22 @@ pub struct BytecodeProviderContract {
     pub allowed_targets: Vec<String>,
     #[serde(default)]
     pub allowed_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeProviderHarness {
+    pub name: String,
+    pub provider: String,
+    pub mode: String,
+    pub network: String,
+    pub secrets: String,
+    pub filesystem: String,
+    pub max_steps: Option<u64>,
+    pub timeout_ms: Option<u64>,
+    pub input_contract: Option<String>,
+    pub output_contract: Option<String>,
+    #[serde(default)]
+    pub attestations: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -362,6 +380,12 @@ pub enum BytecodeError {
     PassportsRequireV019,
     #[error("invalid passport `{name}`: {reason}")]
     InvalidPassport { name: String, reason: String },
+    #[error("provider harness metadata requires bytecode version 0.20")]
+    HarnessesRequireV020,
+    #[error("duplicate provider harness `{0}`")]
+    DuplicateProviderHarness(String),
+    #[error("invalid provider harness `{name}`: {reason}")]
+    InvalidProviderHarness { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -386,6 +410,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.17"
             | "0.18"
             | "0.19"
+            | "0.20"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -396,7 +421,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     if !matches!(
         program.bytecode_version.as_str(),
-        "0.19" | "0.18" | "0.17" | "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
+        "0.20" | "0.19" | "0.18" | "0.17" | "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -404,7 +429,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.modules.is_empty() || !program.imports.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.16" | "0.17" | "0.18" | "0.19"
+            "0.16" | "0.17" | "0.18" | "0.19" | "0.20"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -422,13 +447,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         }
     }
     if !program.policies.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.17" | "0.18" | "0.19")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.17" | "0.18" | "0.19" | "0.20"
+        )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
     }
     validate_policies(program, &mut errors);
     validate_message_contracts(program, &mut errors);
     validate_passports(program, &mut errors);
+    validate_provider_harnesses(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -625,7 +654,7 @@ fn validate_contract_allowlists(
         }
         if !matches!(
             program.bytecode_version.as_str(),
-            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17" | "0.18" | "0.19"
+            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17" | "0.18" | "0.19" | "0.20"
         ) {
             continue;
         }
@@ -694,7 +723,10 @@ fn validate_contract_allowlists(
 
 fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     if (!program.types.is_empty() || !program.enums.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.18" | "0.19")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.18" | "0.19" | "0.20"
+        )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
     }
@@ -738,7 +770,9 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
     const RISK_LEVELS: [&str; 4] = ["low", "medium", "high", "critical"];
     const ASN_REGISTRIES: [&str; 6] = ["LACNIC", "ARIN", "RIPE", "APNIC", "AFRINIC", "UNKNOWN"];
 
-    if !program.passports.is_empty() && program.bytecode_version != "0.19" {
+    if !program.passports.is_empty()
+        && !matches!(program.bytecode_version.as_str(), "0.19" | "0.20")
+    {
         errors.push(BytecodeError::PassportsRequireV019);
     }
     let agents: HashSet<&str> = program
@@ -808,6 +842,88 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
                     reason: format!("invalid asn registry `{}`", asn.registry),
                 });
             }
+        }
+    }
+}
+
+fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    if !program.provider_harnesses.is_empty() && program.bytecode_version != "0.20" {
+        errors.push(BytecodeError::HarnessesRequireV020);
+    }
+    let providers = program
+        .providers
+        .iter()
+        .map(|provider| provider.name.as_str())
+        .collect::<HashSet<_>>();
+    let types = program
+        .types
+        .iter()
+        .map(|contract| contract.name.as_str())
+        .collect::<HashSet<_>>();
+    let mut names = HashSet::new();
+    for harness in &program.provider_harnesses {
+        if !names.insert(harness.name.as_str()) {
+            errors.push(BytecodeError::DuplicateProviderHarness(
+                harness.name.clone(),
+            ));
+        }
+        let invalid = |reason: String, errors: &mut Vec<BytecodeError>| {
+            errors.push(BytecodeError::InvalidProviderHarness {
+                name: harness.name.clone(),
+                reason,
+            });
+        };
+        if harness.name.trim().is_empty() {
+            invalid("name must not be empty".into(), errors);
+        }
+        if harness.provider.trim().is_empty() {
+            invalid("provider must not be empty".into(), errors);
+        } else if !providers.contains(harness.provider.as_str()) {
+            invalid(
+                format!("unknown provider `{}`", harness.provider),
+                errors,
+            );
+        }
+        if !matches!(harness.mode.as_str(), "dry_run" | "simulated") {
+            invalid(
+                format!("invalid mode `{}`", harness.mode),
+                errors,
+            );
+        }
+        if harness.network != "denied" {
+            invalid("network must be denied".into(), errors);
+        }
+        if harness.secrets != "denied" {
+            invalid("secrets must be denied".into(), errors);
+        }
+        if !matches!(harness.filesystem.as_str(), "none" | "read_only") {
+            invalid(
+                format!("invalid filesystem `{}`", harness.filesystem),
+                errors,
+            );
+        }
+        if harness.max_steps == Some(0) {
+            invalid("max_steps must be positive".into(), errors);
+        }
+        if harness.timeout_ms == Some(0) {
+            invalid("timeout_ms must be positive".into(), errors);
+        }
+        for (label, contract) in [
+            ("input_contract", harness.input_contract.as_ref()),
+            ("output_contract", harness.output_contract.as_ref()),
+        ] {
+            if let Some(contract) = contract {
+                if !types.contains(contract.as_str()) {
+                    invalid(format!("unknown {label} `{contract}`"), errors);
+                }
+            }
+        }
+        if harness
+            .attestations
+            .iter()
+            .any(|attestation| attestation.trim().is_empty())
+        {
+            invalid("attestation entries must not be empty".into(), errors);
         }
     }
 }
@@ -926,6 +1042,7 @@ mod tests {
             modules: vec![],
             imports: vec![],
             providers: vec![],
+            provider_harnesses: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -1285,5 +1402,84 @@ mod tests {
         let mut plain_v018 = valid_program();
         plain_v018.bytecode_version = "0.18".into();
         verify_bytecode(&plain_v018).unwrap();
+    }
+
+    #[test]
+    fn validates_v020_provider_harnesses_and_accepts_v019() {
+        let mut v020 = valid_program();
+        v020.bytecode_version = "0.20".into();
+        v020.types = vec![super::BytecodeType {
+            name: "Prompt".into(),
+            fields: vec![],
+        }];
+        let contract = BytecodeProviderContract {
+            name: "OpenAI".into(),
+            kind: "external".into(),
+            enabled: false,
+            dry_run_only: true,
+            requires_feature_flag: true,
+            requires_explicit_approval: true,
+            allowed_targets: vec![],
+            allowed_capabilities: vec![],
+        };
+        v020.providers.push(contract.clone());
+        v020.instructions.insert(
+            0,
+            Instruction::DeclareProviderContract {
+                name: contract.name,
+                kind: contract.kind,
+                enabled: contract.enabled,
+                dry_run_only: contract.dry_run_only,
+                requires_feature_flag: contract.requires_feature_flag,
+                requires_explicit_approval: contract.requires_explicit_approval,
+                allowed_targets: contract.allowed_targets,
+                allowed_capabilities: contract.allowed_capabilities,
+            },
+        );
+        v020.provider_harnesses = vec![super::BytecodeProviderHarness {
+            name: "OpenAIHarness".into(),
+            provider: "OpenAI".into(),
+            mode: "dry_run".into(),
+            network: "denied".into(),
+            secrets: "denied".into(),
+            filesystem: "none".into(),
+            max_steps: Some(10),
+            timeout_ms: Some(1000),
+            input_contract: Some("Prompt".into()),
+            output_contract: None,
+            attestations: vec![],
+        }];
+        verify_bytecode(&v020).unwrap();
+
+        let mut v019 = valid_program();
+        v019.bytecode_version = "0.19".into();
+        verify_bytecode(&v019).unwrap();
+
+        let mut below = v020.clone();
+        below.bytecode_version = "0.19".into();
+        assert!(verify_bytecode(&below)
+            .unwrap_err()
+            .contains(&BytecodeError::HarnessesRequireV020));
+
+        let mut invalid = v020;
+        invalid.provider_harnesses[0].network = "allowed".into();
+        invalid.provider_harnesses[0].max_steps = Some(0);
+        invalid.provider_harnesses[0].attestations = vec!["".into()];
+        let errors = verify_bytecode(&invalid).unwrap_err();
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            BytecodeError::InvalidProviderHarness { reason, .. }
+                if reason.contains("network must be denied")
+        )));
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            BytecodeError::InvalidProviderHarness { reason, .. }
+                if reason.contains("max_steps must be positive")
+        )));
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            BytecodeError::InvalidProviderHarness { reason, .. }
+                if reason.contains("attestation entries")
+        )));
     }
 }
