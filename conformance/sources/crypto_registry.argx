@@ -1,0 +1,38 @@
+module app.main
+
+crypto sha256 {
+  kind hash
+  status allowed
+  strength classical
+  purpose ["digest", "evidence", "ledger"]
+  output_bits 256
+}
+
+crypto ml_dsa {
+  kind signature
+  status post_quantum_candidate
+  strength post_quantum
+  purpose ["future-signature"]
+}
+
+type T { x: string }
+
+agent User { sends T to X }
+agent X { receives T }
+
+protocol P {
+  User -> X: tell T
+}
+
+policy CryptoRegistryPolicy {
+  require crypto_primitives_declared
+  require crypto_key_material_absent
+  require crypto_secret_material_absent
+  require crypto_execution_absent
+  require crypto_post_quantum_candidates_declared
+
+  on violation {
+    action review
+    trace required
+  }
+}
