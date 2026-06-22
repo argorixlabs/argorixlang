@@ -1,0 +1,40 @@
+name: DCO
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: DCO sign-off check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify Signed-off-by on all PR commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          for sha in $(git rev-list "$BASE_SHA..$HEAD_SHA"); do
+            author="$(git show -s --format='%an <%ae>' "$sha")"
+            if git show -s --format=%B "$sha" \
+              | grep -qiE '^Signed-off-by: .+ <.+@.+>'; then
+              continue
+            fi
+            echo "::error::Commit $sha by $author is missing a Signed-off-by line"
+            missing=1
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "All commits must carry a Developer Certificate of Origin sign-off."
+            echo "Add one with: git commit -s   (or: git rebase --signoff <base>)"
+            echo "See CONTRIBUTING.md."
+            exit 1
+          fi
+          echo "All commits are signed off. ✅"
