@@ -1,0 +1,8 @@
+module m
+crypto sha256 { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }
+crypto_boundary Bad {
+  allowed_hashes ["sha256"]
+  secret_material denied
+  execution disabled
+  purpose ["test"]
+}

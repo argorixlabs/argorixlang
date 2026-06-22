@@ -1,0 +1,78 @@
+module app.main
+
+crypto sha256 { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }
+crypto rsa2048 { kind signature status legacy strength classical purpose ["compatibility"] min_key_bits 2048 }
+crypto rsa1024 { kind signature status denied strength classical purpose ["insecure"] min_key_bits 1024 }
+crypto ml_dsa { kind signature status post_quantum_candidate strength post_quantum purpose ["future-signature"] }
+crypto ml_kem { kind kem status post_quantum_candidate strength post_quantum purpose ["future-key-establishment"] }
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  allowed_signatures ["ml_dsa"]
+  allowed_kems ["ml_kem"]
+
+  legacy_allowed ["rsa2048"]
+  denied ["rsa1024"]
+
+  min_hash_bits 256
+  post_quantum_ready true
+  hybrid_allowed true
+
+  key_material denied
+  secret_material denied
+  execution disabled
+
+  purpose ["identity", "credential", "evidence"]
+  notes "metadata only; no security claim"
+}
+
+crypto_boundary LegacyBoundary {
+  allowed_hashes ["sha256"]
+  legacy_allowed ["rsa2048"]
+  denied []
+
+  key_material denied
+  secret_material denied
+  execution disabled
+
+  purpose ["compatibility"]
+}
+
+crypto_boundary PostQuantumReadyBoundary {
+  allowed_signatures ["ml_dsa"]
+  allowed_kems ["ml_kem"]
+  post_quantum_ready true
+  hybrid_allowed false
+
+  key_material denied
+  secret_material denied
+  execution disabled
+
+  purpose ["future-handshake"]
+}
+
+agent User { sends T to X }
+agent X { receives T }
+
+type T { x: string }
+
+protocol P {
+  User -> X: tell T
+}
+
+policy CryptoBoundaryPolicy {
+  require crypto_primitives_declared
+  require crypto_boundaries_declared
+  require crypto_boundary_primitives_declared
+  require crypto_boundary_no_conflicts
+  require crypto_boundary_key_material_denied
+  require crypto_boundary_secret_material_denied
+  require crypto_boundary_execution_disabled
+  require post_quantum_readiness_declared
+  require post_quantum_no_security_claims
+
+  on violation {
+    action review
+    trace required
+  }
+}

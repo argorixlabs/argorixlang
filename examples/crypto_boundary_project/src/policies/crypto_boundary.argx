@@ -1,0 +1,9 @@
+module policies.crypto_boundary
+
+policy ProjectCryptoBoundaryPolicy {
+  require crypto_primitives_declared
+  require crypto_boundaries_declared
+  require post_quantum_readiness_declared
+
+  on violation { action review trace required }
+}

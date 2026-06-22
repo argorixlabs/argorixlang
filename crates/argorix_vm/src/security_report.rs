@@ -32,6 +32,8 @@ pub struct SecurityReport {
     pub adapter_profiles: AdapterProfileSummary,
     #[serde(default)]
     pub crypto_registry: CryptoRegistrySummary,
+    #[serde(default)]
+    pub crypto_boundaries: CryptoBoundariesSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -200,8 +202,81 @@ fn adapter_profile_summary(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct CryptoBoundariesSummary {
+    pub total: usize,
+    pub allowed_hashes_total: usize,
+    pub allowed_signatures_total: usize,
+    pub allowed_kems_total: usize,
+    pub allowed_aeads_total: usize,
+    pub legacy_allowed_total: usize,
+    pub denied_total: usize,
+    pub post_quantum_ready: usize,
+    pub hybrid_allowed: usize,
+    pub key_material: std::collections::BTreeMap<String, usize>,
+    pub secret_material: std::collections::BTreeMap<String, usize>,
+    pub execution: std::collections::BTreeMap<String, usize>,
+    pub security_claims: std::collections::BTreeMap<String, bool>,
+}
+
+fn crypto_boundaries_summary(
+    boundaries: &[argorix_bytecode::BytecodeCryptoBoundary],
+) -> CryptoBoundariesSummary {
+    use std::collections::BTreeMap;
+    let mut key_material = BTreeMap::new();
+    let mut secret_material = BTreeMap::new();
+    let mut execution = BTreeMap::new();
+    let mut allowed_hashes_total = 0usize;
+    let mut allowed_signatures_total = 0usize;
+    let mut allowed_kems_total = 0usize;
+    let mut allowed_aeads_total = 0usize;
+    let mut legacy_allowed_total = 0usize;
+    let mut denied_total = 0usize;
+    let mut post_quantum_ready = 0usize;
+    let mut hybrid_allowed = 0usize;
+
+    for b in boundaries {
+        *key_material.entry(b.key_material.clone()).or_insert(0) += 1;
+        *secret_material
+            .entry(b.secret_material.clone())
+            .or_insert(0) += 1;
+        *execution.entry(b.execution.clone()).or_insert(0) += 1;
+        allowed_hashes_total += b.allowed_hashes.len();
+        allowed_signatures_total += b.allowed_signatures.len();
+        allowed_kems_total += b.allowed_kems.len();
+        allowed_aeads_total += b.allowed_aeads.len();
+        legacy_allowed_total += b.legacy_allowed.len();
+        denied_total += b.denied.len();
+        if b.post_quantum_ready == Some(true) {
+            post_quantum_ready += 1;
+        }
+        if b.hybrid_allowed == Some(true) {
+            hybrid_allowed += 1;
+        }
+    }
+
+    CryptoBoundariesSummary {
+        total: boundaries.len(),
+        allowed_hashes_total,
+        allowed_signatures_total,
+        allowed_kems_total,
+        allowed_aeads_total,
+        legacy_allowed_total,
+        denied_total,
+        post_quantum_ready,
+        hybrid_allowed,
+        key_material,
+        secret_material,
+        execution,
+        security_claims: {
+            let mut m = BTreeMap::new();
+            m.insert("post_quantum_secure".to_string(), false);
+            m
+        },
+    }
+}
+
 fn crypto_registry_summary(cryptos: &[argorix_bytecode::BytecodeCrypto]) -> CryptoRegistrySummary {
-    use std::collections::BTreeSet;
     let mut kinds = BTreeMap::new();
     let mut statuses = BTreeMap::new();
     let mut strength = BTreeMap::new();
@@ -456,7 +531,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.24".into(),
+            report_version: "0.25".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -464,7 +539,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.22".into()),
+                .unwrap_or_else(|| "0.25".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -474,6 +549,7 @@ impl SecurityReport {
             adapters: adapter_summary(&bytecode.adapters),
             adapter_profiles: adapter_profile_summary(&bytecode.adapter_profiles),
             crypto_registry: crypto_registry_summary(&bytecode.cryptos),
+            crypto_boundaries: crypto_boundaries_summary(&bytecode.crypto_boundaries),
             policy,
             provider_boundary,
             calls,

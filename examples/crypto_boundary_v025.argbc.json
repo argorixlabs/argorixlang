@@ -1,0 +1,237 @@
+{
+  "bytecode_version": "0.25",
+  "language": "Argorix Lang",
+  "module": "app.main",
+  "providers": [],
+  "provider_harnesses": [],
+  "cryptos": [
+    {
+      "name": "sha256",
+      "kind": "hash",
+      "status": "allowed",
+      "strength": "classical",
+      "purpose": [
+        "digest"
+      ],
+      "output_bits": 256
+    },
+    {
+      "name": "rsa2048",
+      "kind": "signature",
+      "status": "legacy",
+      "strength": "classical",
+      "purpose": [
+        "compatibility"
+      ],
+      "min_key_bits": 2048
+    },
+    {
+      "name": "rsa1024",
+      "kind": "signature",
+      "status": "denied",
+      "strength": "classical",
+      "purpose": [
+        "insecure"
+      ],
+      "min_key_bits": 1024
+    },
+    {
+      "name": "ml_dsa",
+      "kind": "signature",
+      "status": "post_quantum_candidate",
+      "strength": "post_quantum",
+      "purpose": [
+        "future-signature"
+      ]
+    },
+    {
+      "name": "ml_kem",
+      "kind": "kem",
+      "status": "post_quantum_candidate",
+      "strength": "post_quantum",
+      "purpose": [
+        "future-key-establishment"
+      ]
+    }
+  ],
+  "crypto_boundaries": [
+    {
+      "name": "TrustBoundary",
+      "allowed_hashes": [
+        "sha256"
+      ],
+      "allowed_signatures": [
+        "ml_dsa"
+      ],
+      "allowed_kems": [
+        "ml_kem"
+      ],
+      "allowed_aeads": [],
+      "legacy_allowed": [
+        "rsa2048"
+      ],
+      "denied": [
+        "rsa1024"
+      ],
+      "min_hash_bits": 256,
+      "post_quantum_ready": true,
+      "hybrid_allowed": true,
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "purpose": [
+        "identity",
+        "credential",
+        "evidence"
+      ],
+      "notes": "metadata only; no security claim"
+    },
+    {
+      "name": "LegacyBoundary",
+      "allowed_hashes": [
+        "sha256"
+      ],
+      "allowed_signatures": [],
+      "allowed_kems": [],
+      "allowed_aeads": [],
+      "legacy_allowed": [
+        "rsa2048"
+      ],
+      "denied": [],
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "purpose": [
+        "compatibility"
+      ]
+    },
+    {
+      "name": "PostQuantumReadyBoundary",
+      "allowed_hashes": [],
+      "allowed_signatures": [
+        "ml_dsa"
+      ],
+      "allowed_kems": [
+        "ml_kem"
+      ],
+      "allowed_aeads": [],
+      "legacy_allowed": [],
+      "denied": [],
+      "post_quantum_ready": true,
+      "hybrid_allowed": false,
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "purpose": [
+        "future-handshake"
+      ]
+    }
+  ],
+  "assertions": [],
+  "policies": [
+    {
+      "name": "CryptoBoundaryPolicy",
+      "rules": [
+        {
+          "effect": "require",
+          "rule": "crypto_primitives_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "crypto_boundaries_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "crypto_boundary_primitives_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "crypto_boundary_no_conflicts"
+        },
+        {
+          "effect": "require",
+          "rule": "crypto_boundary_key_material_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "crypto_boundary_secret_material_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "crypto_boundary_execution_disabled"
+        },
+        {
+          "effect": "require",
+          "rule": "post_quantum_readiness_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "post_quantum_no_security_claims"
+        }
+      ],
+      "on_violation": {
+        "action": "review",
+        "trace_required": true
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "T",
+      "fields": [
+        {
+          "name": "x",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "agents": [
+    {
+      "name": "User",
+      "approval": "denied"
+    },
+    {
+      "name": "X",
+      "approval": "denied"
+    }
+  ],
+  "capabilities": [],
+  "tools": [],
+  "models": [],
+  "instructions": [
+    {
+      "op": "DeclareAgent",
+      "name": "User",
+      "approval": "denied"
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "X",
+      "approval": "denied"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "P"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "X",
+      "act": "tell",
+      "message_type": "T"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol P completed"
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}

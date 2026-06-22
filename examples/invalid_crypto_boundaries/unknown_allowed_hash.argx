@@ -1,0 +1,8 @@
+module m
+crypto_boundary Bad {
+  allowed_hashes ["ghost256"]
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["test"]
+}

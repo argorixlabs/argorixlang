@@ -1,0 +1,6 @@
+[package]
+name = "crypto-boundary-v025"
+version = "0.25.0"
+
+[entry]
+main = "src/main.argx"

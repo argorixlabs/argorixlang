@@ -1,0 +1,10 @@
+{
+  "suite_version": "0.25",
+  "cases": [
+    {"id":"crypto-boundary-parse","name":"crypto boundary parses","category":"crypto_boundaries","source_path":"sources/crypto_boundary.argx","stages":["parse"]},
+    {"id":"crypto-boundary-semantics","name":"crypto boundary semantic check passes","category":"crypto_boundaries","source_path":"sources/crypto_boundary.argx","stages":["parse","semantic_check"]},
+    {"id":"crypto-boundary-ir","name":"IR 0.25 includes crypto_boundaries","category":"crypto_boundaries","source_path":"sources/crypto_boundary.argx","stages":["parse","semantic_check","emit_ir"]},
+    {"id":"crypto-boundary-bytecode","name":"Bytecode 0.25 includes crypto_boundaries","category":"crypto_boundaries","source_path":"sources/crypto_boundary.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode"]},
+    {"id":"crypto-boundary-policy","name":"Policy v2 crypto boundary rules pass","category":"crypto_boundaries","source_path":"sources/crypto_boundary.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode","run_vm"],"injection":"User:X:tell:T"}
+  ]
+}

@@ -1,0 +1,137 @@
+{
+    "bytecode_version":  "0.24",
+    "language":  "Argorix Lang",
+    "module":  "app.main",
+    "providers":  [
+
+                  ],
+    "provider_harnesses":  [
+
+                           ],
+    "cryptos":  [
+                    {
+                        "name":  "sha256",
+                        "kind":  "hash",
+                        "status":  "allowed",
+                        "strength":  "classical",
+                        "purpose":  [
+                                        "digest",
+                                        "evidence",
+                                        "ledger"
+                                    ],
+                        "output_bits":  256
+                    },
+                    {
+                        "name":  "ml_dsa",
+                        "kind":  "signature",
+                        "status":  "post_quantum_candidate",
+                        "strength":  "post_quantum",
+                        "purpose":  [
+                                        "future-signature"
+                                    ]
+                    }
+                ],
+    "assertions":  [
+
+                   ],
+    "policies":  [
+                     {
+                         "name":  "CryptoRegistryPolicy",
+                         "rules":  [
+                                       {
+                                           "effect":  "require",
+                                           "rule":  "crypto_primitives_declared"
+                                       },
+                                       {
+                                           "effect":  "require",
+                                           "rule":  "crypto_key_material_absent"
+                                       },
+                                       {
+                                           "effect":  "require",
+                                           "rule":  "crypto_secret_material_absent"
+                                       },
+                                       {
+                                           "effect":  "require",
+                                           "rule":  "crypto_execution_absent"
+                                       },
+                                       {
+                                           "effect":  "require",
+                                           "rule":  "crypto_post_quantum_candidates_declared"
+                                       }
+                                   ],
+                         "on_violation":  {
+                                              "action":  "review",
+                                              "trace_required":  true
+                                          }
+                     }
+                 ],
+    "types":  [
+                  {
+                      "name":  "T",
+                      "fields":  [
+                                     {
+                                         "name":  "x",
+                                         "type":  "string"
+                                     }
+                                 ]
+                  }
+              ],
+    "enums":  [
+
+              ],
+    "failures":  [
+
+                 ],
+    "agents":  [
+                   {
+                       "name":  "User",
+                       "approval":  "denied"
+                   },
+                   {
+                       "name":  "X",
+                       "approval":  "denied"
+                   }
+               ],
+    "capabilities":  [
+
+                     ],
+    "tools":  [
+
+              ],
+    "models":  [
+
+               ],
+    "instructions":  [
+                         {
+                             "op":  "DeclareAgent",
+                             "name":  "User",
+                             "approval":  "denied"
+                         },
+                         {
+                             "op":  "DeclareAgent",
+                             "name":  "X",
+                             "approval":  "denied"
+                         },
+                         {
+                             "op":  "DeclareProtocol",
+                             "name":  "P"
+                         },
+                         {
+                             "op":  "SendMessage",
+                             "from":  "User",
+                             "to":  "X",
+                             "act":  "tell",
+                             "message_type":  "T"
+                         },
+                         {
+                             "op":  "Trace",
+                             "message":  "protocol P completed"
+                         },
+                         {
+                             "op":  "PolicyReport"
+                         },
+                         {
+                             "op":  "End"
+                         }
+                     ]
+}

@@ -1,0 +1,16 @@
+module boundaries.trust
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  allowed_signatures ["ml_dsa"]
+  allowed_kems ["ml_kem"]
+  legacy_allowed ["rsa2048"]
+  denied []
+  min_hash_bits 256
+  post_quantum_ready true
+  hybrid_allowed true
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["identity", "evidence"]
+}

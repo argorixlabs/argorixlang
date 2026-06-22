@@ -1,0 +1,6 @@
+module crypto.primitives
+
+crypto sha256 { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }
+crypto ml_dsa { kind signature status post_quantum_candidate strength post_quantum purpose ["future-signature"] }
+crypto ml_kem { kind kem status post_quantum_candidate strength post_quantum purpose ["future-key-establishment"] }
+crypto rsa2048 { kind signature status legacy strength classical purpose ["compatibility"] min_key_bits 2048 }
