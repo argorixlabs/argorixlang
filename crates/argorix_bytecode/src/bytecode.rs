@@ -929,7 +929,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
 }
 
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    const RULES: [&str; 16] = [
+    const RULES: [&str; 22] = [
         "no_unhandled_messages",
         "all_tool_calls_traced",
         "all_model_calls_traced",
@@ -946,6 +946,12 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "agent_passport_attested",
         "agent_data_residency_declared",
         "agent_identity_declared",
+        "provider_harness_declared",
+        "provider_harness_sandboxed",
+        "provider_network_denied",
+        "provider_secrets_denied",
+        "provider_filesystem_restricted",
+        "external_provider_harnessed",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {

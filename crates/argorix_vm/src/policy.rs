@@ -8,6 +8,12 @@ pub struct PolicyEvidenceContext {
     pub agent_passport_attested: bool,
     pub agent_data_residency_declared: bool,
     pub agent_identity_declared: bool,
+    pub provider_harness_declared: bool,
+    pub provider_harness_sandboxed: bool,
+    pub provider_network_denied: bool,
+    pub provider_secrets_denied: bool,
+    pub provider_filesystem_restricted: bool,
+    pub external_provider_harnessed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +114,30 @@ pub fn evaluate_rule(
         "agent_identity_declared" => (
             context.agent_identity_declared,
             "one or more passports lack a declared identity",
+        ),
+        "provider_harness_declared" => (
+            context.provider_harness_declared,
+            "no provider harness is declared",
+        ),
+        "provider_harness_sandboxed" => (
+            context.provider_harness_sandboxed,
+            "one or more provider harnesses are not sandboxed",
+        ),
+        "provider_network_denied" => (
+            context.provider_network_denied,
+            "one or more provider harnesses do not deny network access",
+        ),
+        "provider_secrets_denied" => (
+            context.provider_secrets_denied,
+            "one or more provider harnesses do not deny secret access",
+        ),
+        "provider_filesystem_restricted" => (
+            context.provider_filesystem_restricted,
+            "one or more provider harnesses have unrestricted filesystem access",
+        ),
+        "external_provider_harnessed" => (
+            context.external_provider_harnessed,
+            "one or more external providers lack an associated harness",
         ),
         _ => (false, "unknown policy rule"),
     };

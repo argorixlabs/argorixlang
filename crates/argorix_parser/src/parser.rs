@@ -475,6 +475,12 @@ impl Parser {
             "agent_passport_attested" => PolicyRule::AgentPassportAttested,
             "agent_data_residency_declared" => PolicyRule::AgentDataResidencyDeclared,
             "agent_identity_declared" => PolicyRule::AgentIdentityDeclared,
+            "provider_harness_declared" => PolicyRule::ProviderHarnessDeclared,
+            "provider_harness_sandboxed" => PolicyRule::ProviderHarnessSandboxed,
+            "provider_network_denied" => PolicyRule::ProviderNetworkDenied,
+            "provider_secrets_denied" => PolicyRule::ProviderSecretsDenied,
+            "provider_filesystem_restricted" => PolicyRule::ProviderFilesystemRestricted,
+            "external_provider_harnessed" => PolicyRule::ExternalProviderHarnessed,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {
@@ -1527,5 +1533,32 @@ mod tests {
         )
         .unwrap_err();
         assert!(malformed[0].message.contains("integer"));
+    }
+
+    #[test]
+    fn parses_provider_harness_policy_rules() {
+        let program = parse_source(
+            r#"
+            module main
+            policy HarnessPolicy {
+                require provider_harness_declared
+                require provider_harness_sandboxed
+                require provider_network_denied
+                require provider_secrets_denied
+                require provider_filesystem_restricted
+                require external_provider_harnessed
+            }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(program.policies[0].rules.len(), 6);
+        assert!(matches!(
+            program.policies[0].rules[0].rule().value,
+            PolicyRule::ProviderHarnessDeclared
+        ));
+        assert!(matches!(
+            program.policies[0].rules[5].rule().value,
+            PolicyRule::ExternalProviderHarnessed
+        ));
     }
 }

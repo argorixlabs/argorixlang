@@ -212,6 +212,7 @@ mod tests {
             modules: vec![],
             imports: vec![],
             providers: vec![],
+            provider_harnesses: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

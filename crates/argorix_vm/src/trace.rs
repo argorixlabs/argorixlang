@@ -64,6 +64,10 @@ pub enum EventType {
     ProviderContractDeclared,
     ProviderContractValidated,
     ProviderContractRejected,
+    ProviderHarnessDeclared,
+    ProviderHarnessValidated,
+    ProviderHarnessSandboxed,
+    ProviderHarnessRejected,
     ExternalProviderExecutionBlocked,
     AssertionDeclared,
     FailureDeclared,
@@ -161,6 +165,8 @@ pub struct ReactiveExecutionTrace {
     pub message_contracts: Vec<argorix_bytecode::BytecodeType>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub passports: Vec<argorix_bytecode::BytecodePassport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_harnesses: Vec<argorix_bytecode::BytecodeProviderHarness>,
     pub injected: InjectedMessage,
     pub steps: Vec<ReactiveStep>,
     pub mailboxes: Vec<MailboxSummary>,

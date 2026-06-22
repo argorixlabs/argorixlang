@@ -185,6 +185,12 @@ pub enum PolicyRule {
     AgentPassportAttested,
     AgentDataResidencyDeclared,
     AgentIdentityDeclared,
+    ProviderHarnessDeclared,
+    ProviderHarnessSandboxed,
+    ProviderNetworkDenied,
+    ProviderSecretsDenied,
+    ProviderFilesystemRestricted,
+    ExternalProviderHarnessed,
     Unknown(String),
 }
 
@@ -207,6 +213,12 @@ impl PolicyRule {
             Self::AgentPassportAttested => "agent_passport_attested",
             Self::AgentDataResidencyDeclared => "agent_data_residency_declared",
             Self::AgentIdentityDeclared => "agent_identity_declared",
+            Self::ProviderHarnessDeclared => "provider_harness_declared",
+            Self::ProviderHarnessSandboxed => "provider_harness_sandboxed",
+            Self::ProviderNetworkDenied => "provider_network_denied",
+            Self::ProviderSecretsDenied => "provider_secrets_denied",
+            Self::ProviderFilesystemRestricted => "provider_filesystem_restricted",
+            Self::ExternalProviderHarnessed => "external_provider_harnessed",
             Self::Unknown(value) => value,
         }
         .to_owned()

@@ -182,12 +182,44 @@ impl Vm {
                 );
                 record_external_execution_policy_violations(bytecode, &mut state);
             }
+            if errors.iter().any(|error| {
+                matches!(
+                    error,
+                    BytecodeError::HarnessesRequireV020
+                        | BytecodeError::DuplicateProviderHarness(_)
+                        | BytecodeError::InvalidProviderHarness { .. }
+                )
+            }) {
+                state.trace_ledger.record(
+                    EventType::ProviderHarnessRejected,
+                    "rejected",
+                    "provider harness metadata rejected by bytecode verification",
+                    EventFields::default(),
+                );
+            }
             let error = VmError::from_verification(errors);
             state.fail(error.to_string());
             return ExecutionOutcome {
                 state,
                 result: Err(error),
             };
+        }
+        for harness in &bytecode.provider_harnesses {
+            state.trace_ledger.record(
+                EventType::ProviderHarnessValidated,
+                "validated",
+                format!("provider harness {} validated", harness.name),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ProviderHarnessSandboxed,
+                "sandboxed",
+                format!(
+                    "provider harness {} containment validated without execution",
+                    harness.name
+                ),
+                EventFields::default(),
+            );
         }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
@@ -312,7 +344,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.19".into(),
+            vm_version: "0.20".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -326,6 +358,7 @@ impl Vm {
             imports: bytecode.imports.clone(),
             message_contracts: bytecode.types.clone(),
             passports: bytecode.passports.clone(),
+            provider_harnesses: bytecode.provider_harnesses.clone(),
             injected,
             steps,
             mailboxes,
@@ -352,7 +385,7 @@ impl Vm {
         state: &mut RuntimeState,
         steps: &[crate::ReactiveStep],
     ) -> PolicyReport {
-        let passport_context = passport_evidence_context(bytecode);
+        let evidence_context = policy_evidence_context(bytecode);
         let mut results = Vec::new();
         for assertion in &bytecode.assertions {
             let name = if assertion.name == "runtime_status" {
@@ -360,7 +393,7 @@ impl Vm {
             } else {
                 assertion.name.as_str()
             };
-            let mut evaluation = evaluate_rule(name, state, steps, passport_context);
+            let mut evaluation = evaluate_rule(name, state, steps, evidence_context);
             if assertion.name == "runtime_status"
                 && assertion.argument.as_deref() != Some("completed")
             {
@@ -418,7 +451,7 @@ impl Vm {
             let mut deny_rules = Vec::new();
             let mut violations = Vec::new();
             for declaration in &policy.rules {
-                let evaluation = evaluate_rule(&declaration.rule, state, steps, passport_context);
+                let evaluation = evaluate_rule(&declaration.rule, state, steps, evidence_context);
                 let passed = if declaration.effect == "deny" {
                     !evaluation.passed
                 } else {
@@ -611,7 +644,7 @@ fn blocked_external_provider<'a>(
 ///
 /// These booleans feed the v0.19 Policy v2 passport rules. They never resolve
 /// DIDs, ASN registrations, or registries; they only inspect declared metadata.
-fn passport_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext {
+fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext {
     let passports = &bytecode.passports;
     let agent_passport_declared = !bytecode.agents.is_empty()
         && bytecode.agents.iter().all(|agent| {
@@ -619,6 +652,7 @@ fn passport_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContex
                 .iter()
                 .any(|passport| passport.agent == agent.name)
         });
+    let harnesses = &bytecode.provider_harnesses;
     PolicyEvidenceContext {
         agent_passport_declared,
         agent_passport_attested: !passports.is_empty()
@@ -633,6 +667,31 @@ fn passport_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContex
             && passports
                 .iter()
                 .all(|passport| !passport.identity.trim().is_empty()),
+        provider_harness_declared: !harnesses.is_empty(),
+        provider_harness_sandboxed: harnesses.iter().all(|harness| {
+            matches!(harness.mode.as_str(), "dry_run" | "simulated")
+                && harness.network == "denied"
+                && harness.secrets == "denied"
+                && matches!(harness.filesystem.as_str(), "none" | "read_only")
+        }),
+        provider_network_denied: harnesses
+            .iter()
+            .all(|harness| harness.network == "denied"),
+        provider_secrets_denied: harnesses
+            .iter()
+            .all(|harness| harness.secrets == "denied"),
+        provider_filesystem_restricted: harnesses
+            .iter()
+            .all(|harness| matches!(harness.filesystem.as_str(), "none" | "read_only")),
+        external_provider_harnessed: bytecode
+            .providers
+            .iter()
+            .filter(|provider| provider.kind == "external")
+            .all(|provider| {
+                harnesses
+                    .iter()
+                    .any(|harness| harness.provider == provider.name)
+            }),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -643,7 +702,7 @@ mod tests {
     use crate::{EventType, InjectedMessage, RuntimeStatus, Scheduler};
     use argorix_bytecode::{
         BytecodeAgent, BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation,
-        BytecodeProgram, BytecodeProviderContract, Instruction,
+        BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness, Instruction,
     };
     use serde_json::json;
 
@@ -683,6 +742,7 @@ mod tests {
             modules: vec![],
             imports: vec![],
             providers: vec![],
+            provider_harnesses: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -836,7 +896,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.19");
+        assert_eq!(json["vm_version"], "0.20");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -858,7 +918,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.19");
+        assert_eq!(json["vm_version"], "0.20");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -880,7 +940,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.19");
+        assert_eq!(json["vm_version"], "0.20");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -935,7 +995,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.19");
+        assert_eq!(trace.vm_version, "0.20");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -1009,7 +1069,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.19");
+        assert_eq!(trace.vm_version, "0.20");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1061,7 +1121,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.19");
+        assert_eq!(json["vm_version"], "0.20");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -1252,5 +1312,161 @@ mod tests {
             .events
             .iter()
             .any(|event| event.event_type == EventType::PolicyActionActivated));
+    }
+
+    #[test]
+    fn provider_harness_metadata_is_traced_and_policy_evaluated_offline() {
+        let mut bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/policy_assertions_v09.argbc.json"
+        ))
+        .unwrap();
+        add_external_contract(&mut bytecode, false);
+        bytecode.bytecode_version = "0.20".into();
+        bytecode.provider_harnesses = vec![BytecodeProviderHarness {
+            name: "OpenAIHarness".into(),
+            provider: "OpenAI".into(),
+            mode: "dry_run".into(),
+            network: "denied".into(),
+            secrets: "denied".into(),
+            filesystem: "none".into(),
+            max_steps: Some(10),
+            timeout_ms: Some(1000),
+            input_contract: None,
+            output_contract: None,
+            attestations: vec!["policy-check".into()],
+        }];
+        bytecode.policies = vec![BytecodePolicy {
+            name: "HarnessPolicy".into(),
+            rules: [
+                "provider_harness_declared",
+                "provider_harness_sandboxed",
+                "provider_network_denied",
+                "provider_secrets_denied",
+                "provider_filesystem_restricted",
+                "external_provider_harnessed",
+            ]
+            .into_iter()
+            .map(|rule| BytecodePolicyRule {
+                effect: "require".into(),
+                rule: rule.into(),
+            })
+            .collect(),
+            on_violation: Some(BytecodePolicyViolation {
+                action: "review".into(),
+                trace_required: true,
+            }),
+        }];
+
+        let trace = Vm::new()
+            .run_reactive(
+                &bytecode,
+                InjectedMessage {
+                    from: "User".into(),
+                    to: "ResearchAgent".into(),
+                    act: "tell".into(),
+                    message_type: "UserPrompt".into(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(trace.vm_version, "0.20");
+        assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
+        assert_eq!(trace.policy_report.status, "passed");
+        for expected in [
+            EventType::ProviderHarnessDeclared,
+            EventType::ProviderHarnessValidated,
+            EventType::ProviderHarnessSandboxed,
+        ] {
+            assert!(trace
+                .events
+                .iter()
+                .any(|event| event.event_type == expected));
+        }
+    }
+
+    #[test]
+    fn provider_harness_policies_fail_when_declaration_or_coverage_is_missing() {
+        let mut bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/policy_assertions_v09.argbc.json"
+        ))
+        .unwrap();
+        add_external_contract(&mut bytecode, false);
+        bytecode.bytecode_version = "0.20".into();
+        bytecode.policies = vec![BytecodePolicy {
+            name: "HarnessPolicy".into(),
+            rules: [
+                "provider_harness_declared",
+                "external_provider_harnessed",
+            ]
+            .into_iter()
+            .map(|rule| BytecodePolicyRule {
+                effect: "require".into(),
+                rule: rule.into(),
+            })
+            .collect(),
+            on_violation: Some(BytecodePolicyViolation {
+                action: "review".into(),
+                trace_required: true,
+            }),
+        }];
+        let trace = Vm::new()
+            .run_reactive(
+                &bytecode,
+                InjectedMessage {
+                    from: "User".into(),
+                    to: "ResearchAgent".into(),
+                    act: "tell".into(),
+                    message_type: "UserPrompt".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(trace.policy_report.status, "review_required");
+        let violations = &trace.policy_report.policy_blocks[0].violations;
+        assert!(violations
+            .iter()
+            .any(|violation| violation.rule == "provider_harness_declared"));
+        assert!(violations
+            .iter()
+            .any(|violation| violation.rule == "external_provider_harnessed"));
+    }
+
+    #[test]
+    fn harness_does_not_make_external_provider_executable() {
+        let mut bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+            "../../../examples/policy_assertions_v09.argbc.json"
+        ))
+        .unwrap();
+        add_external_contract(&mut bytecode, false);
+        bytecode.bytecode_version = "0.20".into();
+        bytecode.provider_harnesses = vec![BytecodeProviderHarness {
+            name: "OpenAIHarness".into(),
+            provider: "OpenAI".into(),
+            mode: "dry_run".into(),
+            network: "denied".into(),
+            secrets: "denied".into(),
+            filesystem: "none".into(),
+            max_steps: None,
+            timeout_ms: None,
+            input_contract: None,
+            output_contract: None,
+            attestations: vec![],
+        }];
+        bytecode.models[0].provider = "OpenAI".into();
+        let outcome = Vm::new().run_reactive_outcome(
+            &bytecode,
+            InjectedMessage {
+                from: "User".into(),
+                to: "ResearchAgent".into(),
+                act: "tell".into(),
+                message_type: "UserPrompt".into(),
+            },
+        );
+        assert!(outcome.result.is_err());
+        assert!(outcome
+            .state
+            .trace_ledger
+            .events
+            .iter()
+            .any(|event| event.event_type == EventType::ExternalProviderExecutionBlocked));
     }
 }

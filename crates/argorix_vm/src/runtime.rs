@@ -139,6 +139,17 @@ impl RuntimeState {
                 EventFields::default(),
             );
         }
+        for harness in &bytecode.provider_harnesses {
+            trace_ledger.record(
+                EventType::ProviderHarnessDeclared,
+                "declared",
+                format!(
+                    "provider harness {} declared for {}",
+                    harness.name, harness.provider
+                ),
+                EventFields::default(),
+            );
+        }
         for failure in &bytecode.failures {
             trace_ledger.record(
                 EventType::FailureDeclared,

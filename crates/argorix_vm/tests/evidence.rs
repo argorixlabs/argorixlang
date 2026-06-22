@@ -91,7 +91,7 @@ fn bundle_preserves_metadata_digests_and_relative_paths() {
     )
     .unwrap();
 
-    assert_eq!(bundle.bundle_version, "0.19");
+    assert_eq!(bundle.bundle_version, "0.20");
     assert_eq!(bundle.language, bytecode.language);
     assert_eq!(bundle.module, bytecode.module);
     assert_eq!(bundle.bytecode_version, bytecode.bytecode_version);
@@ -305,6 +305,47 @@ fn offline_verification_accepts_v014_bundle_and_report() {
 
     let result = verify_evidence(&bundle_path).unwrap();
 
+    assert!(result.passed, "{:?}", result.failures);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn offline_verification_accepts_v019_bundle_without_harness_summary_field() {
+    let root = temp_root("compat-v019");
+    let bundle_path = root.join("reports/run.bundle.json");
+    let bytecode_path = root.join("examples/program.argbc.json");
+    let trace_path = root.join("reports/run.trace.json");
+    let report_path = root.join("reports/run.security.json");
+    let bytecode = fixture();
+    let mut outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+    outcome.result.as_mut().unwrap().vm_version = "0.19".into();
+    let trace = outcome.result.as_ref().unwrap();
+    let mut report = SecurityReport::from_outcome(&bytecode, &outcome);
+    report.report_version = "0.19".into();
+    report.vm_version = "0.19".into();
+    let mut bundle = EvidenceBundle::from_outcome(
+        &bytecode,
+        &outcome,
+        &report,
+        &bundle_path,
+        Some(&bytecode_path),
+        Some(&trace_path),
+        Some(&report_path),
+    )
+    .unwrap();
+    bundle.bundle_version = "0.19".into();
+
+    let mut old_report_json = serde_json::to_value(&report).unwrap();
+    old_report_json
+        .as_object_mut()
+        .unwrap()
+        .remove("provider_harnesses");
+    write_json(&bytecode_path, &bytecode);
+    write_json(&trace_path, trace);
+    write_json(&report_path, &old_report_json);
+    write_json(&bundle_path, &bundle);
+
+    let result = verify_evidence(&bundle_path).unwrap();
     assert!(result.passed, "{:?}", result.failures);
     fs::remove_dir_all(root).unwrap();
 }

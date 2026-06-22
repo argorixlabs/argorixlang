@@ -20,6 +20,8 @@ pub struct SecurityReport {
     pub execution: ExecutionSummary,
     pub message_contracts: MessageContractSummary,
     pub agent_passports: AgentPassportSummary,
+    #[serde(default)]
+    pub provider_harnesses: ProviderHarnessSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -61,6 +63,19 @@ pub struct AgentPassportSummary {
     pub risk_levels: BTreeMap<String, usize>,
     pub attestations_total: usize,
     pub intents: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderHarnessSummary {
+    pub total: usize,
+    pub providers: Vec<String>,
+    pub modes: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub secrets: BTreeMap<String, usize>,
+    pub filesystem: BTreeMap<String, usize>,
+    pub attestations_total: usize,
+    pub input_contracts: Vec<String>,
+    pub output_contracts: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,7 +246,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.19".into(),
+            report_version: "0.20".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -239,10 +254,11 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.19".into()),
+                .unwrap_or_else(|| "0.20".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
+            provider_harnesses: provider_harness_summary(&bytecode.provider_harnesses),
             policy,
             provider_boundary,
             calls,
@@ -250,6 +266,45 @@ impl SecurityReport {
             ledger,
             verdict,
         }
+    }
+}
+
+fn provider_harness_summary(
+    harnesses: &[argorix_bytecode::BytecodeProviderHarness],
+) -> ProviderHarnessSummary {
+    use std::collections::BTreeSet;
+    let mut providers = BTreeSet::new();
+    let mut modes = BTreeMap::new();
+    let mut network = BTreeMap::new();
+    let mut secrets = BTreeMap::new();
+    let mut filesystem = BTreeMap::new();
+    let mut input_contracts = BTreeSet::new();
+    let mut output_contracts = BTreeSet::new();
+    let mut attestations_total = 0;
+    for harness in harnesses {
+        providers.insert(harness.provider.clone());
+        *modes.entry(harness.mode.clone()).or_insert(0) += 1;
+        *network.entry(harness.network.clone()).or_insert(0) += 1;
+        *secrets.entry(harness.secrets.clone()).or_insert(0) += 1;
+        *filesystem.entry(harness.filesystem.clone()).or_insert(0) += 1;
+        if let Some(contract) = &harness.input_contract {
+            input_contracts.insert(contract.clone());
+        }
+        if let Some(contract) = &harness.output_contract {
+            output_contracts.insert(contract.clone());
+        }
+        attestations_total += harness.attestations.len();
+    }
+    ProviderHarnessSummary {
+        total: harnesses.len(),
+        providers: providers.into_iter().collect(),
+        modes,
+        network,
+        secrets,
+        filesystem,
+        attestations_total,
+        input_contracts: input_contracts.into_iter().collect(),
+        output_contracts: output_contracts.into_iter().collect(),
     }
 }
 

@@ -1,4 +1,4 @@
-use argorix_bytecode::BytecodeProgram;
+use argorix_bytecode::{BytecodeProgram, BytecodeProviderHarness};
 use argorix_vm::{
     AssertionResult, EventFields, EventType, ExecutionOutcome, InjectedMessage, RuntimeState,
     RuntimeStatus, SecurityReport, Vm, VmError,
@@ -39,9 +39,9 @@ fn successful_report_uses_real_runtime_evidence() {
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
 
     assert!(outcome.result.is_ok());
-    assert_eq!(report.report_version, "0.19");
+    assert_eq!(report.report_version, "0.20");
     assert_eq!(report.bytecode_version, "0.13");
-    assert_eq!(report.vm_version, "0.19");
+    assert_eq!(report.vm_version, "0.20");
     assert!(report.execution.completed);
     assert!(!report.execution.failed);
     assert_eq!(report.execution.steps, 3);
@@ -112,7 +112,7 @@ fn passport_report_summarizes_identity_and_trace_preserves_passports() {
     .unwrap();
     let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.19");
+    assert_eq!(report.report_version, "0.20");
     assert_eq!(report.agent_passports.total, 1);
     assert_eq!(report.agent_passports.linked_agents, 1);
     assert_eq!(report.agent_passports.countries, vec!["CL".to_string()]);
@@ -131,6 +131,44 @@ fn passport_report_summarizes_identity_and_trace_preserves_passports() {
     assert!(report.verdict.passed);
     // The VM trace preserves the passport metadata verbatim.
     assert_eq!(outcome.result.unwrap().passports, bytecode.passports);
+}
+
+#[test]
+fn provider_harness_report_summarizes_structural_containment() {
+    let mut bytecode = fixture();
+    bytecode.bytecode_version = "0.20".into();
+    let provider = bytecode.providers[0].name.clone();
+    bytecode.provider_harnesses = vec![BytecodeProviderHarness {
+        name: "OpenAIHarness".into(),
+        provider: provider.clone(),
+        mode: "dry_run".into(),
+        network: "denied".into(),
+        secrets: "denied".into(),
+        filesystem: "read_only".into(),
+        max_steps: Some(10),
+        timeout_ms: Some(1000),
+        input_contract: None,
+        output_contract: None,
+        attestations: vec!["dry-run".into(), "policy-check".into()],
+    }];
+    let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+    let report = SecurityReport::from_outcome(&bytecode, &outcome);
+
+    assert_eq!(report.report_version, "0.20");
+    assert_eq!(report.provider_harnesses.total, 1);
+    assert_eq!(report.provider_harnesses.providers, vec![provider]);
+    assert_eq!(report.provider_harnesses.modes.get("dry_run"), Some(&1));
+    assert_eq!(report.provider_harnesses.network.get("denied"), Some(&1));
+    assert_eq!(report.provider_harnesses.secrets.get("denied"), Some(&1));
+    assert_eq!(
+        report.provider_harnesses.filesystem.get("read_only"),
+        Some(&1)
+    );
+    assert_eq!(report.provider_harnesses.attestations_total, 2);
+    assert_eq!(
+        outcome.result.unwrap().provider_harnesses,
+        bytecode.provider_harnesses
+    );
 }
 
 #[test]
