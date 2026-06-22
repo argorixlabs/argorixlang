@@ -676,7 +676,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.24"
             | "0.25"
             | "0.26"
-            | "0.28"
+            | "0.27"
             | "0.28"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -704,7 +704,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.24"
             | "0.25"
             | "0.26"
-            | "0.28"
+            | "0.27"
             | "0.28"
     ) && !program.providers.is_empty()
     {
@@ -724,7 +724,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.24"
                 | "0.25"
                 | "0.26"
-                | "0.28"
+                | "0.27"
                 | "0.28"
         )
     {
@@ -755,7 +755,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.24"
                 | "0.25"
                 | "0.26"
-                | "0.28"
+                | "0.27"
                 | "0.28"
         )
     {
@@ -770,7 +770,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapters.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.28" | "0.28"
+            "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -778,7 +778,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapter_profiles.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.23" | "0.24" | "0.25" | "0.26" | "0.28" | "0.28"
+            "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -786,7 +786,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.cryptos.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.24" | "0.25" | "0.26" | "0.28" | "0.28"
+            "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -794,7 +794,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.crypto_boundaries.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.25" | "0.26" | "0.28" | "0.28"
+            "0.25" | "0.26" | "0.27" | "0.28"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
@@ -1086,7 +1086,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.24"
                 | "0.25"
                 | "0.26"
-                | "0.28"
+                | "0.27"
                 | "0.28"
         )
     {
@@ -1135,7 +1135,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
     if !program.passports.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.28" | "0.28"
+            "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1215,7 +1215,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
     if !program.provider_harnesses.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.28" | "0.28"
+            "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1316,7 +1316,7 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
     if !program.features.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.28" | "0.28"
+            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -1376,7 +1376,7 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
     if !program.secrets.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.28" | "0.28"
+            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);

@@ -2369,7 +2369,7 @@ fn check_did_methods(program: &Program, symbols: &Symbols, diagnostics: &mut Vec
 
 fn check_atrust_boundaries(
     program: &Program,
-    symbols: &Symbols,
+    _symbols: &Symbols,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let mut names = HashSet::new();
@@ -2695,106 +2695,163 @@ fn check_atrust_identities(
 }
 
 #[allow(unused_variables, dead_code)]
-fn check_atrust_credential_contracts(program: &Program, _symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+fn check_atrust_credential_contracts(
+    program: &Program,
+    _symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let mut names = HashSet::new();
     for c in &program.atrust_credential_contracts {
-        report_duplicate(&mut names, &c.name, "atrust_credential_contract", diagnostics);
+        report_duplicate(
+            &mut names,
+            &c.name,
+            "atrust_credential_contract",
+            diagnostics,
+        );
 
         if c.subject.value.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `subject`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `subject`",
+                    c.name.value
+                ),
                 c.subject.span,
             ));
         }
         if c.identity.value.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `identity`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `identity`",
+                    c.name.value
+                ),
                 c.identity.span,
             ));
         }
         if c.boundary.value.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `boundary`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `boundary`",
+                    c.name.value
+                ),
                 c.boundary.span,
             ));
         }
         if c.method.value.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `method`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `method`",
+                    c.name.value
+                ),
                 c.method.span,
             ));
         }
         if c.issuer_did.value.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `issuer_did`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `issuer_did`",
+                    c.name.value
+                ),
                 c.issuer_did.span,
             ));
         }
         if c.holder_did.value.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `holder_did`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `holder_did`",
+                    c.name.value
+                ),
                 c.holder_did.span,
             ));
         }
         if c.credential_type.value.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `credential_type`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `credential_type`",
+                    c.name.value
+                ),
                 c.credential_type.span,
             ));
         }
         if c.schema.value.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `schema`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `schema`",
+                    c.name.value
+                ),
                 c.schema.span,
             ));
         }
         if c.claims.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `claims`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `claims`",
+                    c.name.value
+                ),
                 c.name.span,
             ));
         }
         if c.purpose.is_empty() {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` is missing required field `purpose`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` is missing required field `purpose`",
+                    c.name.value
+                ),
                 c.name.span,
             ));
         }
         // verification must be declared_only
         if c.verification.value.source_name() != "declared_only" {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` requires verification `declared_only`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` requires verification `declared_only`",
+                    c.name.value
+                ),
                 c.verification.span,
             ));
         }
         // similar for other
         if c.key_material.value.source_name() != "denied" {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` requires key_material `denied`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` requires key_material `denied`",
+                    c.name.value
+                ),
                 c.key_material.span,
             ));
         }
         if c.secret_material.value.source_name() != "denied" {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` requires secret_material `denied`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` requires secret_material `denied`",
+                    c.name.value
+                ),
                 c.secret_material.span,
             ));
         }
         if c.execution.value.source_name() != "disabled" {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` requires execution `disabled`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` requires execution `disabled`",
+                    c.name.value
+                ),
                 c.execution.span,
             ));
         }
         if c.evidence.value.source_name() != "required" {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` requires evidence `required`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` requires evidence `required`",
+                    c.name.value
+                ),
                 c.evidence.span,
             ));
         }
         if c.security_claims.value.source_name() != "none" {
             diagnostics.push(Diagnostic::new(
-                format!("atrust_credential_contract `{}` requires security_claims `none`", c.name.value),
+                format!(
+                    "atrust_credential_contract `{}` requires security_claims `none`",
+                    c.name.value
+                ),
                 c.security_claims.span,
             ));
         }
