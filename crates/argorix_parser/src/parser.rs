@@ -1,16 +1,20 @@
 use crate::{
     ast::{
-        AdapterDecl, AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
-        AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution,
-        AdapterProfileFamily, AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets,
-        AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl,
-        CryptoDecl, CryptoKind, CryptoStatus, CryptoStrength, EnumDecl, FailureDecl, FeatureDecl,
-        FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
-        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl,
-        MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule,
-        PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
-        ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl,
-        SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl, TypeDecl,
+        ATrustBoundaryDecl, ATrustCredentialMode, ATrustExecution, ATrustHandshakeMode,
+        ATrustIdentityFormat, ATrustMaterialBoundary, ATrustPostQuantumRequirement,
+        ATrustResolutionMode, ATrustSecurityClaims, AdapterDecl, AdapterExecution,
+        AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork, AdapterProfileApiStyle,
+        AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution, AdapterProfileFamily,
+        AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, AgentDecl, Approval,
+        AssertionDecl, CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind,
+        CryptoStatus, CryptoStrength, DidLedgerMode, DidMethodDecl, DidMethodStatus,
+        DidResolutionMode, EnumDecl, FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus,
+        FieldDecl, HandlerDecl, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
+        HarnessSecrets, ImportDecl, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl,
+        PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
+        Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
+        ReceiveDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl,
+        TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -74,6 +78,8 @@ impl Parser {
             adapter_profiles: Vec::new(),
             cryptos: Vec::new(),
             crypto_boundaries: Vec::new(),
+            did_methods: Vec::new(),
+            atrust_boundaries: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -100,6 +106,8 @@ impl Parser {
                     program.crypto_boundaries.push(self.parse_crypto_boundary()?)
                 }
                 Some("crypto") => program.cryptos.push(self.parse_crypto()?),
+                Some("did_method") => program.did_methods.push(self.parse_did_method()?),
+                Some("atrust_boundary") => program.atrust_boundaries.push(self.parse_atrust_boundary()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -119,7 +127,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -1235,6 +1243,340 @@ impl Parser {
         })
     }
 
+    fn parse_did_method(&mut self) -> Result<DidMethodDecl, Diagnostic> {
+        self.expect_keyword("did_method")?;
+        let name = self.expect_identifier("did method name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut status = None;
+        let mut resolution = None;
+        let mut ledger = None;
+        let mut crypto_boundary = None;
+        let mut governance = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated did_method declaration")?;
+            match self.peek_identifier() {
+                Some("status") => {
+                    self.set_block_field(&mut status, "did_method", "status", |parser| {
+                        let token = parser.expect_identifier("did_method status")?;
+                        let value = match token.value.as_str() {
+                            "experimental" => DidMethodStatus::Experimental,
+                            "preview" => DidMethodStatus::Preview,
+                            "stable" => DidMethodStatus::Stable,
+                            "deprecated" => DidMethodStatus::Deprecated,
+                            "denied" => DidMethodStatus::Denied,
+                            other => DidMethodStatus::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("resolution") => {
+                    self.set_block_field(&mut resolution, "did_method", "resolution", |parser| {
+                        let token = parser.expect_identifier("did_method resolution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => DidResolutionMode::Disabled,
+                            "embedded" => DidResolutionMode::Embedded,
+                            "local" => DidResolutionMode::Local,
+                            other => DidResolutionMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("ledger") => {
+                    self.set_block_field(&mut ledger, "did_method", "ledger", |parser| {
+                        let token = parser.expect_identifier("did_method ledger")?;
+                        let value = match token.value.as_str() {
+                            "none" => DidLedgerMode::None,
+                            "local" => DidLedgerMode::Local,
+                            "embedded" => DidLedgerMode::Embedded,
+                            "custom" => DidLedgerMode::Custom,
+                            other => DidLedgerMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("crypto_boundary") => self.set_block_field(
+                    &mut crypto_boundary,
+                    "did_method",
+                    "crypto_boundary",
+                    |parser| parser.expect_identifier("did_method crypto_boundary reference"),
+                )?,
+                Some("governance") => {
+                    self.set_block_field(&mut governance, "did_method", "governance", |parser| {
+                        parser.expect_string("did_method governance")
+                    })?
+                }
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "did_method", "purpose", |parser| {
+                        parser.parse_string_array("did_method purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "did_method", "notes", |parser| {
+                        parser.expect_string("did_method notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected did_method item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected a did_method field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        let unknown_status =
+            || Spanned::new(DidMethodStatus::Unknown(String::new()), fallback_span);
+        let unknown_resolution =
+            || Spanned::new(DidResolutionMode::Unknown(String::new()), fallback_span);
+        let unknown_ledger = || Spanned::new(DidLedgerMode::Unknown(String::new()), fallback_span);
+        Ok(DidMethodDecl {
+            name,
+            status: status.unwrap_or_else(unknown_status),
+            resolution: resolution.unwrap_or_else(unknown_resolution),
+            ledger: ledger.unwrap_or_else(unknown_ledger),
+            crypto_boundary: crypto_boundary
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            governance,
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_atrust_boundary(&mut self) -> Result<ATrustBoundaryDecl, Diagnostic> {
+        self.expect_keyword("atrust_boundary")?;
+        let name = self.expect_identifier("atrust boundary name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut crypto_boundary = None;
+        let mut did_methods: Option<Vec<Spanned<String>>> = None;
+        let mut identity_format = None;
+        let mut credential_mode = None;
+        let mut handshake = None;
+        let mut resolution = None;
+        let mut key_material = None;
+        let mut secret_material = None;
+        let mut execution = None;
+        let mut post_quantum_ready = None;
+        let mut security_claims = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated atrust_boundary declaration")?;
+            match self.peek_identifier() {
+                Some("crypto_boundary") => self.set_block_field(
+                    &mut crypto_boundary,
+                    "atrust_boundary",
+                    "crypto_boundary",
+                    |parser| parser.expect_identifier("atrust_boundary crypto_boundary reference"),
+                )?,
+                Some("did_methods") => self.set_block_field(
+                    &mut did_methods,
+                    "atrust_boundary",
+                    "did_methods",
+                    |parser| parser.parse_string_array("atrust_boundary did_methods"),
+                )?,
+                Some("identity_format") => self.set_block_field(
+                    &mut identity_format,
+                    "atrust_boundary",
+                    "identity_format",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_boundary identity_format")?;
+                        let value = match token.value.as_str() {
+                            "did" => ATrustIdentityFormat::Did,
+                            "opaque" => ATrustIdentityFormat::Opaque,
+                            "custom" => ATrustIdentityFormat::Custom,
+                            other => ATrustIdentityFormat::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("credential_mode") => self.set_block_field(
+                    &mut credential_mode,
+                    "atrust_boundary",
+                    "credential_mode",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_boundary credential_mode")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustCredentialMode::Disabled,
+                            "declared_only" => ATrustCredentialMode::DeclaredOnly,
+                            other => ATrustCredentialMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("handshake") => self.set_block_field(
+                    &mut handshake,
+                    "atrust_boundary",
+                    "handshake",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_boundary handshake")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustHandshakeMode::Disabled,
+                            "declared_only" => ATrustHandshakeMode::DeclaredOnly,
+                            other => ATrustHandshakeMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("resolution") => self.set_block_field(
+                    &mut resolution,
+                    "atrust_boundary",
+                    "resolution",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_boundary resolution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustResolutionMode::Disabled,
+                            "embedded" => ATrustResolutionMode::Embedded,
+                            "local" => ATrustResolutionMode::Local,
+                            other => ATrustResolutionMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "atrust_boundary",
+                    "key_material",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_boundary key_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "atrust_boundary",
+                    "secret_material",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_boundary secret_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("execution") => self.set_block_field(
+                    &mut execution,
+                    "atrust_boundary",
+                    "execution",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_boundary execution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustExecution::Disabled,
+                            other => ATrustExecution::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("post_quantum_ready") => self.set_block_field(
+                    &mut post_quantum_ready,
+                    "atrust_boundary",
+                    "post_quantum_ready",
+                    |parser| {
+                        let token =
+                            parser.expect_identifier("atrust_boundary post_quantum_ready")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustPostQuantumRequirement::Required,
+                            "optional" => ATrustPostQuantumRequirement::Optional,
+                            "not_required" => ATrustPostQuantumRequirement::NotRequired,
+                            other => ATrustPostQuantumRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "atrust_boundary",
+                    "security_claims",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_boundary security_claims")?;
+                        let value = match token.value.as_str() {
+                            "none" => ATrustSecurityClaims::None,
+                            other => ATrustSecurityClaims::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "atrust_boundary", "purpose", |parser| {
+                        parser.parse_string_array("atrust_boundary purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "atrust_boundary", "notes", |parser| {
+                        parser.expect_string("atrust_boundary notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected atrust_boundary item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected an atrust_boundary field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        let unknown_material = || {
+            Spanned::new(
+                ATrustMaterialBoundary::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_exec = || Spanned::new(ATrustExecution::Unknown(String::new()), fallback_span);
+        Ok(ATrustBoundaryDecl {
+            name,
+            crypto_boundary: crypto_boundary
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            did_methods: did_methods.unwrap_or_default(),
+            identity_format: identity_format.unwrap_or_else(|| {
+                Spanned::new(ATrustIdentityFormat::Unknown(String::new()), fallback_span)
+            }),
+            credential_mode: credential_mode.unwrap_or_else(|| {
+                Spanned::new(ATrustCredentialMode::Unknown(String::new()), fallback_span)
+            }),
+            handshake: handshake.unwrap_or_else(|| {
+                Spanned::new(ATrustHandshakeMode::Unknown(String::new()), fallback_span)
+            }),
+            resolution: resolution.unwrap_or_else(|| {
+                Spanned::new(ATrustResolutionMode::Unknown(String::new()), fallback_span)
+            }),
+            key_material: key_material.unwrap_or_else(unknown_material),
+            secret_material: secret_material.unwrap_or_else(unknown_material),
+            execution: execution.unwrap_or_else(unknown_exec),
+            post_quantum_ready,
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback_span)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -1396,6 +1738,20 @@ impl Parser {
             "crypto_execution_absent" => PolicyRule::CryptoExecutionAbsent,
             "crypto_boundaries_declared" => PolicyRule::CryptoBoundariesDeclared,
             "post_quantum_readiness_declared" => PolicyRule::PostQuantumReadinessDeclared,
+            "atrust_boundaries_declared" => PolicyRule::ATrustBoundariesDeclared,
+            "atrust_did_methods_declared" => PolicyRule::ATrustDidMethodsDeclared,
+            "atrust_did_method_allowed" => PolicyRule::ATrustDidMethodAllowed,
+            "atrust_identity_format_declared" => PolicyRule::ATrustIdentityFormatDeclared,
+            "atrust_credential_mode_declared" => PolicyRule::ATrustCredentialModeDeclared,
+            "atrust_handshake_disabled" => PolicyRule::ATrustHandshakeDisabled,
+            "atrust_resolution_disabled" => PolicyRule::ATrustResolutionDisabled,
+            "atrust_key_material_denied" => PolicyRule::ATrustKeyMaterialDenied,
+            "atrust_secret_material_denied" => PolicyRule::ATrustSecretMaterialDenied,
+            "atrust_execution_disabled" => PolicyRule::ATrustExecutionDisabled,
+            "atrust_post_quantum_readiness_declared" => {
+                PolicyRule::ATrustPostQuantumReadinessDeclared
+            }
+            "atrust_security_claims_none" => PolicyRule::ATrustSecurityClaimsNone,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

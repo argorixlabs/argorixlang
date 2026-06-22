@@ -1,0 +1,28 @@
+﻿module app.main
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["trust"]
+}
+
+did_method argorix { status experimental resolution embedded ledger local crypto_boundary TrustBoundary purpose ["identity"] }
+
+atrust_boundary DemoTrust {
+  crypto_boundary TrustBoundary
+  did_methods ["argorix"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  security_claims none
+  purpose ["identity"]
+}
+
+type Ping { v: int }
+agent Main { receives Ping }

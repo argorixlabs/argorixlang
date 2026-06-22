@@ -21,6 +21,8 @@ pub struct Symbols {
     pub adapters: HashSet<String>,
     pub adapter_profiles: HashSet<String>,
     pub cryptos: HashSet<String>,
+    pub did_methods: HashSet<String>,
+    pub atrust_boundaries: HashSet<String>,
 }
 
 impl Symbols {

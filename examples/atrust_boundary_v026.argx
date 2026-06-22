@@ -1,0 +1,56 @@
+module ATrustDemo
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  post_quantum_ready true
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["identity", "trust"]
+}
+
+did_method chile {
+  status experimental
+  resolution disabled
+  ledger local
+  crypto_boundary TrustBoundary
+  governance "CCHIA"
+  purpose ["identity", "agent-trust", "future-did-resolution"]
+  notes "metadata only; no DID resolution"
+}
+
+did_method argorix {
+  status experimental
+  resolution embedded
+  ledger local
+  crypto_boundary TrustBoundary
+  governance "open"
+  purpose ["identity", "agent-passport", "future-did-resolution"]
+}
+
+atrust_boundary AgentTrustBoundary {
+  crypto_boundary TrustBoundary
+  did_methods ["chile", "argorix"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  post_quantum_ready required
+  security_claims none
+  purpose ["identity", "credential", "evidence", "future-handshake"]
+  notes "metadata only; no trust runtime"
+}
+
+type UserPrompt { content: string }
+agent ResearchAgent { receives UserPrompt }
+
+policy TrustBoundaryPolicy {
+  require atrust_boundaries_declared
+  require atrust_did_methods_declared
+  require atrust_key_material_denied
+  require atrust_execution_disabled
+  require atrust_post_quantum_readiness_declared
+}

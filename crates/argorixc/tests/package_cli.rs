@@ -36,7 +36,7 @@ fn emit_ir_package_is_clean_json_with_metadata() {
     let output = run(&["emit-ir-package", manifest.to_str().unwrap()]);
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["ir_version"], "0.25");
+    assert_eq!(json["ir_version"], "0.26");
     assert_eq!(json["module"], "app.main");
     assert_eq!(json["modules"].as_array().unwrap().len(), 6);
     assert_eq!(json["imports"].as_array().unwrap().len(), 5);
@@ -48,7 +48,7 @@ fn emit_bytecode_package_is_clean_json_with_metadata() {
     let output = run(&["emit-bytecode-package", manifest.to_str().unwrap()]);
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["bytecode_version"], "0.25");
+    assert_eq!(json["bytecode_version"], "0.26");
     assert_eq!(json["modules"].as_array().unwrap().len(), 6);
 }
 

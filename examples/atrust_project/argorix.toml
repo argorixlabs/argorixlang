@@ -1,0 +1,6 @@
+﻿[package]
+name = "atrust-demo"
+version = "0.26.0"
+
+[entry]
+main = "src/main.argx"

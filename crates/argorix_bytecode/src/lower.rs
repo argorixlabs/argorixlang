@@ -1,7 +1,8 @@
 use crate::{
-    BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability,
-    BytecodeCrypto, BytecodeCryptoBoundary, BytecodeFailure, BytecodeFeature, BytecodeModel,
-    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodeATrustBoundary, BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent,
+    BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
+    BytecodeDidMethod, BytecodeFailure, BytecodeFeature, BytecodeModel, BytecodeModule,
+    BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
     BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField,
     Instruction,
@@ -173,7 +174,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.25".to_owned(),
+        bytecode_version: "0.26".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -302,6 +303,40 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 key_material: b.key_material.clone(),
                 secret_material: b.secret_material.clone(),
                 execution: b.execution.clone(),
+            })
+            .collect(),
+        did_methods: ir
+            .did_methods
+            .iter()
+            .map(|d| BytecodeDidMethod {
+                name: d.name.clone(),
+                status: d.status.clone(),
+                resolution: d.resolution.clone(),
+                ledger: d.ledger.clone(),
+                crypto_boundary: d.crypto_boundary.clone(),
+                governance: d.governance.clone(),
+                purpose: d.purpose.clone(),
+                notes: d.notes.clone(),
+            })
+            .collect(),
+        atrust_boundaries: ir
+            .atrust_boundaries
+            .iter()
+            .map(|a| BytecodeATrustBoundary {
+                name: a.name.clone(),
+                crypto_boundary: a.crypto_boundary.clone(),
+                did_methods: a.did_methods.clone(),
+                identity_format: a.identity_format.clone(),
+                credential_mode: a.credential_mode.clone(),
+                handshake: a.handshake.clone(),
+                resolution: a.resolution.clone(),
+                key_material: a.key_material.clone(),
+                secret_material: a.secret_material.clone(),
+                execution: a.execution.clone(),
+                post_quantum_ready: a.post_quantum_ready.clone(),
+                security_claims: a.security_claims.clone(),
+                purpose: a.purpose.clone(),
+                notes: a.notes.clone(),
             })
             .collect(),
         imports: ir
@@ -481,6 +516,8 @@ mod tests {
             adapter_profiles: vec![],
             cryptos: vec![],
             crypto_boundaries: vec![],
+            did_methods: vec![],
+            atrust_boundaries: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -546,7 +583,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.25");
+        assert_eq!(bytecode.bytecode_version, "0.26");
         assert!(bytecode
             .instructions
             .iter()
@@ -636,6 +673,8 @@ mod tests {
             adapter_profiles: vec![],
             cryptos: vec![],
             crypto_boundaries: vec![],
+            did_methods: vec![],
+            atrust_boundaries: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -649,7 +688,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.25");
+        assert_eq!(bytecode.bytecode_version, "0.26");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

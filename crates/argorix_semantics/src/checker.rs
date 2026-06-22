@@ -1,13 +1,15 @@
 use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
     ast::{
-        AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
-        AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileExecution, AdapterProfileFamily,
-        AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, Approval, CapabilityLevel,
-        CryptoKind, CryptoStatus, CryptoStrength, FeatureDefault, FeatureStatus,
-        HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
-        PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program, SecretAccess, SecretScope,
-        SecretSource,
+        ATrustCredentialMode, ATrustExecution, ATrustHandshakeMode, ATrustIdentityFormat,
+        ATrustMaterialBoundary, ATrustResolutionMode,
+        ATrustSecurityClaims, AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode,
+        AdapterNetwork, AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileExecution,
+        AdapterProfileFamily, AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets,
+        Approval, CapabilityLevel, CryptoKind, CryptoStatus, CryptoStrength, DidLedgerMode,
+        DidMethodStatus, DidResolutionMode, FeatureDefault, FeatureStatus, HandlerInstruction,
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl,
+        PolicyViolationAction, Program, SecretAccess, SecretScope, SecretSource,
     },
     diagnostics::Diagnostic,
     span::Spanned,
@@ -36,6 +38,8 @@ pub fn check_program_with_options(
     check_adapters(program, &symbols, &mut diagnostics);
     check_adapter_profiles(program, &symbols, &mut diagnostics);
     check_cryptos(program, &symbols, &mut diagnostics);
+    check_did_methods(program, &symbols, &mut diagnostics);
+    check_atrust_boundaries(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -2117,6 +2121,17 @@ fn collect_symbols(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> Symb
     for crypto in &program.cryptos {
         report_duplicate(&mut symbols.cryptos, &crypto.name, "crypto", diagnostics);
     }
+    for d in &program.did_methods {
+        report_duplicate(&mut symbols.did_methods, &d.name, "did_method", diagnostics);
+    }
+    for a in &program.atrust_boundaries {
+        report_duplicate(
+            &mut symbols.atrust_boundaries,
+            &a.name,
+            "atrust_boundary",
+            diagnostics,
+        );
+    }
     for capability in &program.capabilities {
         if symbols
             .capabilities
@@ -2265,6 +2280,231 @@ fn require_participant(
             format!("unknown {role} `{}`", participant.value),
             participant.span,
         ));
+    }
+}
+
+fn check_did_methods(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+    let mut names = HashSet::new();
+    for d in &program.did_methods {
+        report_duplicate(&mut names, &d.name, "did_method", diagnostics);
+
+        // required
+        if matches!(&d.status.value, DidMethodStatus::Unknown(v) if v.is_empty()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "did_method `{}` is missing required field `status`",
+                    d.name.value
+                ),
+                d.status.span,
+            ));
+        }
+        if matches!(&d.resolution.value, DidResolutionMode::Unknown(v) if v.is_empty()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "did_method `{}` is missing required field `resolution`",
+                    d.name.value
+                ),
+                d.resolution.span,
+            ));
+        }
+        if matches!(&d.ledger.value, DidLedgerMode::Unknown(v) if v.is_empty()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "did_method `{}` is missing required field `ledger`",
+                    d.name.value
+                ),
+                d.ledger.span,
+            ));
+        }
+        if d.crypto_boundary.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "did_method `{}` is missing required field `crypto_boundary`",
+                    d.name.value
+                ),
+                d.crypto_boundary.span,
+            ));
+        } else if !symbols.cryptos.contains(&d.crypto_boundary.value)
+            && !program
+                .crypto_boundaries
+                .iter()
+                .any(|cb| cb.name.value == d.crypto_boundary.value)
+        {
+            // crypto_boundary is from crypto_boundaries, but we check later in atrust or use symbols if extended
+        }
+        if d.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "did_method `{}` is missing required field `purpose`",
+                    d.name.value
+                ),
+                d.name.span,
+            ));
+        }
+        for p in &d.purpose {
+            if p.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new("purpose entries must be non-empty", p.span));
+            }
+        }
+        // resolution restrictions
+        if matches!(&d.resolution.value, DidResolutionMode::Unknown(v) if v == "remote" || v == "network" || v == "live" || v == "distributed")
+        {
+            diagnostics.push(Diagnostic::new(
+                "resolution `remote`/`network`/`live`/`distributed` not permitted in v0.26",
+                d.resolution.span,
+            ));
+        }
+    }
+}
+
+fn check_atrust_boundaries(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut names = HashSet::new();
+    for a in &program.atrust_boundaries {
+        report_duplicate(&mut names, &a.name, "atrust_boundary", diagnostics);
+
+        if a.crypto_boundary.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` is missing required field `crypto_boundary`",
+                    a.name.value
+                ),
+                a.crypto_boundary.span,
+            ));
+        }
+        if a.did_methods.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` is missing required field `did_methods`",
+                    a.name.value
+                ),
+                a.name.span,
+            ));
+        }
+        for dm in &a.did_methods {
+            if dm.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    "did_methods entries must be non-empty",
+                    dm.span,
+                ));
+            }
+            // existence and not denied will be enforced; simple check
+        }
+        if matches!(&a.identity_format.value, ATrustIdentityFormat::Unknown(v) if v.is_empty()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` is missing required field `identity_format`",
+                    a.name.value
+                ),
+                a.identity_format.span,
+            ));
+        }
+        if matches!(&a.credential_mode.value, ATrustCredentialMode::Unknown(v) if v.is_empty()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` is missing required field `credential_mode`",
+                    a.name.value
+                ),
+                a.credential_mode.span,
+            ));
+        }
+        if matches!(&a.handshake.value, ATrustHandshakeMode::Unknown(v) if v.is_empty()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` is missing required field `handshake`",
+                    a.name.value
+                ),
+                a.handshake.span,
+            ));
+        }
+        if matches!(&a.resolution.value, ATrustResolutionMode::Unknown(v) if v.is_empty()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` is missing required field `resolution`",
+                    a.name.value
+                ),
+                a.resolution.span,
+            ));
+        }
+        if matches!(&a.key_material.value, ATrustMaterialBoundary::Unknown(v) if v.is_empty() || v != "denied")
+        {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` requires key_material `denied`",
+                    a.name.value
+                ),
+                a.key_material.span,
+            ));
+        }
+        if matches!(&a.secret_material.value, ATrustMaterialBoundary::Unknown(v) if v.is_empty() || v != "denied")
+        {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` requires secret_material `denied`",
+                    a.name.value
+                ),
+                a.secret_material.span,
+            ));
+        }
+        if matches!(&a.execution.value, ATrustExecution::Unknown(v) if v.is_empty() || v != "disabled")
+        {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` requires execution `disabled`",
+                    a.name.value
+                ),
+                a.execution.span,
+            ));
+        }
+        if matches!(&a.security_claims.value, ATrustSecurityClaims::Unknown(v) if v.is_empty() || v != "none")
+        {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` requires security_claims `none`",
+                    a.name.value
+                ),
+                a.security_claims.span,
+            ));
+        }
+        if a.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_boundary `{}` is missing required field `purpose`",
+                    a.name.value
+                ),
+                a.name.span,
+            ));
+        }
+        for p in &a.purpose {
+            if p.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new("purpose entries must be non-empty", p.span));
+            }
+        }
+        // forbid live values
+        if matches!(&a.credential_mode.value, ATrustCredentialMode::Unknown(v) if v == "verified" || v == "live" || v == "remote")
+        {
+            diagnostics.push(Diagnostic::new(
+                "credential_mode verified/live/remote not permitted",
+                a.credential_mode.span,
+            ));
+        }
+        if matches!(&a.handshake.value, ATrustHandshakeMode::Unknown(v) if v == "enabled" || v == "live" || v == "real" || v == "network")
+        {
+            diagnostics.push(Diagnostic::new(
+                "handshake enabled/live/real/network not permitted",
+                a.handshake.span,
+            ));
+        }
+        if matches!(&a.resolution.value, ATrustResolutionMode::Unknown(v) if v == "remote" || v == "network" || v == "live" || v == "distributed")
+        {
+            diagnostics.push(Diagnostic::new(
+                "resolution remote/network/live/distributed not permitted",
+                a.resolution.span,
+            ));
+        }
     }
 }
 

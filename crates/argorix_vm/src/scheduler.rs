@@ -219,6 +219,8 @@ mod tests {
             adapter_profiles: vec![],
             cryptos: vec![],
             crypto_boundaries: vec![],
+            did_methods: vec![],
+            atrust_boundaries: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

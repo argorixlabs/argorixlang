@@ -12,6 +12,8 @@ pub struct Program {
     pub adapter_profiles: Vec<AdapterProfileDecl>,
     pub cryptos: Vec<CryptoDecl>,
     pub crypto_boundaries: Vec<CryptoBoundaryDecl>,
+    pub did_methods: Vec<DidMethodDecl>,
+    pub atrust_boundaries: Vec<ATrustBoundaryDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -766,6 +768,18 @@ pub enum PolicyRule {
     CryptoExecutionAbsent,
     CryptoBoundariesDeclared,
     PostQuantumReadinessDeclared,
+    ATrustBoundariesDeclared,
+    ATrustDidMethodsDeclared,
+    ATrustDidMethodAllowed,
+    ATrustIdentityFormatDeclared,
+    ATrustCredentialModeDeclared,
+    ATrustHandshakeDisabled,
+    ATrustResolutionDisabled,
+    ATrustKeyMaterialDenied,
+    ATrustSecretMaterialDenied,
+    ATrustExecutionDisabled,
+    ATrustPostQuantumReadinessDeclared,
+    ATrustSecurityClaimsNone,
     Unknown(String),
 }
 
@@ -829,6 +843,18 @@ impl PolicyRule {
             Self::CryptoExecutionAbsent => "crypto_execution_absent",
             Self::CryptoBoundariesDeclared => "crypto_boundaries_declared",
             Self::PostQuantumReadinessDeclared => "post_quantum_readiness_declared",
+            Self::ATrustBoundariesDeclared => "atrust_boundaries_declared",
+            Self::ATrustDidMethodsDeclared => "atrust_did_methods_declared",
+            Self::ATrustDidMethodAllowed => "atrust_did_method_allowed",
+            Self::ATrustIdentityFormatDeclared => "atrust_identity_format_declared",
+            Self::ATrustCredentialModeDeclared => "atrust_credential_mode_declared",
+            Self::ATrustHandshakeDisabled => "atrust_handshake_disabled",
+            Self::ATrustResolutionDisabled => "atrust_resolution_disabled",
+            Self::ATrustKeyMaterialDenied => "atrust_key_material_denied",
+            Self::ATrustSecretMaterialDenied => "atrust_secret_material_denied",
+            Self::ATrustExecutionDisabled => "atrust_execution_disabled",
+            Self::ATrustPostQuantumReadinessDeclared => "atrust_post_quantum_readiness_declared",
+            Self::ATrustSecurityClaimsNone => "atrust_security_claims_none",
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -1081,4 +1107,238 @@ pub struct PassportAsnDecl {
     pub number: Spanned<String>,
     pub holder: Spanned<String>,
     pub country: Spanned<String>,
+}
+
+/// A top-level `did_method` block describing a DID method that may be referenced
+/// by ATrust boundaries. Declarative only — no DID resolution is performed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DidMethodDecl {
+    pub name: Spanned<String>,
+    pub status: Spanned<DidMethodStatus>,
+    pub resolution: Spanned<DidResolutionMode>,
+    pub ledger: Spanned<DidLedgerMode>,
+    pub crypto_boundary: Spanned<String>,
+    pub governance: Option<Spanned<String>>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DidMethodStatus {
+    Experimental,
+    Preview,
+    Stable,
+    Deprecated,
+    Denied,
+    Unknown(String),
+}
+
+impl DidMethodStatus {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Experimental => "experimental",
+            Self::Preview => "preview",
+            Self::Stable => "stable",
+            Self::Deprecated => "deprecated",
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DidResolutionMode {
+    Disabled,
+    Embedded,
+    Local,
+    Unknown(String),
+}
+
+impl DidResolutionMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Embedded => "embedded",
+            Self::Local => "local",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DidLedgerMode {
+    None,
+    Local,
+    Embedded,
+    Custom,
+    Unknown(String),
+}
+
+impl DidLedgerMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::None => "none",
+            Self::Local => "local",
+            Self::Embedded => "embedded",
+            Self::Custom => "custom",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+/// A top-level `atrust_boundary` block declaring an ATrust boundary contract.
+/// Metadata only — no identity resolution, credential verification, handshake,
+/// signing, or key operations are performed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ATrustBoundaryDecl {
+    pub name: Spanned<String>,
+    pub crypto_boundary: Spanned<String>,
+    pub did_methods: Vec<Spanned<String>>,
+    pub identity_format: Spanned<ATrustIdentityFormat>,
+    pub credential_mode: Spanned<ATrustCredentialMode>,
+    pub handshake: Spanned<ATrustHandshakeMode>,
+    pub resolution: Spanned<ATrustResolutionMode>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub post_quantum_ready: Option<Spanned<ATrustPostQuantumRequirement>>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustIdentityFormat {
+    Did,
+    Opaque,
+    Custom,
+    Unknown(String),
+}
+
+impl ATrustIdentityFormat {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Did => "did",
+            Self::Opaque => "opaque",
+            Self::Custom => "custom",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustCredentialMode {
+    Disabled,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl ATrustCredentialMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustHandshakeMode {
+    Disabled,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl ATrustHandshakeMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustResolutionMode {
+    Disabled,
+    Embedded,
+    Local,
+    Unknown(String),
+}
+
+impl ATrustResolutionMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Embedded => "embedded",
+            Self::Local => "local",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustMaterialBoundary {
+    Denied,
+    Unknown(String),
+}
+
+impl ATrustMaterialBoundary {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustExecution {
+    Disabled,
+    Unknown(String),
+}
+
+impl ATrustExecution {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustPostQuantumRequirement {
+    Required,
+    Optional,
+    NotRequired,
+    Unknown(String),
+}
+
+impl ATrustPostQuantumRequirement {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Required => "required",
+            Self::Optional => "optional",
+            Self::NotRequired => "not_required",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustSecurityClaims {
+    None,
+    Unknown(String),
+}
+
+impl ATrustSecurityClaims {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::None => "none",
+            Self::Unknown(value) => value,
+        }
+    }
 }

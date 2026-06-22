@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 26] = [
+pub const CATEGORIES: [&str; 28] = [
     "parser",
     "semantics",
     "ir",
@@ -50,6 +50,8 @@ pub const CATEGORIES: [&str; 26] = [
     "adapter_framework",
     "crypto_registry",
     "crypto_boundaries",
+    "did_methods",
+    "atrust_boundaries",
 ];
 
 #[derive(Debug, Error)]
@@ -65,10 +67,20 @@ pub fn validate_suite(
     let mut errors = Vec::new();
     if !matches!(
         suite.suite_version.as_str(),
-        "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
+        "0.16"
+            | "0.17"
+            | "0.18"
+            | "0.19"
+            | "0.20"
+            | "0.21"
+            | "0.22"
+            | "0.23"
+            | "0.24"
+            | "0.25"
+            | "0.26"
     ) {
         errors.push(format!(
-            "suite_version must be `0.16`..`0.25`, found `{}`",
+            "suite_version must be `0.16`..`0.26`, found `{}`",
             suite.suite_version
         ));
     }
@@ -112,7 +124,13 @@ pub fn validate_suite(
         {
             continue;
         }
-        if suite.suite_version != "0.25" && category == "crypto_boundaries" {
+        if !matches!(suite.suite_version.as_str(), "0.25" | "0.26")
+            && category == "crypto_boundaries"
+        {
+            continue;
+        }
+        if suite.suite_version != "0.26" && matches!(category, "did_methods" | "atrust_boundaries")
+        {
             continue;
         }
         if !categories.contains(category) && category != "adapter_framework" {
