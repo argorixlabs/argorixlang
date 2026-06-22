@@ -25,6 +25,8 @@ pub struct BytecodeProgram {
     pub adapters: Vec<BytecodeAdapter>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapter_profiles: Vec<BytecodeAdapterProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cryptos: Vec<BytecodeCrypto>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -144,6 +146,23 @@ pub struct BytecodeAdapterProfile {
     pub capabilities: Vec<String>,
     #[serde(default)]
     pub required_conformance: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeCrypto {
+    pub name: String,
+    pub kind: String,
+    pub status: String,
+    pub strength: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_bits: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_key_bits: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -496,6 +515,12 @@ pub enum BytecodeError {
     DuplicateAdapterProfile(String),
     #[error("invalid adapter profile `{name}`: {reason}")]
     InvalidAdapterProfile { name: String, reason: String },
+    #[error("crypto primitive metadata requires bytecode version 0.24")]
+    CryptosRequireV024,
+    #[error("duplicate crypto `{0}`")]
+    DuplicateCrypto(String),
+    #[error("invalid crypto `{name}`: {reason}")]
+    InvalidCrypto { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -574,7 +599,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.policies.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23"
+            "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -589,11 +614,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     {
         errors.push(BytecodeError::AdaptersRequireV022);
     }
-    if !program.adapter_profiles.is_empty() && program.bytecode_version != "0.23" {
+    if !program.adapter_profiles.is_empty()
+        && !matches!(program.bytecode_version.as_str(), "0.23" | "0.24")
+    {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
+    }
+    if !program.cryptos.is_empty() && program.bytecode_version != "0.24" {
+        errors.push(BytecodeError::CryptosRequireV024);
     }
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
+    validate_cryptos(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -1381,8 +1412,67 @@ fn validate_adapter_profiles(program: &BytecodeProgram, errors: &mut Vec<Bytecod
     }
 }
 
+fn validate_cryptos(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    for c in &program.cryptos {
+        if !names.insert(c.name.as_str()) {
+            errors.push(BytecodeError::DuplicateCrypto(c.name.clone()));
+            continue;
+        }
+        if c.kind.trim().is_empty() {
+            errors.push(BytecodeError::InvalidCrypto {
+                name: c.name.clone(),
+                reason: "missing kind".into(),
+            });
+        }
+        if c.status.trim().is_empty() {
+            errors.push(BytecodeError::InvalidCrypto {
+                name: c.name.clone(),
+                reason: "missing status".into(),
+            });
+        }
+        if c.strength.trim().is_empty() {
+            errors.push(BytecodeError::InvalidCrypto {
+                name: c.name.clone(),
+                reason: "missing strength".into(),
+            });
+        }
+        if c.purpose.is_empty() {
+            errors.push(BytecodeError::InvalidCrypto {
+                name: c.name.clone(),
+                reason: "missing or empty purpose".into(),
+            });
+        } else {
+            for p in &c.purpose {
+                if p.trim().is_empty() {
+                    errors.push(BytecodeError::InvalidCrypto {
+                        name: c.name.clone(),
+                        reason: "empty purpose item".into(),
+                    });
+                }
+            }
+        }
+        if let Some(ob) = c.output_bits {
+            if ob == 0 {
+                errors.push(BytecodeError::InvalidCrypto {
+                    name: c.name.clone(),
+                    reason: "output_bits must be > 0".into(),
+                });
+            }
+        }
+        if let Some(mk) = c.min_key_bits {
+            if mk == 0 {
+                errors.push(BytecodeError::InvalidCrypto {
+                    name: c.name.clone(),
+                    reason: "min_key_bits must be > 0".into(),
+                });
+            }
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    const RULES: [&str; 46] = [
+    const RULES: &[&str] = &[
         "no_unhandled_messages",
         "all_tool_calls_traced",
         "all_model_calls_traced",
@@ -1429,6 +1519,13 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "adapter_profiles_linked",
         "adapter_profiles_conformance_declared",
         "vendor_profiles_declared",
+        "crypto_primitives_declared",
+        "crypto_primitives_allowed",
+        "crypto_denied_not_used",
+        "crypto_post_quantum_candidates_declared",
+        "crypto_key_material_absent",
+        "crypto_secret_material_absent",
+        "crypto_execution_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {

@@ -1,0 +1,15 @@
+module crypto.post_quantum
+
+crypto ml_dsa {
+  kind signature
+  status post_quantum_candidate
+  strength post_quantum
+  purpose ["future-signature", "identity"]
+}
+
+crypto ml_kem {
+  kind kem
+  status post_quantum_candidate
+  strength post_quantum
+  purpose ["future-key-establishment"]
+}

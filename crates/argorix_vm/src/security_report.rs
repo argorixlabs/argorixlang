@@ -30,6 +30,8 @@ pub struct SecurityReport {
     pub adapters: AdapterSummary,
     #[serde(default)]
     pub adapter_profiles: AdapterProfileSummary,
+    #[serde(default)]
+    pub crypto_registry: CryptoRegistrySummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -144,6 +146,20 @@ pub struct AdapterProfileSummary {
     pub required_conformance_total: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct CryptoRegistrySummary {
+    pub total: usize,
+    pub kinds: BTreeMap<String, usize>,
+    pub statuses: BTreeMap<String, usize>,
+    pub strength: BTreeMap<String, usize>,
+    pub purposes_total: usize,
+    pub post_quantum_candidates: usize,
+    pub denied: usize,
+    pub key_material_present: bool,
+    pub secret_material_present: bool,
+    pub execution_present: bool,
+}
+
 fn adapter_profile_summary(
     profiles: &[argorix_bytecode::BytecodeAdapterProfile],
 ) -> AdapterProfileSummary {
@@ -181,6 +197,42 @@ fn adapter_profile_summary(
         secrets,
         capabilities_total: caps_total,
         required_conformance_total: req_conf_total,
+    }
+}
+
+fn crypto_registry_summary(cryptos: &[argorix_bytecode::BytecodeCrypto]) -> CryptoRegistrySummary {
+    use std::collections::BTreeSet;
+    let mut kinds = BTreeMap::new();
+    let mut statuses = BTreeMap::new();
+    let mut strength = BTreeMap::new();
+    let mut purposes_total = 0usize;
+    let mut post_quantum_candidates = 0usize;
+    let mut denied = 0usize;
+
+    for c in cryptos {
+        *kinds.entry(c.kind.clone()).or_insert(0) += 1;
+        *statuses.entry(c.status.clone()).or_insert(0) += 1;
+        *strength.entry(c.strength.clone()).or_insert(0) += 1;
+        purposes_total += c.purpose.len();
+        if c.status == "post_quantum_candidate" || c.strength == "post_quantum" {
+            post_quantum_candidates += 1;
+        }
+        if c.status == "denied" {
+            denied += 1;
+        }
+    }
+
+    CryptoRegistrySummary {
+        total: cryptos.len(),
+        kinds,
+        statuses,
+        strength,
+        purposes_total,
+        post_quantum_candidates,
+        denied,
+        key_material_present: false,
+        secret_material_present: false,
+        execution_present: false,
     }
 }
 
@@ -404,7 +456,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.23".into(),
+            report_version: "0.24".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -421,6 +473,7 @@ impl SecurityReport {
             secret_boundaries: secret_boundaries_summary(&bytecode.secrets),
             adapters: adapter_summary(&bytecode.adapters),
             adapter_profiles: adapter_profile_summary(&bytecode.adapter_profiles),
+            crypto_registry: crypto_registry_summary(&bytecode.cryptos),
             policy,
             provider_boundary,
             calls,

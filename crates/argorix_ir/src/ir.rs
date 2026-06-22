@@ -20,6 +20,8 @@ pub struct IrProgram {
     pub adapters: Vec<IrAdapter>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapter_profiles: Vec<IrAdapterProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cryptos: Vec<IrCrypto>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -161,6 +163,23 @@ pub struct IrAdapterProfile {
     pub response_contract: Option<String>,
     pub capabilities: Vec<String>,
     pub required_conformance: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrCrypto {
+    pub name: String,
+    pub kind: String,
+    pub status: String,
+    pub strength: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_bits: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_key_bits: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -317,7 +336,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.23".to_owned(),
+            ir_version: "0.24".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -444,6 +463,21 @@ impl From<&Program> for IrProgram {
                         .iter()
                         .map(|v| v.value.clone())
                         .collect(),
+                })
+                .collect(),
+            cryptos: program
+                .cryptos
+                .iter()
+                .map(|c| IrCrypto {
+                    name: c.name.value.clone(),
+                    kind: c.kind.value.source_name().to_owned(),
+                    status: c.status.value.source_name().to_owned(),
+                    strength: c.strength.value.source_name().to_owned(),
+                    purpose: c.purpose.iter().map(|v| v.value.clone()).collect(),
+                    output_bits: c.output_bits.as_ref().map(|v| v.value),
+                    min_key_bits: c.min_key_bits.as_ref().map(|v| v.value),
+                    security_level: c.security_level.as_ref().map(|v| v.value.clone()),
+                    notes: c.notes.as_ref().map(|v| v.value.clone()),
                 })
                 .collect(),
             assertions: program

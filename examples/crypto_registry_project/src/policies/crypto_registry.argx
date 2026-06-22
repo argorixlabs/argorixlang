@@ -1,0 +1,11 @@
+module policies.crypto_registry
+
+policy CryptoRegistryPolicy {
+  require crypto_primitives_declared
+  require crypto_key_material_absent
+  require crypto_secret_material_absent
+  require crypto_execution_absent
+  require crypto_post_quantum_candidates_declared
+
+  on violation { action review trace required }
+}

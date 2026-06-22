@@ -1,0 +1,24 @@
+module crypto.classical
+
+crypto sha256 {
+  kind hash
+  status allowed
+  strength classical
+  purpose ["digest", "evidence"]
+  output_bits 256
+}
+
+crypto rsa2048 {
+  kind signature
+  status legacy
+  strength classical
+  purpose ["compatibility"]
+  min_key_bits 2048
+}
+
+crypto aes256_gcm {
+  kind aead
+  status allowed
+  strength classical
+  purpose ["future-encryption"]
+}

@@ -4,9 +4,10 @@ use argorix_parser::{
         AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
         AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileExecution, AdapterProfileFamily,
         AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, Approval, CapabilityLevel,
-        FeatureDefault, FeatureStatus, HandlerInstruction, HarnessFilesystem, HarnessMode,
-        HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program,
-        SecretAccess, SecretScope, SecretSource,
+        CryptoDecl, CryptoKind, CryptoStatus, CryptoStrength, FeatureDefault, FeatureStatus,
+        HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
+        PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program, SecretAccess, SecretScope,
+        SecretSource,
     },
     diagnostics::Diagnostic,
     span::Spanned,
@@ -34,6 +35,7 @@ pub fn check_program_with_options(
     check_secrets(program, &symbols, &mut diagnostics);
     check_adapters(program, &symbols, &mut diagnostics);
     check_adapter_profiles(program, &symbols, &mut diagnostics);
+    check_cryptos(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -1258,6 +1260,96 @@ fn check_adapter_profiles(program: &Program, symbols: &Symbols, diagnostics: &mu
     }
 }
 
+fn check_cryptos(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+    let mut names = HashSet::new();
+    for crypto in &program.cryptos {
+        report_duplicate(&mut names, &crypto.name, "crypto", diagnostics);
+        let crypto_name = &crypto.name.value;
+
+        // required fields
+        match &crypto.kind.value {
+            CryptoKind::Unknown(value) if value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!("crypto `{crypto_name}` is missing required field `kind`"),
+                crypto.kind.span,
+            )),
+            CryptoKind::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("crypto `{crypto_name}` has invalid kind `{value}`"),
+                crypto.kind.span,
+            )),
+            _ => {}
+        }
+
+        match &crypto.status.value {
+            CryptoStatus::Unknown(value) if value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!("crypto `{crypto_name}` is missing required field `status`"),
+                crypto.status.span,
+            )),
+            CryptoStatus::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("crypto `{crypto_name}` has invalid status `{value}`"),
+                crypto.status.span,
+            )),
+            _ => {}
+        }
+
+        match &crypto.strength.value {
+            CryptoStrength::UnknownValue(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("crypto `{crypto_name}` is missing required field `strength`"),
+                    crypto.strength.span,
+                ))
+            }
+            CryptoStrength::UnknownValue(value) => diagnostics.push(Diagnostic::new(
+                format!("crypto `{crypto_name}` has invalid strength `{value}`"),
+                crypto.strength.span,
+            )),
+            _ => {}
+        }
+
+        if crypto.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("crypto `{crypto_name}` is missing required field `purpose`"),
+                crypto.name.span,
+            ));
+        } else {
+            for p in &crypto.purpose {
+                if p.value.trim().is_empty() {
+                    diagnostics.push(Diagnostic::new(
+                        format!("crypto `{crypto_name}` has empty purpose item"),
+                        p.span,
+                    ));
+                }
+            }
+        }
+
+        // optional numeric fields
+        if let Some(ob) = &crypto.output_bits {
+            if ob.value == 0 {
+                diagnostics.push(Diagnostic::new(
+                    format!("crypto `{crypto_name}` has invalid output_bits 0"),
+                    ob.span,
+                ));
+            }
+        }
+        if let Some(mk) = &crypto.min_key_bits {
+            if mk.value == 0 {
+                diagnostics.push(Diagnostic::new(
+                    format!("crypto `{crypto_name}` has invalid min_key_bits 0"),
+                    mk.span,
+                ));
+            }
+        }
+
+        if let Some(n) = &crypto.notes {
+            if n.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("crypto `{crypto_name}` has empty notes"),
+                    n.span,
+                ));
+            }
+        }
+    }
+}
+
 fn check_provider_contracts(
     program: &Program,
     symbols: &Symbols,
@@ -2019,6 +2111,9 @@ fn collect_symbols(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> Symb
             "adapter_profile",
             diagnostics,
         );
+    }
+    for crypto in &program.cryptos {
+        report_duplicate(&mut symbols.cryptos, &crypto.name, "crypto", diagnostics);
     }
     for capability in &program.capabilities {
         if symbols

@@ -38,6 +38,13 @@ pub struct PolicyEvidenceContext {
     pub adapter_profiles_linked: bool,
     pub adapter_profiles_conformance_declared: bool,
     pub vendor_profiles_declared: bool,
+    pub crypto_primitives_declared: bool,
+    pub crypto_primitives_allowed: bool,
+    pub crypto_denied_not_used: bool,
+    pub crypto_post_quantum_candidates_declared: bool,
+    pub crypto_key_material_absent: bool,
+    pub crypto_secret_material_absent: bool,
+    pub crypto_execution_absent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -255,6 +262,34 @@ pub fn evaluate_rule(
         "vendor_profiles_declared" => (
             context.vendor_profiles_declared,
             "no vendor profile is declared",
+        ),
+        "crypto_primitives_declared" => (
+            context.crypto_primitives_declared,
+            "no crypto primitive is declared",
+        ),
+        "crypto_primitives_allowed" => (
+            context.crypto_primitives_allowed,
+            "one or more crypto primitives are denied or invalid",
+        ),
+        "crypto_denied_not_used" => (
+            context.crypto_denied_not_used,
+            "one or more denied crypto primitives are referenced",
+        ),
+        "crypto_post_quantum_candidates_declared" => (
+            context.crypto_post_quantum_candidates_declared,
+            "no post-quantum candidate crypto primitive is declared",
+        ),
+        "crypto_key_material_absent" => (
+            context.crypto_key_material_absent,
+            "crypto key material is present",
+        ),
+        "crypto_secret_material_absent" => (
+            context.crypto_secret_material_absent,
+            "crypto secret material is present",
+        ),
+        "crypto_execution_absent" => (
+            context.crypto_execution_absent,
+            "crypto execution primitives or operations are present",
         ),
         _ => (false, "unknown policy rule"),
     };

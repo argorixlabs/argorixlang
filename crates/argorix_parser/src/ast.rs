@@ -10,6 +10,7 @@ pub struct Program {
     pub secrets: Vec<SecretDecl>,
     pub adapters: Vec<AdapterDecl>,
     pub adapter_profiles: Vec<AdapterProfileDecl>,
+    pub cryptos: Vec<CryptoDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -554,6 +555,104 @@ impl AdapterProfileSecrets {
     }
 }
 
+/// A top-level `crypto` block declaring a cryptographic primitive as metadata only.
+///
+/// v0.24 crypto primitives are governance / conformance metadata. They describe
+/// which algorithms (hash, signature, KEM, AEAD, etc.) are allowed, legacy,
+/// deprecated, denied, experimental or post-quantum candidates. They do not
+/// execute any cryptography, do not generate keys, do not sign, do not verify
+/// signatures, do not encrypt, do not decrypt. `simulated` remains the only
+/// executable provider. No key material or secret material is stored or read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CryptoDecl {
+    pub name: Spanned<String>,
+    pub kind: Spanned<CryptoKind>,
+    pub status: Spanned<CryptoStatus>,
+    pub strength: Spanned<CryptoStrength>,
+    pub purpose: Vec<Spanned<String>>,
+    pub output_bits: Option<Spanned<u64>>,
+    pub min_key_bits: Option<Spanned<u64>>,
+    pub security_level: Option<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CryptoKind {
+    Hash,
+    Signature,
+    Kem,
+    Aead,
+    Mac,
+    Kdf,
+    Commitment,
+    Randomness,
+    Custom,
+    Unknown(String),
+}
+
+impl CryptoKind {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Hash => "hash",
+            Self::Signature => "signature",
+            Self::Kem => "kem",
+            Self::Aead => "aead",
+            Self::Mac => "mac",
+            Self::Kdf => "kdf",
+            Self::Commitment => "commitment",
+            Self::Randomness => "randomness",
+            Self::Custom => "custom",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CryptoStatus {
+    Allowed,
+    Legacy,
+    Deprecated,
+    Denied,
+    Experimental,
+    PostQuantumCandidate,
+    Unknown(String),
+}
+
+impl CryptoStatus {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Allowed => "allowed",
+            Self::Legacy => "legacy",
+            Self::Deprecated => "deprecated",
+            Self::Denied => "denied",
+            Self::Experimental => "experimental",
+            Self::PostQuantumCandidate => "post_quantum_candidate",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CryptoStrength {
+    Classical,
+    PostQuantum,
+    Hybrid,
+    Unknown,
+    UnknownValue(String),
+}
+
+impl CryptoStrength {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Classical => "classical",
+            Self::PostQuantum => "post_quantum",
+            Self::Hybrid => "hybrid",
+            Self::Unknown => "unknown",
+            Self::UnknownValue(value) => value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssertionDecl {
     pub name: Spanned<String>,
@@ -636,6 +735,13 @@ pub enum PolicyRule {
     AdapterProfilesLinked,
     AdapterProfilesConformanceDeclared,
     VendorProfilesDeclared,
+    CryptoPrimitivesDeclared,
+    CryptoPrimitivesAllowed,
+    CryptoDeniedNotUsed,
+    CryptoPostQuantumCandidatesDeclared,
+    CryptoKeyMaterialAbsent,
+    CryptoSecretMaterialAbsent,
+    CryptoExecutionAbsent,
     Unknown(String),
 }
 
@@ -690,6 +796,13 @@ impl PolicyRule {
             Self::AdapterProfilesLinked => "adapter_profiles_linked",
             Self::AdapterProfilesConformanceDeclared => "adapter_profiles_conformance_declared",
             Self::VendorProfilesDeclared => "vendor_profiles_declared",
+            Self::CryptoPrimitivesDeclared => "crypto_primitives_declared",
+            Self::CryptoPrimitivesAllowed => "crypto_primitives_allowed",
+            Self::CryptoDeniedNotUsed => "crypto_denied_not_used",
+            Self::CryptoPostQuantumCandidatesDeclared => "crypto_post_quantum_candidates_declared",
+            Self::CryptoKeyMaterialAbsent => "crypto_key_material_absent",
+            Self::CryptoSecretMaterialAbsent => "crypto_secret_material_absent",
+            Self::CryptoExecutionAbsent => "crypto_execution_absent",
             Self::Unknown(value) => value,
         }
         .to_owned()

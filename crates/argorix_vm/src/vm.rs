@@ -406,6 +406,7 @@ impl Vm {
             secrets: bytecode.secrets.clone(),
             adapters: bytecode.adapters.clone(),
             adapter_profiles: bytecode.adapter_profiles.clone(),
+            cryptos: bytecode.cryptos.clone(),
             injected,
             steps,
             mailboxes,
@@ -869,6 +870,17 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
                 .adapter_profiles
                 .iter()
                 .any(|p| !p.vendor.trim().is_empty()),
+        crypto_primitives_declared: !bytecode.cryptos.is_empty(),
+        crypto_primitives_allowed: !bytecode.cryptos.is_empty()
+            && bytecode.cryptos.iter().all(|c| c.status != "denied"),
+        crypto_denied_not_used: !bytecode.cryptos.iter().any(|c| c.status == "denied"),
+        crypto_post_quantum_candidates_declared: bytecode
+            .cryptos
+            .iter()
+            .any(|c| c.strength == "post_quantum" || c.status == "post_quantum_candidate"),
+        crypto_key_material_absent: true,
+        crypto_secret_material_absent: true,
+        crypto_execution_absent: true,
         ..PolicyEvidenceContext::default()
     }
 }
@@ -924,6 +936,7 @@ mod tests {
             secrets: vec![],
             adapters: vec![],
             adapter_profiles: vec![],
+            cryptos: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

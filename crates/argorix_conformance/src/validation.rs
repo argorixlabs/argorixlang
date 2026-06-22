@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 24] = [
+pub const CATEGORIES: [&str; 25] = [
     "parser",
     "semantics",
     "ir",
@@ -48,6 +48,7 @@ pub const CATEGORIES: [&str; 24] = [
     "feature_flags",
     "secret_boundary",
     "adapter_framework",
+    "crypto_registry",
 ];
 
 #[derive(Debug, Error)]
@@ -63,10 +64,10 @@ pub fn validate_suite(
     let mut errors = Vec::new();
     if !matches!(
         suite.suite_version.as_str(),
-        "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22"
+        "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24"
     ) {
         errors.push(format!(
-            "suite_version must be `0.16`..`0.22`, found `{}`",
+            "suite_version must be `0.16`..`0.24`, found `{}`",
             suite.suite_version
         ));
     }

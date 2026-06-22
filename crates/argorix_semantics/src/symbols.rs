@@ -20,6 +20,7 @@ pub struct Symbols {
     pub secrets: HashSet<String>,
     pub adapters: HashSet<String>,
     pub adapter_profiles: HashSet<String>,
+    pub cryptos: HashSet<String>,
 }
 
 impl Symbols {

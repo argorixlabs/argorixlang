@@ -1,0 +1,3 @@
+module m
+crypto Dup { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }
+crypto Dup { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }

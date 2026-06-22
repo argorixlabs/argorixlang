@@ -1,9 +1,10 @@
 use crate::{
     BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability,
-    BytecodeFailure, BytecodeFeature, BytecodeModel, BytecodeModule, BytecodeModuleImport,
-    BytecodePassport, BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule,
-    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness,
-    BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeCrypto, BytecodeFailure, BytecodeFeature, BytecodeModel, BytecodeModule,
+    BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
+    BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField,
+    Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -172,7 +173,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.23".to_owned(),
+        bytecode_version: "0.24".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -266,6 +267,21 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 response_contract: p.response_contract.clone(),
                 capabilities: p.capabilities.clone(),
                 required_conformance: p.required_conformance.clone(),
+            })
+            .collect(),
+        cryptos: ir
+            .cryptos
+            .iter()
+            .map(|c| BytecodeCrypto {
+                name: c.name.clone(),
+                kind: c.kind.clone(),
+                status: c.status.clone(),
+                strength: c.strength.clone(),
+                purpose: c.purpose.clone(),
+                output_bits: c.output_bits,
+                min_key_bits: c.min_key_bits,
+                security_level: c.security_level.clone(),
+                notes: c.notes.clone(),
             })
             .collect(),
         imports: ir

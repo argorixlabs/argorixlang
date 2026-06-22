@@ -1,0 +1,2 @@
+module m
+crypto Bad { kind hash status allowed strength classical purpose ["digest"] output_bits 0 }

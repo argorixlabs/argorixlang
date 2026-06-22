@@ -3,8 +3,9 @@ use crate::{
         AdapterDecl, AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
         AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution,
         AdapterProfileFamily, AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets,
-        AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
-        FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
+        AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, CryptoDecl,
+        CryptoKind, CryptoStatus, CryptoStrength, EnumDecl, FailureDecl, FeatureDecl,
+        FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
         HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl,
         MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule,
         PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
@@ -71,6 +72,7 @@ impl Parser {
             secrets: Vec::new(),
             adapters: Vec::new(),
             adapter_profiles: Vec::new(),
+            cryptos: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -93,6 +95,7 @@ impl Parser {
                 Some("secret") => program.secrets.push(self.parse_secret()?),
                 Some("adapter") => program.adapters.push(self.parse_adapter()?),
                 Some("adapter_profile") => program.adapter_profiles.push(self.parse_adapter_profile()?),
+                Some("crypto") => program.cryptos.push(self.parse_crypto()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -112,7 +115,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -978,6 +981,121 @@ impl Parser {
         })
     }
 
+    fn parse_crypto(&mut self) -> Result<CryptoDecl, Diagnostic> {
+        self.expect_keyword("crypto")?;
+        let name = self.expect_identifier("crypto primitive name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut kind = None;
+        let mut status = None;
+        let mut strength = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut output_bits = None;
+        let mut min_key_bits = None;
+        let mut security_level = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated crypto declaration")?;
+            match self.peek_identifier() {
+                Some("kind") => self.set_block_field(&mut kind, "crypto", "kind", |parser| {
+                    let token = parser.expect_identifier("crypto kind")?;
+                    let value = match token.value.as_str() {
+                        "hash" => CryptoKind::Hash,
+                        "signature" => CryptoKind::Signature,
+                        "kem" => CryptoKind::Kem,
+                        "aead" => CryptoKind::Aead,
+                        "mac" => CryptoKind::Mac,
+                        "kdf" => CryptoKind::Kdf,
+                        "commitment" => CryptoKind::Commitment,
+                        "randomness" => CryptoKind::Randomness,
+                        "custom" => CryptoKind::Custom,
+                        other => CryptoKind::Unknown(other.to_owned()),
+                    };
+                    Ok(Spanned::new(value, token.span))
+                })?,
+                Some("status") => {
+                    self.set_block_field(&mut status, "crypto", "status", |parser| {
+                        let token = parser.expect_identifier("crypto status")?;
+                        let value = match token.value.as_str() {
+                            "allowed" => CryptoStatus::Allowed,
+                            "legacy" => CryptoStatus::Legacy,
+                            "deprecated" => CryptoStatus::Deprecated,
+                            "denied" => CryptoStatus::Denied,
+                            "experimental" => CryptoStatus::Experimental,
+                            "post_quantum_candidate" => CryptoStatus::PostQuantumCandidate,
+                            other => CryptoStatus::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("strength") => {
+                    self.set_block_field(&mut strength, "crypto", "strength", |parser| {
+                        let token = parser.expect_identifier("crypto strength")?;
+                        let value = match token.value.as_str() {
+                            "classical" => CryptoStrength::Classical,
+                            "post_quantum" => CryptoStrength::PostQuantum,
+                            "hybrid" => CryptoStrength::Hybrid,
+                            "unknown" => CryptoStrength::Unknown,
+                            other => CryptoStrength::UnknownValue(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "crypto", "purpose", |parser| {
+                        parser.parse_string_array("crypto purpose")
+                    })?
+                }
+                Some("output_bits") => {
+                    self.set_block_field(&mut output_bits, "crypto", "output_bits", |parser| {
+                        parser.expect_integer("crypto output_bits")
+                    })?
+                }
+                Some("min_key_bits") => {
+                    self.set_block_field(&mut min_key_bits, "crypto", "min_key_bits", |parser| {
+                        parser.expect_integer("crypto min_key_bits")
+                    })?
+                }
+                Some("security_level") => self.set_block_field(
+                    &mut security_level,
+                    "crypto",
+                    "security_level",
+                    |parser| parser.expect_string("crypto security_level"),
+                )?,
+                Some("notes") => self.set_block_field(&mut notes, "crypto", "notes", |parser| {
+                    parser.expect_string("crypto notes")
+                })?,
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected crypto item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => return Err(Diagnostic::new("expected a crypto field", self.peek().span)),
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        Ok(CryptoDecl {
+            name,
+            kind: kind
+                .unwrap_or_else(|| Spanned::new(CryptoKind::Unknown(String::new()), fallback_span)),
+            status: status.unwrap_or_else(|| {
+                Spanned::new(CryptoStatus::Unknown(String::new()), fallback_span)
+            }),
+            strength: strength.unwrap_or_else(|| {
+                Spanned::new(CryptoStrength::UnknownValue(String::new()), fallback_span)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            output_bits,
+            min_key_bits,
+            security_level,
+            notes,
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -1128,6 +1246,15 @@ impl Parser {
                 PolicyRule::AdapterProfilesConformanceDeclared
             }
             "vendor_profiles_declared" => PolicyRule::VendorProfilesDeclared,
+            "crypto_primitives_declared" => PolicyRule::CryptoPrimitivesDeclared,
+            "crypto_primitives_allowed" => PolicyRule::CryptoPrimitivesAllowed,
+            "crypto_denied_not_used" => PolicyRule::CryptoDeniedNotUsed,
+            "crypto_post_quantum_candidates_declared" => {
+                PolicyRule::CryptoPostQuantumCandidatesDeclared
+            }
+            "crypto_key_material_absent" => PolicyRule::CryptoKeyMaterialAbsent,
+            "crypto_secret_material_absent" => PolicyRule::CryptoSecretMaterialAbsent,
+            "crypto_execution_absent" => PolicyRule::CryptoExecutionAbsent,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {
