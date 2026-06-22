@@ -17,6 +17,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         harnesses: Vec::new(),
         features: Vec::new(),
         secrets: Vec::new(),
+        adapters: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -46,6 +47,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         merged.harnesses.extend(program.harnesses.iter().cloned());
         merged.features.extend(program.features.iter().cloned());
         merged.secrets.extend(program.secrets.iter().cloned());
+        merged.adapters.extend(program.adapters.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());

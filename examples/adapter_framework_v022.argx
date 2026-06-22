@@ -1,0 +1,151 @@
+module app.main
+
+capability model.invoke { level safe }
+capability state.write { level safe }
+capability runtime.guard { level safe }
+
+type UserPrompt {
+  content: string
+  risk_level: string
+}
+
+type DraftAnswer {
+  content: string
+  citations_required: bool
+}
+
+provider GenericProvider {
+  kind external
+  enabled false
+  dry_run_only true
+  requires feature_flag
+  requires approval
+  allowed_targets {
+    GuardModel
+  }
+  allowed_capabilities {
+    model.invoke
+  }
+}
+
+model GuardModel {
+  provider simulated
+  capability model.invoke
+  input UserPrompt
+  output DraftAnswer
+}
+
+feature GenericAdapterFeature {
+  provider GenericProvider
+  status experimental
+  default disabled
+  requires approval
+  purpose "future-generic-adapter"
+}
+
+secret GenericSecret {
+  handle "GENERIC_API_KEY"
+  provider GenericProvider
+  required_by GenericAdapterFeature
+  scope adapter
+  access denied
+  source none
+}
+
+harness GenericHarness {
+  provider GenericProvider
+  feature GenericAdapterFeature
+  secret GenericSecret
+
+  mode dry_run
+  network denied
+  secrets denied
+  filesystem none
+
+  max_steps 10
+  timeout_ms 1000
+
+  input_contract UserPrompt
+  output_contract DraftAnswer
+
+  attestations ["dry-run", "policy-check", "evidence-bundle"]
+}
+
+adapter GenericAdapter {
+  provider GenericProvider
+  feature GenericAdapterFeature
+  secret GenericSecret
+  harness GenericHarness
+
+  kind llm
+  vendor "generic"
+  mode experimental
+  execution disabled
+
+  network denied
+  secrets denied
+  filesystem none
+
+  input_contract UserPrompt
+  output_contract DraftAnswer
+
+  conformance [
+    "feature-gated",
+    "secret-boundary",
+    "provider-harnessed",
+    "network-denied",
+    "secrets-denied",
+    "execution-disabled",
+    "evidence-required"
+  ]
+}
+
+agent User {
+  sends UserPrompt to ResearchAgent
+}
+
+agent ResearchAgent {
+  receives UserPrompt
+  sends DraftAnswer to User
+  capabilities {
+    model.invoke
+    state.write
+    runtime.guard
+  }
+}
+
+passport ResearchPassport {
+  agent ResearchAgent
+  agent_name "Research Agent"
+  global_id "argx:agent:01HZX9RESEARCH"
+  identity "did:argorix:research-agent-v1"
+  provider "Argorix"
+  version "1.0.0"
+  country "CL"
+  jurisdiction "CL"
+  data_residency ["CL"]
+  intent "risk_analysis"
+  risk_level "high"
+  attestations ["redteam", "policy-check", "evidence-bundle"]
+}
+
+policy AdapterConformancePolicy {
+  require adapters_declared
+  require adapters_execution_disabled
+  require adapters_network_denied
+  require adapters_secrets_denied
+  require adapters_provider_harnessed
+  require adapters_feature_gated
+  require adapters_secret_boundaried
+  require adapters_conformance_declared
+  require adapters_evidence_required
+
+  on violation {
+    action review
+    trace required
+  }
+}
+
+protocol Flow {
+  User -> ResearchAgent: tell UserPrompt
+}

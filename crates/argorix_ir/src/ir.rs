@@ -16,6 +16,8 @@ pub struct IrProgram {
     pub features: Vec<IrFeature>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<IrSecret>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adapters: Vec<IrAdapter>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -111,6 +113,32 @@ pub struct IrSecret {
     pub scope: String,
     pub access: String,
     pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrAdapter {
+    pub name: String,
+    pub provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vendor: Option<String>,
+    pub mode: String,
+    pub execution: String,
+    pub network: String,
+    pub secrets: String,
+    pub filesystem: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_contract: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_contract: Option<String>,
+    pub conformance: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -267,7 +295,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.21".to_owned(),
+            ir_version: "0.22".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -342,6 +370,34 @@ impl From<&Program> for IrProgram {
                     scope: secret.scope.value.source_name().to_owned(),
                     access: secret.access.value.source_name().to_owned(),
                     source: secret.source.value.source_name().to_owned(),
+                })
+                .collect(),
+            adapters: program
+                .adapters
+                .iter()
+                .map(|adapter| IrAdapter {
+                    name: adapter.name.value.clone(),
+                    provider: adapter.provider.value.clone(),
+                    feature: adapter.feature.as_ref().map(|v| v.value.clone()),
+                    secret: adapter.secret.as_ref().map(|v| v.value.clone()),
+                    harness: adapter.harness.as_ref().map(|v| v.value.clone()),
+                    kind: adapter
+                        .kind
+                        .as_ref()
+                        .map(|v| v.value.source_name().to_owned()),
+                    vendor: adapter.vendor.as_ref().map(|v| v.value.clone()),
+                    mode: adapter.mode.value.source_name().to_owned(),
+                    execution: adapter.execution.value.source_name().to_owned(),
+                    network: adapter.network.value.source_name().to_owned(),
+                    secrets: adapter.secrets.value.source_name().to_owned(),
+                    filesystem: adapter.filesystem.value.source_name().to_owned(),
+                    input_contract: adapter.input_contract.as_ref().map(|v| v.value.clone()),
+                    output_contract: adapter.output_contract.as_ref().map(|v| v.value.clone()),
+                    conformance: adapter
+                        .conformance
+                        .iter()
+                        .map(|v| v.value.clone())
+                        .collect(),
                 })
                 .collect(),
             assertions: program

@@ -1,9 +1,11 @@
 use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
     ast::{
-        Approval, CapabilityLevel, FeatureDefault, FeatureStatus, HandlerInstruction,
-        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl,
-        PolicyViolationAction, Program, SecretAccess, SecretScope, SecretSource,
+        AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
+        AdapterSecrets, Approval, CapabilityLevel, FeatureDefault, FeatureStatus,
+        HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
+        PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program, SecretAccess, SecretScope,
+        SecretSource,
     },
     diagnostics::Diagnostic,
     span::Spanned,
@@ -29,6 +31,7 @@ pub fn check_program_with_options(
     check_provider_harnesses(program, &symbols, &mut diagnostics);
     check_features(program, &symbols, &mut diagnostics);
     check_secrets(program, &symbols, &mut diagnostics);
+    check_adapters(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -481,6 +484,424 @@ fn check_secrets(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Dia
                             ),
                             secret_provider.span,
                         ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn check_adapters(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+    let mut names = HashSet::new();
+    for adapter in &program.adapters {
+        report_duplicate(&mut names, &adapter.name, "adapter", diagnostics);
+        let adapter_name = &adapter.name.value;
+
+        // provider (required)
+        if adapter.provider.value.trim().is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("adapter `{adapter_name}` is missing required field `provider`"),
+                adapter.provider.span,
+            ));
+        } else if !symbols.providers.contains(&adapter.provider.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "adapter `{adapter_name}` references unknown provider `{}`",
+                    adapter.provider.value
+                ),
+                adapter.provider.span,
+            ));
+        }
+
+        // feature reference (if present)
+        if let Some(feature) = &adapter.feature {
+            if !symbols.features.contains(&feature.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter `{adapter_name}` references unknown feature `{}`",
+                        feature.value
+                    ),
+                    feature.span,
+                ));
+            }
+        }
+
+        // secret reference (if present)
+        if let Some(secret) = &adapter.secret {
+            if !symbols.secrets.contains(&secret.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter `{adapter_name}` references unknown secret `{}`",
+                        secret.value
+                    ),
+                    secret.span,
+                ));
+            }
+        }
+
+        // harness reference (if present)
+        if let Some(harness) = &adapter.harness {
+            // harness names are not in symbols yet, check against program.harnesses directly
+            if !program
+                .harnesses
+                .iter()
+                .any(|h| h.name.value == harness.value)
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter `{adapter_name}` references unknown harness `{}`",
+                        harness.value
+                    ),
+                    harness.span,
+                ));
+            }
+        }
+
+        // kind (optional, validate if present)
+        if let Some(kind) = &adapter.kind {
+            if let AdapterKind::Unknown(value) = &kind.value {
+                if !value.is_empty() {
+                    // unknown but non-empty kind: still allow for future extensibility per spec
+                }
+            }
+        }
+
+        // vendor (optional) - non-empty check only when present
+        if let Some(vendor) = &adapter.vendor {
+            if vendor.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter `{adapter_name}` has empty `vendor`"),
+                    vendor.span,
+                ));
+            }
+        }
+
+        // mode (required)
+        match &adapter.mode.value {
+            AdapterMode::Unknown(value) if value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!("adapter `{adapter_name}` is missing required field `mode`"),
+                adapter.mode.span,
+            )),
+            AdapterMode::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter `{adapter_name}` has invalid mode `{value}`"),
+                adapter.mode.span,
+            )),
+            _ => {}
+        }
+
+        // execution (required, must be disabled in v0.22)
+        match &adapter.execution.value {
+            AdapterExecution::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter `{adapter_name}` is missing required field `execution`"),
+                    adapter.execution.span,
+                ))
+            }
+            AdapterExecution::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter `{adapter_name}` has invalid execution `{value}`"),
+                adapter.execution.span,
+            )),
+            AdapterExecution::Disabled => {}
+        }
+
+        // network (required, must be denied)
+        match &adapter.network.value {
+            AdapterNetwork::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter `{adapter_name}` is missing required field `network`"),
+                    adapter.network.span,
+                ))
+            }
+            AdapterNetwork::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter `{adapter_name}` has invalid network `{value}`"),
+                adapter.network.span,
+            )),
+            AdapterNetwork::Denied => {}
+        }
+
+        // secrets (required, must be denied)
+        match &adapter.secrets.value {
+            AdapterSecrets::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter `{adapter_name}` is missing required field `secrets`"),
+                    adapter.secrets.span,
+                ))
+            }
+            AdapterSecrets::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter `{adapter_name}` has invalid secrets `{value}`"),
+                adapter.secrets.span,
+            )),
+            AdapterSecrets::Denied => {}
+        }
+
+        // filesystem (required, none or read_only)
+        match &adapter.filesystem.value {
+            AdapterFilesystem::Unknown(value) if value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter `{adapter_name}` is missing required field `filesystem`"),
+                    adapter.filesystem.span,
+                ))
+            }
+            AdapterFilesystem::Unknown(value) => diagnostics.push(Diagnostic::new(
+                format!("adapter `{adapter_name}` has invalid filesystem `{value}`"),
+                adapter.filesystem.span,
+            )),
+            AdapterFilesystem::None | AdapterFilesystem::ReadOnly => {}
+        }
+
+        // conformance items must be non-empty strings
+        for item in &adapter.conformance {
+            if item.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("adapter `{adapter_name}` has empty conformance item"),
+                    item.span,
+                ));
+            }
+        }
+
+        // input/output contracts validated for existence later against types if present
+    }
+
+    // cross reference validations (provider/feature etc match)
+    for adapter in &program.adapters {
+        let adapter_name = &adapter.name.value;
+
+        // provider matches on referenced feature/secret/harness when present
+        let adapter_provider = &adapter.provider.value;
+
+        if let Some(feat) = &adapter.feature {
+            if let Some(feature_decl) = program.features.iter().find(|f| f.name.value == feat.value)
+            {
+                if let Some(fp) = &feature_decl.provider {
+                    if fp.value != *adapter_provider {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "adapter `{}` provider `{}` does not match feature `{}` provider `{}`",
+                                adapter_name, adapter_provider, feat.value, fp.value
+                            ),
+                            feat.span,
+                        ));
+                    }
+                }
+            }
+        }
+
+        if let Some(sec) = &adapter.secret {
+            if let Some(secret_decl) = program.secrets.iter().find(|s| s.name.value == sec.value) {
+                if let Some(sp) = &secret_decl.provider {
+                    if sp.value != *adapter_provider {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "adapter `{}` provider `{}` does not match secret `{}` provider `{}`",
+                                adapter_name, adapter_provider, sec.value, sp.value
+                            ),
+                            sec.span,
+                        ));
+                    }
+                }
+                if let Some(required_by) = &secret_decl.required_by {
+                    if let Some(feat) = &adapter.feature {
+                        if required_by.value != feat.value {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{}` feature `{}` does not match secret `{}` required_by `{}`",
+                                    adapter_name, feat.value, sec.value, required_by.value
+                                ),
+                                sec.span,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(harn) = &adapter.harness {
+            if let Some(harness_decl) = program
+                .harnesses
+                .iter()
+                .find(|h| h.name.value == harn.value)
+            {
+                if harness_decl.provider.value != *adapter_provider {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "adapter `{}` provider `{}` does not match harness `{}` provider `{}`",
+                            adapter_name, adapter_provider, harn.value, harness_decl.provider.value
+                        ),
+                        harn.span,
+                    ));
+                }
+                if let Some(hf) = &harness_decl.feature {
+                    if let Some(af) = &adapter.feature {
+                        if hf.value != af.value {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{}` feature `{}` does not match harness `{}` feature `{}`",
+                                    adapter_name, af.value, harn.value, hf.value
+                                ),
+                                harn.span,
+                            ));
+                        }
+                    }
+                }
+                if let Some(hs) = &harness_decl.secret {
+                    if let Some(as_) = &adapter.secret {
+                        if hs.value != as_.value {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{}` secret `{}` does not match harness `{}` secret `{}`",
+                                    adapter_name, as_.value, harn.value, hs.value
+                                ),
+                                harn.span,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // input/output contract type existence (if declared)
+    for adapter in &program.adapters {
+        let adapter_name = &adapter.name.value;
+        if let Some(ic) = &adapter.input_contract {
+            if !symbols.is_field_type(&ic.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter `{adapter_name}` input_contract references unknown type `{}`",
+                        ic.value
+                    ),
+                    ic.span,
+                ));
+            }
+        }
+        if let Some(oc) = &adapter.output_contract {
+            if !symbols.is_field_type(&oc.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "adapter `{adapter_name}` output_contract references unknown type `{}`",
+                        oc.value
+                    ),
+                    oc.span,
+                ));
+            }
+        }
+    }
+
+    // external provider + adapter boundary rules (when provider is external)
+    for adapter in &program.adapters {
+        let prov = program
+            .providers
+            .iter()
+            .find(|p| p.name.value == adapter.provider.value);
+        if let Some(p) = prov {
+            if p.kind.value.as_str() == "external" {
+                let adapter_name = &adapter.name.value;
+                // must have feature, secret, harness
+                if adapter.feature.is_none() {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "adapter `{adapter_name}` references external provider but is missing `feature`"
+                        ),
+                        adapter.provider.span,
+                    ));
+                }
+                if adapter.secret.is_none() {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "adapter `{adapter_name}` references external provider but is missing `secret`"
+                        ),
+                        adapter.provider.span,
+                    ));
+                }
+                if adapter.harness.is_none() {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "adapter `{adapter_name}` references external provider but is missing `harness`"
+                        ),
+                        adapter.provider.span,
+                    ));
+                }
+                // feature must be disabled + approval if present
+                if let Some(feat_ref) = &adapter.feature {
+                    if let Some(feat) = program
+                        .features
+                        .iter()
+                        .find(|f| f.name.value == feat_ref.value)
+                    {
+                        if let FeatureDefault::Enabled = &feat.default.value {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{adapter_name}` for external provider requires feature `{}` to default to disabled",
+                                    feat_ref.value
+                                ),
+                                feat.default.span,
+                            ));
+                        }
+                        if !feat.requires_approval {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{adapter_name}` for external provider requires feature `{}` to require approval",
+                                    feat_ref.value
+                                ),
+                                feat.name.span,
+                            ));
+                        }
+                    }
+                }
+                // secret must deny + none
+                if let Some(sec_ref) = &adapter.secret {
+                    if let Some(sec) = program
+                        .secrets
+                        .iter()
+                        .find(|s| s.name.value == sec_ref.value)
+                    {
+                        if let SecretAccess::Denied = &sec.access.value {
+                        } else if matches!(&sec.access.value, SecretAccess::Unknown(v) if v.is_empty())
+                        {
+                        } else {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{adapter_name}` secret boundary for external provider must have access denied"
+                                ),
+                                sec.access.span,
+                            ));
+                        }
+                        if let SecretSource::None = &sec.source.value {
+                        } else if matches!(&sec.source.value, SecretSource::Unknown(v) if v.is_empty())
+                        {
+                        } else {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{adapter_name}` secret boundary for external provider must have source none"
+                                ),
+                                sec.source.span,
+                            ));
+                        }
+                    }
+                }
+                // harness network/secrets denied
+                if let Some(harn_ref) = &adapter.harness {
+                    if let Some(harn) = program
+                        .harnesses
+                        .iter()
+                        .find(|h| h.name.value == harn_ref.value)
+                    {
+                        if !matches!(&harn.network.value, HarnessNetwork::Denied) {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{adapter_name}` harness for external provider must have network denied"
+                                ),
+                                harn.network.span,
+                            ));
+                        }
+                        if !matches!(&harn.secrets.value, HarnessSecrets::Denied) {
+                            diagnostics.push(Diagnostic::new(
+                                format!(
+                                    "adapter `{adapter_name}` harness for external provider must have secrets denied"
+                                ),
+                                harn.secrets.span,
+                            ));
+                        }
                     }
                 }
             }
@@ -1238,6 +1659,9 @@ fn collect_symbols(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> Symb
     }
     for secret in &program.secrets {
         report_duplicate(&mut symbols.secrets, &secret.name, "secret", diagnostics);
+    }
+    for adapter in &program.adapters {
+        report_duplicate(&mut symbols.adapters, &adapter.name, "adapter", diagnostics);
     }
     for capability in &program.capabilities {
         if symbols

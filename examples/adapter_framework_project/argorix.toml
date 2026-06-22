@@ -1,0 +1,6 @@
+[package]
+name = "adapter-framework-example"
+version = "0.22.0"
+
+[entry]
+main = "src/main.argx"

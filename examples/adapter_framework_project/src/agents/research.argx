@@ -1,0 +1,37 @@
+module agents.research
+
+model GuardModel {
+  provider simulated
+  capability model.invoke
+  input UserPrompt
+  output DraftAnswer
+}
+
+agent User {
+  sends UserPrompt
+}
+
+agent ResearchAgent {
+  receives UserPrompt
+  sends DraftAnswer
+  capabilities {
+    model.invoke
+    state.write
+    runtime.guard
+  }
+}
+
+passport ResearchPassport {
+  agent ResearchAgent
+  agent_name "Research Agent"
+  global_id "argx:agent:01HZX9RESEARCH"
+  identity "did:argorix:research-agent-v1"
+  provider "Argorix"
+  version "1.0.0"
+  country "CL"
+  jurisdiction "CL"
+  data_residency ["CL"]
+  intent "risk_analysis"
+  risk_level "high"
+  attestations ["redteam", "policy-check", "evidence-bundle"]
+}

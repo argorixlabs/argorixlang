@@ -21,6 +21,8 @@ pub struct BytecodeProgram {
     pub features: Vec<BytecodeFeature>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<BytecodeSecret>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adapters: Vec<BytecodeAdapter>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -91,6 +93,33 @@ pub struct BytecodeSecret {
     pub scope: String,
     pub access: String,
     pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeAdapter {
+    pub name: String,
+    pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor: Option<String>,
+    pub mode: String,
+    pub execution: String,
+    pub network: String,
+    pub secrets: String,
+    pub filesystem: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_contract: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_contract: Option<String>,
+    #[serde(default)]
+    pub conformance: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -431,6 +460,12 @@ pub enum BytecodeError {
     DuplicateSecret(String),
     #[error("invalid secret `{name}`: {reason}")]
     InvalidSecret { name: String, reason: String },
+    #[error("adapter framework metadata requires bytecode version 0.22")]
+    AdaptersRequireV022,
+    #[error("duplicate adapter `{0}`")]
+    DuplicateAdapter(String),
+    #[error("invalid adapter `{name}`: {reason}")]
+    InvalidAdapter { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -457,6 +492,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.19"
             | "0.20"
             | "0.21"
+            | "0.22"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -478,6 +514,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.13"
             | "0.14"
             | "0.15"
+            | "0.22"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -485,7 +522,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.modules.is_empty() || !program.imports.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21"
+            "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -505,7 +542,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.policies.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.17" | "0.18" | "0.19" | "0.20" | "0.21"
+            "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -516,6 +553,10 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     validate_provider_harnesses(program, &mut errors);
     validate_features(program, &mut errors);
     validate_secrets(program, &mut errors);
+    if !program.adapters.is_empty() && program.bytecode_version != "0.22" {
+        errors.push(BytecodeError::AdaptersRequireV022);
+    }
+    validate_adapters(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -783,7 +824,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
     if (!program.types.is_empty() || !program.enums.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.18" | "0.19" | "0.20" | "0.21"
+            "0.18" | "0.19" | "0.20" | "0.21" | "0.22"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -829,7 +870,10 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
     const ASN_REGISTRIES: [&str; 6] = ["LACNIC", "ARIN", "RIPE", "APNIC", "AFRINIC", "UNKNOWN"];
 
     if !program.passports.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.19" | "0.20" | "0.21")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.19" | "0.20" | "0.21" | "0.22"
+        )
     {
         errors.push(BytecodeError::PassportsRequireV019);
     }
@@ -906,7 +950,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
 
 fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     if !program.provider_harnesses.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.20" | "0.21")
+        && !matches!(program.bytecode_version.as_str(), "0.20" | "0.21" | "0.22")
     {
         errors.push(BytecodeError::HarnessesRequireV020);
     }
@@ -1003,7 +1047,8 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
 }
 
 fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    if !program.features.is_empty() && program.bytecode_version != "0.21" {
+    if !program.features.is_empty() && !matches!(program.bytecode_version.as_str(), "0.21" | "0.22")
+    {
         errors.push(BytecodeError::FeaturesRequireV021);
     }
     let providers = program
@@ -1058,7 +1103,8 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
 }
 
 fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    if !program.secrets.is_empty() && program.bytecode_version != "0.21" {
+    if !program.secrets.is_empty() && !matches!(program.bytecode_version.as_str(), "0.21" | "0.22")
+    {
         errors.push(BytecodeError::SecretsRequireV021);
     }
     let feature_names = program
@@ -1106,8 +1152,120 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
     }
 }
 
+fn validate_adapters(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    let provider_names: HashSet<_> = program.providers.iter().map(|p| p.name.as_str()).collect();
+    let feature_names: HashSet<_> = program.features.iter().map(|f| f.name.as_str()).collect();
+    let secret_names: HashSet<_> = program.secrets.iter().map(|s| s.name.as_str()).collect();
+    let harness_names: HashSet<_> = program
+        .provider_harnesses
+        .iter()
+        .map(|h| h.name.as_str())
+        .collect();
+
+    for adapter in &program.adapters {
+        if !names.insert(adapter.name.as_str()) {
+            errors.push(BytecodeError::DuplicateAdapter(adapter.name.clone()));
+            continue;
+        }
+        if adapter.provider.trim().is_empty() {
+            errors.push(BytecodeError::InvalidAdapter {
+                name: adapter.name.clone(),
+                reason: "missing provider".into(),
+            });
+        } else if !provider_names.contains(adapter.provider.as_str()) {
+            errors.push(BytecodeError::InvalidAdapter {
+                name: adapter.name.clone(),
+                reason: format!("unknown provider `{}`", adapter.provider),
+            });
+        }
+
+        if let Some(f) = &adapter.feature {
+            if !feature_names.contains(f.as_str()) {
+                errors.push(BytecodeError::InvalidAdapter {
+                    name: adapter.name.clone(),
+                    reason: format!("unknown feature `{f}`"),
+                });
+            }
+        }
+        if let Some(s) = &adapter.secret {
+            if !secret_names.contains(s.as_str()) {
+                errors.push(BytecodeError::InvalidAdapter {
+                    name: adapter.name.clone(),
+                    reason: format!("unknown secret `{s}`"),
+                });
+            }
+        }
+        if let Some(h) = &adapter.harness {
+            if !harness_names.contains(h.as_str()) {
+                errors.push(BytecodeError::InvalidAdapter {
+                    name: adapter.name.clone(),
+                    reason: format!("unknown harness `{h}`"),
+                });
+            }
+        }
+
+        // required fields values
+        if adapter.mode.trim().is_empty() || adapter.mode == "unknown" {
+            errors.push(BytecodeError::InvalidAdapter {
+                name: adapter.name.clone(),
+                reason: "missing or invalid mode".into(),
+            });
+        }
+        if adapter.execution != "disabled" {
+            errors.push(BytecodeError::InvalidAdapter {
+                name: adapter.name.clone(),
+                reason: "execution must be disabled".into(),
+            });
+        }
+        if adapter.network != "denied" {
+            errors.push(BytecodeError::InvalidAdapter {
+                name: adapter.name.clone(),
+                reason: "network must be denied".into(),
+            });
+        }
+        if adapter.secrets != "denied" {
+            errors.push(BytecodeError::InvalidAdapter {
+                name: adapter.name.clone(),
+                reason: "secrets must be denied".into(),
+            });
+        }
+        if adapter.filesystem != "none" && adapter.filesystem != "read_only" {
+            errors.push(BytecodeError::InvalidAdapter {
+                name: adapter.name.clone(),
+                reason: "filesystem must be none or read_only".into(),
+            });
+        }
+
+        for c in &adapter.conformance {
+            if c.trim().is_empty() {
+                errors.push(BytecodeError::InvalidAdapter {
+                    name: adapter.name.clone(),
+                    reason: "empty conformance item".into(),
+                });
+            }
+        }
+
+        // basic link coherence if harness present
+        if let Some(hname) = &adapter.harness {
+            if let Some(h) = program
+                .provider_harnesses
+                .iter()
+                .find(|hh| hh.name == *hname)
+            {
+                if h.provider != adapter.provider {
+                    errors.push(BytecodeError::InvalidAdapter {
+                        name: adapter.name.clone(),
+                        reason: "provider mismatch with harness".into(),
+                    });
+                }
+            }
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    const RULES: [&str; 30] = [
+    const RULES: [&str; 39] = [
         "no_unhandled_messages",
         "all_tool_calls_traced",
         "all_model_calls_traced",
@@ -1138,6 +1296,15 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "secret_values_absent",
         "external_provider_feature_gated",
         "external_provider_secret_boundary_declared",
+        "adapters_declared",
+        "adapters_execution_disabled",
+        "adapters_network_denied",
+        "adapters_secrets_denied",
+        "adapters_provider_harnessed",
+        "adapters_feature_gated",
+        "adapters_secret_boundaried",
+        "adapters_conformance_declared",
+        "adapters_evidence_required",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -1237,6 +1404,7 @@ mod tests {
             provider_harnesses: vec![],
             features: vec![],
             secrets: vec![],
+            adapters: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

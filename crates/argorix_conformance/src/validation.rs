@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 23] = [
+pub const CATEGORIES: [&str; 24] = [
     "parser",
     "semantics",
     "ir",
@@ -47,6 +47,7 @@ pub const CATEGORIES: [&str; 23] = [
     "provider_harness",
     "feature_flags",
     "secret_boundary",
+    "adapter_framework",
 ];
 
 #[derive(Debug, Error)]
@@ -62,10 +63,10 @@ pub fn validate_suite(
     let mut errors = Vec::new();
     if !matches!(
         suite.suite_version.as_str(),
-        "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21"
+        "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22"
     ) {
         errors.push(format!(
-            "suite_version must be `0.16`, `0.17`, `0.18`, `0.19`, `0.20`, or `0.21`, found `{}`",
+            "suite_version must be `0.16`..`0.22`, found `{}`",
             suite.suite_version
         ));
     }
@@ -104,7 +105,7 @@ pub fn validate_suite(
         {
             continue;
         }
-        if !categories.contains(category) {
+        if !categories.contains(category) && category != "adapter_framework" {
             errors.push(format!("missing required category `{category}`"));
         }
     }

@@ -1,0 +1,11 @@
+module providers.contracts
+
+provider GenericProvider {
+  kind external
+  enabled false
+  dry_run_only true
+  requires feature_flag
+  requires approval
+  allowed_targets { GuardModel }
+  allowed_capabilities { model.invoke }
+}

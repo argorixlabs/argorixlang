@@ -1,12 +1,14 @@
 use crate::{
     ast::{
-        AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
-        FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
-        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl,
-        MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule,
-        PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
-        ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl,
-        SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl, TypeDecl,
+        AdapterDecl, AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
+        AdapterSecrets, AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel,
+        EnumDecl, FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl,
+        HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
+        ImportDecl, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl,
+        PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program,
+        ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
+        ReceiveDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl,
+        TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -66,6 +68,7 @@ impl Parser {
             harnesses: Vec::new(),
             features: Vec::new(),
             secrets: Vec::new(),
+            adapters: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -86,6 +89,7 @@ impl Parser {
                 Some("harness") => program.harnesses.push(self.parse_harness()?),
                 Some("feature") => program.features.push(self.parse_feature()?),
                 Some("secret") => program.secrets.push(self.parse_secret()?),
+                Some("adapter") => program.adapters.push(self.parse_adapter()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -105,7 +109,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -594,6 +598,184 @@ impl Parser {
         })
     }
 
+    fn parse_adapter(&mut self) -> Result<AdapterDecl, Diagnostic> {
+        self.expect_keyword("adapter")?;
+        let name = self.expect_identifier("adapter name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut provider = None;
+        let mut feature = None;
+        let mut secret = None;
+        let mut harness = None;
+        let mut kind = None;
+        let mut vendor = None;
+        let mut mode = None;
+        let mut execution = None;
+        let mut network = None;
+        let mut secrets = None;
+        let mut filesystem = None;
+        let mut input_contract = None;
+        let mut output_contract = None;
+        let mut conformance: Option<Vec<Spanned<String>>> = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated adapter declaration")?;
+            match self.peek_identifier() {
+                Some("provider") => {
+                    self.set_block_field(&mut provider, "adapter", "provider", |parser| {
+                        parser.expect_identifier("adapter provider reference")
+                    })?
+                }
+                Some("feature") => {
+                    self.set_block_field(&mut feature, "adapter", "feature", |parser| {
+                        parser.expect_identifier("adapter feature reference")
+                    })?
+                }
+                Some("secret") => {
+                    self.set_block_field(&mut secret, "adapter", "secret", |parser| {
+                        parser.expect_identifier("adapter secret reference")
+                    })?
+                }
+                Some("harness") => {
+                    self.set_block_field(&mut harness, "adapter", "harness", |parser| {
+                        parser.expect_identifier("adapter harness reference")
+                    })?
+                }
+                Some("kind") => self.set_block_field(&mut kind, "adapter", "kind", |parser| {
+                    let token = parser.expect_identifier("adapter kind")?;
+                    let value = match token.value.as_str() {
+                        "llm" => AdapterKind::Llm,
+                        "tool" => AdapterKind::Tool,
+                        "bridge" => AdapterKind::Bridge,
+                        "registry" => AdapterKind::Registry,
+                        "identity" => AdapterKind::Identity,
+                        "payment" => AdapterKind::Payment,
+                        "storage" => AdapterKind::Storage,
+                        "custom" => AdapterKind::Custom,
+                        other => AdapterKind::Unknown(other.to_owned()),
+                    };
+                    Ok(Spanned::new(value, token.span))
+                })?,
+                Some("vendor") => {
+                    self.set_block_field(&mut vendor, "adapter", "vendor", |parser| {
+                        parser.expect_string("adapter vendor")
+                    })?
+                }
+                Some("mode") => self.set_block_field(&mut mode, "adapter", "mode", |parser| {
+                    let token = parser.expect_identifier("adapter mode")?;
+                    let value = match token.value.as_str() {
+                        "experimental" => AdapterMode::Experimental,
+                        "preview" => AdapterMode::Preview,
+                        "stable" => AdapterMode::Stable,
+                        "deprecated" => AdapterMode::Deprecated,
+                        other => AdapterMode::Unknown(other.to_owned()),
+                    };
+                    Ok(Spanned::new(value, token.span))
+                })?,
+                Some("execution") => {
+                    self.set_block_field(&mut execution, "adapter", "execution", |parser| {
+                        let token = parser.expect_identifier("adapter execution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => AdapterExecution::Disabled,
+                            other => AdapterExecution::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("network") => {
+                    self.set_block_field(&mut network, "adapter", "network", |parser| {
+                        let token = parser.expect_identifier("adapter network")?;
+                        let value = match token.value.as_str() {
+                            "denied" => AdapterNetwork::Denied,
+                            other => AdapterNetwork::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("secrets") => {
+                    self.set_block_field(&mut secrets, "adapter", "secrets", |parser| {
+                        let token = parser.expect_identifier("adapter secrets")?;
+                        let value = match token.value.as_str() {
+                            "denied" => AdapterSecrets::Denied,
+                            other => AdapterSecrets::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("filesystem") => {
+                    self.set_block_field(&mut filesystem, "adapter", "filesystem", |parser| {
+                        let token = parser.expect_identifier("adapter filesystem")?;
+                        let value = match token.value.as_str() {
+                            "none" => AdapterFilesystem::None,
+                            "read_only" => AdapterFilesystem::ReadOnly,
+                            other => AdapterFilesystem::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("input_contract") => self.set_block_field(
+                    &mut input_contract,
+                    "adapter",
+                    "input_contract",
+                    |parser| parser.expect_identifier("adapter input contract"),
+                )?,
+                Some("output_contract") => self.set_block_field(
+                    &mut output_contract,
+                    "adapter",
+                    "output_contract",
+                    |parser| parser.expect_identifier("adapter output contract"),
+                )?,
+                Some("conformance") => {
+                    self.set_block_field(&mut conformance, "adapter", "conformance", |parser| {
+                        parser.parse_string_array("adapter conformance item")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected adapter item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected an adapter field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        Ok(AdapterDecl {
+            name,
+            provider: provider.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            feature,
+            secret,
+            harness,
+            kind,
+            vendor,
+            mode: mode.unwrap_or_else(|| {
+                Spanned::new(AdapterMode::Unknown(String::new()), fallback_span)
+            }),
+            execution: execution.unwrap_or_else(|| {
+                Spanned::new(AdapterExecution::Unknown(String::new()), fallback_span)
+            }),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(AdapterNetwork::Unknown(String::new()), fallback_span)
+            }),
+            secrets: secrets.unwrap_or_else(|| {
+                Spanned::new(AdapterSecrets::Unknown(String::new()), fallback_span)
+            }),
+            filesystem: filesystem.unwrap_or_else(|| {
+                Spanned::new(AdapterFilesystem::Unknown(String::new()), fallback_span)
+            }),
+            input_contract,
+            output_contract,
+            conformance: conformance.unwrap_or_default(),
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -726,6 +908,15 @@ impl Parser {
             "external_provider_secret_boundary_declared" => {
                 PolicyRule::ExternalProviderSecretBoundaryDeclared
             }
+            "adapters_declared" => PolicyRule::AdaptersDeclared,
+            "adapters_execution_disabled" => PolicyRule::AdaptersExecutionDisabled,
+            "adapters_network_denied" => PolicyRule::AdaptersNetworkDenied,
+            "adapters_secrets_denied" => PolicyRule::AdaptersSecretsDenied,
+            "adapters_provider_harnessed" => PolicyRule::AdaptersProviderHarnessed,
+            "adapters_feature_gated" => PolicyRule::AdaptersFeatureGated,
+            "adapters_secret_boundaried" => PolicyRule::AdaptersSecretBoundaried,
+            "adapters_conformance_declared" => PolicyRule::AdaptersConformanceDeclared,
+            "adapters_evidence_required" => PolicyRule::AdaptersEvidenceRequired,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

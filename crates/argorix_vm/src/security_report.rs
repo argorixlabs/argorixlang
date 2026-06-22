@@ -26,6 +26,8 @@ pub struct SecurityReport {
     pub feature_flags: FeatureFlagsSummary,
     #[serde(default)]
     pub secret_boundaries: SecretBoundariesSummary,
+    #[serde(default)]
+    pub adapters: AdapterSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -108,6 +110,74 @@ pub struct SecretBoundariesSummary {
     pub linked_providers: Vec<String>,
     pub required_by: Vec<String>,
     pub values_present: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AdapterSummary {
+    pub total: usize,
+    pub providers: Vec<String>,
+    pub features: Vec<String>,
+    pub secrets: Vec<String>,
+    pub harnesses: Vec<String>,
+    pub kinds: BTreeMap<String, usize>,
+    pub modes: BTreeMap<String, usize>,
+    pub execution: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub secrets_access: BTreeMap<String, usize>,
+    pub filesystem: BTreeMap<String, usize>,
+    pub conformance_total: usize,
+}
+
+fn adapter_summary(adapters: &[argorix_bytecode::BytecodeAdapter]) -> AdapterSummary {
+    use std::collections::BTreeSet;
+    let mut kinds = BTreeMap::new();
+    let mut modes = BTreeMap::new();
+    let mut execution = BTreeMap::new();
+    let mut network = BTreeMap::new();
+    let mut secrets_access = BTreeMap::new();
+    let mut filesystem = BTreeMap::new();
+    let mut providers = BTreeSet::new();
+    let mut features = BTreeSet::new();
+    let mut secrets = BTreeSet::new();
+    let mut harnesses = BTreeSet::new();
+    let mut conformance_total = 0usize;
+
+    for a in adapters {
+        *kinds
+            .entry(a.kind.clone().unwrap_or_else(|| "unspecified".into()))
+            .or_insert(0) += 1;
+        *modes.entry(a.mode.clone()).or_insert(0) += 1;
+        *execution.entry(a.execution.clone()).or_insert(0) += 1;
+        *network.entry(a.network.clone()).or_insert(0) += 1;
+        *secrets_access.entry(a.secrets.clone()).or_insert(0) += 1;
+        *filesystem.entry(a.filesystem.clone()).or_insert(0) += 1;
+        providers.insert(a.provider.clone());
+        if let Some(f) = &a.feature {
+            features.insert(f.clone());
+        }
+        if let Some(s) = &a.secret {
+            secrets.insert(s.clone());
+        }
+        if let Some(h) = &a.harness {
+            harnesses.insert(h.clone());
+        }
+        conformance_total += a.conformance.len();
+    }
+
+    AdapterSummary {
+        total: adapters.len(),
+        providers: providers.into_iter().collect(),
+        features: features.into_iter().collect(),
+        secrets: secrets.into_iter().collect(),
+        harnesses: harnesses.into_iter().collect(),
+        kinds,
+        modes,
+        execution,
+        network,
+        secrets_access,
+        filesystem,
+        conformance_total,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -278,7 +348,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.21".into(),
+            report_version: "0.22".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -286,13 +356,14 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.21".into()),
+                .unwrap_or_else(|| "0.22".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
             provider_harnesses: provider_harness_summary(&bytecode.provider_harnesses),
             feature_flags: feature_flags_summary(&bytecode.features),
             secret_boundaries: secret_boundaries_summary(&bytecode.secrets),
+            adapters: adapter_summary(&bytecode.adapters),
             policy,
             provider_boundary,
             calls,

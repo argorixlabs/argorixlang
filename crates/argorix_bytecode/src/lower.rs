@@ -1,9 +1,9 @@
 use crate::{
-    BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeFeature,
-    BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn,
-    BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram,
-    BytecodeProviderContract, BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType,
-    BytecodeTypeField, Instruction,
+    BytecodeAdapter, BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure,
+    BytecodeFeature, BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport,
+    BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation,
+    BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness, BytecodeSecret,
+    BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -172,7 +172,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.21".to_owned(),
+        bytecode_version: "0.22".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -225,6 +225,27 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 scope: secret.scope.clone(),
                 access: secret.access.clone(),
                 source: secret.source.clone(),
+            })
+            .collect(),
+        adapters: ir
+            .adapters
+            .iter()
+            .map(|adapter| BytecodeAdapter {
+                name: adapter.name.clone(),
+                provider: adapter.provider.clone(),
+                feature: adapter.feature.clone(),
+                secret: adapter.secret.clone(),
+                harness: adapter.harness.clone(),
+                kind: adapter.kind.clone(),
+                vendor: adapter.vendor.clone(),
+                mode: adapter.mode.clone(),
+                execution: adapter.execution.clone(),
+                network: adapter.network.clone(),
+                secrets: adapter.secrets.clone(),
+                filesystem: adapter.filesystem.clone(),
+                input_contract: adapter.input_contract.clone(),
+                output_contract: adapter.output_contract.clone(),
+                conformance: adapter.conformance.clone(),
             })
             .collect(),
         imports: ir
@@ -400,6 +421,7 @@ mod tests {
             provider_harnesses: vec![],
             features: vec![],
             secrets: vec![],
+            adapters: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -551,6 +573,7 @@ mod tests {
             }],
             features: vec![],
             secrets: vec![],
+            adapters: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],

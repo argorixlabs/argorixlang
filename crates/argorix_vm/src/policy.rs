@@ -22,6 +22,15 @@ pub struct PolicyEvidenceContext {
     pub secret_values_absent: bool,
     pub external_provider_feature_gated: bool,
     pub external_provider_secret_boundary_declared: bool,
+    pub adapters_declared: bool,
+    pub adapters_execution_disabled: bool,
+    pub adapters_network_denied: bool,
+    pub adapters_secrets_denied: bool,
+    pub adapters_provider_harnessed: bool,
+    pub adapters_feature_gated: bool,
+    pub adapters_secret_boundaried: bool,
+    pub adapters_conformance_declared: bool,
+    pub adapters_evidence_required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,6 +187,39 @@ pub fn evaluate_rule(
         "external_provider_secret_boundary_declared" => (
             context.external_provider_secret_boundary_declared,
             "one or more external providers lack a denied/none secret boundary",
+        ),
+        "adapters_declared" => (context.adapters_declared, "no adapter is declared"),
+        "adapters_execution_disabled" => (
+            context.adapters_execution_disabled,
+            "one or more adapters do not have execution disabled",
+        ),
+        "adapters_network_denied" => (
+            context.adapters_network_denied,
+            "one or more adapters do not deny network access",
+        ),
+        "adapters_secrets_denied" => (
+            context.adapters_secrets_denied,
+            "one or more adapters do not deny secret access",
+        ),
+        "adapters_provider_harnessed" => (
+            context.adapters_provider_harnessed,
+            "one or more external-provider adapters lack a harness",
+        ),
+        "adapters_feature_gated" => (
+            context.adapters_feature_gated,
+            "one or more external-provider adapters lack a disabled approval-gated feature",
+        ),
+        "adapters_secret_boundaried" => (
+            context.adapters_secret_boundaried,
+            "one or more external-provider adapters lack a denied/none secret boundary",
+        ),
+        "adapters_conformance_declared" => (
+            context.adapters_conformance_declared,
+            "one or more adapters lack a non-empty conformance list",
+        ),
+        "adapters_evidence_required" => (
+            context.adapters_evidence_required,
+            "one or more adapters with conformance do not require evidence",
         ),
         _ => (false, "unknown policy rule"),
     };

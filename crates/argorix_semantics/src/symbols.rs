@@ -18,6 +18,7 @@ pub struct Symbols {
     pub models: HashSet<String>,
     pub features: HashSet<String>,
     pub secrets: HashSet<String>,
+    pub adapters: HashSet<String>,
 }
 
 impl Symbols {

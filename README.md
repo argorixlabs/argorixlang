@@ -412,6 +412,23 @@ Conformance paths resolve from the suite, not from the shell.
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
 
+## Argorix Lang v0.22 Adapter Framework + Adapter Conformance Suite
+
+**Principle:** Adapter conformance comes before adapter execution.
+
+v0.22 adds top-level `adapter` declarations. An adapter is declarative governance metadata that binds a provider contract, feature flag, secret boundary and harness. It records `kind`, `vendor`, `mode`, `execution disabled`, boundary restrictions (`network denied`, `secrets denied`, `filesystem none|read_only`), typed contracts and a `conformance` list.
+
+Adapters are **never executed** in v0.22. `simulated` remains the only executable provider. External providers remain non-executable. No network, env, secrets, or external SDKs are used.
+
+New Policy v2 rules:
+`adapters_declared`, `adapters_execution_disabled`, `adapters_network_denied`, `adapters_secrets_denied`, `adapters_provider_harnessed`, `adapters_feature_gated`, `adapters_secret_boundaried`, `adapters_conformance_declared`, `adapters_evidence_required`.
+
+SecurityReport and EvidenceBundle include adapter summaries. Conformance Suite v0.22 validates the adapter framework.
+
+See `examples/adapter_framework_v022.argx` and `examples/adapter_framework_project/`.
+
+All prior v0.16–v0.21 features are preserved. Bytecode/EvidenceBundle 0.21 remain verifiable.
+
 ## Argorix Lang v0.21 Feature Flags + Secret Boundary
 
 The v0.21 principle is:

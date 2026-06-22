@@ -1,0 +1,14 @@
+module app.main
+
+import providers.contracts
+import features.generic
+import secrets.generic
+import harnesses.generic
+import adapters.generic
+import messages.contracts
+import agents.research
+import policies.adapter_conformance
+
+protocol Flow {
+  User -> ResearchAgent: tell UserPrompt
+}

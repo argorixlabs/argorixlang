@@ -1,0 +1,18 @@
+module policies.adapter_conformance
+
+policy AdapterConformancePolicy {
+  require adapters_declared
+  require adapters_execution_disabled
+  require adapters_network_denied
+  require adapters_secrets_denied
+  require adapters_provider_harnessed
+  require adapters_feature_gated
+  require adapters_secret_boundaried
+  require adapters_conformance_declared
+  require adapters_evidence_required
+
+  on violation {
+    action review
+    trace required
+  }
+}

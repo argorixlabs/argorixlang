@@ -1,0 +1,9 @@
+{
+  "suite_version": "0.22",
+  "cases": [
+    {"id":"adapter-parse","name":"adapter parses","category":"adapter_framework","source_path":"../examples/adapter_min_v022.argx","stages":["parse"]},
+    {"id":"adapter-sem","name":"adapter semantic check passes","category":"adapter_framework","source_path":"../examples/adapter_min_v022.argx","stages":["parse","semantic_check"]},
+    {"id":"adapter-ir","name":"IR 0.22 includes adapters","category":"adapter_framework","source_path":"../examples/adapter_min_v022.argx","stages":["parse","semantic_check","emit_ir"]},
+    {"id":"adapter-bc","name":"Bytecode 0.22 includes adapters","category":"adapter_framework","source_path":"../examples/adapter_min_v022.argx","stages":["parse","semantic_check","emit_ir","emit_bytecode","verify_bytecode"]}
+  ]
+}

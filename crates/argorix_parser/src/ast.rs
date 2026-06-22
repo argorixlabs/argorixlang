@@ -8,6 +8,7 @@ pub struct Program {
     pub harnesses: Vec<ProviderHarnessDecl>,
     pub features: Vec<FeatureDecl>,
     pub secrets: Vec<SecretDecl>,
+    pub adapters: Vec<AdapterDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -263,6 +264,143 @@ impl SecretSource {
     }
 }
 
+/// A top-level `adapter` block declaring a future or experimental integration profile.
+///
+/// v0.22 adapters are governance / conformance metadata only. They declare how a
+/// future adapter would connect provider contracts, feature flags, secret boundaries
+/// and harnesses. Adapters do not execute, do not call external systems, and do not
+/// read secrets or environment variables. `simulated` remains the only executable provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterDecl {
+    pub name: Spanned<String>,
+    pub provider: Spanned<String>,
+    pub feature: Option<Spanned<String>>,
+    pub secret: Option<Spanned<String>>,
+    pub harness: Option<Spanned<String>>,
+    pub kind: Option<Spanned<AdapterKind>>,
+    pub vendor: Option<Spanned<String>>,
+    pub mode: Spanned<AdapterMode>,
+    pub execution: Spanned<AdapterExecution>,
+    pub network: Spanned<AdapterNetwork>,
+    pub secrets: Spanned<AdapterSecrets>,
+    pub filesystem: Spanned<AdapterFilesystem>,
+    pub input_contract: Option<Spanned<String>>,
+    pub output_contract: Option<Spanned<String>>,
+    pub conformance: Vec<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterKind {
+    Llm,
+    Tool,
+    Bridge,
+    Registry,
+    Identity,
+    Payment,
+    Storage,
+    Custom,
+    Unknown(String),
+}
+
+impl AdapterKind {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Llm => "llm",
+            Self::Tool => "tool",
+            Self::Bridge => "bridge",
+            Self::Registry => "registry",
+            Self::Identity => "identity",
+            Self::Payment => "payment",
+            Self::Storage => "storage",
+            Self::Custom => "custom",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterMode {
+    Experimental,
+    Preview,
+    Stable,
+    Deprecated,
+    Unknown(String),
+}
+
+impl AdapterMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Experimental => "experimental",
+            Self::Preview => "preview",
+            Self::Stable => "stable",
+            Self::Deprecated => "deprecated",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterExecution {
+    Disabled,
+    Unknown(String),
+}
+
+impl AdapterExecution {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterNetwork {
+    Denied,
+    Unknown(String),
+}
+
+impl AdapterNetwork {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterSecrets {
+    Denied,
+    Unknown(String),
+}
+
+impl AdapterSecrets {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdapterFilesystem {
+    None,
+    ReadOnly,
+    Unknown(String),
+}
+
+impl AdapterFilesystem {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::None => "none",
+            Self::ReadOnly => "read_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssertionDecl {
     pub name: Spanned<String>,
@@ -329,6 +467,15 @@ pub enum PolicyRule {
     SecretValuesAbsent,
     ExternalProviderFeatureGated,
     ExternalProviderSecretBoundaryDeclared,
+    AdaptersDeclared,
+    AdaptersExecutionDisabled,
+    AdaptersNetworkDenied,
+    AdaptersSecretsDenied,
+    AdaptersProviderHarnessed,
+    AdaptersFeatureGated,
+    AdaptersSecretBoundaried,
+    AdaptersConformanceDeclared,
+    AdaptersEvidenceRequired,
     Unknown(String),
 }
 
@@ -367,6 +514,15 @@ impl PolicyRule {
             Self::ExternalProviderSecretBoundaryDeclared => {
                 "external_provider_secret_boundary_declared"
             }
+            Self::AdaptersDeclared => "adapters_declared",
+            Self::AdaptersExecutionDisabled => "adapters_execution_disabled",
+            Self::AdaptersNetworkDenied => "adapters_network_denied",
+            Self::AdaptersSecretsDenied => "adapters_secrets_denied",
+            Self::AdaptersProviderHarnessed => "adapters_provider_harnessed",
+            Self::AdaptersFeatureGated => "adapters_feature_gated",
+            Self::AdaptersSecretBoundaried => "adapters_secret_boundaried",
+            Self::AdaptersConformanceDeclared => "adapters_conformance_declared",
+            Self::AdaptersEvidenceRequired => "adapters_evidence_required",
             Self::Unknown(value) => value,
         }
         .to_owned()

@@ -1,0 +1,30 @@
+module adapters.generic
+
+adapter GenericAdapter {
+  provider GenericProvider
+  feature GenericAdapterFeature
+  secret GenericSecret
+  harness GenericHarness
+
+  kind llm
+  vendor "generic"
+  mode experimental
+  execution disabled
+
+  network denied
+  secrets denied
+  filesystem none
+
+  input_contract UserPrompt
+  output_contract DraftAnswer
+
+  conformance [
+    "feature-gated",
+    "secret-boundary",
+    "provider-harnessed",
+    "network-denied",
+    "secrets-denied",
+    "execution-disabled",
+    "evidence-required"
+  ]
+}

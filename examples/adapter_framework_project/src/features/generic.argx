@@ -1,0 +1,9 @@
+module features.generic
+
+feature GenericAdapterFeature {
+  provider GenericProvider
+  status experimental
+  default disabled
+  requires approval
+  purpose "future-generic-adapter"
+}

@@ -1,0 +1,62 @@
+module main
+
+provider P {
+  kind external
+  enabled false
+  dry_run_only true
+  requires feature_flag
+  requires approval
+}
+
+type T { x: string }
+
+feature F {
+  provider P
+  status experimental
+  default disabled
+  requires approval
+}
+
+secret S {
+  handle "K"
+  provider P
+  required_by F
+  scope adapter
+  access denied
+  source none
+}
+
+harness H {
+  provider P
+  feature F
+  secret S
+  mode dry_run
+  network denied
+  secrets denied
+  filesystem none
+}
+
+adapter A {
+  provider P
+  feature F
+  secret S
+  harness H
+  mode experimental
+  execution disabled
+  network denied
+  secrets denied
+  filesystem none
+  conformance ["feature-gated"]
+}
+
+agent X {
+  receives T
+}
+
+agent U {
+  sends T to X
+}
+
+protocol P {
+  U -> X: tell T
+}

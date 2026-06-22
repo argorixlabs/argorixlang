@@ -215,6 +215,7 @@ mod tests {
             provider_harnesses: vec![],
             features: vec![],
             secrets: vec![],
+            adapters: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

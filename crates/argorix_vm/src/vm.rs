@@ -387,7 +387,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.21".into(),
+            vm_version: "0.22".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -404,6 +404,7 @@ impl Vm {
             provider_harnesses: bytecode.provider_harnesses.clone(),
             features: bytecode.features.clone(),
             secrets: bytecode.secrets.clone(),
+            adapters: bytecode.adapters.clone(),
             injected,
             steps,
             mailboxes,
@@ -770,6 +771,72 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
                         && secret.source == "none"
                 })
             }),
+        adapters_declared: !bytecode.adapters.is_empty(),
+        adapters_execution_disabled: !bytecode.adapters.is_empty()
+            && bytecode.adapters.iter().all(|a| a.execution == "disabled"),
+        adapters_network_denied: !bytecode.adapters.is_empty()
+            && bytecode.adapters.iter().all(|a| a.network == "denied"),
+        adapters_secrets_denied: !bytecode.adapters.is_empty()
+            && bytecode.adapters.iter().all(|a| a.secrets == "denied"),
+        adapters_provider_harnessed: bytecode
+            .providers
+            .iter()
+            .filter(|p| p.kind == "external")
+            .all(|p| {
+                bytecode
+                    .adapters
+                    .iter()
+                    .filter(|a| a.provider == p.name)
+                    .all(|a| a.harness.is_some())
+            }),
+        adapters_feature_gated: bytecode
+            .providers
+            .iter()
+            .filter(|p| p.kind == "external")
+            .all(|p| {
+                bytecode
+                    .adapters
+                    .iter()
+                    .filter(|a| a.provider == p.name)
+                    .all(|a| {
+                        if let Some(f) = &a.feature {
+                            bytecode.features.iter().any(|feat| {
+                                feat.name == *f
+                                    && feat.default == "disabled"
+                                    && feat.requires_approval
+                            })
+                        } else {
+                            false
+                        }
+                    })
+            }),
+        adapters_secret_boundaried: bytecode
+            .providers
+            .iter()
+            .filter(|p| p.kind == "external")
+            .all(|p| {
+                bytecode
+                    .adapters
+                    .iter()
+                    .filter(|a| a.provider == p.name)
+                    .all(|a| {
+                        if let Some(s) = &a.secret {
+                            bytecode.secrets.iter().any(|sec| {
+                                sec.name == *s && sec.access == "denied" && sec.source == "none"
+                            })
+                        } else {
+                            false
+                        }
+                    })
+            }),
+        adapters_conformance_declared: !bytecode.adapters.is_empty()
+            && bytecode.adapters.iter().all(|a| !a.conformance.is_empty()),
+        adapters_evidence_required: !bytecode.adapters.is_empty()
+            && bytecode
+                .adapters
+                .iter()
+                .filter(|a| !a.conformance.is_empty())
+                .all(|a| a.conformance.iter().any(|c| c == "evidence-required")),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -823,6 +890,7 @@ mod tests {
             provider_harnesses: vec![],
             features: vec![],
             secrets: vec![],
+            adapters: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -976,7 +1044,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.21");
+        assert_eq!(json["vm_version"], "0.22");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -998,7 +1066,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.21");
+        assert_eq!(json["vm_version"], "0.22");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -1020,7 +1088,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.21");
+        assert_eq!(json["vm_version"], "0.22");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -1075,7 +1143,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.21");
+        assert_eq!(trace.vm_version, "0.22");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -1149,7 +1217,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.21");
+        assert_eq!(trace.vm_version, "0.22");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1201,7 +1269,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.21");
+        assert_eq!(json["vm_version"], "0.22");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -1451,7 +1519,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.21");
+        assert_eq!(trace.vm_version, "0.22");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [

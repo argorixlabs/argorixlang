@@ -1,0 +1,8 @@
+module m
+adapter A {
+  mode experimental
+  execution disabled
+  network denied
+  secrets denied
+  filesystem none
+}
