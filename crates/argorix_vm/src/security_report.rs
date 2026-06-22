@@ -19,6 +19,7 @@ pub struct SecurityReport {
     pub vm_version: String,
     pub execution: ExecutionSummary,
     pub message_contracts: MessageContractSummary,
+    pub agent_passports: AgentPassportSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -43,6 +44,23 @@ pub struct MessageContractSummary {
     pub typed: usize,
     pub untyped: usize,
     pub fields_total: usize,
+}
+
+/// Summary of declared Agent Passports (v0.19).
+///
+/// Passports improve traceability, declared identity, and structural evidence.
+/// They are not proof of real-world safety; the verdict is not inflated by their
+/// presence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentPassportSummary {
+    pub total: usize,
+    pub linked_agents: usize,
+    pub countries: Vec<String>,
+    pub jurisdictions: Vec<String>,
+    pub data_residency: Vec<String>,
+    pub risk_levels: BTreeMap<String, usize>,
+    pub attestations_total: usize,
+    pub intents: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,7 +231,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.18".into(),
+            report_version: "0.19".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -221,9 +239,10 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.18".into()),
+                .unwrap_or_else(|| "0.19".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
+            agent_passports: agent_passport_summary(&bytecode.passports),
             policy,
             provider_boundary,
             calls,
@@ -254,6 +273,50 @@ fn message_contract_summary(
         typed,
         untyped: contracts.len() - typed,
         fields_total: contracts.iter().map(|contract| contract.fields.len()).sum(),
+    }
+}
+
+fn agent_passport_summary(
+    passports: &[argorix_bytecode::BytecodePassport],
+) -> AgentPassportSummary {
+    use std::collections::BTreeSet;
+    let mut countries = BTreeSet::new();
+    let mut jurisdictions = BTreeSet::new();
+    let mut data_residency = BTreeSet::new();
+    let mut intents = BTreeSet::new();
+    let mut linked_agents = BTreeSet::new();
+    let mut risk_levels = BTreeMap::new();
+    let mut attestations_total = 0;
+    for passport in passports {
+        if !passport.country.trim().is_empty() {
+            countries.insert(passport.country.clone());
+        }
+        if !passport.jurisdiction.trim().is_empty() {
+            jurisdictions.insert(passport.jurisdiction.clone());
+        }
+        for entry in &passport.data_residency {
+            data_residency.insert(entry.clone());
+        }
+        if !passport.intent.trim().is_empty() {
+            intents.insert(passport.intent.clone());
+        }
+        if !passport.agent.trim().is_empty() {
+            linked_agents.insert(passport.agent.clone());
+        }
+        if !passport.risk_level.trim().is_empty() {
+            *risk_levels.entry(passport.risk_level.clone()).or_insert(0) += 1;
+        }
+        attestations_total += passport.attestations.len();
+    }
+    AgentPassportSummary {
+        total: passports.len(),
+        linked_agents: linked_agents.len(),
+        countries: countries.into_iter().collect(),
+        jurisdictions: jurisdictions.into_iter().collect(),
+        data_residency: data_residency.into_iter().collect(),
+        risk_levels,
+        attestations_total,
+        intents: intents.into_iter().collect(),
     }
 }
 

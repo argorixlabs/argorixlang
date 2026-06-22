@@ -1,0 +1,34 @@
+module passports.risk_analyzer
+
+passport RiskAnalyzerPassport {
+    agent ResearchAgent
+    agent_name "Risk Analyzer"
+
+    global_id "argx:agent:01HZX9RISKANALYZER"
+    identity "did:argorix:risk-analyzer-v1"
+    provider "Argorix"
+    version "1.0.0"
+
+    ans_name "argx://riskAnalyzer.RiskAnalysis.Argorix.v1.sovereign"
+
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL", "EU"]
+
+    asn {
+        registry "LACNIC"
+        number "AS-PLACEHOLDER"
+        holder "Argorix Labs"
+        country "CL"
+    }
+
+    model "frontier-compatible"
+    risk_level "high"
+    data_scope ["internal", "confidential"]
+
+    intent "risk_analysis"
+    intended_use ["policy-review", "risk-assessment"]
+    prohibited_use ["external-execution", "credential-access"]
+
+    attestations ["redteam", "policy-check", "evidence-bundle"]
+}

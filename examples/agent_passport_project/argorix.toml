@@ -1,0 +1,6 @@
+[package]
+name = "agent-passport-project"
+version = "0.19.0"
+
+[entry]
+main = "src/main.argx"

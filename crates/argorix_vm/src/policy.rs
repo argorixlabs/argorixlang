@@ -4,6 +4,10 @@ use crate::{EventType, ReactiveStep, RuntimeState, RuntimeStatus};
 pub struct PolicyEvidenceContext {
     pub security_report_generated: bool,
     pub evidence_bundle_verified: bool,
+    pub agent_passport_declared: bool,
+    pub agent_passport_attested: bool,
+    pub agent_data_residency_declared: bool,
+    pub agent_identity_declared: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +92,22 @@ pub fn evaluate_rule(
         "security_report_generated" => (
             context.security_report_generated,
             "no prior generated security report was supplied",
+        ),
+        "agent_passport_declared" => (
+            context.agent_passport_declared,
+            "one or more agents lack a declared passport",
+        ),
+        "agent_passport_attested" => (
+            context.agent_passport_attested,
+            "one or more passports lack an attestation",
+        ),
+        "agent_data_residency_declared" => (
+            context.agent_data_residency_declared,
+            "one or more passports lack declared data residency",
+        ),
+        "agent_identity_declared" => (
+            context.agent_identity_declared,
+            "one or more passports lack a declared identity",
         ),
         _ => (false, "unknown policy rule"),
     };

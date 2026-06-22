@@ -312,7 +312,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.18".into(),
+            vm_version: "0.19".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -325,6 +325,7 @@ impl Vm {
             modules: bytecode.modules.clone(),
             imports: bytecode.imports.clone(),
             message_contracts: bytecode.types.clone(),
+            passports: bytecode.passports.clone(),
             injected,
             steps,
             mailboxes,
@@ -351,6 +352,7 @@ impl Vm {
         state: &mut RuntimeState,
         steps: &[crate::ReactiveStep],
     ) -> PolicyReport {
+        let passport_context = passport_evidence_context(bytecode);
         let mut results = Vec::new();
         for assertion in &bytecode.assertions {
             let name = if assertion.name == "runtime_status" {
@@ -358,8 +360,7 @@ impl Vm {
             } else {
                 assertion.name.as_str()
             };
-            let mut evaluation =
-                evaluate_rule(name, state, steps, PolicyEvidenceContext::default());
+            let mut evaluation = evaluate_rule(name, state, steps, passport_context);
             if assertion.name == "runtime_status"
                 && assertion.argument.as_deref() != Some("completed")
             {
@@ -417,12 +418,7 @@ impl Vm {
             let mut deny_rules = Vec::new();
             let mut violations = Vec::new();
             for declaration in &policy.rules {
-                let evaluation = evaluate_rule(
-                    &declaration.rule,
-                    state,
-                    steps,
-                    PolicyEvidenceContext::default(),
-                );
+                let evaluation = evaluate_rule(&declaration.rule, state, steps, passport_context);
                 let passed = if declaration.effect == "deny" {
                     !evaluation.passed
                 } else {
@@ -611,6 +607,36 @@ fn blocked_external_provider<'a>(
     })
 }
 
+/// Derive offline passport policy evidence from the bytecode.
+///
+/// These booleans feed the v0.19 Policy v2 passport rules. They never resolve
+/// DIDs, ASN registrations, or registries; they only inspect declared metadata.
+fn passport_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext {
+    let passports = &bytecode.passports;
+    let agent_passport_declared = !bytecode.agents.is_empty()
+        && bytecode.agents.iter().all(|agent| {
+            passports
+                .iter()
+                .any(|passport| passport.agent == agent.name)
+        });
+    PolicyEvidenceContext {
+        agent_passport_declared,
+        agent_passport_attested: !passports.is_empty()
+            && passports
+                .iter()
+                .all(|passport| !passport.attestations.is_empty()),
+        agent_data_residency_declared: !passports.is_empty()
+            && passports
+                .iter()
+                .all(|passport| !passport.data_residency.is_empty()),
+        agent_identity_declared: !passports.is_empty()
+            && passports
+                .iter()
+                .all(|passport| !passport.identity.trim().is_empty()),
+        ..PolicyEvidenceContext::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Vm;
@@ -662,6 +688,7 @@ mod tests {
             types: vec![],
             enums: vec![],
             failures: vec![],
+            passports: vec![],
             agents: vec![BytecodeAgent {
                 name: "Worker".into(),
                 approval: "denied".into(),
@@ -809,7 +836,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.18");
+        assert_eq!(json["vm_version"], "0.19");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -831,7 +858,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.18");
+        assert_eq!(json["vm_version"], "0.19");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -853,7 +880,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.18");
+        assert_eq!(json["vm_version"], "0.19");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -908,7 +935,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.18");
+        assert_eq!(trace.vm_version, "0.19");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -982,7 +1009,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.18");
+        assert_eq!(trace.vm_version, "0.19");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1034,7 +1061,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.18");
+        assert_eq!(json["vm_version"], "0.19");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");

@@ -24,6 +24,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         models: Vec::new(),
         agents: Vec::new(),
         protocols: Vec::new(),
+        passports: Vec::new(),
     };
 
     // Iterate modules in deterministic (sorted) order, entry first.
@@ -51,6 +52,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         merged.models.extend(program.models.iter().cloned());
         merged.agents.extend(program.agents.iter().cloned());
         merged.protocols.extend(program.protocols.iter().cloned());
+        merged.passports.extend(program.passports.iter().cloned());
     }
 
     merged

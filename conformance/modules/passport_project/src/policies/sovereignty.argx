@@ -1,0 +1,13 @@
+module policies.sovereignty
+
+policy SovereignAgentPolicy {
+    require agent_passport_declared
+    require agent_identity_declared
+    require agent_data_residency_declared
+    require agent_passport_attested
+
+    on violation {
+        action review
+        trace required
+    }
+}

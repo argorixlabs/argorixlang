@@ -3,8 +3,9 @@ pub mod lower;
 
 pub use bytecode::{
     verify_bytecode, BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeError,
-    BytecodeFailure, BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePolicy,
-    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
-    BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeFailure, BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport,
+    BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation,
+    BytecodeProgram, BytecodeProviderContract, BytecodeTool, BytecodeType, BytecodeTypeField,
+    Instruction,
 };
 pub use lower::lower_ir;

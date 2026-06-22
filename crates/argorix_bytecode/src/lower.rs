@@ -1,8 +1,8 @@
 use crate::{
     BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeFailure, BytecodeModel,
-    BytecodeModule, BytecodeModuleImport, BytecodePolicy, BytecodePolicyRule,
-    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeTool, BytecodeType,
-    BytecodeTypeField, Instruction,
+    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
+    BytecodeTool, BytecodeType, BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -171,7 +171,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.18".to_owned(),
+        bytecode_version: "0.19".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -256,6 +256,36 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 name: failure.name.clone(),
                 action: failure.action.clone(),
                 trace: failure.trace.clone(),
+            })
+            .collect(),
+        passports: ir
+            .passports
+            .iter()
+            .map(|passport| BytecodePassport {
+                name: passport.name.clone(),
+                agent: passport.agent.clone(),
+                agent_name: passport.agent_name.clone(),
+                global_id: passport.global_id.clone(),
+                identity: passport.identity.clone(),
+                provider: passport.provider.clone(),
+                version: passport.version.clone(),
+                ans_name: passport.ans_name.clone(),
+                country: passport.country.clone(),
+                jurisdiction: passport.jurisdiction.clone(),
+                data_residency: passport.data_residency.clone(),
+                asn: passport.asn.as_ref().map(|asn| BytecodePassportAsn {
+                    registry: asn.registry.clone(),
+                    number: asn.number.clone(),
+                    holder: asn.holder.clone(),
+                    country: asn.country.clone(),
+                }),
+                model: passport.model.clone(),
+                risk_level: passport.risk_level.clone(),
+                data_scope: passport.data_scope.clone(),
+                intent: passport.intent.clone(),
+                intended_use: passport.intended_use.clone(),
+                prohibited_use: passport.prohibited_use.clone(),
+                attestations: passport.attestations.clone(),
             })
             .collect(),
         agents: ir
@@ -383,10 +413,11 @@ mod tests {
                     message_type: "Ping".into(),
                 }],
             }],
+            passports: vec![],
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.18");
+        assert_eq!(bytecode.bytecode_version, "0.19");
         assert!(bytecode
             .instructions
             .iter()

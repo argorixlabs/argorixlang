@@ -217,6 +217,7 @@ mod tests {
             types: vec![],
             enums: vec![],
             failures: vec![],
+            passports: vec![],
             agents: ["PromptScanner", "PolicyJudge", "RuntimeGate"]
                 .into_iter()
                 .map(|name| BytecodeAgent {

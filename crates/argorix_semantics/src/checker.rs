@@ -26,6 +26,7 @@ pub fn check_program_with_options(
     let symbols = collect_symbols(program, &mut diagnostics);
     check_provider_contracts(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
+    check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
     check_model_declarations(program, &symbols, &mut diagnostics);
 
@@ -327,6 +328,143 @@ fn check_policies(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
             ));
         }
     }
+}
+
+/// Validate v0.19 Agent Passport blocks.
+///
+/// Passports are sovereign-identity metadata only. Validation is structural and
+/// offline: no DID resolution, ASN lookup, registry queries, or real country
+/// verification beyond a basic ISO-like format check.
+fn check_passports(program: &Program, symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+    const RISK_LEVELS: [&str; 4] = ["low", "medium", "high", "critical"];
+    const ASN_REGISTRIES: [&str; 6] = ["LACNIC", "ARIN", "RIPE", "APNIC", "AFRINIC", "UNKNOWN"];
+
+    let mut passport_names = HashSet::new();
+    let mut agents_with_passport: HashSet<String> = HashSet::new();
+    for passport in &program.passports {
+        let name = passport.name.value.clone();
+        if !passport_names.insert(name.clone()) {
+            diagnostics.push(Diagnostic::new(
+                format!("duplicate passport `{name}`"),
+                passport.name.span,
+            ));
+        }
+
+        // Required, non-empty scalar fields.
+        for (label, field) in [
+            ("agent", &passport.agent),
+            ("agent_name", &passport.agent_name),
+            ("global_id", &passport.global_id),
+            ("identity", &passport.identity),
+            ("provider", &passport.provider),
+            ("version", &passport.version),
+            ("country", &passport.country),
+            ("jurisdiction", &passport.jurisdiction),
+            ("intent", &passport.intent),
+            ("risk_level", &passport.risk_level),
+        ] {
+            if field.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("passport `{name}` is missing required field `{label}`"),
+                    field.span,
+                ));
+            }
+        }
+
+        if passport.data_residency.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("passport `{name}` requires non-empty `data_residency`"),
+                passport.name.span,
+            ));
+        }
+
+        // Agent reference must resolve to a declared agent, at most one per agent.
+        if !passport.agent.value.trim().is_empty() {
+            if !symbols.agents.contains(&passport.agent.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "passport `{name}` references unknown agent `{}`",
+                        passport.agent.value
+                    ),
+                    passport.agent.span,
+                ));
+            } else if !agents_with_passport.insert(passport.agent.value.clone()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "agent `{}` already has a passport; only one passport per agent is allowed",
+                        passport.agent.value
+                    ),
+                    passport.agent.span,
+                ));
+            }
+        }
+
+        if !passport.country.value.trim().is_empty() && !is_iso_country(&passport.country.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "passport `{name}` country `{}` must use a 2-letter ISO-like code",
+                    passport.country.value
+                ),
+                passport.country.span,
+            ));
+        }
+
+        if !passport.risk_level.value.trim().is_empty()
+            && !RISK_LEVELS.contains(&passport.risk_level.value.as_str())
+        {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "passport `{name}` has invalid risk_level `{}`; allowed: {}",
+                    passport.risk_level.value,
+                    RISK_LEVELS.join(", ")
+                ),
+                passport.risk_level.span,
+            ));
+        }
+
+        if let Some(asn) = &passport.asn {
+            if !ASN_REGISTRIES.contains(&asn.registry.value.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "passport `{name}` has invalid asn registry `{}`; allowed: {}",
+                        asn.registry.value,
+                        ASN_REGISTRIES.join(", ")
+                    ),
+                    asn.registry.span,
+                ));
+            }
+            if !is_valid_asn_number(&asn.number.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "passport `{name}` asn number `{}` must be an `AS`-prefixed value or explicit placeholder",
+                        asn.number.value
+                    ),
+                    asn.number.span,
+                ));
+            }
+            if !asn.country.value.trim().is_empty() && !is_iso_country(&asn.country.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "passport `{name}` asn country `{}` must use a 2-letter ISO-like code",
+                        asn.country.value
+                    ),
+                    asn.country.span,
+                ));
+            }
+        }
+    }
+}
+
+fn is_iso_country(value: &str) -> bool {
+    value.len() == 2
+        && value
+            .chars()
+            .all(|character| character.is_ascii_uppercase())
+}
+
+fn is_valid_asn_number(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty() && (value.starts_with("AS") || value == "PLACEHOLDER")
 }
 
 fn check_model_declarations(
@@ -922,6 +1060,94 @@ mod tests {
         "#;
         let program = parse_source(source).unwrap();
         check_program(&program).unwrap();
+    }
+
+    fn passport_messages(source: &str) -> Vec<String> {
+        check_program(&parse_source(source).unwrap())
+            .unwrap_err()
+            .into_iter()
+            .map(|diagnostic| diagnostic.message)
+            .collect()
+    }
+
+    #[test]
+    fn accepts_valid_passport() {
+        let source = r#"
+            module main
+            agent ResearchAgent {}
+            passport RiskAnalyzerPassport {
+                agent ResearchAgent
+                agent_name "Risk Analyzer"
+                global_id "argx:agent:01HZX9"
+                identity "did:argorix:risk-v1"
+                provider "Argorix"
+                version "1.0.0"
+                country "CL"
+                jurisdiction "CL"
+                data_residency ["CL", "EU"]
+                asn { registry "LACNIC" number "AS-PLACEHOLDER" holder "Argorix Labs" country "CL" }
+                risk_level "high"
+                intent "risk_analysis"
+                attestations ["redteam"]
+            }
+        "#;
+        check_program(&parse_source(source).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn rejects_invalid_passports() {
+        assert!(passport_messages(
+            "module main\nagent A {}\npassport P { agent A agent_name \"n\" global_id \"g\" identity \"i\" provider \"p\" country \"CL\" jurisdiction \"CL\" data_residency [\"CL\"] risk_level \"high\" intent \"x\" }\n"
+        )
+        .iter()
+        .any(|message| message.contains("missing required field `version`")));
+
+        assert!(passport_messages(
+            "module main\nagent A {}\npassport P { agent Missing agent_name \"n\" global_id \"g\" identity \"i\" provider \"p\" version \"1\" country \"CL\" jurisdiction \"CL\" data_residency [\"CL\"] risk_level \"high\" intent \"x\" }\n"
+        )
+        .iter()
+        .any(|message| message.contains("references unknown agent `Missing`")));
+
+        assert!(passport_messages(
+            "module main\nagent A {}\npassport P { agent A agent_name \"n\" global_id \"g\" identity \"i\" provider \"p\" version \"1\" country \"CL\" jurisdiction \"CL\" data_residency [\"CL\"] risk_level \"extreme\" intent \"x\" }\n"
+        )
+        .iter()
+        .any(|message| message.contains("invalid risk_level `extreme`")));
+
+        assert!(passport_messages(
+            "module main\nagent A {}\npassport P { agent A agent_name \"n\" global_id \"g\" identity \"i\" provider \"p\" version \"1\" country \"Chile\" jurisdiction \"CL\" data_residency [\"CL\"] risk_level \"high\" intent \"x\" }\n"
+        )
+        .iter()
+        .any(|message| message.contains("2-letter ISO-like code")));
+
+        assert!(passport_messages(
+            "module main\nagent A {}\npassport P { agent A agent_name \"n\" global_id \"g\" identity \"i\" provider \"p\" version \"1\" country \"CL\" jurisdiction \"CL\" data_residency [] risk_level \"high\" intent \"x\" }\n"
+        )
+        .iter()
+        .any(|message| message.contains("non-empty `data_residency`")));
+
+        assert!(passport_messages(
+            "module main\nagent A {}\npassport P { agent A agent_name \"n\" global_id \"g\" identity \"i\" provider \"p\" version \"1\" country \"CL\" jurisdiction \"CL\" data_residency [\"CL\"] asn { registry \"FOO\" number \"AS-1\" holder \"h\" country \"CL\" } risk_level \"high\" intent \"x\" }\n"
+        )
+        .iter()
+        .any(|message| message.contains("invalid asn registry `FOO`")));
+    }
+
+    #[test]
+    fn rejects_duplicate_passport_names_and_per_agent() {
+        let source = r#"
+            module main
+            agent A {}
+            passport First { agent A agent_name "n" global_id "g" identity "i" provider "p" version "1" country "CL" jurisdiction "CL" data_residency ["CL"] risk_level "high" intent "x" }
+            passport First { agent A agent_name "n" global_id "g" identity "i" provider "p" version "1" country "CL" jurisdiction "CL" data_residency ["CL"] risk_level "high" intent "x" }
+        "#;
+        let messages = passport_messages(source);
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate passport `First`")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("already has a passport")));
     }
 
     #[test]

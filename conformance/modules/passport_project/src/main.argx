@@ -1,0 +1,10 @@
+module main
+
+import messages.contracts
+import agents.research
+import policies.sovereignty
+import passports.risk_analyzer
+
+protocol RiskFlow {
+    User -> ResearchAgent: tell UserPrompt
+}

@@ -1,0 +1,6 @@
+module messages.contracts
+
+type UserPrompt {
+    content: string
+    risk_level: string
+}

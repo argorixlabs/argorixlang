@@ -39,9 +39,9 @@ fn successful_report_uses_real_runtime_evidence() {
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
 
     assert!(outcome.result.is_ok());
-    assert_eq!(report.report_version, "0.18");
+    assert_eq!(report.report_version, "0.19");
     assert_eq!(report.bytecode_version, "0.13");
-    assert_eq!(report.vm_version, "0.18");
+    assert_eq!(report.vm_version, "0.19");
     assert!(report.execution.completed);
     assert!(!report.execution.failed);
     assert_eq!(report.execution.steps, 3);
@@ -102,6 +102,35 @@ fn typed_message_report_summarizes_contracts_without_payload_execution() {
     assert_eq!(report.message_contracts.untyped, 2);
     assert_eq!(report.message_contracts.fields_total, 6);
     assert_eq!(outcome.result.unwrap().message_contracts, bytecode.types);
+}
+
+#[test]
+fn passport_report_summarizes_identity_and_trace_preserves_passports() {
+    let bytecode: BytecodeProgram = serde_json::from_str(include_str!(
+        "../../../examples/agent_passport_v019.argbc.json"
+    ))
+    .unwrap();
+    let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+    let report = SecurityReport::from_outcome(&bytecode, &outcome);
+    assert_eq!(report.report_version, "0.19");
+    assert_eq!(report.agent_passports.total, 1);
+    assert_eq!(report.agent_passports.linked_agents, 1);
+    assert_eq!(report.agent_passports.countries, vec!["CL".to_string()]);
+    assert_eq!(report.agent_passports.jurisdictions, vec!["CL".to_string()]);
+    assert_eq!(
+        report.agent_passports.data_residency,
+        vec!["CL".to_string(), "EU".to_string()]
+    );
+    assert_eq!(report.agent_passports.attestations_total, 3);
+    assert_eq!(
+        report.agent_passports.intents,
+        vec!["risk_analysis".to_string()]
+    );
+    assert_eq!(report.agent_passports.risk_levels.get("high"), Some(&1));
+    // The verdict is not inflated by the presence of a passport.
+    assert!(report.verdict.passed);
+    // The VM trace preserves the passport metadata verbatim.
+    assert_eq!(outcome.result.unwrap().passports, bytecode.passports);
 }
 
 #[test]

@@ -2,9 +2,9 @@ use crate::{
     ast::{
         AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, EnumDecl, FailureDecl,
         FieldDecl, HandlerDecl, HandlerInstruction, ImportDecl, MessageFieldType, ModelDecl,
-        PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
-        Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl,
-        ToolDecl, TypeDecl,
+        PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule, PolicyRuleDecl,
+        PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl, ProtocolStep,
+        ProviderDecl, ProviderKindDecl, ReceiveDecl, SendDecl, ToolDecl, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -71,6 +71,7 @@ impl Parser {
             models: Vec::new(),
             agents: Vec::new(),
             protocols: Vec::new(),
+            passports: Vec::new(),
         };
 
         while !self.is_eof() {
@@ -87,6 +88,7 @@ impl Parser {
                 Some("model") => program.models.push(self.parse_model()?),
                 Some("agent") => program.agents.push(self.parse_agent()?),
                 Some("protocol") => program.protocols.push(self.parse_protocol()?),
+                Some("passport") => program.passports.push(self.parse_passport()?),
                 Some(other) => {
                     return Err(Diagnostic::new(
                         format!("unexpected top-level declaration `{other}`"),
@@ -95,7 +97,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, or `protocol`",
+                        "expected `import`, `provider`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -320,6 +322,10 @@ impl Parser {
             "external_execution" => PolicyRule::ExternalExecution,
             "evidence_bundle_verified" => PolicyRule::EvidenceBundleVerified,
             "security_report_generated" => PolicyRule::SecurityReportGenerated,
+            "agent_passport_declared" => PolicyRule::AgentPassportDeclared,
+            "agent_passport_attested" => PolicyRule::AgentPassportAttested,
+            "agent_data_residency_declared" => PolicyRule::AgentDataResidencyDeclared,
+            "agent_identity_declared" => PolicyRule::AgentIdentityDeclared,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {
@@ -718,6 +724,242 @@ impl Parser {
         Ok(ProtocolDecl { name, steps })
     }
 
+    fn parse_passport(&mut self) -> Result<PassportDecl, Diagnostic> {
+        self.expect_keyword("passport")?;
+        let name = self.expect_identifier("passport name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut agent = None;
+        let mut agent_name = None;
+        let mut global_id = None;
+        let mut identity = None;
+        let mut provider = None;
+        let mut version = None;
+        let mut ans_name = None;
+        let mut country = None;
+        let mut jurisdiction = None;
+        let mut data_residency = None;
+        let mut asn = None;
+        let mut model = None;
+        let mut risk_level = None;
+        let mut data_scope = None;
+        let mut intent = None;
+        let mut intended_use = None;
+        let mut prohibited_use = None;
+        let mut attestations = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated passport declaration")?;
+            let key = self.peek_identifier().map(str::to_owned);
+            match key.as_deref() {
+                Some("agent") => self.set_passport_field(&mut agent, "agent", |p| {
+                    p.expect_identifier("passport agent reference")
+                })?,
+                Some("agent_name") => {
+                    self.set_passport_field(&mut agent_name, "agent_name", |p| {
+                        p.expect_string("passport agent_name value")
+                    })?
+                }
+                Some("global_id") => self.set_passport_field(&mut global_id, "global_id", |p| {
+                    p.expect_string("passport global_id value")
+                })?,
+                Some("identity") => self.set_passport_field(&mut identity, "identity", |p| {
+                    p.expect_string("passport identity value")
+                })?,
+                Some("provider") => self.set_passport_field(&mut provider, "provider", |p| {
+                    p.expect_string("passport provider value")
+                })?,
+                Some("version") => self.set_passport_field(&mut version, "version", |p| {
+                    p.expect_string("passport version value")
+                })?,
+                Some("ans_name") => self.set_passport_field(&mut ans_name, "ans_name", |p| {
+                    p.expect_string("passport ans_name value")
+                })?,
+                Some("country") => self.set_passport_field(&mut country, "country", |p| {
+                    p.expect_string("passport country value")
+                })?,
+                Some("jurisdiction") => {
+                    self.set_passport_field(&mut jurisdiction, "jurisdiction", |p| {
+                        p.expect_string("passport jurisdiction value")
+                    })?
+                }
+                Some("data_residency") => {
+                    self.set_passport_field(&mut data_residency, "data_residency", |p| {
+                        p.parse_string_array("data residency entry")
+                    })?
+                }
+                Some("model") => self.set_passport_field(&mut model, "model", |p| {
+                    p.expect_string("passport model value")
+                })?,
+                Some("risk_level") => {
+                    self.set_passport_field(&mut risk_level, "risk_level", |p| {
+                        p.expect_string("passport risk_level value")
+                    })?
+                }
+                Some("data_scope") => {
+                    self.set_passport_field(&mut data_scope, "data_scope", |p| {
+                        p.parse_string_array("data scope entry")
+                    })?
+                }
+                Some("intent") => self.set_passport_field(&mut intent, "intent", |p| {
+                    p.expect_string("passport intent value")
+                })?,
+                Some("intended_use") => {
+                    self.set_passport_field(&mut intended_use, "intended_use", |p| {
+                        p.parse_string_array("intended use entry")
+                    })?
+                }
+                Some("prohibited_use") => {
+                    self.set_passport_field(&mut prohibited_use, "prohibited_use", |p| {
+                        p.parse_string_array("prohibited use entry")
+                    })?
+                }
+                Some("attestations") => {
+                    self.set_passport_field(&mut attestations, "attestations", |p| {
+                        p.parse_string_array("attestation entry")
+                    })?
+                }
+                Some("asn") => {
+                    if asn.is_some() {
+                        return Err(Diagnostic::new(
+                            "duplicate `asn` block in passport",
+                            self.peek().span,
+                        ));
+                    }
+                    asn = Some(self.parse_passport_asn()?);
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected passport item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected a passport field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        let empty = || Spanned::new(String::new(), fallback_span);
+        Ok(PassportDecl {
+            agent: agent.unwrap_or_else(empty),
+            agent_name: agent_name.unwrap_or_else(empty),
+            global_id: global_id.unwrap_or_else(empty),
+            identity: identity.unwrap_or_else(empty),
+            provider: provider.unwrap_or_else(empty),
+            version: version.unwrap_or_else(empty),
+            ans_name,
+            country: country.unwrap_or_else(empty),
+            jurisdiction: jurisdiction.unwrap_or_else(empty),
+            data_residency: data_residency.unwrap_or_default(),
+            asn,
+            model,
+            risk_level: risk_level.unwrap_or_else(empty),
+            data_scope: data_scope.unwrap_or_default(),
+            intent: intent.unwrap_or_else(empty),
+            intended_use: intended_use.unwrap_or_default(),
+            prohibited_use: prohibited_use.unwrap_or_default(),
+            attestations: attestations.unwrap_or_default(),
+            name,
+        })
+    }
+
+    fn parse_passport_asn(&mut self) -> Result<PassportAsnDecl, Diagnostic> {
+        self.expect_keyword("asn")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut registry = None;
+        let mut number = None;
+        let mut holder = None;
+        let mut country = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated asn block")?;
+            match self.peek_identifier() {
+                Some("registry") => self.set_passport_field(&mut registry, "registry", |p| {
+                    p.expect_string("asn registry value")
+                })?,
+                Some("number") => self.set_passport_field(&mut number, "number", |p| {
+                    p.expect_string("asn number value")
+                })?,
+                Some("holder") => self.set_passport_field(&mut holder, "holder", |p| {
+                    p.expect_string("asn holder value")
+                })?,
+                Some("country") => self.set_passport_field(&mut country, "country", |p| {
+                    p.expect_string("asn country value")
+                })?,
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected asn item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => return Err(Diagnostic::new("expected an asn field", self.peek().span)),
+            }
+        }
+        let fallback_span = self.peek().span;
+        self.advance();
+        let empty = || Spanned::new(String::new(), fallback_span);
+        Ok(PassportAsnDecl {
+            registry: registry.unwrap_or_else(empty),
+            number: number.unwrap_or_else(empty),
+            holder: holder.unwrap_or_else(empty),
+            country: country.unwrap_or_else(empty),
+        })
+    }
+
+    /// Consume a passport key keyword and parse its value, rejecting duplicates.
+    fn set_passport_field<T>(
+        &mut self,
+        slot: &mut Option<T>,
+        key: &str,
+        parse_value: impl FnOnce(&mut Self) -> Result<T, Diagnostic>,
+    ) -> Result<(), Diagnostic> {
+        let span = self.peek().span;
+        self.advance();
+        if slot.is_some() {
+            return Err(Diagnostic::new(
+                format!("duplicate passport field `{key}`"),
+                span,
+            ));
+        }
+        *slot = Some(parse_value(self)?);
+        Ok(())
+    }
+
+    fn parse_string_array(
+        &mut self,
+        description: &str,
+    ) -> Result<Vec<Spanned<String>>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut values = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            self.ensure_not_eof("unterminated string array")?;
+            values.push(self.expect_string(description)?);
+            if !self.check(&TokenKind::RightBracket) {
+                self.expect_symbol(TokenKind::Comma, "`,`")?;
+            }
+        }
+        self.advance();
+        Ok(values)
+    }
+
+    fn expect_string(&mut self, description: &str) -> Result<Spanned<String>, Diagnostic> {
+        let token = self.peek().clone();
+        if let TokenKind::StringLiteral(value) = token.kind {
+            self.advance();
+            Ok(Spanned::new(value, token.span))
+        } else {
+            Err(Diagnostic::new(
+                format!("expected {description}"),
+                token.span,
+            ))
+        }
+    }
+
     fn expect_keyword(&mut self, expected: &str) -> Result<(), Diagnostic> {
         if self.match_keyword(expected) {
             Ok(())
@@ -956,6 +1198,75 @@ mod tests {
         assert!(diagnostics[0]
             .message
             .contains("duplicate `on violation` block"));
+    }
+
+    #[test]
+    fn parses_passport_block_with_asn_and_string_arrays() {
+        let program = parse_source(
+            r#"
+            module main
+            agent ResearchAgent {}
+            passport RiskAnalyzerPassport {
+                agent ResearchAgent
+                agent_name "Risk Analyzer"
+                global_id "argx:agent:01HZX9"
+                identity "did:argorix:risk-v1"
+                provider "Argorix"
+                version "1.0.0"
+                ans_name "argx://riskAnalyzer.v1.sovereign"
+                country "CL"
+                jurisdiction "CL"
+                data_residency ["CL", "EU"]
+                asn {
+                    registry "LACNIC"
+                    number "AS-PLACEHOLDER"
+                    holder "Argorix Labs"
+                    country "CL"
+                }
+                model "frontier-compatible"
+                risk_level "high"
+                data_scope ["internal", "confidential"]
+                intent "risk_analysis"
+                intended_use ["policy-review"]
+                prohibited_use ["external-execution"]
+                attestations ["redteam", "policy-check"]
+            }
+            "#,
+        )
+        .unwrap();
+        let passport = &program.passports[0];
+        assert_eq!(passport.name.value, "RiskAnalyzerPassport");
+        assert_eq!(passport.agent.value, "ResearchAgent");
+        assert_eq!(passport.agent_name.value, "Risk Analyzer");
+        assert_eq!(passport.data_residency.len(), 2);
+        assert_eq!(passport.data_residency[1].value, "EU");
+        let asn = passport.asn.as_ref().unwrap();
+        assert_eq!(asn.registry.value, "LACNIC");
+        assert_eq!(asn.number.value, "AS-PLACEHOLDER");
+        assert_eq!(
+            passport.ans_name.as_ref().unwrap().value,
+            "argx://riskAnalyzer.v1.sovereign"
+        );
+        assert_eq!(passport.attestations.len(), 2);
+        assert_eq!(passport.intent.value, "risk_analysis");
+    }
+
+    #[test]
+    fn rejects_malformed_passport_syntax() {
+        // Missing quotes around a string value is a structural parser error.
+        let diagnostics =
+            parse_source("module main\npassport P {\n  agent_name Risk\n}\n").unwrap_err();
+        assert!(diagnostics[0]
+            .message
+            .contains("expected passport agent_name value"));
+
+        // Duplicate keys are rejected structurally.
+        let duplicate =
+            parse_source("module main\npassport P {\n  intent \"a\"\n  intent \"b\"\n}\n")
+                .unwrap_err();
+        assert!(duplicate[0]
+            .message
+            .contains("duplicate passport field `intent`"));
     }
 
     #[test]

@@ -15,6 +15,7 @@ pub struct Program {
     pub models: Vec<ModelDecl>,
     pub agents: Vec<AgentDecl>,
     pub protocols: Vec<ProtocolDecl>,
+    pub passports: Vec<PassportDecl>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +98,10 @@ pub enum PolicyRule {
     ExternalExecution,
     EvidenceBundleVerified,
     SecurityReportGenerated,
+    AgentPassportDeclared,
+    AgentPassportAttested,
+    AgentDataResidencyDeclared,
+    AgentIdentityDeclared,
     Unknown(String),
 }
 
@@ -115,6 +120,10 @@ impl PolicyRule {
             Self::ExternalExecution => "external_execution",
             Self::EvidenceBundleVerified => "evidence_bundle_verified",
             Self::SecurityReportGenerated => "security_report_generated",
+            Self::AgentPassportDeclared => "agent_passport_declared",
+            Self::AgentPassportAttested => "agent_passport_attested",
+            Self::AgentDataResidencyDeclared => "agent_data_residency_declared",
+            Self::AgentIdentityDeclared => "agent_identity_declared",
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -332,4 +341,39 @@ pub struct ProtocolStep {
     pub to: Spanned<String>,
     pub act: Spanned<String>,
     pub message_type: Spanned<String>,
+}
+
+/// A top-level `passport` block declaring sovereign agent identity metadata.
+///
+/// v0.19 passports are compilable, verifiable, auditable metadata only. They
+/// perform no network resolution, DID verification, or ASN lookup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassportDecl {
+    pub name: Spanned<String>,
+    pub agent: Spanned<String>,
+    pub agent_name: Spanned<String>,
+    pub global_id: Spanned<String>,
+    pub identity: Spanned<String>,
+    pub provider: Spanned<String>,
+    pub version: Spanned<String>,
+    pub ans_name: Option<Spanned<String>>,
+    pub country: Spanned<String>,
+    pub jurisdiction: Spanned<String>,
+    pub data_residency: Vec<Spanned<String>>,
+    pub asn: Option<PassportAsnDecl>,
+    pub model: Option<Spanned<String>>,
+    pub risk_level: Spanned<String>,
+    pub data_scope: Vec<Spanned<String>>,
+    pub intent: Spanned<String>,
+    pub intended_use: Vec<Spanned<String>>,
+    pub prohibited_use: Vec<Spanned<String>>,
+    pub attestations: Vec<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassportAsnDecl {
+    pub registry: Spanned<String>,
+    pub number: Spanned<String>,
+    pub holder: Spanned<String>,
+    pub country: Spanned<String>,
 }

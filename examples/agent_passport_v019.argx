@@ -1,0 +1,69 @@
+module Argorix.AgentPassport
+
+capability trace.write { level safe }
+
+type UserPrompt {
+    content: string
+    risk_level: string
+}
+
+policy SovereignAgentPolicy {
+    require agent_passport_declared
+    require agent_identity_declared
+    require agent_data_residency_declared
+    require agent_passport_attested
+    on violation {
+        action review
+        trace required
+    }
+}
+
+agent ResearchAgent {
+    receives UserPrompt
+    capabilities { trace.write }
+    on UserPrompt as prompt { trace prompt }
+}
+
+protocol RiskFlow {
+    User -> ResearchAgent: tell UserPrompt
+}
+
+passport RiskAnalyzerPassport {
+    agent ResearchAgent
+    agent_name "Risk Analyzer"
+
+    // Global identity
+    global_id "argx:agent:01HZX9RISKANALYZER"
+    identity "did:argorix:risk-analyzer-v1"
+    provider "Argorix"
+    version "1.0.0"
+
+    // Optional discovery name, no network resolution in v0.19
+    ans_name "argx://riskAnalyzer.RiskAnalysis.Argorix.v1.sovereign"
+
+    // Jurisdiction and sovereignty
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL", "EU"]
+
+    // Network / infrastructure registration metadata
+    asn {
+        registry "LACNIC"
+        number "AS-PLACEHOLDER"
+        holder "Argorix Labs"
+        country "CL"
+    }
+
+    // Model and risk metadata
+    model "frontier-compatible"
+    risk_level "high"
+    data_scope ["internal", "confidential"]
+
+    // Intent / purpose
+    intent "risk_analysis"
+    intended_use ["policy-review", "risk-assessment"]
+    prohibited_use ["external-execution", "credential-access"]
+
+    // Verification and evidence
+    attestations ["redteam", "policy-check", "evidence-bundle"]
+}

@@ -21,6 +21,42 @@ pub struct IrProgram {
     pub models: Vec<IrModel>,
     pub agents: Vec<IrAgent>,
     pub protocols: Vec<IrProtocol>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub passports: Vec<IrPassport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrPassport {
+    pub name: String,
+    pub agent: String,
+    pub agent_name: String,
+    pub global_id: String,
+    pub identity: String,
+    pub provider: String,
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ans_name: Option<String>,
+    pub country: String,
+    pub jurisdiction: String,
+    pub data_residency: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asn: Option<IrPassportAsn>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    pub risk_level: String,
+    pub data_scope: Vec<String>,
+    pub intent: String,
+    pub intended_use: Vec<String>,
+    pub prohibited_use: Vec<String>,
+    pub attestations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrPassportAsn {
+    pub registry: String,
+    pub number: String,
+    pub holder: String,
+    pub country: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -182,7 +218,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.18".to_owned(),
+            ir_version: "0.19".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -407,8 +443,42 @@ impl From<&Program> for IrProgram {
                         .collect(),
                 })
                 .collect(),
+            passports: program
+                .passports
+                .iter()
+                .map(|passport| IrPassport {
+                    name: passport.name.value.clone(),
+                    agent: passport.agent.value.clone(),
+                    agent_name: passport.agent_name.value.clone(),
+                    global_id: passport.global_id.value.clone(),
+                    identity: passport.identity.value.clone(),
+                    provider: passport.provider.value.clone(),
+                    version: passport.version.value.clone(),
+                    ans_name: passport.ans_name.as_ref().map(|value| value.value.clone()),
+                    country: passport.country.value.clone(),
+                    jurisdiction: passport.jurisdiction.value.clone(),
+                    data_residency: spanned_values(&passport.data_residency),
+                    asn: passport.asn.as_ref().map(|asn| IrPassportAsn {
+                        registry: asn.registry.value.clone(),
+                        number: asn.number.value.clone(),
+                        holder: asn.holder.value.clone(),
+                        country: asn.country.value.clone(),
+                    }),
+                    model: passport.model.as_ref().map(|value| value.value.clone()),
+                    risk_level: passport.risk_level.value.clone(),
+                    data_scope: spanned_values(&passport.data_scope),
+                    intent: passport.intent.value.clone(),
+                    intended_use: spanned_values(&passport.intended_use),
+                    prohibited_use: spanned_values(&passport.prohibited_use),
+                    attestations: spanned_values(&passport.attestations),
+                })
+                .collect(),
         }
     }
+}
+
+fn spanned_values(values: &[argorix_parser::span::Spanned<String>]) -> Vec<String> {
+    values.iter().map(|value| value.value.clone()).collect()
 }
 
 pub fn resolved_provider(provider: Option<&str>) -> &str {
@@ -434,7 +504,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.18");
+        assert_eq!(ir.ir_version, "0.19");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -444,5 +514,42 @@ mod tests {
             "block"
         );
         assert!(ir.policies[0].on_violation.as_ref().unwrap().trace_required);
+    }
+
+    #[test]
+    fn ir_019_preserves_passport_metadata() {
+        let program = parse_source(
+            r#"
+            module main
+            agent ResearchAgent {}
+            passport RiskAnalyzerPassport {
+                agent ResearchAgent
+                agent_name "Risk Analyzer"
+                global_id "argx:agent:1"
+                identity "did:argorix:risk-v1"
+                provider "Argorix"
+                version "1.0.0"
+                ans_name "argx://risk.v1.sovereign"
+                country "CL"
+                jurisdiction "CL"
+                data_residency ["CL", "EU"]
+                asn { registry "LACNIC" number "AS-PLACEHOLDER" holder "Argorix Labs" country "CL" }
+                risk_level "high"
+                intent "risk_analysis"
+                attestations ["redteam"]
+            }
+            "#,
+        )
+        .unwrap();
+        let ir = IrProgram::from(&program);
+        assert_eq!(ir.ir_version, "0.19");
+        assert_eq!(ir.passports.len(), 1);
+        assert_eq!(ir.passports[0].agent, "ResearchAgent");
+        assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
+        assert_eq!(ir.passports[0].asn.as_ref().unwrap().registry, "LACNIC");
+        assert_eq!(
+            ir.passports[0].ans_name.as_deref(),
+            Some("argx://risk.v1.sovereign")
+        );
     }
 }

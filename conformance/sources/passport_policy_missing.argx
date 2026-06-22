@@ -1,0 +1,23 @@
+module conformance.passport_policy_missing
+
+capability trace.write { level safe }
+
+type UserPrompt { content: string }
+
+policy SovereignAgentPolicy {
+    require agent_passport_declared
+    on violation {
+        action block
+        trace required
+    }
+}
+
+agent ResearchAgent {
+    receives UserPrompt
+    capabilities { trace.write }
+    on UserPrompt as prompt { trace prompt }
+}
+
+protocol RiskFlow {
+    User -> ResearchAgent: tell UserPrompt
+}

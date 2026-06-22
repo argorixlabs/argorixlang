@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 19] = [
+pub const CATEGORIES: [&str; 20] = [
     "parser",
     "semantics",
     "ir",
@@ -43,6 +43,7 @@ pub const CATEGORIES: [&str; 19] = [
     "module_graph",
     "multi_file_semantics",
     "typed_messages",
+    "agent_passport",
 ];
 
 #[derive(Debug, Error)]
@@ -56,9 +57,12 @@ pub fn validate_suite(
     suite_path: &Path,
 ) -> Result<(), ConformanceValidationError> {
     let mut errors = Vec::new();
-    if !matches!(suite.suite_version.as_str(), "0.16" | "0.17" | "0.18") {
+    if !matches!(
+        suite.suite_version.as_str(),
+        "0.16" | "0.17" | "0.18" | "0.19"
+    ) {
         errors.push(format!(
-            "suite_version must be `0.16`, `0.17`, or `0.18`, found `{}`",
+            "suite_version must be `0.16`, `0.17`, `0.18`, or `0.19`, found `{}`",
             suite.suite_version
         ));
     }
@@ -76,7 +80,11 @@ pub fn validate_suite(
         if suite.suite_version == "0.16" && category == "policy_v2" {
             continue;
         }
-        if suite.suite_version != "0.18" && category == "typed_messages" {
+        if !matches!(suite.suite_version.as_str(), "0.18" | "0.19") && category == "typed_messages"
+        {
+            continue;
+        }
+        if suite.suite_version != "0.19" && category == "agent_passport" {
             continue;
         }
         if !categories.contains(category) {

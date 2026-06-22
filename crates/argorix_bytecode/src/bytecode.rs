@@ -25,6 +25,8 @@ pub struct BytecodeProgram {
     pub enums: Vec<String>,
     #[serde(default)]
     pub failures: Vec<BytecodeFailure>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub passports: Vec<BytecodePassport>,
     pub agents: Vec<BytecodeAgent>,
     pub capabilities: Vec<BytecodeCapability>,
     #[serde(default)]
@@ -103,6 +105,45 @@ pub struct BytecodeFailure {
     pub name: String,
     pub action: String,
     pub trace: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodePassport {
+    pub name: String,
+    pub agent: String,
+    pub agent_name: String,
+    pub global_id: String,
+    pub identity: String,
+    pub provider: String,
+    pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ans_name: Option<String>,
+    pub country: String,
+    pub jurisdiction: String,
+    #[serde(default)]
+    pub data_residency: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asn: Option<BytecodePassportAsn>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    pub risk_level: String,
+    #[serde(default)]
+    pub data_scope: Vec<String>,
+    pub intent: String,
+    #[serde(default)]
+    pub intended_use: Vec<String>,
+    #[serde(default)]
+    pub prohibited_use: Vec<String>,
+    #[serde(default)]
+    pub attestations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodePassportAsn {
+    pub registry: String,
+    pub number: String,
+    pub holder: String,
+    pub country: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -317,6 +358,10 @@ pub enum BytecodeError {
     MessageContractsRequireV018,
     #[error("invalid message contract `{name}`: {reason}")]
     InvalidMessageContract { name: String, reason: String },
+    #[error("agent passports require bytecode version 0.19")]
+    PassportsRequireV019,
+    #[error("invalid passport `{name}`: {reason}")]
+    InvalidPassport { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -340,6 +385,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.16"
             | "0.17"
             | "0.18"
+            | "0.19"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -350,13 +396,16 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     if !matches!(
         program.bytecode_version.as_str(),
-        "0.18" | "0.17" | "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
+        "0.19" | "0.18" | "0.17" | "0.16" | "0.11" | "0.12" | "0.13" | "0.14" | "0.15"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
     }
     if (!program.modules.is_empty() || !program.imports.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.16" | "0.17" | "0.18")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.16" | "0.17" | "0.18" | "0.19"
+        )
     {
         errors.push(BytecodeError::ModulesRequireV016);
     }
@@ -372,12 +421,14 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             }
         }
     }
-    if !program.policies.is_empty() && !matches!(program.bytecode_version.as_str(), "0.17" | "0.18")
+    if !program.policies.is_empty()
+        && !matches!(program.bytecode_version.as_str(), "0.17" | "0.18" | "0.19")
     {
         errors.push(BytecodeError::PoliciesRequireV017);
     }
     validate_policies(program, &mut errors);
     validate_message_contracts(program, &mut errors);
+    validate_passports(program, &mut errors);
     let mut provider_contract_names = HashSet::new();
     for contract in &program.providers {
         if !provider_contract_names.insert(contract.name.as_str()) {
@@ -574,7 +625,7 @@ fn validate_contract_allowlists(
         }
         if !matches!(
             program.bytecode_version.as_str(),
-            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17" | "0.18"
+            "0.12" | "0.13" | "0.14" | "0.15" | "0.16" | "0.17" | "0.18" | "0.19"
         ) {
             continue;
         }
@@ -643,7 +694,7 @@ fn validate_contract_allowlists(
 
 fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     if (!program.types.is_empty() || !program.enums.is_empty())
-        && program.bytecode_version != "0.18"
+        && !matches!(program.bytecode_version.as_str(), "0.18" | "0.19")
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
     }
@@ -683,8 +734,86 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
     }
 }
 
+fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    const RISK_LEVELS: [&str; 4] = ["low", "medium", "high", "critical"];
+    const ASN_REGISTRIES: [&str; 6] = ["LACNIC", "ARIN", "RIPE", "APNIC", "AFRINIC", "UNKNOWN"];
+
+    if !program.passports.is_empty() && program.bytecode_version != "0.19" {
+        errors.push(BytecodeError::PassportsRequireV019);
+    }
+    let agents: HashSet<&str> = program
+        .agents
+        .iter()
+        .map(|agent| agent.name.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    let mut passport_agents = HashSet::new();
+    for passport in &program.passports {
+        if !names.insert(passport.name.as_str()) {
+            errors.push(BytecodeError::InvalidPassport {
+                name: passport.name.clone(),
+                reason: "duplicate passport name".into(),
+            });
+        }
+        for (label, value) in [
+            ("agent", &passport.agent),
+            ("agent_name", &passport.agent_name),
+            ("global_id", &passport.global_id),
+            ("identity", &passport.identity),
+            ("provider", &passport.provider),
+            ("version", &passport.version),
+            ("country", &passport.country),
+            ("jurisdiction", &passport.jurisdiction),
+            ("intent", &passport.intent),
+            ("risk_level", &passport.risk_level),
+        ] {
+            if value.trim().is_empty() {
+                errors.push(BytecodeError::InvalidPassport {
+                    name: passport.name.clone(),
+                    reason: format!("missing required field `{label}`"),
+                });
+            }
+        }
+        if passport.data_residency.is_empty() {
+            errors.push(BytecodeError::InvalidPassport {
+                name: passport.name.clone(),
+                reason: "data_residency must not be empty".into(),
+            });
+        }
+        if !passport.agent.trim().is_empty() {
+            if !agents.contains(passport.agent.as_str()) {
+                errors.push(BytecodeError::InvalidPassport {
+                    name: passport.name.clone(),
+                    reason: format!("unknown agent `{}`", passport.agent),
+                });
+            } else if !passport_agents.insert(passport.agent.as_str()) {
+                errors.push(BytecodeError::InvalidPassport {
+                    name: passport.name.clone(),
+                    reason: format!("agent `{}` already has a passport", passport.agent),
+                });
+            }
+        }
+        if !passport.risk_level.trim().is_empty()
+            && !RISK_LEVELS.contains(&passport.risk_level.as_str())
+        {
+            errors.push(BytecodeError::InvalidPassport {
+                name: passport.name.clone(),
+                reason: format!("invalid risk_level `{}`", passport.risk_level),
+            });
+        }
+        if let Some(asn) = &passport.asn {
+            if !ASN_REGISTRIES.contains(&asn.registry.as_str()) {
+                errors.push(BytecodeError::InvalidPassport {
+                    name: passport.name.clone(),
+                    reason: format!("invalid asn registry `{}`", asn.registry),
+                });
+            }
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
-    const RULES: [&str; 12] = [
+    const RULES: [&str; 16] = [
         "no_unhandled_messages",
         "all_tool_calls_traced",
         "all_model_calls_traced",
@@ -697,6 +826,10 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "external_execution",
         "evidence_bundle_verified",
         "security_report_generated",
+        "agent_passport_declared",
+        "agent_passport_attested",
+        "agent_data_residency_declared",
+        "agent_identity_declared",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -798,6 +931,7 @@ mod tests {
             types: vec![],
             enums: vec![],
             failures: vec![],
+            passports: vec![],
             agents: vec![BytecodeAgent {
                 name: "Worker".into(),
                 approval: "denied".into(),
@@ -1097,5 +1231,59 @@ mod tests {
         let mut v017 = valid_program();
         v017.bytecode_version = "0.17".into();
         verify_bytecode(&v017).unwrap();
+    }
+
+    #[test]
+    fn validates_v019_passports_and_accepts_v018() {
+        let mut v019 = valid_program();
+        v019.bytecode_version = "0.19".into();
+        v019.passports = vec![super::BytecodePassport {
+            name: "WorkerPassport".into(),
+            agent: "Worker".into(),
+            agent_name: "Worker".into(),
+            global_id: "argx:agent:1".into(),
+            identity: "did:argorix:worker".into(),
+            provider: "Argorix".into(),
+            version: "1.0.0".into(),
+            ans_name: None,
+            country: "CL".into(),
+            jurisdiction: "CL".into(),
+            data_residency: vec!["CL".into()],
+            asn: None,
+            model: None,
+            risk_level: "high".into(),
+            data_scope: vec![],
+            intent: "x".into(),
+            intended_use: vec![],
+            prohibited_use: vec![],
+            attestations: vec!["redteam".into()],
+        }];
+        verify_bytecode(&v019).unwrap();
+
+        // Passports below 0.19 are rejected.
+        let mut v018 = v019.clone();
+        v018.bytecode_version = "0.18".into();
+        assert!(verify_bytecode(&v018)
+            .unwrap_err()
+            .contains(&BytecodeError::PassportsRequireV019));
+
+        // Unknown agent and invalid risk level are rejected.
+        let mut invalid = v019.clone();
+        invalid.passports[0].agent = "Ghost".into();
+        invalid.passports[0].risk_level = "extreme".into();
+        let errors = verify_bytecode(&invalid).unwrap_err();
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            BytecodeError::InvalidPassport { reason, .. } if reason.contains("unknown agent `Ghost`")
+        )));
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            BytecodeError::InvalidPassport { reason, .. } if reason.contains("invalid risk_level")
+        )));
+
+        // A v0.18 program without passports still verifies.
+        let mut plain_v018 = valid_program();
+        plain_v018.bytecode_version = "0.18".into();
+        verify_bytecode(&plain_v018).unwrap();
     }
 }

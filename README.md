@@ -44,23 +44,26 @@ source language
 
 ## Current status
 
-**Version:** `0.18`
+**Version:** `0.19`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version 0.18 adds Typed Message Contracts. Message fields can use `string`,
-`bool`, `int`, and `float`; legacy empty/nominal types and declared enum/type
-references remain compatible. Policy Language v2 and packages are preserved.
+Version 0.19 adds the Agent Passport / Sovereign Agent Identity block: a
+top-level `passport` declaring an agent's identity, sovereignty, jurisdiction,
+data residency, infrastructure, intent, risk, and attestations. Passports are
+compilable, verifiable, auditable metadata only — there is no network access,
+DNS resolution, DID verification, ASN lookup, or remote registry. Typed Message
+Contracts, Policy Language v2, and the Module / Package System are preserved.
 
 ```text
 argorix.toml + src/*.argx
   -> module resolution (deterministic graph)
   -> whole-package semantic and security verification
   -> lexer / parser / AST
-  -> Argorix IR 0.18 (with typed message, policy and module metadata)
-  -> Argorix Bytecode 0.18 (with typed message, policy and module metadata)
+  -> Argorix IR 0.19 (with passport, typed message, policy and module metadata)
+  -> Argorix Bytecode 0.19 (with passport, typed message, policy and module metadata)
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
@@ -401,6 +404,168 @@ Conformance paths resolve from the suite, not from the shell.
 ```
 
 Security reports are evidence artifacts, not success receipts. `Allowlisted does not mean executable`: `simulated` remains the only executable provider, and external allowlists remain future permissions only.
+
+## Argorix Lang v0.19 Agent Passport / Sovereign Agent Identity
+
+The v0.19 principle is:
+
+```text
+Agents must carry sovereign identity before they can participate in an open agentic web.
+```
+
+An **Agent Passport** is a top-level `passport` block that declares the sovereign
+identity of an agent: who it is, where it is registered, what it is allowed to do,
+and what evidence backs it. It is the agent's portable, auditable identity card.
+
+```argx
+passport RiskAnalyzerPassport {
+  agent ResearchAgent
+  agent_name "Risk Analyzer"
+
+  // Global identity
+  global_id "argx:agent:01HZX9RISKANALYZER"
+  identity  "did:argorix:risk-analyzer-v1"
+  provider  "Argorix"
+  version   "1.0.0"
+
+  // Optional discovery name — no network resolution in v0.19
+  ans_name "argx://riskAnalyzer.RiskAnalysis.Argorix.v1.sovereign"
+
+  // Jurisdiction and sovereignty
+  country        "CL"
+  jurisdiction   "CL"
+  data_residency ["CL", "EU"]
+
+  // Network / infrastructure registration metadata
+  asn {
+    registry "LACNIC"
+    number   "AS-PLACEHOLDER"
+    holder   "Argorix Labs"
+    country  "CL"
+  }
+
+  // Model and risk metadata
+  model      "frontier-compatible"
+  risk_level "high"
+  data_scope ["internal", "confidential"]
+
+  // Intent / purpose
+  intent         "risk_analysis"
+  intended_use   ["policy-review", "risk-assessment"]
+  prohibited_use ["external-execution", "credential-access"]
+
+  // Verification and evidence
+  attestations ["redteam", "policy-check", "evidence-bundle"]
+}
+```
+
+### Field meaning
+
+- **`global_id`** — a stable, globally unique identifier for the agent (an opaque
+  string, e.g. `argx:agent:...`). It is not resolved against any registry.
+- **`identity`** — a DID-like identity string (e.g. `did:argorix:...`). v0.19 stores
+  it verbatim; it performs **no DID resolution**.
+- **`agent_name`** — a human-readable display name.
+- **`country` / `jurisdiction`** — the agent's legal sovereignty. `country` must use
+  a 2-letter ISO-like code; `jurisdiction` must be non-empty.
+- **`data_residency`** — the regions where the agent's data may reside (required,
+  non-empty).
+- **`asn`** — optional network registration metadata: `registry` (one of `LACNIC`,
+  `ARIN`, `RIPE`, `APNIC`, `AFRINIC`, `UNKNOWN`), `number` (an `AS`-prefixed value
+  or explicit placeholder), `holder`, and `country`. **No ASN lookup is performed.**
+- **`intent` / `intended_use` / `prohibited_use`** — the declared purpose, allowed
+  uses, and prohibited uses of the agent.
+- **`attestations`** — references to evidence/verifications associated with the agent.
+
+### `intent` vs `attestations`
+
+These are different concepts and must not be conflated:
+
+```text
+intent         = the agent's declared purpose
+intended_use   = permitted or expected uses
+prohibited_use = forbidden uses
+attestations   = evidence/verifications (internal or external) attached to the agent
+```
+
+`attestations` are **evidence, not intention**. Writing
+`attestations ["risk_analysis"]` is syntactically allowed but semantically wrong —
+`risk_analysis` is an `intent`, not an attestation.
+
+### Passport vs provider contract vs policy vs evidence bundle
+
+- **Passport** — *who the agent is*: sovereign identity, jurisdiction, residency,
+  intent, attestations.
+- **Provider contract** — *what external providers may be reached* (still
+  non-executable; `simulated` remains the only executable provider).
+- **Policy** — *what runtime evidence must hold* (Policy v2 rules evaluated against
+  the trace).
+- **Evidence bundle** — *the signed digest chain* over Bytecode, Trace, and
+  SecurityReport that makes a run offline-verifiable.
+
+### Required vs optional fields
+
+```text
+required: agent, agent_name, global_id, identity, provider, version,
+          country, jurisdiction, data_residency, intent, risk_level
+optional: ans_name, asn, model, data_scope, intended_use, prohibited_use, attestations
+```
+
+### Policy v2 integration
+
+v0.19 adds four optional Policy v2 rules, evaluated offline against declared
+passport metadata:
+
+```text
+agent_passport_declared        — every agent has a declared passport
+agent_identity_declared        — every passport has a non-empty identity
+agent_data_residency_declared  — every passport has non-empty data residency
+agent_passport_attested        — every passport has at least one attestation
+```
+
+```argx
+policy SovereignAgentPolicy {
+  require agent_passport_declared
+  require agent_identity_declared
+  require agent_data_residency_declared
+  require agent_passport_attested
+
+  on violation {
+    action review
+    trace required
+  }
+}
+```
+
+### SecurityReport and EvidenceBundle integration
+
+The SecurityReport gains an `agent_passports` summary (totals, linked agents,
+countries, jurisdictions, data residency, risk levels, attestation count, and
+intents). The EvidenceBundle covers passports through the existing digest chain
+(Bytecode, Trace, SecurityReport) — no new artifact is added.
+
+> **Holding a passport does not prove real-world safety.** It improves
+> traceability, declared identity, and structural evidence only. The security
+> verdict is **not** inflated by the presence of a passport.
+
+### Limits (v0.19 does not)
+
+```text
+- no network calls, DNS resolution, or remote registry
+- no real DID verification
+- no real ASN verification
+- no country verification beyond a basic ISO-like format check
+- no certificates or secrets
+- external providers remain non-executable; simulated remains the only executable provider
+```
+
+```bash
+cargo run -p argorixc -- check examples/agent_passport_v019.argx
+cargo run -p argorixc -- emit-ir examples/agent_passport_v019.argx
+cargo run -p argorixc -- emit-bytecode examples/agent_passport_v019.argx
+cargo run -p argorixc -- check-package examples/agent_passport_project/argorix.toml
+cargo run -p argorix-conformance -- run conformance/suite.v019.json
+```
 
 ## Argorix Lang v0.18 Typed Message Contracts
 

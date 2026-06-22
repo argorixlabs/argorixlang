@@ -1,0 +1,31 @@
+module invalid.duplicate_passport_for_agent
+
+agent ResearchAgent {}
+
+passport FirstPassport {
+    agent ResearchAgent
+    agent_name "Risk Analyzer"
+    global_id "argx:agent:01HZX9RISKANALYZER"
+    identity "did:argorix:risk-analyzer-v1"
+    provider "Argorix"
+    version "1.0.0"
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL"]
+    risk_level "high"
+    intent "risk_analysis"
+}
+
+passport SecondPassport {
+    agent ResearchAgent
+    agent_name "Risk Analyzer Twin"
+    global_id "argx:agent:01HZX9RISKANALYZER2"
+    identity "did:argorix:risk-analyzer-v2"
+    provider "Argorix"
+    version "2.0.0"
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL"]
+    risk_level "high"
+    intent "risk_analysis"
+}

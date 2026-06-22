@@ -19,8 +19,8 @@ pub use runtime::{
 };
 pub use scheduler::Scheduler;
 pub use security_report::{
-    CallSummary, ExecutionSummary, InjectedMessageSummary, IntrinsicSummary, LedgerSummary,
-    MessageContractSummary, PolicySummary, ProviderBoundarySummary, SecurityReport,
+    AgentPassportSummary, CallSummary, ExecutionSummary, InjectedMessageSummary, IntrinsicSummary,
+    LedgerSummary, MessageContractSummary, PolicySummary, ProviderBoundarySummary, SecurityReport,
     SecurityVerdict,
 };
 pub use trace::{

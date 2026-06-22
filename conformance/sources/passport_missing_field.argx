@@ -1,0 +1,16 @@
+module invalid.missing_required_field
+
+agent ResearchAgent {}
+
+passport RiskAnalyzerPassport {
+    agent ResearchAgent
+    agent_name "Risk Analyzer"
+    global_id "argx:agent:01HZX9RISKANALYZER"
+    identity "did:argorix:risk-analyzer-v1"
+    provider "Argorix"
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL"]
+    risk_level "high"
+    intent "risk_analysis"
+}

@@ -1,0 +1,17 @@
+module invalid.invalid_risk_level
+
+agent ResearchAgent {}
+
+passport RiskAnalyzerPassport {
+    agent ResearchAgent
+    agent_name "Risk Analyzer"
+    global_id "argx:agent:01HZX9RISKANALYZER"
+    identity "did:argorix:risk-analyzer-v1"
+    provider "Argorix"
+    version "1.0.0"
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL"]
+    risk_level "extreme"
+    intent "risk_analysis"
+}

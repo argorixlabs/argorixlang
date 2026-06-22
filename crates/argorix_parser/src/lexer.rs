@@ -3,10 +3,14 @@ use crate::{diagnostics::Diagnostic, span::Span};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     Ident(String),
+    StringLiteral(String),
     LeftBrace,
     RightBrace,
     LeftParen,
     RightParen,
+    LeftBracket,
+    RightBracket,
+    Comma,
     Colon,
     Arrow,
     Eof,
@@ -58,7 +62,11 @@ impl<'source> Lexer<'source> {
                 '}' => self.single(TokenKind::RightBrace),
                 '(' => self.single(TokenKind::LeftParen),
                 ')' => self.single(TokenKind::RightParen),
+                '[' => self.single(TokenKind::LeftBracket),
+                ']' => self.single(TokenKind::RightBracket),
+                ',' => self.single(TokenKind::Comma),
                 ':' => self.single(TokenKind::Colon),
+                '"' => self.string(),
                 '-' if self.peek_next() == Some('>') => self.arrow(),
                 character if is_ident_start(character) => self.identifier(),
                 unexpected => {
@@ -136,6 +144,29 @@ impl<'source> Lexer<'source> {
         self.advance();
         self.tokens.push(Token {
             kind: TokenKind::Arrow,
+            span: Span::new(start, self.offset, line, column),
+        });
+    }
+
+    fn string(&mut self) {
+        let start = self.offset;
+        let line = self.line;
+        let column = self.column;
+        self.advance(); // opening quote
+        let value_start = self.offset;
+        while !matches!(self.peek(), None | Some('"' | '\n')) {
+            self.advance();
+        }
+        if self.peek() != Some('"') {
+            let span = Span::new(start, self.offset, line, column);
+            self.diagnostics
+                .push(Diagnostic::new("unterminated string literal", span));
+            return;
+        }
+        let value = self.source[value_start..self.offset].to_owned();
+        self.advance(); // closing quote
+        self.tokens.push(Token {
+            kind: TokenKind::StringLiteral(value),
             span: Span::new(start, self.offset, line, column),
         });
     }

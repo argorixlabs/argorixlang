@@ -61,3 +61,20 @@ fn official_v018_suite_passes_with_typed_message_cases() {
     assert_eq!(result.cases_total, 24);
     fs::remove_dir_all(workdir).unwrap();
 }
+
+#[test]
+fn official_v019_suite_passes_with_agent_passport_cases() {
+    let suite_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../conformance/suite.v019.json");
+    let suite: ConformanceSuite = serde_json::from_slice(&fs::read(&suite_path).unwrap()).unwrap();
+    let workdir = temp_workdir().join("v019");
+    let result = run_suite(&suite, &suite_path, &workdir).unwrap();
+    assert!(result.passed, "{:?}", result.failures);
+    assert_eq!(result.cases_total, 45);
+    assert!(result
+        .case_results
+        .iter()
+        .filter(|case| case.category == "agent_passport")
+        .all(|case| case.passed));
+    fs::remove_dir_all(workdir).unwrap();
+}

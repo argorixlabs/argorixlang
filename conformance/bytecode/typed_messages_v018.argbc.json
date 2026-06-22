@@ -1,0 +1,33 @@
+{
+  "bytecode_version":"0.18",
+  "language":"Argorix Lang",
+  "module":"Argorix.TypedMessages",
+  "providers":[],
+  "assertions":[],
+  "policies":[{"name":"RuntimeSafety","rules":[{"effect":"require","rule":"no_unhandled_messages"},{"effect":"deny","rule":"external_execution"}],"on_violation":null}],
+  "types":[
+    {"name":"UserPrompt","fields":[{"name":"content","type":"string"},{"name":"risk_level","type":"string"}]},
+    {"name":"ReviewResult","fields":[{"name":"approved","type":"bool"},{"name":"score","type":"int"},{"name":"confidence","type":"float"}]},
+    {"name":"LegacyMessage","fields":[]},
+    {"name":"CompatibleLegacy","fields":[{"name":"risk","type":"RiskLevel"}]}
+  ],
+  "enums":["RiskLevel"],
+  "failures":[],
+  "agents":[{"name":"ResearchAgent","approval":"denied"}],
+  "capabilities":[{"name":"trace.write","level":"safe","requires_approval":false}],
+  "tools":[],
+  "models":[],
+  "instructions":[
+    {"op":"DeclareCapability","name":"trace.write","level":"safe","requires_approval":false},
+    {"op":"DeclareAgent","name":"ResearchAgent","approval":"denied"},
+    {"op":"RequireCapability","agent":"ResearchAgent","capability":"trace.write"},
+    {"op":"DeclareHandler","agent":"ResearchAgent","message_type":"UserPrompt","binding":"prompt"},
+    {"op":"TraceValue","agent":"ResearchAgent","binding":"prompt"},
+    {"op":"EndHandler"},
+    {"op":"DeclareProtocol","name":"TypedFlow"},
+    {"op":"SendMessage","from":"User","to":"ResearchAgent","act":"tell","message_type":"UserPrompt"},
+    {"op":"Trace","message":"protocol TypedFlow completed"},
+    {"op":"PolicyReport"},
+    {"op":"End"}
+  ]
+}
