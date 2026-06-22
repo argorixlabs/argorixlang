@@ -1,0 +1,22 @@
+name: Security & licenses
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # Weekly Monday 06:00 UTC – catch newly disclosed advisories.
+
+permissions:
+  contents: read
+
+jobs:
+  # CodeQL does not support Rust; cargo-deny covers vulns + licenses + bans.
+  cargo-deny:
+    name: Dependency scan & license check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources

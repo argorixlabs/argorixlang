@@ -1,0 +1,10 @@
+# Code owners are auto-requested for review on matching paths.
+# Adjust the team/handle below to a real maintainer team with write access.
+* @argorixlabs/maintainers
+
+# Security-sensitive surfaces — require maintainer review explicitly.
+/crates/argorix_vm/         @argorixlabs/maintainers
+/crates/argorix_provider/   @argorixlabs/maintainers
+/.github/                   @argorixlabs/maintainers
+/conformance/               @argorixlabs/maintainers
+/CLA.md                     @argorixlabs/maintainers
