@@ -8,7 +8,7 @@ on:
 
 permissions:
   actions: write
-  contents: read # 'write' only needed if the signatures file lives in this repo
+  contents: write # signatures file is stored in this repo
   pull-requests: write
   statuses: write
 
@@ -21,14 +21,12 @@ jobs:
         uses: contributor-assistant/github-action@v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # PERSONAL_ACCESS_TOKEN is required if the signatures repo is private/separate.
-          PERSONAL_ACCESS_TOKEN: ${{ secrets.CLA_SIGNATURES_TOKEN }}
         with:
+          # Signatures are stored in this repo; no separate repo/PAT needed.
           path-to-signatures: "signatures/version1/cla.json"
           path-to-document: "https://github.com/argorixlabs/argorixlang/blob/main/CLA.md"
           branch: "main"
-          allowlist: dependabot[bot],bot*
-          remote-organization-name: argorixlabs
-          remote-repository-name: cla-signatures
+          # Project owners and bots are exempt from signing their own contributions.
+          allowlist: argorixlabs,dependabot[bot],bot*
           custom-pr-sign-comment: "I have read the CLA Document and I hereby sign the CLA"
           custom-allsigned-prcomment: "All contributors have signed the CLA. ✍️"

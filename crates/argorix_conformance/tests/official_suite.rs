@@ -13,7 +13,9 @@ fn official_v016_suite_passes_and_records_blocked_external_execution() {
     let suite_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../conformance/suite.v016.json");
     let suite: ConformanceSuite = serde_json::from_slice(&fs::read(&suite_path).unwrap()).unwrap();
-    let workdir = temp_workdir();
+    // Use a dedicated subdir: tests in this binary run concurrently and the
+    // bare temp_workdir() base is the parent of every other test's workdir.
+    let workdir = temp_workdir().join("v016");
 
     let result = run_suite(&suite, &suite_path, &workdir).unwrap();
 

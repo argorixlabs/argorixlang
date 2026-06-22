@@ -20,6 +20,9 @@ confidence-threshold = 0.9
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal workspace crates are referenced by path without a version, which
+# cargo-deny treats as a wildcard. Allow those; still deny real wildcard deps.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
