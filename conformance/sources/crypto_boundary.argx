@@ -23,7 +23,6 @@ crypto_boundary TrustBoundary {
   execution disabled
 
   purpose ["identity", "credential", "evidence"]
-  notes "metadata only; no security claim"
 }
 
 crypto_boundary LegacyBoundary {
@@ -63,13 +62,11 @@ protocol P {
 policy CryptoBoundaryPolicy {
   require crypto_primitives_declared
   require crypto_boundaries_declared
-  require crypto_boundary_primitives_declared
-  require crypto_boundary_no_conflicts
-  require crypto_boundary_key_material_denied
-  require crypto_boundary_secret_material_denied
-  require crypto_boundary_execution_disabled
+  require crypto_post_quantum_candidates_declared
+  require crypto_key_material_absent
+  require crypto_secret_material_absent
+  require crypto_execution_absent
   require post_quantum_readiness_declared
-  require post_quantum_no_security_claims
 
   on violation {
     action review
