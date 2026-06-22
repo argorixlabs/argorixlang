@@ -45,6 +45,8 @@ pub struct PolicyEvidenceContext {
     pub crypto_key_material_absent: bool,
     pub crypto_secret_material_absent: bool,
     pub crypto_execution_absent: bool,
+    pub crypto_boundaries_declared: bool,
+    pub post_quantum_readiness_declared: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,6 +292,14 @@ pub fn evaluate_rule(
         "crypto_execution_absent" => (
             context.crypto_execution_absent,
             "crypto execution primitives or operations are present",
+        ),
+        "crypto_boundaries_declared" => (
+            context.crypto_boundaries_declared,
+            "no crypto boundary is declared",
+        ),
+        "post_quantum_readiness_declared" => (
+            context.post_quantum_readiness_declared,
+            "no crypto boundary declares post-quantum readiness",
         ),
         _ => (false, "unknown policy rule"),
     };

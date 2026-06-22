@@ -20,6 +20,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         adapters: Vec::new(),
         adapter_profiles: Vec::new(),
         cryptos: Vec::new(),
+        crypto_boundaries: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -54,6 +55,9 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
             .adapter_profiles
             .extend(program.adapter_profiles.iter().cloned());
         merged.cryptos.extend(program.cryptos.iter().cloned());
+        merged
+            .crypto_boundaries
+            .extend(program.crypto_boundaries.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());

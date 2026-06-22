@@ -3,8 +3,8 @@ use crate::{
         AdapterDecl, AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork,
         AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution,
         AdapterProfileFamily, AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets,
-        AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, CryptoDecl,
-        CryptoKind, CryptoStatus, CryptoStrength, EnumDecl, FailureDecl, FeatureDecl,
+        AgentDecl, Approval, AssertionDecl, CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl,
+        CryptoDecl, CryptoKind, CryptoStatus, CryptoStrength, EnumDecl, FailureDecl, FeatureDecl,
         FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
         HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl,
         MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule,
@@ -73,6 +73,7 @@ impl Parser {
             adapters: Vec::new(),
             adapter_profiles: Vec::new(),
             cryptos: Vec::new(),
+            crypto_boundaries: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -95,6 +96,9 @@ impl Parser {
                 Some("secret") => program.secrets.push(self.parse_secret()?),
                 Some("adapter") => program.adapters.push(self.parse_adapter()?),
                 Some("adapter_profile") => program.adapter_profiles.push(self.parse_adapter_profile()?),
+                Some("crypto_boundary") => {
+                    program.crypto_boundaries.push(self.parse_crypto_boundary()?)
+                }
                 Some("crypto") => program.cryptos.push(self.parse_crypto()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
@@ -1096,6 +1100,141 @@ impl Parser {
         })
     }
 
+    fn parse_crypto_boundary(&mut self) -> Result<CryptoBoundaryDecl, Diagnostic> {
+        self.expect_keyword("crypto_boundary")?;
+        let name = self.expect_identifier("crypto boundary name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut allowed_hashes: Option<Vec<Spanned<String>>> = None;
+        let mut allowed_signatures: Option<Vec<Spanned<String>>> = None;
+        let mut allowed_kems: Option<Vec<Spanned<String>>> = None;
+        let mut allowed_aeads: Option<Vec<Spanned<String>>> = None;
+        let mut legacy_allowed: Option<Vec<Spanned<String>>> = None;
+        let mut denied: Option<Vec<Spanned<String>>> = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut min_hash_bits = None;
+        let mut post_quantum_ready = None;
+        let mut hybrid_allowed = None;
+        let mut key_material = None;
+        let mut secret_material = None;
+        let mut execution = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated crypto_boundary declaration")?;
+            match self.peek_identifier() {
+                Some("allowed_hashes") => self.set_block_field(
+                    &mut allowed_hashes,
+                    "crypto_boundary",
+                    "allowed_hashes",
+                    |parser| parser.parse_string_array("crypto_boundary allowed_hashes"),
+                )?,
+                Some("allowed_signatures") => self.set_block_field(
+                    &mut allowed_signatures,
+                    "crypto_boundary",
+                    "allowed_signatures",
+                    |parser| parser.parse_string_array("crypto_boundary allowed_signatures"),
+                )?,
+                Some("allowed_kems") => self.set_block_field(
+                    &mut allowed_kems,
+                    "crypto_boundary",
+                    "allowed_kems",
+                    |parser| parser.parse_string_array("crypto_boundary allowed_kems"),
+                )?,
+                Some("allowed_aeads") => self.set_block_field(
+                    &mut allowed_aeads,
+                    "crypto_boundary",
+                    "allowed_aeads",
+                    |parser| parser.parse_string_array("crypto_boundary allowed_aeads"),
+                )?,
+                Some("legacy_allowed") => self.set_block_field(
+                    &mut legacy_allowed,
+                    "crypto_boundary",
+                    "legacy_allowed",
+                    |parser| parser.parse_string_array("crypto_boundary legacy_allowed"),
+                )?,
+                Some("denied") => {
+                    self.set_block_field(&mut denied, "crypto_boundary", "denied", |parser| {
+                        parser.parse_string_array("crypto_boundary denied")
+                    })?
+                }
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "crypto_boundary", "purpose", |parser| {
+                        parser.parse_string_array("crypto_boundary purpose")
+                    })?
+                }
+                Some("min_hash_bits") => self.set_block_field(
+                    &mut min_hash_bits,
+                    "crypto_boundary",
+                    "min_hash_bits",
+                    |parser| parser.expect_integer("crypto_boundary min_hash_bits"),
+                )?,
+                Some("post_quantum_ready") => self.set_block_field(
+                    &mut post_quantum_ready,
+                    "crypto_boundary",
+                    "post_quantum_ready",
+                    |parser| parser.expect_bool("crypto_boundary post_quantum_ready"),
+                )?,
+                Some("hybrid_allowed") => self.set_block_field(
+                    &mut hybrid_allowed,
+                    "crypto_boundary",
+                    "hybrid_allowed",
+                    |parser| parser.expect_bool("crypto_boundary hybrid_allowed"),
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "crypto_boundary",
+                    "key_material",
+                    |parser| parser.expect_identifier("crypto_boundary key_material"),
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "crypto_boundary",
+                    "secret_material",
+                    |parser| parser.expect_identifier("crypto_boundary secret_material"),
+                )?,
+                Some("execution") => self.set_block_field(
+                    &mut execution,
+                    "crypto_boundary",
+                    "execution",
+                    |parser| parser.expect_identifier("crypto_boundary execution"),
+                )?,
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected crypto_boundary item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected a crypto_boundary field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        let default_disposition = |span| Spanned::new("denied".to_owned(), span);
+        Ok(CryptoBoundaryDecl {
+            name,
+            allowed_hashes: allowed_hashes.unwrap_or_default(),
+            allowed_signatures: allowed_signatures.unwrap_or_default(),
+            allowed_kems: allowed_kems.unwrap_or_default(),
+            allowed_aeads: allowed_aeads.unwrap_or_default(),
+            legacy_allowed: legacy_allowed.unwrap_or_default(),
+            denied: denied.unwrap_or_default(),
+            purpose: purpose.unwrap_or_default(),
+            min_hash_bits,
+            post_quantum_ready,
+            hybrid_allowed,
+            key_material: key_material.unwrap_or_else(|| default_disposition(fallback_span)),
+            secret_material: secret_material.unwrap_or_else(|| default_disposition(fallback_span)),
+            execution: execution
+                .unwrap_or_else(|| Spanned::new("disabled".to_owned(), fallback_span)),
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -1255,6 +1394,8 @@ impl Parser {
             "crypto_key_material_absent" => PolicyRule::CryptoKeyMaterialAbsent,
             "crypto_secret_material_absent" => PolicyRule::CryptoSecretMaterialAbsent,
             "crypto_execution_absent" => PolicyRule::CryptoExecutionAbsent,
+            "crypto_boundaries_declared" => PolicyRule::CryptoBoundariesDeclared,
+            "post_quantum_readiness_declared" => PolicyRule::PostQuantumReadinessDeclared,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 25] = [
+pub const CATEGORIES: [&str; 26] = [
     "parser",
     "semantics",
     "ir",
@@ -49,6 +49,7 @@ pub const CATEGORIES: [&str; 25] = [
     "secret_boundary",
     "adapter_framework",
     "crypto_registry",
+    "crypto_boundaries",
 ];
 
 #[derive(Debug, Error)]
@@ -64,10 +65,10 @@ pub fn validate_suite(
     let mut errors = Vec::new();
     if !matches!(
         suite.suite_version.as_str(),
-        "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24"
+        "0.16" | "0.17" | "0.18" | "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25"
     ) {
         errors.push(format!(
-            "suite_version must be `0.16`..`0.24`, found `{}`",
+            "suite_version must be `0.16`..`0.25`, found `{}`",
             suite.suite_version
         ));
     }
@@ -104,6 +105,14 @@ pub fn validate_suite(
         }
         if suite.suite_version != "0.21" && matches!(category, "feature_flags" | "secret_boundary")
         {
+            continue;
+        }
+        // crypto_registry was introduced in v0.24; crypto_boundaries in v0.25.
+        if !matches!(suite.suite_version.as_str(), "0.24" | "0.25") && category == "crypto_registry"
+        {
+            continue;
+        }
+        if suite.suite_version != "0.25" && category == "crypto_boundaries" {
             continue;
         }
         if !categories.contains(category) && category != "adapter_framework" {

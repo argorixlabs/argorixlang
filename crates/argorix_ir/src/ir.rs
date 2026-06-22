@@ -22,6 +22,8 @@ pub struct IrProgram {
     pub adapter_profiles: Vec<IrAdapterProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cryptos: Vec<IrCrypto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub crypto_boundaries: Vec<IrCryptoBoundary>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -183,6 +185,34 @@ pub struct IrCrypto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrCryptoBoundary {
+    pub name: String,
+    #[serde(default)]
+    pub allowed_hashes: Vec<String>,
+    #[serde(default)]
+    pub allowed_signatures: Vec<String>,
+    #[serde(default)]
+    pub allowed_kems: Vec<String>,
+    #[serde(default)]
+    pub allowed_aeads: Vec<String>,
+    #[serde(default)]
+    pub legacy_allowed: Vec<String>,
+    #[serde(default)]
+    pub denied: Vec<String>,
+    #[serde(default)]
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_hash_bits: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_quantum_ready: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hybrid_allowed: Option<bool>,
+    pub key_material: String,
+    pub secret_material: String,
+    pub execution: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
@@ -336,7 +366,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.24".to_owned(),
+            ir_version: "0.25".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -478,6 +508,30 @@ impl From<&Program> for IrProgram {
                     min_key_bits: c.min_key_bits.as_ref().map(|v| v.value),
                     security_level: c.security_level.as_ref().map(|v| v.value.clone()),
                     notes: c.notes.as_ref().map(|v| v.value.clone()),
+                })
+                .collect(),
+            crypto_boundaries: program
+                .crypto_boundaries
+                .iter()
+                .map(|b| IrCryptoBoundary {
+                    name: b.name.value.clone(),
+                    allowed_hashes: b.allowed_hashes.iter().map(|v| v.value.clone()).collect(),
+                    allowed_signatures: b
+                        .allowed_signatures
+                        .iter()
+                        .map(|v| v.value.clone())
+                        .collect(),
+                    allowed_kems: b.allowed_kems.iter().map(|v| v.value.clone()).collect(),
+                    allowed_aeads: b.allowed_aeads.iter().map(|v| v.value.clone()).collect(),
+                    legacy_allowed: b.legacy_allowed.iter().map(|v| v.value.clone()).collect(),
+                    denied: b.denied.iter().map(|v| v.value.clone()).collect(),
+                    purpose: b.purpose.iter().map(|v| v.value.clone()).collect(),
+                    min_hash_bits: b.min_hash_bits.as_ref().map(|v| v.value),
+                    post_quantum_ready: b.post_quantum_ready.as_ref().map(|v| v.value),
+                    hybrid_allowed: b.hybrid_allowed.as_ref().map(|v| v.value),
+                    key_material: b.key_material.value.clone(),
+                    secret_material: b.secret_material.value.clone(),
+                    execution: b.execution.value.clone(),
                 })
                 .collect(),
             assertions: program
@@ -739,7 +793,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.21");
+        assert_eq!(ir.ir_version, "0.25");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -777,7 +831,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.21");
+        assert_eq!(ir.ir_version, "0.25");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -812,7 +866,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.21");
+        assert_eq!(ir.ir_version, "0.25");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");
