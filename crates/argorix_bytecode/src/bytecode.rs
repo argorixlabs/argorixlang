@@ -37,6 +37,8 @@ pub struct BytecodeProgram {
     pub atrust_identities: Vec<BytecodeATrustIdentity>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub atrust_credential_contracts: Vec<BytecodeATrustCredentialContract>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atrust_handshakes: Vec<BytecodeATrustHandshake>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -278,6 +280,34 @@ pub struct BytecodeATrustCredentialContract {
     pub evidence: String,
     pub security_claims: String,
     pub claims: Vec<String>,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeATrustHandshake {
+    pub name: String,
+    pub initiator: String,
+    pub responder: String,
+    pub initiator_identity: String,
+    pub responder_identity: String,
+    pub credential_contracts: Vec<String>,
+    pub boundary: String,
+    pub method: String,
+    pub mode: String,
+    pub direction: String,
+    pub challenge: String,
+    pub response: String,
+    pub transcript: String,
+    pub verification: String,
+    pub resolution: String,
+    pub network: String,
+    pub key_material: String,
+    pub secret_material: String,
+    pub execution: String,
+    pub evidence: String,
+    pub security_claims: String,
     pub purpose: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
@@ -645,6 +675,10 @@ pub enum BytecodeError {
     DuplicateCryptoBoundary(String),
     #[error("invalid crypto boundary `{name}`: {reason}")]
     InvalidCryptoBoundary { name: String, reason: String },
+    #[error("duplicate atrust handshake `{0}`")]
+    DuplicateATrustHandshake(String),
+    #[error("invalid atrust handshake `{name}`: {reason}")]
+    InvalidATrustHandshake { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -678,6 +712,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.26"
             | "0.27"
             | "0.28"
+            | "0.29"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -706,6 +741,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.26"
             | "0.27"
             | "0.28"
+            | "0.29"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -726,6 +762,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.26"
                 | "0.27"
                 | "0.28"
+                | "0.29"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -757,6 +794,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.26"
                 | "0.27"
                 | "0.28"
+                | "0.29"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -770,7 +808,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapters.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
+            "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -778,7 +816,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapter_profiles.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
+            "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -786,7 +824,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.cryptos.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
+            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -794,18 +832,25 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.crypto_boundaries.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.25" | "0.26" | "0.27" | "0.28"
+            "0.25" | "0.26" | "0.27" | "0.28" | "0.29"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
     }
     if !program.atrust_credential_contracts.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.28")
+        && !matches!(program.bytecode_version.as_str(), "0.28" | "0.29")
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
         ));
     }
+    if !program.atrust_handshakes.is_empty() && !matches!(program.bytecode_version.as_str(), "0.29")
+    {
+        errors.push(BytecodeError::UnsupportedVersion(
+            program.bytecode_version.clone(),
+        ));
+    }
+    validate_atrust_handshakes(program, &mut errors);
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
@@ -1088,6 +1133,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.26"
                 | "0.27"
                 | "0.28"
+                | "0.29"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -1135,7 +1181,17 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
     if !program.passports.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.19" | "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
+            "0.19"
+                | "0.20"
+                | "0.21"
+                | "0.22"
+                | "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1215,7 +1271,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
     if !program.provider_harnesses.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
+            "0.20" | "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1316,7 +1372,7 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
     if !program.features.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
+            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -1376,7 +1432,7 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
     if !program.secrets.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28"
+            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);
@@ -1735,6 +1791,88 @@ fn validate_crypto_boundaries(program: &BytecodeProgram, errors: &mut Vec<Byteco
     }
 }
 
+fn validate_atrust_handshakes(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    for h in &program.atrust_handshakes {
+        if !names.insert(h.name.as_str()) {
+            errors.push(BytecodeError::DuplicateATrustHandshake(h.name.clone()));
+            continue;
+        }
+        let mut invalid = |reason: &str| {
+            errors.push(BytecodeError::InvalidATrustHandshake {
+                name: h.name.clone(),
+                reason: reason.to_owned(),
+            });
+        };
+        if h.name.trim().is_empty() {
+            invalid("name must not be empty");
+        }
+        if h.initiator.trim().is_empty() {
+            invalid("initiator must not be empty");
+        }
+        if h.responder.trim().is_empty() {
+            invalid("responder must not be empty");
+        }
+        if h.initiator_identity.trim().is_empty() {
+            invalid("initiator_identity must not be empty");
+        }
+        if h.responder_identity.trim().is_empty() {
+            invalid("responder_identity must not be empty");
+        }
+        if h.boundary.trim().is_empty() {
+            invalid("boundary must not be empty");
+        }
+        if h.method.trim().is_empty() {
+            invalid("method must not be empty");
+        }
+        if h.credential_contracts.iter().any(|c| c.trim().is_empty()) {
+            invalid("credential_contracts must not contain empty items");
+        }
+        if h.purpose.iter().any(|p| p.trim().is_empty()) {
+            invalid("purpose must not contain empty items");
+        }
+        if h.mode != "dry_run" {
+            invalid("mode must be dry_run");
+        }
+        if !matches!(h.direction.as_str(), "one_way" | "mutual") {
+            invalid("direction must be one_way or mutual");
+        }
+        if !matches!(h.challenge.as_str(), "disabled" | "declared_only") {
+            invalid("challenge must be disabled or declared_only");
+        }
+        if !matches!(h.response.as_str(), "disabled" | "declared_only") {
+            invalid("response must be disabled or declared_only");
+        }
+        if !matches!(h.transcript.as_str(), "metadata_only" | "evidence_only") {
+            invalid("transcript must be metadata_only or evidence_only");
+        }
+        if !matches!(h.verification.as_str(), "disabled" | "declared_only") {
+            invalid("verification must be disabled or declared_only");
+        }
+        if !matches!(h.resolution.as_str(), "disabled" | "embedded" | "local") {
+            invalid("resolution must be disabled, embedded, or local");
+        }
+        if h.network != "denied" {
+            invalid("network must be denied");
+        }
+        if h.key_material != "denied" {
+            invalid("key_material must be denied");
+        }
+        if h.secret_material != "denied" {
+            invalid("secret_material must be denied");
+        }
+        if h.execution != "disabled" {
+            invalid("execution must be disabled");
+        }
+        if h.evidence != "required" {
+            invalid("evidence must be required");
+        }
+        if h.security_claims != "none" {
+            invalid("security_claims must be none");
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -1831,6 +1969,24 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "atrust_credential_execution_disabled",
         "atrust_credential_evidence_required",
         "atrust_credential_security_claims_absent",
+        "atrust_handshake_declared",
+        "atrust_handshake_initiator_responder_valid",
+        "atrust_handshake_identities_valid",
+        "atrust_handshake_credential_contracts_valid",
+        "atrust_handshake_boundary_method_valid",
+        "atrust_handshake_mode_dry_run",
+        "atrust_handshake_direction_valid",
+        "atrust_handshake_challenge_declared_only",
+        "atrust_handshake_response_declared_only",
+        "atrust_handshake_transcript_evidence_only",
+        "atrust_handshake_verification_declared_only",
+        "atrust_handshake_resolution_disabled",
+        "atrust_handshake_network_denied",
+        "atrust_handshake_key_material_denied",
+        "atrust_handshake_secret_material_denied",
+        "atrust_handshake_execution_disabled",
+        "atrust_handshake_evidence_required",
+        "atrust_handshake_security_claims_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -1938,6 +2094,7 @@ mod tests {
             atrust_boundaries: vec![],
             atrust_identities: vec![],
             atrust_credential_contracts: vec![],
+            atrust_handshakes: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

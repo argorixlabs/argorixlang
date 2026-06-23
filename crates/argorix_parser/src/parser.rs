@@ -2,21 +2,24 @@ use crate::{
     ast::{
         ATrustBoundaryDecl, ATrustCredentialContractDecl, ATrustCredentialMode,
         ATrustCredentialPresentation, ATrustCredentialStatus, ATrustCredentialVerification,
-        ATrustEvidenceRequirement, ATrustExecution, ATrustHandshakeMode, ATrustIdentityDecl,
-        ATrustIdentityFormat, ATrustIdentityStatus, ATrustIdentityValidation,
-        ATrustMaterialBoundary, ATrustPostQuantumRequirement, ATrustResolutionMode,
-        ATrustSecurityClaims, AdapterDecl, AdapterExecution, AdapterFilesystem, AdapterKind,
-        AdapterMode, AdapterNetwork, AdapterProfileApiStyle, AdapterProfileAuth,
-        AdapterProfileDecl, AdapterProfileExecution, AdapterProfileFamily, AdapterProfileNetwork,
-        AdapterProfileSecrets, AdapterSecrets, AgentDecl, Approval, AssertionDecl, CapabilityDecl,
-        CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind, CryptoStatus, CryptoStrength,
-        DidLedgerMode, DidMethodDecl, DidMethodStatus, DidResolutionMode, EnumDecl, FailureDecl,
-        FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl, HandlerInstruction,
-        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl,
-        MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule,
-        PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl,
-        ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl,
-        SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl, TypeDecl,
+        ATrustEvidenceRequirement, ATrustExecution, ATrustHandshakeChallenge, ATrustHandshakeDecl,
+        ATrustHandshakeDirection, ATrustHandshakeDryRunMode, ATrustHandshakeMode,
+        ATrustHandshakeResponse, ATrustHandshakeTranscript, ATrustHandshakeVerification,
+        ATrustIdentityDecl, ATrustIdentityFormat, ATrustIdentityStatus, ATrustIdentityValidation,
+        ATrustMaterialBoundary, ATrustNetworkBoundary, ATrustPostQuantumRequirement,
+        ATrustResolutionMode, ATrustSecurityClaims, AdapterDecl, AdapterExecution,
+        AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork, AdapterProfileApiStyle,
+        AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution, AdapterProfileFamily,
+        AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, AgentDecl, Approval,
+        AssertionDecl, CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind,
+        CryptoStatus, CryptoStrength, DidLedgerMode, DidMethodDecl, DidMethodStatus,
+        DidResolutionMode, EnumDecl, FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus,
+        FieldDecl, HandlerDecl, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
+        HarnessSecrets, ImportDecl, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl,
+        PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
+        Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
+        ReceiveDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl,
+        TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -84,6 +87,7 @@ impl Parser {
             atrust_boundaries: Vec::new(),
             atrust_identities: Vec::new(),
             atrust_credential_contracts: Vec::new(),
+            atrust_handshakes: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -114,6 +118,7 @@ impl Parser {
                 Some("atrust_boundary") => program.atrust_boundaries.push(self.parse_atrust_boundary()?),
                 Some("atrust_identity") => program.atrust_identities.push(self.parse_atrust_identity()?),
                 Some("atrust_credential_contract") => program.atrust_credential_contracts.push(self.parse_atrust_credential_contract()?),
+                Some("atrust_handshake") => program.atrust_handshakes.push(self.parse_atrust_handshake()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -133,7 +138,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -2116,6 +2121,357 @@ impl Parser {
         })
     }
 
+    fn parse_atrust_handshake(&mut self) -> Result<ATrustHandshakeDecl, Diagnostic> {
+        self.expect_keyword("atrust_handshake")?;
+        let name = self.expect_identifier("atrust handshake name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut initiator = None;
+        let mut responder = None;
+        let mut initiator_identity = None;
+        let mut responder_identity = None;
+        let mut credential_contracts: Option<Vec<Spanned<String>>> = None;
+        let mut boundary = None;
+        let mut method = None;
+        let mut mode = None;
+        let mut direction = None;
+        let mut challenge = None;
+        let mut response = None;
+        let mut transcript = None;
+        let mut verification = None;
+        let mut resolution = None;
+        let mut network = None;
+        let mut key_material = None;
+        let mut secret_material = None;
+        let mut execution = None;
+        let mut evidence = None;
+        let mut security_claims = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated atrust_handshake declaration")?;
+            match self.peek_identifier() {
+                Some("initiator") => self.set_block_field(
+                    &mut initiator,
+                    "atrust_handshake",
+                    "initiator",
+                    |parser| parser.expect_identifier("atrust_handshake initiator agent"),
+                )?,
+                Some("responder") => self.set_block_field(
+                    &mut responder,
+                    "atrust_handshake",
+                    "responder",
+                    |parser| parser.expect_identifier("atrust_handshake responder agent"),
+                )?,
+                Some("initiator_identity") => self.set_block_field(
+                    &mut initiator_identity,
+                    "atrust_handshake",
+                    "initiator_identity",
+                    |parser| {
+                        parser.expect_identifier("atrust_handshake initiator_identity reference")
+                    },
+                )?,
+                Some("responder_identity") => self.set_block_field(
+                    &mut responder_identity,
+                    "atrust_handshake",
+                    "responder_identity",
+                    |parser| {
+                        parser.expect_identifier("atrust_handshake responder_identity reference")
+                    },
+                )?,
+                Some("credential_contracts") => self.set_block_field(
+                    &mut credential_contracts,
+                    "atrust_handshake",
+                    "credential_contracts",
+                    |parser| parser.parse_string_array("atrust_handshake credential_contracts"),
+                )?,
+                Some("boundary") => {
+                    self.set_block_field(&mut boundary, "atrust_handshake", "boundary", |parser| {
+                        parser.expect_identifier("atrust_handshake atrust_boundary reference")
+                    })?
+                }
+                Some("method") => {
+                    self.set_block_field(&mut method, "atrust_handshake", "method", |parser| {
+                        parser.expect_identifier("atrust_handshake did_method reference")
+                    })?
+                }
+                Some("mode") => {
+                    self.set_block_field(&mut mode, "atrust_handshake", "mode", |parser| {
+                        let token = parser.expect_identifier("atrust_handshake mode")?;
+                        let value = match token.value.as_str() {
+                            "dry_run" => ATrustHandshakeDryRunMode::DryRun,
+                            other => ATrustHandshakeDryRunMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("direction") => self.set_block_field(
+                    &mut direction,
+                    "atrust_handshake",
+                    "direction",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake direction")?;
+                        let value = match token.value.as_str() {
+                            "one_way" => ATrustHandshakeDirection::OneWay,
+                            "mutual" => ATrustHandshakeDirection::Mutual,
+                            other => ATrustHandshakeDirection::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("challenge") => self.set_block_field(
+                    &mut challenge,
+                    "atrust_handshake",
+                    "challenge",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake challenge")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustHandshakeChallenge::Disabled,
+                            "declared_only" => ATrustHandshakeChallenge::DeclaredOnly,
+                            other => ATrustHandshakeChallenge::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("response") => {
+                    self.set_block_field(&mut response, "atrust_handshake", "response", |parser| {
+                        let token = parser.expect_identifier("atrust_handshake response")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustHandshakeResponse::Disabled,
+                            "declared_only" => ATrustHandshakeResponse::DeclaredOnly,
+                            other => ATrustHandshakeResponse::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("transcript") => self.set_block_field(
+                    &mut transcript,
+                    "atrust_handshake",
+                    "transcript",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake transcript")?;
+                        let value = match token.value.as_str() {
+                            "metadata_only" => ATrustHandshakeTranscript::MetadataOnly,
+                            "evidence_only" => ATrustHandshakeTranscript::EvidenceOnly,
+                            other => ATrustHandshakeTranscript::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("verification") => self.set_block_field(
+                    &mut verification,
+                    "atrust_handshake",
+                    "verification",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake verification")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustHandshakeVerification::Disabled,
+                            "declared_only" => ATrustHandshakeVerification::DeclaredOnly,
+                            other => ATrustHandshakeVerification::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("resolution") => self.set_block_field(
+                    &mut resolution,
+                    "atrust_handshake",
+                    "resolution",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake resolution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustResolutionMode::Disabled,
+                            "embedded" => ATrustResolutionMode::Embedded,
+                            "local" => ATrustResolutionMode::Local,
+                            other => ATrustResolutionMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("network") => {
+                    self.set_block_field(&mut network, "atrust_handshake", "network", |parser| {
+                        let token = parser.expect_identifier("atrust_handshake network")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustNetworkBoundary::Denied,
+                            other => ATrustNetworkBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "atrust_handshake",
+                    "key_material",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake key_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "atrust_handshake",
+                    "secret_material",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake secret_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("execution") => self.set_block_field(
+                    &mut execution,
+                    "atrust_handshake",
+                    "execution",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake execution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustExecution::Disabled,
+                            other => ATrustExecution::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("evidence") => {
+                    self.set_block_field(&mut evidence, "atrust_handshake", "evidence", |parser| {
+                        let token = parser.expect_identifier("atrust_handshake evidence")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "atrust_handshake",
+                    "security_claims",
+                    |parser| {
+                        let token = parser.expect_identifier("atrust_handshake security_claims")?;
+                        let value = match token.value.as_str() {
+                            "none" => ATrustSecurityClaims::None,
+                            other => ATrustSecurityClaims::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "atrust_handshake", "purpose", |parser| {
+                        parser.parse_string_array("atrust_handshake purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "atrust_handshake", "notes", |parser| {
+                        parser.expect_string("atrust_handshake notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected atrust_handshake item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected an atrust_handshake field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        let unknown_mode = || {
+            Spanned::new(
+                ATrustHandshakeDryRunMode::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_dir = || {
+            Spanned::new(
+                ATrustHandshakeDirection::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_chal = || {
+            Spanned::new(
+                ATrustHandshakeChallenge::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_resp = || {
+            Spanned::new(
+                ATrustHandshakeResponse::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_trans = || {
+            Spanned::new(
+                ATrustHandshakeTranscript::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_ver = || {
+            Spanned::new(
+                ATrustHandshakeVerification::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_res =
+            || Spanned::new(ATrustResolutionMode::Unknown(String::new()), fallback_span);
+        let unknown_net =
+            || Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback_span);
+        let unknown_mat = || {
+            Spanned::new(
+                ATrustMaterialBoundary::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_exec = || Spanned::new(ATrustExecution::Unknown(String::new()), fallback_span);
+        let unknown_evid = || {
+            Spanned::new(
+                ATrustEvidenceRequirement::Unknown(String::new()),
+                fallback_span,
+            )
+        };
+        let unknown_claims =
+            || Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback_span);
+
+        Ok(ATrustHandshakeDecl {
+            name,
+            initiator: initiator.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            responder: responder.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            initiator_identity: initiator_identity
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            responder_identity: responder_identity
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            credential_contracts: credential_contracts.unwrap_or_default(),
+            boundary: boundary.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            method: method.unwrap_or_else(|| Spanned::new(String::new(), fallback_span)),
+            mode: mode.unwrap_or_else(unknown_mode),
+            direction: direction.unwrap_or_else(unknown_dir),
+            challenge: challenge.unwrap_or_else(unknown_chal),
+            response: response.unwrap_or_else(unknown_resp),
+            transcript: transcript.unwrap_or_else(unknown_trans),
+            verification: verification.unwrap_or_else(unknown_ver),
+            resolution: resolution.unwrap_or_else(unknown_res),
+            network: network.unwrap_or_else(unknown_net),
+            key_material: key_material.unwrap_or_else(unknown_mat),
+            secret_material: secret_material.unwrap_or_else(unknown_mat),
+            execution: execution.unwrap_or_else(unknown_exec),
+            evidence: evidence.unwrap_or_else(unknown_evid),
+            security_claims: security_claims.unwrap_or_else(unknown_claims),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -2337,6 +2693,42 @@ impl Parser {
             "atrust_credential_evidence_required" => PolicyRule::ATrustCredentialEvidenceRequired,
             "atrust_credential_security_claims_absent" => {
                 PolicyRule::ATrustCredentialSecurityClaimsAbsent
+            }
+            "atrust_handshake_declared" => PolicyRule::ATrustHandshakeDeclared,
+            "atrust_handshake_initiator_responder_valid" => {
+                PolicyRule::ATrustHandshakeInitiatorResponderValid
+            }
+            "atrust_handshake_identities_valid" => PolicyRule::ATrustHandshakeIdentitiesValid,
+            "atrust_handshake_credential_contracts_valid" => {
+                PolicyRule::ATrustHandshakeCredentialContractsValid
+            }
+            "atrust_handshake_boundary_method_valid" => {
+                PolicyRule::ATrustHandshakeBoundaryMethodValid
+            }
+            "atrust_handshake_mode_dry_run" => PolicyRule::ATrustHandshakeModeDryRun,
+            "atrust_handshake_direction_valid" => PolicyRule::ATrustHandshakeDirectionValid,
+            "atrust_handshake_challenge_declared_only" => {
+                PolicyRule::ATrustHandshakeChallengeDeclaredOnly
+            }
+            "atrust_handshake_response_declared_only" => {
+                PolicyRule::ATrustHandshakeResponseDeclaredOnly
+            }
+            "atrust_handshake_transcript_evidence_only" => {
+                PolicyRule::ATrustHandshakeTranscriptEvidenceOnly
+            }
+            "atrust_handshake_verification_declared_only" => {
+                PolicyRule::ATrustHandshakeVerificationDeclaredOnly
+            }
+            "atrust_handshake_resolution_disabled" => PolicyRule::ATrustHandshakeResolutionDisabled,
+            "atrust_handshake_network_denied" => PolicyRule::ATrustHandshakeNetworkDenied,
+            "atrust_handshake_key_material_denied" => PolicyRule::ATrustHandshakeKeyMaterialDenied,
+            "atrust_handshake_secret_material_denied" => {
+                PolicyRule::ATrustHandshakeSecretMaterialDenied
+            }
+            "atrust_handshake_execution_disabled" => PolicyRule::ATrustHandshakeExecutionDisabled,
+            "atrust_handshake_evidence_required" => PolicyRule::ATrustHandshakeEvidenceRequired,
+            "atrust_handshake_security_claims_absent" => {
+                PolicyRule::ATrustHandshakeSecurityClaimsAbsent
             }
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;

@@ -3,8 +3,8 @@ pub mod lower;
 
 pub use bytecode::{
     verify_bytecode, BytecodeATrustBoundary, BytecodeATrustCredentialContract,
-    BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent,
-    BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
+    BytecodeATrustHandshake, BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile,
+    BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
     BytecodeDidMethod, BytecodeError, BytecodeFailure, BytecodeFeature, BytecodeModel,
     BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,

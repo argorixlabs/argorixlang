@@ -1,0 +1,33 @@
+module policies.atrust_handshake
+
+capability trace.write { level safe }
+
+policy ATrustHandshakePolicy {
+  require atrust_did_methods_declared
+  require atrust_boundaries_declared
+  require atrust_identity_declared
+  require atrust_credential_contract_declared
+  require atrust_handshake_declared
+  require atrust_handshake_initiator_responder_valid
+  require atrust_handshake_identities_valid
+  require atrust_handshake_credential_contracts_valid
+  require atrust_handshake_boundary_method_valid
+  require atrust_handshake_mode_dry_run
+  require atrust_handshake_direction_valid
+  require atrust_handshake_challenge_declared_only
+  require atrust_handshake_response_declared_only
+  require atrust_handshake_transcript_evidence_only
+  require atrust_handshake_verification_declared_only
+  require atrust_handshake_resolution_disabled
+  require atrust_handshake_network_denied
+  require atrust_handshake_key_material_denied
+  require atrust_handshake_secret_material_denied
+  require atrust_handshake_execution_disabled
+  require atrust_handshake_evidence_required
+  require atrust_handshake_security_claims_absent
+
+  on violation {
+    action review
+    trace required
+  }
+}

@@ -1,11 +1,12 @@
 use crate::{
-    BytecodeATrustBoundary, BytecodeATrustCredentialContract, BytecodeATrustIdentity,
-    BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability,
-    BytecodeCrypto, BytecodeCryptoBoundary, BytecodeDidMethod, BytecodeFailure, BytecodeFeature,
-    BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn,
-    BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram,
-    BytecodeProviderContract, BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType,
-    BytecodeTypeField, Instruction,
+    BytecodeATrustBoundary, BytecodeATrustCredentialContract, BytecodeATrustHandshake,
+    BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent,
+    BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
+    BytecodeDidMethod, BytecodeFailure, BytecodeFeature, BytecodeModel, BytecodeModule,
+    BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
+    BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField,
+    Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -174,7 +175,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.28".to_owned(),
+        bytecode_version: "0.29".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -387,6 +388,35 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 notes: c.notes.clone(),
             })
             .collect(),
+        atrust_handshakes: ir
+            .atrust_handshakes
+            .iter()
+            .map(|h| BytecodeATrustHandshake {
+                name: h.name.clone(),
+                initiator: h.initiator.clone(),
+                responder: h.responder.clone(),
+                initiator_identity: h.initiator_identity.clone(),
+                responder_identity: h.responder_identity.clone(),
+                credential_contracts: h.credential_contracts.clone(),
+                boundary: h.boundary.clone(),
+                method: h.method.clone(),
+                mode: h.mode.clone(),
+                direction: h.direction.clone(),
+                challenge: h.challenge.clone(),
+                response: h.response.clone(),
+                transcript: h.transcript.clone(),
+                verification: h.verification.clone(),
+                resolution: h.resolution.clone(),
+                network: h.network.clone(),
+                key_material: h.key_material.clone(),
+                secret_material: h.secret_material.clone(),
+                execution: h.execution.clone(),
+                evidence: h.evidence.clone(),
+                security_claims: h.security_claims.clone(),
+                purpose: h.purpose.clone(),
+                notes: h.notes.clone(),
+            })
+            .collect(),
         imports: ir
             .imports
             .iter()
@@ -568,6 +598,7 @@ mod tests {
             atrust_boundaries: vec![],
             atrust_identities: vec![],
             atrust_credential_contracts: vec![],
+            atrust_handshakes: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -633,7 +664,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.28");
+        assert_eq!(bytecode.bytecode_version, "0.29");
         assert!(bytecode
             .instructions
             .iter()
@@ -727,6 +758,7 @@ mod tests {
             atrust_boundaries: vec![],
             atrust_identities: vec![],
             atrust_credential_contracts: vec![],
+            atrust_handshakes: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -740,7 +772,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.28");
+        assert_eq!(bytecode.bytecode_version, "0.29");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

@@ -1,0 +1,156 @@
+module ATrustHandshakeDemo
+
+crypto sha256 { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }
+crypto ml_dsa { kind signature status post_quantum_candidate strength post_quantum purpose ["signature"] }
+crypto ml_kem { kind kem status post_quantum_candidate strength post_quantum purpose ["kem"] }
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  allowed_signatures ["ml_dsa"]
+  allowed_kems ["ml_kem"]
+  min_hash_bits 256
+  post_quantum_ready true
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["handshake"]
+}
+
+did_method argorix {
+  status experimental
+  resolution embedded
+  ledger local
+  crypto_boundary TrustBoundary
+  purpose ["identity"]
+}
+
+atrust_boundary AgentTrustBoundary {
+  crypto_boundary TrustBoundary
+  did_methods ["argorix"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity ResearchIdentity {
+  subject ResearchAgent
+  did "did:argorix:research-agent-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity VerifierIdentity {
+  subject VerifierAgent
+  did "did:argorix:verifier-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_credential_contract ResearchCredential {
+  subject ResearchAgent
+  identity ResearchIdentity
+  boundary AgentTrustBoundary
+  method argorix
+  issuer_did "did:argorix:issuer-v1"
+  holder_did "did:argorix:research-agent-v1"
+  credential_type "ResearchAccessCredential"
+  schema "argorix:credential:research-access:v1"
+  status declared
+  verification declared_only
+  presentation disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  claims ["role", "scope"]
+  purpose ["credential"]
+}
+
+atrust_handshake ResearchHandshake {
+  initiator ResearchAgent
+  responder VerifierAgent
+  initiator_identity ResearchIdentity
+  responder_identity VerifierIdentity
+  credential_contracts ["ResearchCredential"]
+  boundary AgentTrustBoundary
+  method argorix
+  mode dry_run
+  direction mutual
+  challenge declared_only
+  response declared_only
+  transcript evidence_only
+  verification declared_only
+  resolution disabled
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["handshake", "identity-link", "credential-contract", "dry-run"]
+  notes "metadata only; no real handshake"
+}
+
+type UserPrompt { content: string }
+agent ResearchAgent { receives UserPrompt }
+agent VerifierAgent { receives UserPrompt }
+
+protocol Demo {
+  User -> ResearchAgent: tell UserPrompt
+}
+
+policy ATrustHandshakePolicy {
+  require atrust_did_methods_declared
+  require atrust_boundaries_declared
+  require atrust_identity_declared
+  require atrust_credential_contract_declared
+  require atrust_handshake_declared
+  require atrust_handshake_initiator_responder_valid
+  require atrust_handshake_identities_valid
+  require atrust_handshake_credential_contracts_valid
+  require atrust_handshake_boundary_method_valid
+  require atrust_handshake_mode_dry_run
+  require atrust_handshake_direction_valid
+  require atrust_handshake_challenge_declared_only
+  require atrust_handshake_response_declared_only
+  require atrust_handshake_transcript_evidence_only
+  require atrust_handshake_verification_declared_only
+  require atrust_handshake_resolution_disabled
+  require atrust_handshake_network_denied
+  require atrust_handshake_key_material_denied
+  require atrust_handshake_secret_material_denied
+  require atrust_handshake_execution_disabled
+  require atrust_handshake_evidence_required
+  require atrust_handshake_security_claims_absent
+
+  on violation {
+    action review
+    trace required
+  }
+}

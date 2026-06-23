@@ -223,6 +223,7 @@ mod tests {
             atrust_boundaries: vec![],
             atrust_identities: vec![],
             atrust_credential_contracts: vec![],
+            atrust_handshakes: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

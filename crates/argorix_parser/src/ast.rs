@@ -16,6 +16,7 @@ pub struct Program {
     pub atrust_boundaries: Vec<ATrustBoundaryDecl>,
     pub atrust_identities: Vec<ATrustIdentityDecl>,
     pub atrust_credential_contracts: Vec<ATrustCredentialContractDecl>,
+    pub atrust_handshakes: Vec<ATrustHandshakeDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -809,6 +810,24 @@ pub enum PolicyRule {
     ATrustCredentialExecutionDisabled,
     ATrustCredentialEvidenceRequired,
     ATrustCredentialSecurityClaimsAbsent,
+    ATrustHandshakeDeclared,
+    ATrustHandshakeInitiatorResponderValid,
+    ATrustHandshakeIdentitiesValid,
+    ATrustHandshakeCredentialContractsValid,
+    ATrustHandshakeBoundaryMethodValid,
+    ATrustHandshakeModeDryRun,
+    ATrustHandshakeDirectionValid,
+    ATrustHandshakeChallengeDeclaredOnly,
+    ATrustHandshakeResponseDeclaredOnly,
+    ATrustHandshakeTranscriptEvidenceOnly,
+    ATrustHandshakeVerificationDeclaredOnly,
+    ATrustHandshakeResolutionDisabled,
+    ATrustHandshakeNetworkDenied,
+    ATrustHandshakeKeyMaterialDenied,
+    ATrustHandshakeSecretMaterialDenied,
+    ATrustHandshakeExecutionDisabled,
+    ATrustHandshakeEvidenceRequired,
+    ATrustHandshakeSecurityClaimsAbsent,
     Unknown(String),
 }
 
@@ -917,6 +936,34 @@ impl PolicyRule {
             Self::ATrustCredentialSecurityClaimsAbsent => {
                 "atrust_credential_security_claims_absent"
             }
+            Self::ATrustHandshakeDeclared => "atrust_handshake_declared",
+            Self::ATrustHandshakeInitiatorResponderValid => {
+                "atrust_handshake_initiator_responder_valid"
+            }
+            Self::ATrustHandshakeIdentitiesValid => "atrust_handshake_identities_valid",
+            Self::ATrustHandshakeCredentialContractsValid => {
+                "atrust_handshake_credential_contracts_valid"
+            }
+            Self::ATrustHandshakeBoundaryMethodValid => "atrust_handshake_boundary_method_valid",
+            Self::ATrustHandshakeModeDryRun => "atrust_handshake_mode_dry_run",
+            Self::ATrustHandshakeDirectionValid => "atrust_handshake_direction_valid",
+            Self::ATrustHandshakeChallengeDeclaredOnly => {
+                "atrust_handshake_challenge_declared_only"
+            }
+            Self::ATrustHandshakeResponseDeclaredOnly => "atrust_handshake_response_declared_only",
+            Self::ATrustHandshakeTranscriptEvidenceOnly => {
+                "atrust_handshake_transcript_evidence_only"
+            }
+            Self::ATrustHandshakeVerificationDeclaredOnly => {
+                "atrust_handshake_verification_declared_only"
+            }
+            Self::ATrustHandshakeResolutionDisabled => "atrust_handshake_resolution_disabled",
+            Self::ATrustHandshakeNetworkDenied => "atrust_handshake_network_denied",
+            Self::ATrustHandshakeKeyMaterialDenied => "atrust_handshake_key_material_denied",
+            Self::ATrustHandshakeSecretMaterialDenied => "atrust_handshake_secret_material_denied",
+            Self::ATrustHandshakeExecutionDisabled => "atrust_handshake_execution_disabled",
+            Self::ATrustHandshakeEvidenceRequired => "atrust_handshake_evidence_required",
+            Self::ATrustHandshakeSecurityClaimsAbsent => "atrust_handshake_security_claims_absent",
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -1552,6 +1599,151 @@ impl ATrustCredentialPresentation {
         match self {
             Self::Disabled => "disabled",
             Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+/// A top-level `atrust_handshake` block declaring an ATrust handshake dry-run contract.
+/// v0.29 is handshake dry-run metadata + evidence only. No real crypto, network, nonces,
+/// signatures, or live challenge-response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ATrustHandshakeDecl {
+    pub name: Spanned<String>,
+    pub initiator: Spanned<String>,
+    pub responder: Spanned<String>,
+    pub initiator_identity: Spanned<String>,
+    pub responder_identity: Spanned<String>,
+    pub credential_contracts: Vec<Spanned<String>>,
+    pub boundary: Spanned<String>,
+    pub method: Spanned<String>,
+    pub mode: Spanned<ATrustHandshakeDryRunMode>,
+    pub direction: Spanned<ATrustHandshakeDirection>,
+    pub challenge: Spanned<ATrustHandshakeChallenge>,
+    pub response: Spanned<ATrustHandshakeResponse>,
+    pub transcript: Spanned<ATrustHandshakeTranscript>,
+    pub verification: Spanned<ATrustHandshakeVerification>,
+    pub resolution: Spanned<ATrustResolutionMode>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub evidence: Spanned<ATrustEvidenceRequirement>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustHandshakeDryRunMode {
+    DryRun,
+    Unknown(String),
+}
+
+impl ATrustHandshakeDryRunMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::DryRun => "dry_run",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustHandshakeDirection {
+    OneWay,
+    Mutual,
+    Unknown(String),
+}
+
+impl ATrustHandshakeDirection {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::OneWay => "one_way",
+            Self::Mutual => "mutual",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustHandshakeChallenge {
+    Disabled,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl ATrustHandshakeChallenge {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustHandshakeResponse {
+    Disabled,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl ATrustHandshakeResponse {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustHandshakeTranscript {
+    MetadataOnly,
+    EvidenceOnly,
+    Unknown(String),
+}
+
+impl ATrustHandshakeTranscript {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::MetadataOnly => "metadata_only",
+            Self::EvidenceOnly => "evidence_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustHandshakeVerification {
+    Disabled,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl ATrustHandshakeVerification {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustNetworkBoundary {
+    Denied,
+    Unknown(String),
+}
+
+impl ATrustNetworkBoundary {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Denied => "denied",
             Self::Unknown(value) => value,
         }
     }

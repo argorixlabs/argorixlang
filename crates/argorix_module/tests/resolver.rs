@@ -65,7 +65,7 @@ fn package_ir_carries_module_metadata() {
     let package = resolve_package(&manifest("module_project/argorix.toml")).unwrap();
     let merged = check_package(&package).unwrap();
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.28");
+    assert_eq!(ir.ir_version, "0.29");
     assert_eq!(ir.module, "app.main");
     assert_eq!(ir.modules.len(), 6);
     assert_eq!(ir.imports.len(), 5);
@@ -135,4 +135,25 @@ fn diagnostics_contain_no_absolute_paths() {
         resolve_package(&manifest("invalid_modules/unknown_import/argorix.toml")).unwrap_err();
     let message = error.to_string();
     assert!(!message.contains(':') || !message.contains('\\'));
+}
+
+#[test]
+fn resolves_and_checks_atrust_handshake_package() {
+    let package = resolve_package(&manifest("atrust_handshake_project/argorix.toml")).unwrap();
+    assert_eq!(package.graph.entry, "app.main");
+
+    let merged = check_package(&package).expect("handshake package checks");
+    assert_eq!(merged.atrust_handshakes.len(), 1);
+    assert_eq!(merged.atrust_handshakes[0].name.value, "ResearchHandshake");
+
+    // The dry-run handshake metadata survives merge + IR construction at 0.29.
+    let ir = package_ir(&merged, &package.graph);
+    assert_eq!(ir.ir_version, "0.29");
+    assert_eq!(ir.atrust_handshakes.len(), 1);
+    let hs = &ir.atrust_handshakes[0];
+    assert_eq!(hs.initiator, "ResearchAgent");
+    assert_eq!(hs.responder, "VerifierAgent");
+    assert_eq!(hs.mode, "dry_run");
+    assert_eq!(hs.network, "denied");
+    assert_eq!(hs.credential_contracts, vec!["ResearchCredential"]);
 }

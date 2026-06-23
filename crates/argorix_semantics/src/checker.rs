@@ -1,16 +1,16 @@
 use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
     ast::{
-        ATrustCredentialMode, ATrustEvidenceRequirement, ATrustExecution, ATrustHandshakeMode,
-        ATrustIdentityFormat, ATrustIdentityStatus, ATrustIdentityValidation,
-        ATrustMaterialBoundary, ATrustResolutionMode, ATrustSecurityClaims, AdapterExecution,
-        AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork, AdapterProfileApiStyle,
-        AdapterProfileAuth, AdapterProfileExecution, AdapterProfileFamily, AdapterProfileNetwork,
-        AdapterProfileSecrets, AdapterSecrets, Approval, CapabilityLevel, CryptoKind, CryptoStatus,
-        CryptoStrength, DidLedgerMode, DidMethodStatus, DidResolutionMode, FeatureDefault,
-        FeatureStatus, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
-        HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program, SecretAccess,
-        SecretScope, SecretSource,
+        ATrustCredentialContractDecl, ATrustCredentialMode, ATrustEvidenceRequirement,
+        ATrustExecution, ATrustHandshakeMode, ATrustIdentityFormat, ATrustIdentityStatus,
+        ATrustIdentityValidation, ATrustMaterialBoundary, ATrustResolutionMode,
+        ATrustSecurityClaims, AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode,
+        AdapterNetwork, AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileExecution,
+        AdapterProfileFamily, AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets,
+        Approval, CapabilityLevel, CryptoKind, CryptoStatus, CryptoStrength, DidLedgerMode,
+        DidMethodStatus, DidResolutionMode, FeatureDefault, FeatureStatus, HandlerInstruction,
+        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl,
+        PolicyViolationAction, Program, SecretAccess, SecretScope, SecretSource,
     },
     diagnostics::Diagnostic,
     span::Spanned,
@@ -42,6 +42,8 @@ pub fn check_program_with_options(
     check_did_methods(program, &symbols, &mut diagnostics);
     check_atrust_boundaries(program, &symbols, &mut diagnostics);
     check_atrust_identities(program, &symbols, &mut diagnostics);
+    check_atrust_credential_contracts(program, &symbols, &mut diagnostics);
+    check_atrust_handshakes(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -2858,6 +2860,362 @@ fn check_atrust_credential_contracts(
     }
 }
 
+fn check_atrust_handshakes(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    use std::collections::HashMap;
+
+    // Lookup maps for cross-reference validation against declared identities,
+    // credential contracts, and boundaries. v0.29 handshakes are dry-run
+    // governance metadata: we validate the declared trust flow, never execute it.
+    let identities: HashMap<&str, &argorix_parser::ast::ATrustIdentityDecl> = program
+        .atrust_identities
+        .iter()
+        .map(|i| (i.name.value.as_str(), i))
+        .collect();
+    let contracts: HashMap<&str, &ATrustCredentialContractDecl> = program
+        .atrust_credential_contracts
+        .iter()
+        .map(|c| (c.name.value.as_str(), c))
+        .collect();
+    let boundaries: HashMap<&str, &argorix_parser::ast::ATrustBoundaryDecl> = program
+        .atrust_boundaries
+        .iter()
+        .map(|b| (b.name.value.as_str(), b))
+        .collect();
+
+    let mut names = HashSet::new();
+    for h in &program.atrust_handshakes {
+        report_duplicate(&mut names, &h.name, "atrust_handshake", diagnostics);
+        let name = h.name.value.clone();
+
+        // --- required field presence ---
+        if h.initiator.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` is missing required field `initiator`"),
+                h.initiator.span,
+            ));
+        }
+        if h.responder.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` is missing required field `responder`"),
+                h.responder.span,
+            ));
+        }
+        if h.initiator_identity.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` is missing required field `initiator_identity`"),
+                h.initiator_identity.span,
+            ));
+        }
+        if h.responder_identity.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` is missing required field `responder_identity`"),
+                h.responder_identity.span,
+            ));
+        }
+        if h.credential_contracts.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_handshake `{name}` is missing required field `credential_contracts`"
+                ),
+                h.name.span,
+            ));
+        }
+        if h.boundary.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` is missing required field `boundary`"),
+                h.boundary.span,
+            ));
+        }
+        if h.method.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` is missing required field `method`"),
+                h.method.span,
+            ));
+        }
+        if h.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` is missing required field `purpose`"),
+                h.name.span,
+            ));
+        }
+        for p in &h.purpose {
+            if p.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("atrust_handshake `{name}` purpose must not contain empty strings"),
+                    p.span,
+                ));
+            }
+        }
+        if let Some(notes) = &h.notes {
+            if notes.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("atrust_handshake `{name}` notes must not be empty"),
+                    notes.span,
+                ));
+            }
+        }
+
+        // --- enumerated boundary values (dry-run only) ---
+        if h.mode.value.source_name() != "dry_run" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires mode `dry_run`"),
+                h.mode.span,
+            ));
+        }
+        if !matches!(h.direction.value.source_name(), "one_way" | "mutual") {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires direction `one_way` or `mutual`"),
+                h.direction.span,
+            ));
+        }
+        if !matches!(
+            h.challenge.value.source_name(),
+            "declared_only" | "disabled"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_handshake `{name}` requires challenge `declared_only` or `disabled`"
+                ),
+                h.challenge.span,
+            ));
+        }
+        if !matches!(h.response.value.source_name(), "declared_only" | "disabled") {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_handshake `{name}` requires response `declared_only` or `disabled`"
+                ),
+                h.response.span,
+            ));
+        }
+        if !matches!(
+            h.transcript.value.source_name(),
+            "metadata_only" | "evidence_only"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires transcript `metadata_only` or `evidence_only`"),
+                h.transcript.span,
+            ));
+        }
+        if !matches!(
+            h.verification.value.source_name(),
+            "declared_only" | "disabled"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_handshake `{name}` requires verification `declared_only` or `disabled`"
+                ),
+                h.verification.span,
+            ));
+        }
+        if !matches!(
+            h.resolution.value.source_name(),
+            "disabled" | "embedded" | "local"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` resolution must be `disabled`, `embedded`, or `local`"),
+                h.resolution.span,
+            ));
+        }
+        if h.network.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires network `denied`"),
+                h.network.span,
+            ));
+        }
+        if h.key_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires key_material `denied`"),
+                h.key_material.span,
+            ));
+        }
+        if h.secret_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires secret_material `denied`"),
+                h.secret_material.span,
+            ));
+        }
+        if h.execution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires execution `disabled`"),
+                h.execution.span,
+            ));
+        }
+        if h.evidence.value.source_name() != "required" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires evidence `required`"),
+                h.evidence.span,
+            ));
+        }
+        if h.security_claims.value.source_name() != "none" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` requires security_claims `none`"),
+                h.security_claims.span,
+            ));
+        }
+
+        // --- cross-reference validation (only when references are present) ---
+        if !h.initiator.value.is_empty() && !symbols.agents.contains(&h.initiator.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_handshake `{name}` references unknown initiator agent `{}`",
+                    h.initiator.value
+                ),
+                h.initiator.span,
+            ));
+        }
+        if !h.responder.value.is_empty() && !symbols.agents.contains(&h.responder.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_handshake `{name}` references unknown responder agent `{}`",
+                    h.responder.value
+                ),
+                h.responder.span,
+            ));
+        }
+        if !h.initiator.value.is_empty() && h.initiator.value == h.responder.value {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_handshake `{name}` initiator and responder must be distinct"),
+                h.responder.span,
+            ));
+        }
+        if !h.boundary.value.is_empty() && !symbols.atrust_boundaries.contains(&h.boundary.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_handshake `{name}` references unknown atrust_boundary `{}`",
+                    h.boundary.value
+                ),
+                h.boundary.span,
+            ));
+        }
+        if !h.method.value.is_empty() && !symbols.did_methods.contains(&h.method.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_handshake `{name}` references unknown did_method `{}`",
+                    h.method.value
+                ),
+                h.method.span,
+            ));
+        }
+        if let Some(b) = boundaries.get(h.boundary.value.as_str()) {
+            if !h.method.value.is_empty()
+                && !b.did_methods.iter().any(|m| m.value == h.method.value)
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_handshake `{name}` method `{}` is not allowed by boundary `{}`",
+                        h.method.value, h.boundary.value
+                    ),
+                    h.method.span,
+                ));
+            }
+        }
+
+        // initiator identity
+        if !h.initiator_identity.value.is_empty() {
+            match identities.get(h.initiator_identity.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_handshake `{name}` references unknown initiator_identity `{}`",
+                        h.initiator_identity.value
+                    ),
+                    h.initiator_identity.span,
+                )),
+                Some(id) => {
+                    if !h.initiator.value.is_empty() && id.subject.value != h.initiator.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` initiator_identity subject `{}` does not match initiator `{}`", id.subject.value, h.initiator.value),
+                            h.initiator_identity.span,
+                        ));
+                    }
+                    if !h.boundary.value.is_empty() && id.boundary.value != h.boundary.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` initiator_identity boundary `{}` does not match handshake boundary `{}`", id.boundary.value, h.boundary.value),
+                            h.initiator_identity.span,
+                        ));
+                    }
+                    if !h.method.value.is_empty() && id.method.value != h.method.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` initiator_identity method `{}` does not match handshake method `{}`", id.method.value, h.method.value),
+                            h.initiator_identity.span,
+                        ));
+                    }
+                }
+            }
+        }
+        // responder identity
+        if !h.responder_identity.value.is_empty() {
+            match identities.get(h.responder_identity.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_handshake `{name}` references unknown responder_identity `{}`",
+                        h.responder_identity.value
+                    ),
+                    h.responder_identity.span,
+                )),
+                Some(id) => {
+                    if !h.responder.value.is_empty() && id.subject.value != h.responder.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` responder_identity subject `{}` does not match responder `{}`", id.subject.value, h.responder.value),
+                            h.responder_identity.span,
+                        ));
+                    }
+                    if !h.boundary.value.is_empty() && id.boundary.value != h.boundary.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` responder_identity boundary `{}` does not match handshake boundary `{}`", id.boundary.value, h.boundary.value),
+                            h.responder_identity.span,
+                        ));
+                    }
+                    if !h.method.value.is_empty() && id.method.value != h.method.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` responder_identity method `{}` does not match handshake method `{}`", id.method.value, h.method.value),
+                            h.responder_identity.span,
+                        ));
+                    }
+                }
+            }
+        }
+        // credential contracts must exist, bind to a participant identity, and
+        // share the handshake boundary + method.
+        for c in &h.credential_contracts {
+            match contracts.get(c.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_handshake `{name}` references unknown credential_contract `{}`",
+                        c.value
+                    ),
+                    c.span,
+                )),
+                Some(contract) => {
+                    let participant = contract.identity.value == h.initiator_identity.value
+                        || contract.identity.value == h.responder_identity.value;
+                    if !participant {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` credential_contract `{}` is not bound to a participant identity", c.value),
+                            c.span,
+                        ));
+                    }
+                    if !h.boundary.value.is_empty() && contract.boundary.value != h.boundary.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` credential_contract `{}` boundary `{}` does not match handshake boundary `{}`", c.value, contract.boundary.value, h.boundary.value),
+                            c.span,
+                        ));
+                    }
+                    if !h.method.value.is_empty() && contract.method.value != h.method.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("atrust_handshake `{name}` credential_contract `{}` method `{}` does not match handshake method `{}`", c.value, contract.method.value, h.method.value),
+                            c.span,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::check_program;
@@ -3249,5 +3607,379 @@ mod tests {
             "harness H { provider OpenAI feature Ghost mode dry_run network denied secrets denied filesystem none }",
         );
         assert!(unknown.iter().any(|m| m.contains("unknown feature")));
+    }
+}
+
+#[cfg(test)]
+mod atrust_handshake_tests {
+    use super::check_program;
+    use argorix_parser::parse_source;
+
+    /// Builds a full, otherwise-valid v0.29 program with the supplied
+    /// `atrust_handshake` block spliced in.
+    fn program_with(handshake: &str) -> String {
+        format!(
+            r#"module HandshakeTest
+
+crypto_boundary TrustBoundary {{
+  allowed_hashes ["sha256"]
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["handshake"]
+}}
+
+did_method argorix {{
+  status experimental
+  resolution embedded
+  ledger local
+  crypto_boundary TrustBoundary
+  purpose ["identity"]
+}}
+
+atrust_boundary AgentTrustBoundary {{
+  crypto_boundary TrustBoundary
+  did_methods ["argorix"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  security_claims none
+  purpose ["identity"]
+}}
+
+atrust_identity ResearchIdentity {{
+  subject ResearchAgent
+  did "did:argorix:research-agent-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}}
+
+atrust_identity VerifierIdentity {{
+  subject VerifierAgent
+  did "did:argorix:verifier-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}}
+
+atrust_credential_contract ResearchCredential {{
+  subject ResearchAgent
+  identity ResearchIdentity
+  boundary AgentTrustBoundary
+  method argorix
+  issuer_did "did:argorix:issuer-v1"
+  holder_did "did:argorix:research-agent-v1"
+  credential_type "ResearchAccessCredential"
+  schema "argorix:credential:research-access:v1"
+  status declared
+  verification declared_only
+  presentation disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  claims ["role", "scope"]
+  purpose ["credential"]
+}}
+
+{handshake}
+
+type UserPrompt {{ content: string }}
+agent ResearchAgent {{ receives UserPrompt }}
+agent VerifierAgent {{ receives UserPrompt }}
+
+protocol Demo {{
+  User -> ResearchAgent: tell UserPrompt
+}}
+"#
+        )
+    }
+
+    const VALID: &str = r#"atrust_handshake ResearchHandshake {
+  initiator ResearchAgent
+  responder VerifierAgent
+  initiator_identity ResearchIdentity
+  responder_identity VerifierIdentity
+  credential_contracts ["ResearchCredential"]
+  boundary AgentTrustBoundary
+  method argorix
+  mode dry_run
+  direction mutual
+  challenge declared_only
+  response declared_only
+  transcript evidence_only
+  verification declared_only
+  resolution disabled
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["handshake", "dry-run"]
+}"#;
+
+    /// Returns a copy of VALID with the line containing `remove_contains`
+    /// dropped (modeling a missing field) or replaced by `replacement`.
+    fn variant(remove_contains: &str, replacement: Option<&str>) -> String {
+        VALID
+            .lines()
+            .filter_map(|l| {
+                if l.contains(remove_contains) {
+                    replacement.map(|r| format!("  {r}"))
+                } else {
+                    Some(l.to_owned())
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn accepts(handshake: &str) {
+        let src = program_with(handshake);
+        let ast = parse_source(&src).expect("parse");
+        check_program(&ast).expect("semantic check should pass");
+    }
+
+    fn rejects(handshake: &str) {
+        let src = program_with(handshake);
+        let ast = parse_source(&src).expect("parse");
+        assert!(check_program(&ast).is_err(), "expected semantic rejection");
+    }
+
+    #[test]
+    fn accepts_valid_handshake() {
+        accepts(VALID);
+    }
+
+    #[test]
+    fn parses_handshake_block() {
+        let ast = parse_source(&program_with(VALID)).expect("parse");
+        assert_eq!(ast.atrust_handshakes.len(), 1);
+        assert_eq!(ast.atrust_handshakes[0].name.value, "ResearchHandshake");
+    }
+
+    #[test]
+    fn rejects_missing_initiator() {
+        rejects(&variant("initiator ResearchAgent", None));
+    }
+
+    #[test]
+    fn rejects_unknown_initiator() {
+        rejects(&variant(
+            "initiator ResearchAgent",
+            Some("initiator GhostAgent"),
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_responder() {
+        rejects(&variant("responder VerifierAgent", None));
+    }
+
+    #[test]
+    fn rejects_unknown_responder() {
+        rejects(&variant(
+            "responder VerifierAgent",
+            Some("responder GhostAgent"),
+        ));
+    }
+
+    #[test]
+    fn rejects_same_initiator_responder() {
+        rejects(&variant(
+            "responder VerifierAgent",
+            Some("responder ResearchAgent"),
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_initiator_identity() {
+        rejects(&variant("initiator_identity ResearchIdentity", None));
+    }
+
+    #[test]
+    fn rejects_unknown_initiator_identity() {
+        rejects(&variant(
+            "initiator_identity ResearchIdentity",
+            Some("initiator_identity GhostIdentity"),
+        ));
+    }
+
+    #[test]
+    fn rejects_initiator_identity_subject_mismatch() {
+        // VerifierIdentity has subject VerifierAgent, not the initiator agent.
+        rejects(&variant(
+            "initiator_identity ResearchIdentity",
+            Some("initiator_identity VerifierIdentity"),
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_responder_identity() {
+        rejects(&variant("responder_identity VerifierIdentity", None));
+    }
+
+    #[test]
+    fn rejects_unknown_responder_identity() {
+        rejects(&variant(
+            "responder_identity VerifierIdentity",
+            Some("responder_identity GhostIdentity"),
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_credential_contracts() {
+        rejects(&variant("credential_contracts", None));
+    }
+
+    #[test]
+    fn rejects_unknown_credential_contract() {
+        rejects(&variant(
+            "credential_contracts",
+            Some(r#"credential_contracts ["GhostCredential"]"#),
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_boundary() {
+        rejects(&variant("boundary AgentTrustBoundary", None));
+    }
+
+    #[test]
+    fn rejects_unknown_boundary() {
+        rejects(&variant(
+            "boundary AgentTrustBoundary",
+            Some("boundary GhostBoundary"),
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_method() {
+        rejects(&variant("method argorix", None));
+    }
+
+    #[test]
+    fn rejects_unknown_method() {
+        rejects(&variant("method argorix", Some("method ghostdid")));
+    }
+
+    #[test]
+    fn rejects_missing_mode() {
+        rejects(&variant("mode dry_run", None));
+    }
+
+    #[test]
+    fn rejects_mode_real() {
+        rejects(&variant("mode dry_run", Some("mode real")));
+    }
+
+    #[test]
+    fn rejects_missing_direction() {
+        rejects(&variant("direction mutual", None));
+    }
+
+    #[test]
+    fn rejects_challenge_generated() {
+        rejects(&variant(
+            "challenge declared_only",
+            Some("challenge generated"),
+        ));
+    }
+
+    #[test]
+    fn rejects_response_signed() {
+        rejects(&variant("response declared_only", Some("response signed")));
+    }
+
+    #[test]
+    fn rejects_transcript_raw() {
+        rejects(&variant("transcript evidence_only", Some("transcript raw")));
+    }
+
+    #[test]
+    fn rejects_verification_real() {
+        rejects(&variant(
+            "verification declared_only",
+            Some("verification real"),
+        ));
+    }
+
+    #[test]
+    fn rejects_resolution_remote() {
+        rejects(&variant("resolution disabled", Some("resolution remote")));
+    }
+
+    #[test]
+    fn rejects_network_allowed() {
+        rejects(&variant("network denied", Some("network allowed")));
+    }
+
+    #[test]
+    fn rejects_key_material_allowed() {
+        rejects(&variant(
+            "key_material denied",
+            Some("key_material allowed"),
+        ));
+    }
+
+    #[test]
+    fn rejects_secret_material_allowed() {
+        rejects(&variant(
+            "secret_material denied",
+            Some("secret_material allowed"),
+        ));
+    }
+
+    #[test]
+    fn rejects_execution_enabled() {
+        rejects(&variant("execution disabled", Some("execution enabled")));
+    }
+
+    #[test]
+    fn rejects_evidence_optional() {
+        rejects(&variant("evidence required", Some("evidence optional")));
+    }
+
+    #[test]
+    fn rejects_security_claims_present() {
+        rejects(&variant(
+            "security_claims none",
+            Some("security_claims handshake_secure"),
+        ));
+    }
+
+    #[test]
+    fn rejects_empty_purpose() {
+        rejects(&variant("purpose", Some("purpose []")));
+    }
+
+    #[test]
+    fn rejects_duplicate_handshake() {
+        let two = format!("{VALID}\n\n{VALID}");
+        rejects(&two);
     }
 }

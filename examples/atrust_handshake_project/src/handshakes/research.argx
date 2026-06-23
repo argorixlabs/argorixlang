@@ -1,0 +1,26 @@
+module handshakes.research
+
+atrust_handshake ResearchHandshake {
+  initiator ResearchAgent
+  responder VerifierAgent
+  initiator_identity ResearchIdentity
+  responder_identity VerifierIdentity
+  credential_contracts ["ResearchCredential"]
+  boundary AgentTrustBoundary
+  method argorix
+  mode dry_run
+  direction mutual
+  challenge declared_only
+  response declared_only
+  transcript evidence_only
+  verification declared_only
+  resolution disabled
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["handshake", "identity-link", "credential-contract", "dry-run"]
+  notes "metadata only; no real handshake"
+}

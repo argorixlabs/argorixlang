@@ -1,0 +1,228 @@
+module InvalidHandshake
+
+crypto sha256 { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }
+crypto ml_dsa { kind signature status post_quantum_candidate strength post_quantum purpose ["signature"] }
+crypto ml_kem { kind kem status post_quantum_candidate strength post_quantum purpose ["kem"] }
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  allowed_signatures ["ml_dsa"]
+  allowed_kems ["ml_kem"]
+  min_hash_bits 256
+  post_quantum_ready true
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["handshake"]
+}
+
+did_method argorix {
+  status experimental
+  resolution embedded
+  ledger local
+  crypto_boundary TrustBoundary
+  purpose ["identity"]
+}
+
+did_method other {
+  status experimental
+  resolution embedded
+  ledger local
+  crypto_boundary TrustBoundary
+  purpose ["identity"]
+}
+
+atrust_boundary AgentTrustBoundary {
+  crypto_boundary TrustBoundary
+  did_methods ["argorix", "other"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_boundary OtherBoundary {
+  crypto_boundary TrustBoundary
+  did_methods ["argorix", "other"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity ResearchIdentity {
+  subject ResearchAgent
+  did "did:argorix:research-agent-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity VerifierIdentity {
+  subject VerifierAgent
+  did "did:argorix:verifier-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity OtherIdentity {
+  subject VerifierAgent
+  did "did:argorix:other-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_credential_contract ResearchCredential {
+  subject ResearchAgent
+  identity ResearchIdentity
+  boundary AgentTrustBoundary
+  method argorix
+  issuer_did "did:argorix:issuer-v1"
+  holder_did "did:argorix:research-agent-v1"
+  credential_type "ResearchAccessCredential"
+  schema "argorix:credential:research-access:v1"
+  status declared
+  verification declared_only
+  presentation disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  claims ["role", "scope"]
+  purpose ["credential"]
+}
+
+atrust_credential_contract OtherCredential {
+  subject VerifierAgent
+  identity OtherIdentity
+  boundary AgentTrustBoundary
+  method argorix
+  issuer_did "did:argorix:issuer-v1"
+  holder_did "did:argorix:other-v1"
+  credential_type "OtherCredential"
+  schema "argorix:credential:other:v1"
+  status declared
+  verification declared_only
+  presentation disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  claims ["role"]
+  purpose ["credential"]
+}
+
+atrust_credential_contract MismatchBoundaryCredential {
+  subject ResearchAgent
+  identity ResearchIdentity
+  boundary OtherBoundary
+  method argorix
+  issuer_did "did:argorix:issuer-v1"
+  holder_did "did:argorix:research-agent-v1"
+  credential_type "MismatchBoundaryCredential"
+  schema "argorix:credential:mismatch-boundary:v1"
+  status declared
+  verification declared_only
+  presentation disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  claims ["role"]
+  purpose ["credential"]
+}
+
+atrust_credential_contract MismatchMethodCredential {
+  subject ResearchAgent
+  identity ResearchIdentity
+  boundary AgentTrustBoundary
+  method other
+  issuer_did "did:argorix:issuer-v1"
+  holder_did "did:argorix:research-agent-v1"
+  credential_type "MismatchMethodCredential"
+  schema "argorix:credential:mismatch-method:v1"
+  status declared
+  verification declared_only
+  presentation disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  claims ["role"]
+  purpose ["credential"]
+}
+
+atrust_handshake ResearchHandshake {
+  initiator ResearchAgent
+  responder VerifierAgent
+  initiator_identity ResearchIdentity
+  responder_identity VerifierIdentity
+  credential_contracts ["ResearchCredential"]
+  boundary AgentTrustBoundary
+  method argorix
+  mode dry_run
+  direction mutual
+  challenge declared_only
+  response declared_only
+  transcript evidence_only
+  resolution disabled
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["handshake", "dry-run"]
+}
+
+type UserPrompt { content: string }
+agent ResearchAgent { receives UserPrompt }
+agent VerifierAgent { receives UserPrompt }
+
+protocol Demo {
+  User -> ResearchAgent: tell UserPrompt
+}
