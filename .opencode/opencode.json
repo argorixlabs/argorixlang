@@ -1,0 +1,53 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "loop-build": {
+      "description": "Autonomous bounded coding loop: implement, test, repair, summarize.",
+      "mode": "primary",
+      "prompt": "{file:./prompts/loop-build.md}",
+      "steps": 8,
+      "temperature": 0.2,
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "cargo fmt*": "allow",
+          "cargo test*": "allow",
+          "cargo clippy*": "allow",
+          "npm test*": "allow",
+          "npm run lint*": "allow",
+          "npm run build*": "allow",
+          "pnpm test*": "allow",
+          "pnpm lint*": "allow",
+          "pnpm build*": "allow",
+          "git push*": "ask",
+          "rm *": "ask",
+          "del *": "ask"
+        },
+        "webfetch": "ask",
+        "websearch": "ask"
+      }
+    },
+    "loop-review": {
+      "description": "Read-only reviewer for security, correctness, scope control and regression risk.",
+      "mode": "subagent",
+      "prompt": "Review the current diff. Do not edit files. Focus on correctness, tests, security, scope creep, and regressions.",
+      "steps": 4,
+      "temperature": 0.1,
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "ask",
+          "git diff*": "allow",
+          "git status*": "allow",
+          "cargo test*": "allow",
+          "npm test*": "allow",
+          "pnpm test*": "allow"
+        }
+      }
+    }
+  }
+}

@@ -44,33 +44,38 @@ source language
 
 ## Current status
 
-**Version:** `0.21`
+**Version:** `0.30`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
 
-Version 0.21 adds Feature Flags + Secret Boundary declarations: governance-only
-metadata that declares which experimental capability exists, whether it is
-disabled by default, whether it requires approval, and which future secret would
-be required by a provider — without ever storing secret material, reading
-environment variables, opening a vault, or making a network call. Version 0.20
-added Sandboxed Provider Harness declarations: metadata-first
-containment evidence for external provider contracts. Version 0.19 added the
-Agent Passport / Sovereign Agent Identity block: a
-top-level `passport` declaring an agent's identity, sovereignty, jurisdiction,
-data residency, infrastructure, intent, risk, and attestations. Passports are
-compilable, verifiable, auditable metadata only — there is no network access,
-DNS resolution, DID verification, ASN lookup, or remote registry. Typed Message
-Contracts, Policy Language v2, and the Module / Package System are preserved.
+Version 0.30 adds the Trust Ledger Hash Chain: a top-level `trust_ledger` block
+that preserves an ordered, auditable hash chain linking earlier trust evidence
+(identities, credential contracts, handshakes) and the evidence bundle. It is an
+audit structure, not a blockchain and not a cryptographic trust guarantee — there
+is no consensus, mining, networking, signing, signature verification, key/secret
+handling, or DID/credential verification. Trust evidence may be linked before it
+is trusted; no trust event becomes authority merely because it is chained.
+
+This builds on the ATrust line: v0.26 ATrust Boundary Contracts, v0.27 ATrust
+Identity Dry-Run, v0.28 ATrust Credential Contracts, and v0.29 ATrust Handshake
+Dry-Run — each declarative, compilable, auditable metadata only. Earlier layers
+are all preserved: Crypto Primitive Registry and Crypto Boundary + Post-Quantum
+Readiness (v0.24–v0.25); the Adapter Framework and Declarative Adapter Profiles
+(v0.22–v0.23); Feature Flags + Secret Boundary (v0.21) and Sandboxed Provider
+Harness (v0.20) governance metadata; the Agent Passport / Sovereign Agent
+Identity block (v0.19); and Typed Message Contracts, Policy Language v2, and the
+Module / Package System (v0.16–v0.18). No version reads environment variables,
+stores secret material, opens a vault, resolves a DID, or makes a network call.
 
 ```text
 argorix.toml + src/*.argx
   -> module resolution (deterministic graph)
   -> whole-package semantic and security verification
   -> lexer / parser / AST
-  -> Argorix IR 0.21 (with feature, secret, harness, passport, typed message, policy and module metadata)
-  -> Argorix Bytecode 0.21 (with feature, secret, harness, passport, typed message, policy and module metadata)
+  -> Argorix IR 0.30 (with trust ledger, ATrust handshake/credential/identity/boundary, DID method, crypto, adapter, feature, secret, harness, passport, typed message, policy and module metadata)
+  -> Argorix Bytecode 0.30 (with trust ledger, ATrust handshake/credential/identity/boundary, DID method, crypto, adapter, feature, secret, harness, passport, typed message, policy and module metadata)
   -> Argorix VM
   -> agent mailboxes
   -> deterministic scheduler
