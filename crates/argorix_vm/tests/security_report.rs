@@ -39,9 +39,9 @@ fn successful_report_uses_real_runtime_evidence() {
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
 
     assert!(outcome.result.is_ok());
-    assert_eq!(report.report_version, "0.29");
+    assert_eq!(report.report_version, "0.30");
     assert_eq!(report.bytecode_version, "0.13");
-    assert_eq!(report.vm_version, "0.29");
+    assert_eq!(report.vm_version, "0.30");
     assert!(report.execution.completed);
     assert!(!report.execution.failed);
     assert_eq!(report.execution.steps, 3);
@@ -112,7 +112,7 @@ fn passport_report_summarizes_identity_and_trace_preserves_passports() {
     .unwrap();
     let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.29");
+    assert_eq!(report.report_version, "0.30");
     assert_eq!(report.agent_passports.total, 1);
     assert_eq!(report.agent_passports.linked_agents, 1);
     assert_eq!(report.agent_passports.countries, vec!["CL".to_string()]);
@@ -156,7 +156,7 @@ fn provider_harness_report_summarizes_structural_containment() {
     let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
 
-    assert_eq!(report.report_version, "0.29");
+    assert_eq!(report.report_version, "0.30");
     assert_eq!(report.provider_harnesses.total, 1);
     assert_eq!(report.provider_harnesses.providers, vec![provider]);
     assert_eq!(report.provider_harnesses.modes.get("dry_run"), Some(&1));

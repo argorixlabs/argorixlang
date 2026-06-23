@@ -65,7 +65,7 @@ fn package_ir_carries_module_metadata() {
     let package = resolve_package(&manifest("module_project/argorix.toml")).unwrap();
     let merged = check_package(&package).unwrap();
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.29");
+    assert_eq!(ir.ir_version, "0.30");
     assert_eq!(ir.module, "app.main");
     assert_eq!(ir.modules.len(), 6);
     assert_eq!(ir.imports.len(), 5);
@@ -148,7 +148,7 @@ fn resolves_and_checks_atrust_handshake_package() {
 
     // The dry-run handshake metadata survives merge + IR construction at 0.29.
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.29");
+    assert_eq!(ir.ir_version, "0.30");
     assert_eq!(ir.atrust_handshakes.len(), 1);
     let hs = &ir.atrust_handshakes[0];
     assert_eq!(hs.initiator, "ResearchAgent");
@@ -156,4 +156,22 @@ fn resolves_and_checks_atrust_handshake_package() {
     assert_eq!(hs.mode, "dry_run");
     assert_eq!(hs.network, "denied");
     assert_eq!(hs.credential_contracts, vec!["ResearchCredential"]);
+}
+
+#[test]
+fn resolves_and_checks_trust_ledger_package() {
+    let package = resolve_package(&manifest("trust_ledger_project/argorix.toml")).unwrap();
+    assert_eq!(package.graph.entry, "app.main");
+
+    let merged = check_package(&package).expect("trust ledger package checks");
+    assert_eq!(merged.trust_ledgers.len(), 1);
+    assert_eq!(merged.trust_ledgers[0].name.value, "ATrustLedger");
+
+    let ir = package_ir(&merged, &package.graph);
+    assert_eq!(ir.ir_version, "0.30");
+    assert_eq!(ir.trust_ledgers.len(), 1);
+    let l = &ir.trust_ledgers[0];
+    assert_eq!(l.hash_algorithm, "sha256");
+    assert_eq!(l.entries.len(), 3);
+    assert_eq!(l.chain_root, "sha256:declared-entry-003");
 }

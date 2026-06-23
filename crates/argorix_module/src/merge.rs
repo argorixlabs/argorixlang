@@ -26,6 +26,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         atrust_identities: Vec::new(),
         atrust_credential_contracts: Vec::new(),
         atrust_handshakes: Vec::new(),
+        trust_ledgers: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -78,6 +79,9 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         merged
             .atrust_handshakes
             .extend(program.atrust_handshakes.iter().cloned());
+        merged
+            .trust_ledgers
+            .extend(program.trust_ledgers.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());

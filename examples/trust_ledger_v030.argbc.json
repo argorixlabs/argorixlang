@@ -1,0 +1,383 @@
+{
+  "bytecode_version": "0.30",
+  "language": "Argorix Lang",
+  "module": "TrustLedgerDemo",
+  "providers": [],
+  "provider_harnesses": [],
+  "cryptos": [
+    {
+      "name": "sha256",
+      "kind": "hash",
+      "status": "allowed",
+      "strength": "classical",
+      "purpose": [
+        "digest"
+      ],
+      "output_bits": 256
+    },
+    {
+      "name": "ml_dsa",
+      "kind": "signature",
+      "status": "post_quantum_candidate",
+      "strength": "post_quantum",
+      "purpose": [
+        "signature"
+      ]
+    },
+    {
+      "name": "ml_kem",
+      "kind": "kem",
+      "status": "post_quantum_candidate",
+      "strength": "post_quantum",
+      "purpose": [
+        "kem"
+      ]
+    }
+  ],
+  "crypto_boundaries": [
+    {
+      "name": "TrustBoundary",
+      "allowed_hashes": [
+        "sha256"
+      ],
+      "allowed_signatures": [
+        "ml_dsa"
+      ],
+      "allowed_kems": [
+        "ml_kem"
+      ],
+      "allowed_aeads": [],
+      "legacy_allowed": [],
+      "denied": [],
+      "purpose": [
+        "handshake"
+      ],
+      "min_hash_bits": 256,
+      "post_quantum_ready": true,
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled"
+    }
+  ],
+  "did_methods": [
+    {
+      "name": "argorix",
+      "status": "experimental",
+      "resolution": "embedded",
+      "ledger": "local",
+      "crypto_boundary": "TrustBoundary",
+      "purpose": [
+        "identity"
+      ]
+    }
+  ],
+  "atrust_boundaries": [
+    {
+      "name": "AgentTrustBoundary",
+      "crypto_boundary": "TrustBoundary",
+      "did_methods": [
+        "argorix"
+      ],
+      "identity_format": "did",
+      "credential_mode": "declared_only",
+      "handshake": "disabled",
+      "resolution": "disabled",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "security_claims": "none",
+      "purpose": [
+        "identity"
+      ]
+    }
+  ],
+  "atrust_identities": [
+    {
+      "name": "ResearchIdentity",
+      "subject": "ResearchAgent",
+      "did": "did:argorix:research-agent-v1",
+      "method": "argorix",
+      "boundary": "AgentTrustBoundary",
+      "status": "active",
+      "validation": "dry_run",
+      "resolution": "disabled",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "identity"
+      ]
+    },
+    {
+      "name": "VerifierIdentity",
+      "subject": "VerifierAgent",
+      "did": "did:argorix:verifier-v1",
+      "method": "argorix",
+      "boundary": "AgentTrustBoundary",
+      "status": "active",
+      "validation": "dry_run",
+      "resolution": "disabled",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "identity"
+      ]
+    }
+  ],
+  "atrust_credential_contracts": [
+    {
+      "name": "ResearchCredential",
+      "subject": "ResearchAgent",
+      "identity": "ResearchIdentity",
+      "boundary": "AgentTrustBoundary",
+      "method": "argorix",
+      "issuer_did": "did:argorix:issuer-v1",
+      "holder_did": "did:argorix:research-agent-v1",
+      "credential_type": "ResearchAccessCredential",
+      "schema": "argorix:credential:research-access:v1",
+      "status": "declared",
+      "verification": "declared_only",
+      "presentation": "disabled",
+      "resolution": "disabled",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "claims": [
+        "role",
+        "scope"
+      ],
+      "purpose": [
+        "credential"
+      ]
+    }
+  ],
+  "atrust_handshakes": [
+    {
+      "name": "ResearchHandshake",
+      "initiator": "ResearchAgent",
+      "responder": "VerifierAgent",
+      "initiator_identity": "ResearchIdentity",
+      "responder_identity": "VerifierIdentity",
+      "credential_contracts": [
+        "ResearchCredential"
+      ],
+      "boundary": "AgentTrustBoundary",
+      "method": "argorix",
+      "mode": "dry_run",
+      "direction": "mutual",
+      "challenge": "declared_only",
+      "response": "declared_only",
+      "transcript": "evidence_only",
+      "verification": "declared_only",
+      "resolution": "disabled",
+      "network": "denied",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "handshake",
+        "dry-run"
+      ]
+    }
+  ],
+  "trust_ledgers": [
+    {
+      "name": "ATrustLedger",
+      "scope": "local",
+      "mode": "dry_run",
+      "hash_algorithm": "sha256",
+      "chain_policy": "append_only",
+      "entries": [
+        {
+          "id": "entry-001",
+          "kind": "identity",
+          "subject": "ResearchIdentity",
+          "previous_hash": "GENESIS",
+          "entry_hash": "sha256:declared-entry-001",
+          "evidence_ref": "bundle:identity"
+        },
+        {
+          "id": "entry-002",
+          "kind": "credential",
+          "subject": "ResearchCredential",
+          "previous_hash": "sha256:declared-entry-001",
+          "entry_hash": "sha256:declared-entry-002",
+          "evidence_ref": "bundle:credential"
+        },
+        {
+          "id": "entry-003",
+          "kind": "handshake",
+          "subject": "ResearchHandshake",
+          "previous_hash": "sha256:declared-entry-002",
+          "entry_hash": "sha256:declared-entry-003",
+          "evidence_ref": "bundle:handshake"
+        }
+      ],
+      "chain_root": "sha256:declared-entry-003",
+      "network": "denied",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "trust-ledger",
+        "evidence-chain",
+        "dry-run"
+      ],
+      "notes": "metadata only; no blockchain, no signing, no network"
+    }
+  ],
+  "assertions": [],
+  "policies": [
+    {
+      "name": "TrustLedgerPolicy",
+      "rules": [
+        {
+          "effect": "require",
+          "rule": "atrust_did_methods_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "atrust_boundaries_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "atrust_identity_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "atrust_credential_contract_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "atrust_handshake_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledgers_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_hash_algorithm_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_chain_valid"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_entries_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_append_only"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_network_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_key_material_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_secret_material_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_execution_disabled"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_evidence_required"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_security_claims_absent"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_blockchain_absent"
+        },
+        {
+          "effect": "require",
+          "rule": "trust_ledger_signature_absent"
+        }
+      ],
+      "on_violation": {
+        "action": "review",
+        "trace_required": true
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "UserPrompt",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "agents": [
+    {
+      "name": "ResearchAgent",
+      "approval": "denied"
+    },
+    {
+      "name": "VerifierAgent",
+      "approval": "denied"
+    }
+  ],
+  "capabilities": [],
+  "tools": [],
+  "models": [],
+  "instructions": [
+    {
+      "op": "DeclareAgent",
+      "name": "ResearchAgent",
+      "approval": "denied"
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "VerifierAgent",
+      "approval": "denied"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "Demo"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol Demo completed"
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}

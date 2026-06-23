@@ -17,6 +17,7 @@ pub struct Program {
     pub atrust_identities: Vec<ATrustIdentityDecl>,
     pub atrust_credential_contracts: Vec<ATrustCredentialContractDecl>,
     pub atrust_handshakes: Vec<ATrustHandshakeDecl>,
+    pub trust_ledgers: Vec<TrustLedgerDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -828,6 +829,19 @@ pub enum PolicyRule {
     ATrustHandshakeExecutionDisabled,
     ATrustHandshakeEvidenceRequired,
     ATrustHandshakeSecurityClaimsAbsent,
+    TrustLedgersDeclared,
+    TrustLedgerHashAlgorithmDeclared,
+    TrustLedgerChainValid,
+    TrustLedgerEntriesBound,
+    TrustLedgerAppendOnly,
+    TrustLedgerNetworkDenied,
+    TrustLedgerKeyMaterialDenied,
+    TrustLedgerSecretMaterialDenied,
+    TrustLedgerExecutionDisabled,
+    TrustLedgerEvidenceRequired,
+    TrustLedgerSecurityClaimsAbsent,
+    TrustLedgerBlockchainAbsent,
+    TrustLedgerSignatureAbsent,
     Unknown(String),
 }
 
@@ -964,6 +978,19 @@ impl PolicyRule {
             Self::ATrustHandshakeExecutionDisabled => "atrust_handshake_execution_disabled",
             Self::ATrustHandshakeEvidenceRequired => "atrust_handshake_evidence_required",
             Self::ATrustHandshakeSecurityClaimsAbsent => "atrust_handshake_security_claims_absent",
+            Self::TrustLedgersDeclared => "trust_ledgers_declared",
+            Self::TrustLedgerHashAlgorithmDeclared => "trust_ledger_hash_algorithm_declared",
+            Self::TrustLedgerChainValid => "trust_ledger_chain_valid",
+            Self::TrustLedgerEntriesBound => "trust_ledger_entries_bound",
+            Self::TrustLedgerAppendOnly => "trust_ledger_append_only",
+            Self::TrustLedgerNetworkDenied => "trust_ledger_network_denied",
+            Self::TrustLedgerKeyMaterialDenied => "trust_ledger_key_material_denied",
+            Self::TrustLedgerSecretMaterialDenied => "trust_ledger_secret_material_denied",
+            Self::TrustLedgerExecutionDisabled => "trust_ledger_execution_disabled",
+            Self::TrustLedgerEvidenceRequired => "trust_ledger_evidence_required",
+            Self::TrustLedgerSecurityClaimsAbsent => "trust_ledger_security_claims_absent",
+            Self::TrustLedgerBlockchainAbsent => "trust_ledger_blockchain_absent",
+            Self::TrustLedgerSignatureAbsent => "trust_ledger_signature_absent",
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -1744,6 +1771,117 @@ impl ATrustNetworkBoundary {
     pub fn source_name(&self) -> &str {
         match self {
             Self::Denied => "denied",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+/// A top-level `trust_ledger` block declaring a Trust Ledger Hash Chain.
+/// v0.30 is hash-chain metadata + evidence only. It is NOT a blockchain: no
+/// consensus, mining, signing, signature verification, network, or key/secret
+/// handling. It preserves an ordered, auditable relation of trust evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustLedgerDecl {
+    pub name: Spanned<String>,
+    pub scope: Spanned<TrustLedgerScope>,
+    pub mode: Spanned<TrustLedgerMode>,
+    pub hash_algorithm: Spanned<String>,
+    pub chain_policy: Spanned<TrustLedgerChainPolicy>,
+    pub entries: Vec<TrustLedgerEntryDecl>,
+    pub chain_root: Spanned<String>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub evidence: Spanned<ATrustEvidenceRequirement>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustLedgerEntryDecl {
+    pub id: Spanned<String>,
+    pub kind: Spanned<TrustLedgerEntryKind>,
+    pub subject: Spanned<String>,
+    pub previous_hash: Spanned<String>,
+    pub entry_hash: Spanned<String>,
+    pub evidence_ref: Spanned<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrustLedgerScope {
+    Local,
+    Package,
+    Bundle,
+    Unknown(String),
+}
+
+impl TrustLedgerScope {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Local => "local",
+            Self::Package => "package",
+            Self::Bundle => "bundle",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrustLedgerMode {
+    DryRun,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl TrustLedgerMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::DryRun => "dry_run",
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrustLedgerChainPolicy {
+    AppendOnly,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl TrustLedgerChainPolicy {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::AppendOnly => "append_only",
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrustLedgerEntryKind {
+    Identity,
+    Credential,
+    Handshake,
+    Evidence,
+    Policy,
+    Custom,
+    Unknown(String),
+}
+
+impl TrustLedgerEntryKind {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Identity => "identity",
+            Self::Credential => "credential",
+            Self::Handshake => "handshake",
+            Self::Evidence => "evidence",
+            Self::Policy => "policy",
+            Self::Custom => "custom",
             Self::Unknown(value) => value,
         }
     }

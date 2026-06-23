@@ -1,0 +1,166 @@
+module InvalidTrustLedger
+
+crypto sha256 { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }
+crypto sha1legacy { kind hash status denied strength classical purpose ["legacy"] output_bits 160 }
+crypto ml_dsa { kind signature status post_quantum_candidate strength post_quantum purpose ["signature"] }
+crypto ml_kem { kind kem status post_quantum_candidate strength post_quantum purpose ["kem"] }
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  allowed_signatures ["ml_dsa"]
+  allowed_kems ["ml_kem"]
+  min_hash_bits 256
+  post_quantum_ready true
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["handshake"]
+}
+
+did_method argorix {
+  status experimental
+  resolution embedded
+  ledger local
+  crypto_boundary TrustBoundary
+  purpose ["identity"]
+}
+
+atrust_boundary AgentTrustBoundary {
+  crypto_boundary TrustBoundary
+  did_methods ["argorix"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity ResearchIdentity {
+  subject ResearchAgent
+  did "did:argorix:research-agent-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity VerifierIdentity {
+  subject VerifierAgent
+  did "did:argorix:verifier-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_credential_contract ResearchCredential {
+  subject ResearchAgent
+  identity ResearchIdentity
+  boundary AgentTrustBoundary
+  method argorix
+  issuer_did "did:argorix:issuer-v1"
+  holder_did "did:argorix:research-agent-v1"
+  credential_type "ResearchAccessCredential"
+  schema "argorix:credential:research-access:v1"
+  status declared
+  verification declared_only
+  presentation disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  claims ["role", "scope"]
+  purpose ["credential"]
+}
+
+atrust_handshake ResearchHandshake {
+  initiator ResearchAgent
+  responder VerifierAgent
+  initiator_identity ResearchIdentity
+  responder_identity VerifierIdentity
+  credential_contracts ["ResearchCredential"]
+  boundary AgentTrustBoundary
+  method argorix
+  mode dry_run
+  direction mutual
+  challenge declared_only
+  response declared_only
+  transcript evidence_only
+  verification declared_only
+  resolution disabled
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["handshake", "dry-run"]
+}
+
+trust_ledger ATrustLedger {
+  scope local
+  mode dry_run
+  hash_algorithm sha256
+  chain_policy append_only
+  entries [
+    {
+      id "entry-001"
+      kind identity
+      subject ResearchIdentity
+      previous_hash "GENESIS"
+      entry_hash "sha256:declared-entry-001"
+      evidence_ref "bundle:identity"
+    },
+    {
+      id "entry-002"
+      kind credential
+      subject ResearchCredential
+      previous_hash "sha256:declared-entry-001"
+      entry_hash "sha256:declared-entry-002"
+      evidence_ref "bundle:credential"
+    },
+    {
+      id "entry-003"
+      kind handshake
+      subject ResearchHandshake
+      previous_hash "sha256:declared-entry-002"
+      evidence_ref "bundle:handshake"
+    }
+  ]
+  chain_root "sha256:declared-entry-003"
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["trust-ledger", "dry-run"]
+}
+
+type UserPrompt { content: string }
+agent ResearchAgent { receives UserPrompt }
+agent VerifierAgent { receives UserPrompt }
+
+protocol Demo {
+  User -> ResearchAgent: tell UserPrompt
+}

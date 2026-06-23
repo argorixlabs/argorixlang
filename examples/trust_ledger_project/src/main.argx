@@ -1,0 +1,22 @@
+module app.main
+
+import crypto.primitives
+import boundaries.crypto
+import did.methods
+import trust.atrust
+import agents.research
+import agents.verifier
+import identity.research
+import identity.verifier
+import credentials.research
+import passports.research
+import passports.verifier
+import handshakes.research
+import ledger.atrust
+import policies.trust_ledger
+
+type UserPrompt { content: string }
+
+protocol Demo {
+    User -> ResearchAgent: tell UserPrompt
+}

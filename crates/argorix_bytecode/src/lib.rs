@@ -8,7 +8,7 @@ pub use bytecode::{
     BytecodeDidMethod, BytecodeError, BytecodeFailure, BytecodeFeature, BytecodeModel,
     BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
-    BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField,
-    Instruction,
+    BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeTrustLedger,
+    BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
 };
 pub use lower::lower_ir;

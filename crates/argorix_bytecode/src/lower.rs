@@ -5,8 +5,8 @@ use crate::{
     BytecodeDidMethod, BytecodeFailure, BytecodeFeature, BytecodeModel, BytecodeModule,
     BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
-    BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeType, BytecodeTypeField,
-    Instruction,
+    BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeTrustLedger,
+    BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -175,7 +175,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.29".to_owned(),
+        bytecode_version: "0.30".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -417,6 +417,38 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 notes: h.notes.clone(),
             })
             .collect(),
+        trust_ledgers: ir
+            .trust_ledgers
+            .iter()
+            .map(|l| BytecodeTrustLedger {
+                name: l.name.clone(),
+                scope: l.scope.clone(),
+                mode: l.mode.clone(),
+                hash_algorithm: l.hash_algorithm.clone(),
+                chain_policy: l.chain_policy.clone(),
+                entries: l
+                    .entries
+                    .iter()
+                    .map(|e| BytecodeTrustLedgerEntry {
+                        id: e.id.clone(),
+                        kind: e.kind.clone(),
+                        subject: e.subject.clone(),
+                        previous_hash: e.previous_hash.clone(),
+                        entry_hash: e.entry_hash.clone(),
+                        evidence_ref: e.evidence_ref.clone(),
+                    })
+                    .collect(),
+                chain_root: l.chain_root.clone(),
+                network: l.network.clone(),
+                key_material: l.key_material.clone(),
+                secret_material: l.secret_material.clone(),
+                execution: l.execution.clone(),
+                evidence: l.evidence.clone(),
+                security_claims: l.security_claims.clone(),
+                purpose: l.purpose.clone(),
+                notes: l.notes.clone(),
+            })
+            .collect(),
         imports: ir
             .imports
             .iter()
@@ -599,6 +631,7 @@ mod tests {
             atrust_identities: vec![],
             atrust_credential_contracts: vec![],
             atrust_handshakes: vec![],
+            trust_ledgers: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -664,7 +697,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.29");
+        assert_eq!(bytecode.bytecode_version, "0.30");
         assert!(bytecode
             .instructions
             .iter()
@@ -759,6 +792,7 @@ mod tests {
             atrust_identities: vec![],
             atrust_credential_contracts: vec![],
             atrust_handshakes: vec![],
+            trust_ledgers: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -772,7 +806,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.29");
+        assert_eq!(bytecode.bytecode_version, "0.30");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

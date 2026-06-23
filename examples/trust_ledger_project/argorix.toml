@@ -1,0 +1,6 @@
+[package]
+name = "argorix-trust-ledger-example"
+version = "0.30.0"
+
+[entry]
+main = "src/main.argx"

@@ -1,0 +1,47 @@
+module ledger.atrust
+
+trust_ledger ATrustLedger {
+  scope local
+  mode dry_run
+  hash_algorithm sha256
+  chain_policy append_only
+
+  entries [
+    {
+      id "entry-001"
+      kind identity
+      subject ResearchIdentity
+      previous_hash "GENESIS"
+      entry_hash "sha256:declared-entry-001"
+      evidence_ref "bundle:identity"
+    },
+    {
+      id "entry-002"
+      kind credential
+      subject ResearchCredential
+      previous_hash "sha256:declared-entry-001"
+      entry_hash "sha256:declared-entry-002"
+      evidence_ref "bundle:credential"
+    },
+    {
+      id "entry-003"
+      kind handshake
+      subject ResearchHandshake
+      previous_hash "sha256:declared-entry-002"
+      entry_hash "sha256:declared-entry-003"
+      evidence_ref "bundle:handshake"
+    }
+  ]
+
+  chain_root "sha256:declared-entry-003"
+
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+
+  purpose ["trust-ledger", "evidence-chain", "dry-run"]
+  notes "metadata only; no blockchain, no signing, no network"
+}

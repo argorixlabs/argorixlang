@@ -19,7 +19,8 @@ use crate::{
         PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
         Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
         ReceiveDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl,
-        TypeDecl,
+        TrustLedgerChainPolicy, TrustLedgerDecl, TrustLedgerEntryDecl, TrustLedgerEntryKind,
+        TrustLedgerMode, TrustLedgerScope, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -88,6 +89,7 @@ impl Parser {
             atrust_identities: Vec::new(),
             atrust_credential_contracts: Vec::new(),
             atrust_handshakes: Vec::new(),
+            trust_ledgers: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -119,6 +121,7 @@ impl Parser {
                 Some("atrust_identity") => program.atrust_identities.push(self.parse_atrust_identity()?),
                 Some("atrust_credential_contract") => program.atrust_credential_contracts.push(self.parse_atrust_credential_contract()?),
                 Some("atrust_handshake") => program.atrust_handshakes.push(self.parse_atrust_handshake()?),
+                Some("trust_ledger") => program.trust_ledgers.push(self.parse_trust_ledger()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -138,7 +141,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -2472,6 +2475,328 @@ impl Parser {
         })
     }
 
+    fn parse_trust_ledger(&mut self) -> Result<TrustLedgerDecl, Diagnostic> {
+        self.expect_keyword("trust_ledger")?;
+        let name = self.expect_identifier("trust ledger name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut scope = None;
+        let mut mode = None;
+        let mut hash_algorithm = None;
+        let mut chain_policy = None;
+        let mut entries: Option<Vec<TrustLedgerEntryDecl>> = None;
+        let mut chain_root = None;
+        let mut network = None;
+        let mut key_material = None;
+        let mut secret_material = None;
+        let mut execution = None;
+        let mut evidence = None;
+        let mut security_claims = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated trust_ledger declaration")?;
+            match self.peek_identifier() {
+                Some("scope") => {
+                    self.set_block_field(&mut scope, "trust_ledger", "scope", |parser| {
+                        let token = parser.expect_identifier("trust_ledger scope")?;
+                        let value = match token.value.as_str() {
+                            "local" => TrustLedgerScope::Local,
+                            "package" => TrustLedgerScope::Package,
+                            "bundle" => TrustLedgerScope::Bundle,
+                            other => TrustLedgerScope::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("mode") => {
+                    self.set_block_field(&mut mode, "trust_ledger", "mode", |parser| {
+                        let token = parser.expect_identifier("trust_ledger mode")?;
+                        let value = match token.value.as_str() {
+                            "dry_run" => TrustLedgerMode::DryRun,
+                            "declared_only" => TrustLedgerMode::DeclaredOnly,
+                            other => TrustLedgerMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("hash_algorithm") => self.set_block_field(
+                    &mut hash_algorithm,
+                    "trust_ledger",
+                    "hash_algorithm",
+                    |parser| parser.expect_identifier("trust_ledger hash_algorithm reference"),
+                )?,
+                Some("chain_policy") => self.set_block_field(
+                    &mut chain_policy,
+                    "trust_ledger",
+                    "chain_policy",
+                    |parser| {
+                        let token = parser.expect_identifier("trust_ledger chain_policy")?;
+                        let value = match token.value.as_str() {
+                            "append_only" => TrustLedgerChainPolicy::AppendOnly,
+                            "declared_only" => TrustLedgerChainPolicy::DeclaredOnly,
+                            other => TrustLedgerChainPolicy::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("entries") => {
+                    self.set_block_field(&mut entries, "trust_ledger", "entries", |parser| {
+                        parser.parse_trust_ledger_entries()
+                    })?
+                }
+                Some("chain_root") => {
+                    self.set_block_field(&mut chain_root, "trust_ledger", "chain_root", |parser| {
+                        parser.expect_string("trust_ledger chain_root")
+                    })?
+                }
+                Some("network") => {
+                    self.set_block_field(&mut network, "trust_ledger", "network", |parser| {
+                        let token = parser.expect_identifier("trust_ledger network")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustNetworkBoundary::Denied,
+                            other => ATrustNetworkBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "trust_ledger",
+                    "key_material",
+                    |parser| {
+                        let token = parser.expect_identifier("trust_ledger key_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "trust_ledger",
+                    "secret_material",
+                    |parser| {
+                        let token = parser.expect_identifier("trust_ledger secret_material")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustMaterialBoundary::Denied,
+                            other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("execution") => {
+                    self.set_block_field(&mut execution, "trust_ledger", "execution", |parser| {
+                        let token = parser.expect_identifier("trust_ledger execution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustExecution::Disabled,
+                            other => ATrustExecution::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("evidence") => {
+                    self.set_block_field(&mut evidence, "trust_ledger", "evidence", |parser| {
+                        let token = parser.expect_identifier("trust_ledger evidence")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "trust_ledger",
+                    "security_claims",
+                    |parser| {
+                        let token = parser.expect_identifier("trust_ledger security_claims")?;
+                        let value = match token.value.as_str() {
+                            "none" => ATrustSecurityClaims::None,
+                            other => ATrustSecurityClaims::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "trust_ledger", "purpose", |parser| {
+                        parser.parse_string_array("trust_ledger purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "trust_ledger", "notes", |parser| {
+                        parser.expect_string("trust_ledger notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected trust_ledger item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected a trust_ledger field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback_span = name.span;
+        let empty = || Spanned::new(String::new(), fallback_span);
+        Ok(TrustLedgerDecl {
+            name,
+            scope: scope.unwrap_or_else(|| {
+                Spanned::new(TrustLedgerScope::Unknown(String::new()), fallback_span)
+            }),
+            mode: mode.unwrap_or_else(|| {
+                Spanned::new(TrustLedgerMode::Unknown(String::new()), fallback_span)
+            }),
+            hash_algorithm: hash_algorithm.unwrap_or_else(empty),
+            chain_policy: chain_policy.unwrap_or_else(|| {
+                Spanned::new(
+                    TrustLedgerChainPolicy::Unknown(String::new()),
+                    fallback_span,
+                )
+            }),
+            entries: entries.unwrap_or_default(),
+            chain_root: chain_root.unwrap_or_else(empty),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback_span)
+            }),
+            key_material: key_material.unwrap_or_else(|| {
+                Spanned::new(
+                    ATrustMaterialBoundary::Unknown(String::new()),
+                    fallback_span,
+                )
+            }),
+            secret_material: secret_material.unwrap_or_else(|| {
+                Spanned::new(
+                    ATrustMaterialBoundary::Unknown(String::new()),
+                    fallback_span,
+                )
+            }),
+            execution: execution.unwrap_or_else(|| {
+                Spanned::new(ATrustExecution::Unknown(String::new()), fallback_span)
+            }),
+            evidence: evidence.unwrap_or_else(|| {
+                Spanned::new(
+                    ATrustEvidenceRequirement::Unknown(String::new()),
+                    fallback_span,
+                )
+            }),
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback_span)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_trust_ledger_entries(&mut self) -> Result<Vec<TrustLedgerEntryDecl>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut entries = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            self.ensure_not_eof("unterminated trust_ledger entries array")?;
+            entries.push(self.parse_trust_ledger_entry()?);
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.advance();
+        Ok(entries)
+    }
+
+    fn parse_trust_ledger_entry(&mut self) -> Result<TrustLedgerEntryDecl, Diagnostic> {
+        let open = self.peek().span;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut id = None;
+        let mut kind = None;
+        let mut subject = None;
+        let mut previous_hash = None;
+        let mut entry_hash = None;
+        let mut evidence_ref = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated trust_ledger entry")?;
+            match self.peek_identifier() {
+                Some("id") => {
+                    self.set_block_field(&mut id, "trust_ledger entry", "id", |parser| {
+                        parser.expect_string("trust_ledger entry id")
+                    })?
+                }
+                Some("kind") => {
+                    self.set_block_field(&mut kind, "trust_ledger entry", "kind", |parser| {
+                        let token = parser.expect_identifier("trust_ledger entry kind")?;
+                        let value = match token.value.as_str() {
+                            "identity" => TrustLedgerEntryKind::Identity,
+                            "credential" => TrustLedgerEntryKind::Credential,
+                            "handshake" => TrustLedgerEntryKind::Handshake,
+                            "evidence" => TrustLedgerEntryKind::Evidence,
+                            "policy" => TrustLedgerEntryKind::Policy,
+                            "custom" => TrustLedgerEntryKind::Custom,
+                            other => TrustLedgerEntryKind::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("subject") => {
+                    self.set_block_field(&mut subject, "trust_ledger entry", "subject", |parser| {
+                        parser.expect_identifier("trust_ledger entry subject")
+                    })?
+                }
+                Some("previous_hash") => self.set_block_field(
+                    &mut previous_hash,
+                    "trust_ledger entry",
+                    "previous_hash",
+                    |parser| parser.expect_string("trust_ledger entry previous_hash"),
+                )?,
+                Some("entry_hash") => self.set_block_field(
+                    &mut entry_hash,
+                    "trust_ledger entry",
+                    "entry_hash",
+                    |parser| parser.expect_string("trust_ledger entry entry_hash"),
+                )?,
+                Some("evidence_ref") => self.set_block_field(
+                    &mut evidence_ref,
+                    "trust_ledger entry",
+                    "evidence_ref",
+                    |parser| parser.expect_string("trust_ledger entry evidence_ref"),
+                )?,
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected trust_ledger entry item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected a trust_ledger entry field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let empty = || Spanned::new(String::new(), open);
+        Ok(TrustLedgerEntryDecl {
+            id: id.unwrap_or_else(empty),
+            kind: kind.unwrap_or_else(|| {
+                Spanned::new(TrustLedgerEntryKind::Unknown(String::new()), open)
+            }),
+            subject: subject.unwrap_or_else(empty),
+            previous_hash: previous_hash.unwrap_or_else(empty),
+            entry_hash: entry_hash.unwrap_or_else(empty),
+            evidence_ref: evidence_ref.unwrap_or_else(empty),
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -2730,6 +3055,19 @@ impl Parser {
             "atrust_handshake_security_claims_absent" => {
                 PolicyRule::ATrustHandshakeSecurityClaimsAbsent
             }
+            "trust_ledgers_declared" => PolicyRule::TrustLedgersDeclared,
+            "trust_ledger_hash_algorithm_declared" => PolicyRule::TrustLedgerHashAlgorithmDeclared,
+            "trust_ledger_chain_valid" => PolicyRule::TrustLedgerChainValid,
+            "trust_ledger_entries_bound" => PolicyRule::TrustLedgerEntriesBound,
+            "trust_ledger_append_only" => PolicyRule::TrustLedgerAppendOnly,
+            "trust_ledger_network_denied" => PolicyRule::TrustLedgerNetworkDenied,
+            "trust_ledger_key_material_denied" => PolicyRule::TrustLedgerKeyMaterialDenied,
+            "trust_ledger_secret_material_denied" => PolicyRule::TrustLedgerSecretMaterialDenied,
+            "trust_ledger_execution_disabled" => PolicyRule::TrustLedgerExecutionDisabled,
+            "trust_ledger_evidence_required" => PolicyRule::TrustLedgerEvidenceRequired,
+            "trust_ledger_security_claims_absent" => PolicyRule::TrustLedgerSecurityClaimsAbsent,
+            "trust_ledger_blockchain_absent" => PolicyRule::TrustLedgerBlockchainAbsent,
+            "trust_ledger_signature_absent" => PolicyRule::TrustLedgerSignatureAbsent,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

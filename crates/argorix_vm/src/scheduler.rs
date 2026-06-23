@@ -224,6 +224,7 @@ mod tests {
             atrust_identities: vec![],
             atrust_credential_contracts: vec![],
             atrust_handshakes: vec![],
+            trust_ledgers: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

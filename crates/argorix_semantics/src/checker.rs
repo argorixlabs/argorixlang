@@ -44,6 +44,7 @@ pub fn check_program_with_options(
     check_atrust_identities(program, &symbols, &mut diagnostics);
     check_atrust_credential_contracts(program, &symbols, &mut diagnostics);
     check_atrust_handshakes(program, &symbols, &mut diagnostics);
+    check_trust_ledgers(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -3216,6 +3217,268 @@ fn check_atrust_handshakes(
     }
 }
 
+fn check_trust_ledgers(program: &Program, _symbols: &Symbols, diagnostics: &mut Vec<Diagnostic>) {
+    use std::collections::HashSet;
+
+    // Crypto primitives declared with kind `hash` and not denied — the only
+    // algorithms a ledger may name. v0.30 ledgers are hash-chain metadata only.
+    let hash_cryptos: HashSet<&str> = program
+        .cryptos
+        .iter()
+        .filter(|c| {
+            c.kind.value.source_name() == "hash" && c.status.value.source_name() != "denied"
+        })
+        .map(|c| c.name.value.as_str())
+        .collect();
+    let identities: HashSet<&str> = program
+        .atrust_identities
+        .iter()
+        .map(|i| i.name.value.as_str())
+        .collect();
+    let credentials: HashSet<&str> = program
+        .atrust_credential_contracts
+        .iter()
+        .map(|c| c.name.value.as_str())
+        .collect();
+    let handshakes: HashSet<&str> = program
+        .atrust_handshakes
+        .iter()
+        .map(|h| h.name.value.as_str())
+        .collect();
+    let policies: HashSet<&str> = program
+        .policies
+        .iter()
+        .map(|p| p.name.value.as_str())
+        .collect();
+
+    let mut names = HashSet::new();
+    for l in &program.trust_ledgers {
+        report_duplicate(&mut names, &l.name, "trust_ledger", diagnostics);
+        let name = l.name.value.clone();
+
+        if !matches!(l.scope.value.source_name(), "local" | "package" | "bundle") {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` requires scope `local`, `package`, or `bundle`"),
+                l.scope.span,
+            ));
+        }
+        if !matches!(l.mode.value.source_name(), "dry_run" | "declared_only") {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` requires mode `dry_run` or `declared_only`"),
+                l.mode.span,
+            ));
+        }
+        if l.hash_algorithm.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` is missing required field `hash_algorithm`"),
+                l.hash_algorithm.span,
+            ));
+        } else if !hash_cryptos.contains(l.hash_algorithm.value.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` hash_algorithm `{}` must reference a declared, non-denied crypto of kind `hash`", l.hash_algorithm.value),
+                l.hash_algorithm.span,
+            ));
+        }
+        if !matches!(
+            l.chain_policy.value.source_name(),
+            "append_only" | "declared_only"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "trust_ledger `{name}` requires chain_policy `append_only` or `declared_only`"
+                ),
+                l.chain_policy.span,
+            ));
+        }
+        if l.network.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` requires network `denied`"),
+                l.network.span,
+            ));
+        }
+        if l.key_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` requires key_material `denied`"),
+                l.key_material.span,
+            ));
+        }
+        if l.secret_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` requires secret_material `denied`"),
+                l.secret_material.span,
+            ));
+        }
+        if l.execution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` requires execution `disabled`"),
+                l.execution.span,
+            ));
+        }
+        if l.evidence.value.source_name() != "required" {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` requires evidence `required`"),
+                l.evidence.span,
+            ));
+        }
+        if l.security_claims.value.source_name() != "none" {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` requires security_claims `none`"),
+                l.security_claims.span,
+            ));
+        }
+        if l.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` is missing required field `purpose`"),
+                l.name.span,
+            ));
+        }
+        for p in &l.purpose {
+            if p.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("trust_ledger `{name}` purpose must not contain empty strings"),
+                    p.span,
+                ));
+            }
+        }
+        if let Some(notes) = &l.notes {
+            if notes.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("trust_ledger `{name}` notes must not be empty"),
+                    notes.span,
+                ));
+            }
+        }
+
+        if l.entries.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` is missing required field `entries`"),
+                l.name.span,
+            ));
+        }
+
+        let prefix = format!("{}:", l.hash_algorithm.value);
+        let mut entry_ids = HashSet::new();
+        let mut previous_entry_hash: Option<&str> = None;
+        for (index, e) in l.entries.iter().enumerate() {
+            if e.id.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("trust_ledger `{name}` entry is missing required field `id`"),
+                    e.id.span,
+                ));
+            } else if !entry_ids.insert(e.id.value.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "trust_ledger `{name}` has duplicate entry id `{}`",
+                        e.id.value
+                    ),
+                    e.id.span,
+                ));
+            }
+            let kind = e.kind.value.source_name();
+            if !matches!(
+                kind,
+                "identity" | "credential" | "handshake" | "evidence" | "policy" | "custom"
+            ) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "trust_ledger `{name}` entry `{}` has invalid kind",
+                        e.id.value
+                    ),
+                    e.kind.span,
+                ));
+            }
+            if e.subject.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "trust_ledger `{name}` entry `{}` is missing required field `subject`",
+                        e.id.value
+                    ),
+                    e.subject.span,
+                ));
+            } else {
+                let known = match kind {
+                    "identity" => identities.contains(e.subject.value.as_str()),
+                    "credential" => credentials.contains(e.subject.value.as_str()),
+                    "handshake" => handshakes.contains(e.subject.value.as_str()),
+                    "policy" => policies.contains(e.subject.value.as_str()),
+                    // evidence/custom (and unknown kinds) only require a non-empty subject.
+                    _ => true,
+                };
+                if !known {
+                    diagnostics.push(Diagnostic::new(
+                        format!("trust_ledger `{name}` entry `{}` references unknown {kind} subject `{}`", e.id.value, e.subject.value),
+                        e.subject.span,
+                    ));
+                }
+            }
+            if e.evidence_ref.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "trust_ledger `{name}` entry `{}` is missing required field `evidence_ref`",
+                        e.id.value
+                    ),
+                    e.evidence_ref.span,
+                ));
+            }
+            if e.entry_hash.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "trust_ledger `{name}` entry `{}` is missing required field `entry_hash`",
+                        e.id.value
+                    ),
+                    e.entry_hash.span,
+                ));
+            } else if !l.hash_algorithm.value.is_empty() && !e.entry_hash.value.starts_with(&prefix)
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "trust_ledger `{name}` entry `{}` entry_hash must use the `{}` prefix",
+                        e.id.value, prefix
+                    ),
+                    e.entry_hash.span,
+                ));
+            }
+            if e.previous_hash.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("trust_ledger `{name}` entry `{}` is missing required field `previous_hash`", e.id.value),
+                    e.previous_hash.span,
+                ));
+            } else if index == 0 {
+                if e.previous_hash.value != "GENESIS" {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "trust_ledger `{name}` first entry previous_hash must be `GENESIS`"
+                        ),
+                        e.previous_hash.span,
+                    ));
+                }
+            } else if let Some(prev) = previous_entry_hash {
+                if e.previous_hash.value != prev {
+                    diagnostics.push(Diagnostic::new(
+                        format!("trust_ledger `{name}` entry `{}` previous_hash must match the prior entry_hash", e.id.value),
+                        e.previous_hash.span,
+                    ));
+                }
+            }
+            previous_entry_hash = Some(e.entry_hash.value.as_str());
+        }
+
+        if l.chain_root.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("trust_ledger `{name}` is missing required field `chain_root`"),
+                l.chain_root.span,
+            ));
+        } else if let Some(last) = l.entries.last() {
+            if l.chain_root.value != last.entry_hash.value {
+                diagnostics.push(Diagnostic::new(
+                    format!("trust_ledger `{name}` chain_root must match the final entry_hash"),
+                    l.chain_root.span,
+                ));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::check_program;
@@ -3981,5 +4244,55 @@ protocol Demo {{
     fn rejects_duplicate_handshake() {
         let two = format!("{VALID}\n\n{VALID}");
         rejects(&two);
+    }
+}
+
+#[cfg(test)]
+mod trust_ledger_tests {
+    use super::check_program;
+    use argorix_parser::parse_source;
+
+    const VALID: &str = include_str!("../../../examples/trust_ledger_v030.argx");
+
+    #[test]
+    fn parses_and_accepts_valid_trust_ledger() {
+        let ast = parse_source(VALID).expect("parse");
+        assert_eq!(ast.trust_ledgers.len(), 1);
+        assert_eq!(ast.trust_ledgers[0].name.value, "ATrustLedger");
+        check_program(&ast).expect("valid trust_ledger passes semantic check");
+    }
+
+    #[test]
+    fn rejects_duplicate_trust_ledger_name() {
+        // Append a second ledger block with the same name.
+        let ledger = r#"
+trust_ledger ATrustLedger {
+  scope local
+  mode dry_run
+  hash_algorithm sha256
+  chain_policy append_only
+  entries [
+    {
+      id "dup-001"
+      kind identity
+      subject ResearchIdentity
+      previous_hash "GENESIS"
+      entry_hash "sha256:dup-001"
+      evidence_ref "bundle:identity"
+    }
+  ]
+  chain_root "sha256:dup-001"
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["trust-ledger"]
+}
+"#;
+        let src = format!("{VALID}\n{ledger}");
+        let ast = parse_source(&src).expect("parse");
+        assert!(check_program(&ast).is_err(), "duplicate ledger must fail");
     }
 }
