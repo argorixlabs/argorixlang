@@ -72,7 +72,7 @@ impl EvidenceBundle {
     ) -> Result<Self, EvidenceError> {
         let trace = outcome.result.as_ref().ok();
         Ok(Self {
-            bundle_version: "0.30".into(),
+            bundle_version: "0.31".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -137,6 +137,7 @@ pub fn verify_evidence(bundle_path: &Path) -> Result<EvidenceVerificationResult,
                 | "0.28"
                 | "0.29"
                 | "0.30"
+                | "0.31"
         ),
         "unsupported bundle_version",
     );

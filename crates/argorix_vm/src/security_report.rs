@@ -40,6 +40,10 @@ pub struct SecurityReport {
     pub atrust_handshakes: usize,
     #[serde(default)]
     pub trust_ledgers: usize,
+    #[serde(default)]
+    pub mcp_bridge_contracts: McpBridgeContractsSummary,
+    #[serde(default)]
+    pub a2a_bridge_contracts: A2ABridgeContractsSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -56,6 +60,42 @@ pub struct ExecutionSummary {
     pub halted: bool,
     pub steps: usize,
     pub injected_message: Option<InjectedMessageSummary>,
+}
+
+/// Summary of declared MCP Bridge Contracts (v0.31).
+///
+/// A declared bridge is NOT a connected bridge: no MCP server exists, no network
+/// is opened, and no tools are executed. The verdict is never inflated by the
+/// presence of bridge contracts. The `network`, `external_execution`,
+/// `tool_execution`, and `security_claims` maps make the closed boundary
+/// explicit in the evidence.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpBridgeContractsSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub protocols: BTreeMap<String, usize>,
+    pub directions: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub tool_execution: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
+}
+
+/// Summary of declared A2A Bridge Contracts (v0.31).
+///
+/// A declared bridge is NOT a connected bridge: no agent communication occurred,
+/// no network is opened, and no agent is executed. The verdict is never inflated
+/// by the presence of bridge contracts.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct A2ABridgeContractsSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub protocols: BTreeMap<String, usize>,
+    pub directions: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub agent_execution: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -537,7 +577,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.30".into(),
+            report_version: "0.31".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -545,7 +585,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.30".into()),
+                .unwrap_or_else(|| "0.31".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -559,6 +599,8 @@ impl SecurityReport {
             atrust_credential_contracts: bytecode.atrust_credential_contracts.len(),
             atrust_handshakes: bytecode.atrust_handshakes.len(),
             trust_ledgers: bytecode.trust_ledgers.len(),
+            mcp_bridge_contracts: mcp_bridge_contracts_summary(&bytecode.mcp_bridge_contracts),
+            a2a_bridge_contracts: a2a_bridge_contracts_summary(&bytecode.a2a_bridge_contracts),
             policy,
             provider_boundary,
             calls,
@@ -567,6 +609,62 @@ impl SecurityReport {
             verdict,
         }
     }
+}
+
+fn mcp_bridge_contracts_summary(
+    contracts: &[argorix_bytecode::BytecodeMcpBridgeContract],
+) -> McpBridgeContractsSummary {
+    let mut summary = McpBridgeContractsSummary {
+        total: contracts.len(),
+        ..Default::default()
+    };
+    for c in contracts {
+        summary.names.push(c.name.clone());
+        *summary.protocols.entry(c.protocol.clone()).or_insert(0) += 1;
+        *summary.directions.entry(c.direction.clone()).or_insert(0) += 1;
+        *summary.network.entry(c.network.clone()).or_insert(0) += 1;
+        *summary
+            .external_execution
+            .entry(c.external_execution.clone())
+            .or_insert(0) += 1;
+        *summary
+            .tool_execution
+            .entry(c.tool_execution.clone())
+            .or_insert(0) += 1;
+        *summary
+            .security_claims
+            .entry(c.security_claims.clone())
+            .or_insert(0) += 1;
+    }
+    summary
+}
+
+fn a2a_bridge_contracts_summary(
+    contracts: &[argorix_bytecode::BytecodeA2ABridgeContract],
+) -> A2ABridgeContractsSummary {
+    let mut summary = A2ABridgeContractsSummary {
+        total: contracts.len(),
+        ..Default::default()
+    };
+    for c in contracts {
+        summary.names.push(c.name.clone());
+        *summary.protocols.entry(c.protocol.clone()).or_insert(0) += 1;
+        *summary.directions.entry(c.direction.clone()).or_insert(0) += 1;
+        *summary.network.entry(c.network.clone()).or_insert(0) += 1;
+        *summary
+            .external_execution
+            .entry(c.external_execution.clone())
+            .or_insert(0) += 1;
+        *summary
+            .agent_execution
+            .entry(c.agent_execution.clone())
+            .or_insert(0) += 1;
+        *summary
+            .security_claims
+            .entry(c.security_claims.clone())
+            .or_insert(0) += 1;
+    }
+    summary
 }
 
 fn provider_harness_summary(

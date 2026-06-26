@@ -1,0 +1,17 @@
+module identity.verifier
+
+atrust_identity VerifierIdentity {
+  subject VerifierAgent
+  did "did:argorix:verifier-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}

@@ -18,6 +18,8 @@ pub struct Program {
     pub atrust_credential_contracts: Vec<ATrustCredentialContractDecl>,
     pub atrust_handshakes: Vec<ATrustHandshakeDecl>,
     pub trust_ledgers: Vec<TrustLedgerDecl>,
+    pub mcp_bridge_contracts: Vec<McpBridgeContractDecl>,
+    pub a2a_bridge_contracts: Vec<A2ABridgeContractDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -842,6 +844,32 @@ pub enum PolicyRule {
     TrustLedgerSecurityClaimsAbsent,
     TrustLedgerBlockchainAbsent,
     TrustLedgerSignatureAbsent,
+    McpBridgeContractsDeclared,
+    McpBridgeAgentsBound,
+    McpBridgePassportsBound,
+    McpBridgeIdentitiesBound,
+    McpBridgeBoundariesBound,
+    McpBridgeNetworkDenied,
+    McpBridgeExternalExecutionDisabled,
+    McpBridgeToolExecutionDisabled,
+    McpBridgeSecretMaterialDenied,
+    McpBridgeKeyMaterialDenied,
+    McpBridgeAuthenticationNonSecret,
+    McpBridgeSecurityClaimsAbsent,
+    A2ABridgeContractsDeclared,
+    A2ABridgeAgentsBound,
+    A2ABridgePassportsBound,
+    A2ABridgeIdentitiesBound,
+    A2ABridgeHandshakesBound,
+    A2ABridgeTrustLedgersBound,
+    A2ABridgeMessageContractsBound,
+    A2ABridgeNetworkDenied,
+    A2ABridgeExternalExecutionDisabled,
+    A2ABridgeAgentExecutionDisabled,
+    A2ABridgeSecretMaterialDenied,
+    A2ABridgeKeyMaterialDenied,
+    A2ABridgeAuthenticationNonSecret,
+    A2ABridgeSecurityClaimsAbsent,
     Unknown(String),
 }
 
@@ -991,6 +1019,32 @@ impl PolicyRule {
             Self::TrustLedgerSecurityClaimsAbsent => "trust_ledger_security_claims_absent",
             Self::TrustLedgerBlockchainAbsent => "trust_ledger_blockchain_absent",
             Self::TrustLedgerSignatureAbsent => "trust_ledger_signature_absent",
+            Self::McpBridgeContractsDeclared => "mcp_bridge_contracts_declared",
+            Self::McpBridgeAgentsBound => "mcp_bridge_agents_bound",
+            Self::McpBridgePassportsBound => "mcp_bridge_passports_bound",
+            Self::McpBridgeIdentitiesBound => "mcp_bridge_identities_bound",
+            Self::McpBridgeBoundariesBound => "mcp_bridge_boundaries_bound",
+            Self::McpBridgeNetworkDenied => "mcp_bridge_network_denied",
+            Self::McpBridgeExternalExecutionDisabled => "mcp_bridge_external_execution_disabled",
+            Self::McpBridgeToolExecutionDisabled => "mcp_bridge_tool_execution_disabled",
+            Self::McpBridgeSecretMaterialDenied => "mcp_bridge_secret_material_denied",
+            Self::McpBridgeKeyMaterialDenied => "mcp_bridge_key_material_denied",
+            Self::McpBridgeAuthenticationNonSecret => "mcp_bridge_authentication_non_secret",
+            Self::McpBridgeSecurityClaimsAbsent => "mcp_bridge_security_claims_absent",
+            Self::A2ABridgeContractsDeclared => "a2a_bridge_contracts_declared",
+            Self::A2ABridgeAgentsBound => "a2a_bridge_agents_bound",
+            Self::A2ABridgePassportsBound => "a2a_bridge_passports_bound",
+            Self::A2ABridgeIdentitiesBound => "a2a_bridge_identities_bound",
+            Self::A2ABridgeHandshakesBound => "a2a_bridge_handshakes_bound",
+            Self::A2ABridgeTrustLedgersBound => "a2a_bridge_trust_ledgers_bound",
+            Self::A2ABridgeMessageContractsBound => "a2a_bridge_message_contracts_bound",
+            Self::A2ABridgeNetworkDenied => "a2a_bridge_network_denied",
+            Self::A2ABridgeExternalExecutionDisabled => "a2a_bridge_external_execution_disabled",
+            Self::A2ABridgeAgentExecutionDisabled => "a2a_bridge_agent_execution_disabled",
+            Self::A2ABridgeSecretMaterialDenied => "a2a_bridge_secret_material_denied",
+            Self::A2ABridgeKeyMaterialDenied => "a2a_bridge_key_material_denied",
+            Self::A2ABridgeAuthenticationNonSecret => "a2a_bridge_authentication_non_secret",
+            Self::A2ABridgeSecurityClaimsAbsent => "a2a_bridge_security_claims_absent",
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -1882,6 +1936,170 @@ impl TrustLedgerEntryKind {
             Self::Evidence => "evidence",
             Self::Policy => "policy",
             Self::Custom => "custom",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+/// A top-level `mcp_bridge_contract` block declaring an MCP interoperability
+/// surface. v0.31 is bridge-contract metadata + evidence only. It declares how
+/// an agent *could* interoperate with MCP tools/resources/prompts; it does NOT
+/// open network access, start an MCP server, execute tools, or read secrets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpBridgeContractDecl {
+    pub name: Spanned<String>,
+    pub agent: Spanned<String>,
+    pub passport: Spanned<String>,
+    pub identity: Spanned<String>,
+    pub boundary: Spanned<String>,
+    pub transport: Spanned<BridgeTransport>,
+    pub protocol: Spanned<McpProtocol>,
+    pub direction: Spanned<BridgeDirection>,
+    pub tools: Vec<Spanned<String>>,
+    pub resources: Vec<Spanned<String>>,
+    pub prompts: Vec<Spanned<String>>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub external_execution: Spanned<ATrustExecution>,
+    pub tool_execution: Spanned<ATrustExecution>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub authentication: Spanned<BridgeAuthentication>,
+    pub authorization: Spanned<BridgeAuthorization>,
+    pub evidence: Spanned<ATrustEvidenceRequirement>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+/// A top-level `a2a_bridge_contract` block declaring an agent-to-agent
+/// interoperability surface. v0.31 is bridge-contract metadata + evidence only.
+/// It declares how two agents *could* interoperate; it does NOT open network
+/// access, execute agents, send messages, or read secrets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct A2ABridgeContractDecl {
+    pub name: Spanned<String>,
+    pub initiator: Spanned<String>,
+    pub responder: Spanned<String>,
+    pub initiator_passport: Spanned<String>,
+    pub responder_passport: Spanned<String>,
+    pub initiator_identity: Spanned<String>,
+    pub responder_identity: Spanned<String>,
+    pub handshake: Spanned<String>,
+    pub trust_ledger: Spanned<String>,
+    pub boundary: Spanned<String>,
+    pub protocol: Spanned<A2AProtocol>,
+    pub transport: Spanned<BridgeTransport>,
+    pub direction: Spanned<BridgeDirection>,
+    pub message_contracts: Vec<Spanned<String>>,
+    pub capabilities: Vec<Spanned<String>>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub external_execution: Spanned<ATrustExecution>,
+    pub agent_execution: Spanned<ATrustExecution>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub authentication: Spanned<BridgeAuthentication>,
+    pub authorization: Spanned<BridgeAuthorization>,
+    pub evidence: Spanned<ATrustEvidenceRequirement>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeTransport {
+    DeclaredOnly,
+    Disabled,
+    Unknown(String),
+}
+
+impl BridgeTransport {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::DeclaredOnly => "declared_only",
+            Self::Disabled => "disabled",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpProtocol {
+    Mcp,
+    Unknown(String),
+}
+
+impl McpProtocol {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Mcp => "mcp",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum A2AProtocol {
+    A2A,
+    Unknown(String),
+}
+
+impl A2AProtocol {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::A2A => "a2a",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeDirection {
+    Inbound,
+    Outbound,
+    Bidirectional,
+    Unknown(String),
+}
+
+impl BridgeDirection {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Inbound => "inbound",
+            Self::Outbound => "outbound",
+            Self::Bidirectional => "bidirectional",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeAuthentication {
+    None,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl BridgeAuthentication {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::None => "none",
+            Self::DeclaredOnly => "declared_only",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeAuthorization {
+    PolicyBound,
+    DeclaredOnly,
+    Unknown(String),
+}
+
+impl BridgeAuthorization {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::PolicyBound => "policy_bound",
+            Self::DeclaredOnly => "declared_only",
             Self::Unknown(value) => value,
         }
     }

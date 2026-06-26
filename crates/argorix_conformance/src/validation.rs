@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 32] = [
+pub const CATEGORIES: [&str; 33] = [
     "parser",
     "semantics",
     "ir",
@@ -56,6 +56,7 @@ pub const CATEGORIES: [&str; 32] = [
     "atrust_credential_contracts",
     "atrust_handshakes",
     "trust_ledgers",
+    "bridge_contracts",
 ];
 
 #[derive(Debug, Error)]
@@ -86,9 +87,10 @@ pub fn validate_suite(
             | "0.28"
             | "0.29"
             | "0.30"
+            | "0.31"
     ) {
         errors.push(format!(
-            "suite_version must be `0.16`..`0.30`, found `{}`",
+            "suite_version must be `0.16`..`0.31`, found `{}`",
             suite.suite_version
         ));
     }
@@ -151,7 +153,10 @@ pub fn validate_suite(
         if suite.suite_version != "0.29" && category == "atrust_handshakes" {
             continue;
         }
-        if suite.suite_version != "0.30" && category == "trust_ledgers" {
+        if !matches!(suite.suite_version.as_str(), "0.30" | "0.31") && category == "trust_ledgers" {
+            continue;
+        }
+        if suite.suite_version != "0.31" && category == "bridge_contracts" {
             continue;
         }
         if !categories.contains(category) && category != "adapter_framework" {

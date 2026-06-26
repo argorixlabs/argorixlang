@@ -1,0 +1,29 @@
+module policies.trust_ledger
+
+capability trace.write { level safe }
+
+policy TrustLedgerPolicy {
+  require atrust_did_methods_declared
+  require atrust_boundaries_declared
+  require atrust_identity_declared
+  require atrust_credential_contract_declared
+  require atrust_handshake_declared
+  require trust_ledgers_declared
+  require trust_ledger_hash_algorithm_declared
+  require trust_ledger_chain_valid
+  require trust_ledger_entries_bound
+  require trust_ledger_append_only
+  require trust_ledger_network_denied
+  require trust_ledger_key_material_denied
+  require trust_ledger_secret_material_denied
+  require trust_ledger_execution_disabled
+  require trust_ledger_evidence_required
+  require trust_ledger_security_claims_absent
+  require trust_ledger_blockchain_absent
+  require trust_ledger_signature_absent
+
+  on violation {
+    action review
+    trace required
+  }
+}

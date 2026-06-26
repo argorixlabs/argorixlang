@@ -41,6 +41,10 @@ pub struct BytecodeProgram {
     pub atrust_handshakes: Vec<BytecodeATrustHandshake>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trust_ledgers: Vec<BytecodeTrustLedger>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_bridge_contracts: Vec<BytecodeMcpBridgeContract>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub a2a_bridge_contracts: Vec<BytecodeA2ABridgeContract>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -343,6 +347,64 @@ pub struct BytecodeTrustLedgerEntry {
     pub previous_hash: String,
     pub entry_hash: String,
     pub evidence_ref: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeMcpBridgeContract {
+    pub name: String,
+    pub agent: String,
+    pub passport: String,
+    pub identity: String,
+    pub boundary: String,
+    pub transport: String,
+    pub protocol: String,
+    pub direction: String,
+    pub tools: Vec<String>,
+    pub resources: Vec<String>,
+    pub prompts: Vec<String>,
+    pub network: String,
+    pub external_execution: String,
+    pub tool_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub authentication: String,
+    pub authorization: String,
+    pub evidence: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeA2ABridgeContract {
+    pub name: String,
+    pub initiator: String,
+    pub responder: String,
+    pub initiator_passport: String,
+    pub responder_passport: String,
+    pub initiator_identity: String,
+    pub responder_identity: String,
+    pub handshake: String,
+    pub trust_ledger: String,
+    pub boundary: String,
+    pub protocol: String,
+    pub transport: String,
+    pub direction: String,
+    pub message_contracts: Vec<String>,
+    pub capabilities: Vec<String>,
+    pub network: String,
+    pub external_execution: String,
+    pub agent_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub authentication: String,
+    pub authorization: String,
+    pub evidence: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -715,6 +777,14 @@ pub enum BytecodeError {
     DuplicateTrustLedger(String),
     #[error("invalid trust ledger `{name}`: {reason}")]
     InvalidTrustLedger { name: String, reason: String },
+    #[error("duplicate mcp bridge contract `{0}`")]
+    DuplicateMcpBridgeContract(String),
+    #[error("invalid mcp bridge contract `{name}`: {reason}")]
+    InvalidMcpBridgeContract { name: String, reason: String },
+    #[error("duplicate a2a bridge contract `{0}`")]
+    DuplicateA2ABridgeContract(String),
+    #[error("invalid a2a bridge contract `{name}`: {reason}")]
+    InvalidA2ABridgeContract { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -750,6 +820,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.28"
             | "0.29"
             | "0.30"
+            | "0.31"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -780,6 +851,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.28"
             | "0.29"
             | "0.30"
+            | "0.31"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -802,6 +874,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.28"
                 | "0.29"
                 | "0.30"
+                | "0.31"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -835,6 +908,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.28"
                 | "0.29"
                 | "0.30"
+                | "0.31"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -848,7 +922,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapters.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30"
+            "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -856,7 +930,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapter_profiles.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30"
+            "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -864,7 +938,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.cryptos.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30"
+            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -872,32 +946,46 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.crypto_boundaries.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30"
+            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
     }
     if !program.atrust_credential_contracts.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.28" | "0.29" | "0.30")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.28" | "0.29" | "0.30" | "0.31"
+        )
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
         ));
     }
     if !program.atrust_handshakes.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.29" | "0.30")
+        && !matches!(program.bytecode_version.as_str(), "0.29" | "0.30" | "0.31")
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
         ));
     }
     validate_atrust_handshakes(program, &mut errors);
-    if !program.trust_ledgers.is_empty() && !matches!(program.bytecode_version.as_str(), "0.30") {
+    if !program.trust_ledgers.is_empty()
+        && !matches!(program.bytecode_version.as_str(), "0.30" | "0.31")
+    {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
         ));
     }
     validate_trust_ledgers(program, &mut errors);
+    if (!program.mcp_bridge_contracts.is_empty() || !program.a2a_bridge_contracts.is_empty())
+        && !matches!(program.bytecode_version.as_str(), "0.31")
+    {
+        errors.push(BytecodeError::UnsupportedVersion(
+            program.bytecode_version.clone(),
+        ));
+    }
+    validate_mcp_bridge_contracts(program, &mut errors);
+    validate_a2a_bridge_contracts(program, &mut errors);
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
@@ -1182,6 +1270,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.28"
                 | "0.29"
                 | "0.30"
+                | "0.31"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -1241,6 +1330,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
                 | "0.28"
                 | "0.29"
                 | "0.30"
+                | "0.31"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1331,6 +1421,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
                 | "0.28"
                 | "0.29"
                 | "0.30"
+                | "0.31"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1431,7 +1522,17 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
     if !program.features.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30"
+            "0.21"
+                | "0.22"
+                | "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -1491,7 +1592,17 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
     if !program.secrets.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.21" | "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30"
+            "0.21"
+                | "0.22"
+                | "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);
@@ -2044,6 +2155,182 @@ fn validate_trust_ledgers(program: &BytecodeProgram, errors: &mut Vec<BytecodeEr
     }
 }
 
+fn validate_mcp_bridge_contracts(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    for c in &program.mcp_bridge_contracts {
+        if !names.insert(c.name.as_str()) {
+            errors.push(BytecodeError::DuplicateMcpBridgeContract(c.name.clone()));
+            continue;
+        }
+        let mut invalid = |reason: &str| {
+            errors.push(BytecodeError::InvalidMcpBridgeContract {
+                name: c.name.clone(),
+                reason: reason.to_owned(),
+            });
+        };
+        if c.name.trim().is_empty() {
+            invalid("name must not be empty");
+        }
+        if c.agent.trim().is_empty() {
+            invalid("agent must not be empty");
+        }
+        if c.passport.trim().is_empty() {
+            invalid("passport must not be empty");
+        }
+        if c.identity.trim().is_empty() {
+            invalid("identity must not be empty");
+        }
+        if c.boundary.trim().is_empty() {
+            invalid("boundary must not be empty");
+        }
+        if !matches!(c.transport.as_str(), "declared_only" | "disabled") {
+            invalid("transport must be declared_only or disabled");
+        }
+        if c.protocol != "mcp" {
+            invalid("protocol must be mcp");
+        }
+        if !matches!(
+            c.direction.as_str(),
+            "inbound" | "outbound" | "bidirectional"
+        ) {
+            invalid("direction must be inbound, outbound, or bidirectional");
+        }
+        if c.tools.iter().any(|t| t.trim().is_empty()) {
+            invalid("tools must not contain empty items");
+        }
+        if c.resources.iter().any(|t| t.trim().is_empty()) {
+            invalid("resources must not contain empty items");
+        }
+        if c.prompts.iter().any(|t| t.trim().is_empty()) {
+            invalid("prompts must not contain empty items");
+        }
+        if c.network != "denied" {
+            invalid("network must be denied");
+        }
+        if c.external_execution != "disabled" {
+            invalid("external_execution must be disabled");
+        }
+        if c.tool_execution != "disabled" {
+            invalid("tool_execution must be disabled");
+        }
+        if c.secret_material != "denied" {
+            invalid("secret_material must be denied");
+        }
+        if c.key_material != "denied" {
+            invalid("key_material must be denied");
+        }
+        if !matches!(c.authentication.as_str(), "none" | "declared_only") {
+            invalid("authentication must be none or declared_only");
+        }
+        if !matches!(c.authorization.as_str(), "policy_bound" | "declared_only") {
+            invalid("authorization must be policy_bound or declared_only");
+        }
+        if c.evidence != "required" {
+            invalid("evidence must be required");
+        }
+        if c.security_claims != "none" {
+            invalid("security_claims must be none");
+        }
+        if c.purpose.is_empty() {
+            invalid("purpose must not be empty");
+        }
+        if c.purpose.iter().any(|p| p.trim().is_empty()) {
+            invalid("purpose must not contain empty items");
+        }
+    }
+}
+
+fn validate_a2a_bridge_contracts(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    for c in &program.a2a_bridge_contracts {
+        if !names.insert(c.name.as_str()) {
+            errors.push(BytecodeError::DuplicateA2ABridgeContract(c.name.clone()));
+            continue;
+        }
+        let mut invalid = |reason: &str| {
+            errors.push(BytecodeError::InvalidA2ABridgeContract {
+                name: c.name.clone(),
+                reason: reason.to_owned(),
+            });
+        };
+        if c.name.trim().is_empty() {
+            invalid("name must not be empty");
+        }
+        for (field, value) in [
+            ("initiator", &c.initiator),
+            ("responder", &c.responder),
+            ("initiator_passport", &c.initiator_passport),
+            ("responder_passport", &c.responder_passport),
+            ("initiator_identity", &c.initiator_identity),
+            ("responder_identity", &c.responder_identity),
+            ("handshake", &c.handshake),
+            ("trust_ledger", &c.trust_ledger),
+            ("boundary", &c.boundary),
+        ] {
+            if value.trim().is_empty() {
+                invalid(&format!("{field} must not be empty"));
+            }
+        }
+        if !c.initiator.trim().is_empty() && c.initiator == c.responder {
+            invalid("initiator and responder must be distinct");
+        }
+        if c.protocol != "a2a" {
+            invalid("protocol must be a2a");
+        }
+        if !matches!(c.transport.as_str(), "declared_only" | "disabled") {
+            invalid("transport must be declared_only or disabled");
+        }
+        if !matches!(
+            c.direction.as_str(),
+            "inbound" | "outbound" | "bidirectional"
+        ) {
+            invalid("direction must be inbound, outbound, or bidirectional");
+        }
+        if c.message_contracts.is_empty() {
+            invalid("message_contracts must not be empty");
+        }
+        if c.message_contracts.iter().any(|m| m.trim().is_empty()) {
+            invalid("message_contracts must not contain empty items");
+        }
+        if c.capabilities.iter().any(|t| t.trim().is_empty()) {
+            invalid("capabilities must not contain empty items");
+        }
+        if c.network != "denied" {
+            invalid("network must be denied");
+        }
+        if c.external_execution != "disabled" {
+            invalid("external_execution must be disabled");
+        }
+        if c.agent_execution != "disabled" {
+            invalid("agent_execution must be disabled");
+        }
+        if c.secret_material != "denied" {
+            invalid("secret_material must be denied");
+        }
+        if c.key_material != "denied" {
+            invalid("key_material must be denied");
+        }
+        if !matches!(c.authentication.as_str(), "none" | "declared_only") {
+            invalid("authentication must be none or declared_only");
+        }
+        if !matches!(c.authorization.as_str(), "policy_bound" | "declared_only") {
+            invalid("authorization must be policy_bound or declared_only");
+        }
+        if c.evidence != "required" {
+            invalid("evidence must be required");
+        }
+        if c.security_claims != "none" {
+            invalid("security_claims must be none");
+        }
+        if c.purpose.is_empty() {
+            invalid("purpose must not be empty");
+        }
+        if c.purpose.iter().any(|p| p.trim().is_empty()) {
+            invalid("purpose must not contain empty items");
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -2171,6 +2458,32 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "trust_ledger_security_claims_absent",
         "trust_ledger_blockchain_absent",
         "trust_ledger_signature_absent",
+        "mcp_bridge_contracts_declared",
+        "mcp_bridge_agents_bound",
+        "mcp_bridge_passports_bound",
+        "mcp_bridge_identities_bound",
+        "mcp_bridge_boundaries_bound",
+        "mcp_bridge_network_denied",
+        "mcp_bridge_external_execution_disabled",
+        "mcp_bridge_tool_execution_disabled",
+        "mcp_bridge_secret_material_denied",
+        "mcp_bridge_key_material_denied",
+        "mcp_bridge_authentication_non_secret",
+        "mcp_bridge_security_claims_absent",
+        "a2a_bridge_contracts_declared",
+        "a2a_bridge_agents_bound",
+        "a2a_bridge_passports_bound",
+        "a2a_bridge_identities_bound",
+        "a2a_bridge_handshakes_bound",
+        "a2a_bridge_trust_ledgers_bound",
+        "a2a_bridge_message_contracts_bound",
+        "a2a_bridge_network_denied",
+        "a2a_bridge_external_execution_disabled",
+        "a2a_bridge_agent_execution_disabled",
+        "a2a_bridge_secret_material_denied",
+        "a2a_bridge_key_material_denied",
+        "a2a_bridge_authentication_non_secret",
+        "a2a_bridge_security_claims_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -2280,6 +2593,8 @@ mod tests {
             atrust_credential_contracts: vec![],
             atrust_handshakes: vec![],
             trust_ledgers: vec![],
+            mcp_bridge_contracts: vec![],
+            a2a_bridge_contracts: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
