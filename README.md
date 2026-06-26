@@ -19,6 +19,7 @@
   ·
   <a href="./LICENSE">Apache-2.0</a>
 </div>
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/argorixlabs/argorixlang/actions/workflows/ci.yml/badge.svg)](https://github.com/argorixlabs/argorixlang/actions/workflows/ci.yml)
 [![Security & licenses](https://github.com/argorixlabs/argorixlang/actions/workflows/security.yml/badge.svg)](https://github.com/argorixlabs/argorixlang/actions/workflows/security.yml)
