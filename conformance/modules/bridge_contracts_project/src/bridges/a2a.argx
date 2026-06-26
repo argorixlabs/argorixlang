@@ -1,0 +1,37 @@
+module bridges.a2a
+
+a2a_bridge_contract ResearchA2ABridge {
+  initiator ResearchAgent
+  responder VerifierAgent
+
+  initiator_passport ResearchPassport
+  responder_passport VerifierPassport
+
+  initiator_identity ResearchIdentity
+  responder_identity VerifierIdentity
+
+  handshake ResearchHandshake
+  trust_ledger ATrustLedger
+  boundary AgentTrustBoundary
+
+  protocol a2a
+  transport declared_only
+  direction bidirectional
+
+  message_contracts ["ResearchRequest", "ResearchResponse"]
+  capabilities ["ask.llm", "respond.safe"]
+
+  network denied
+  external_execution disabled
+  agent_execution disabled
+  secret_material denied
+  key_material denied
+
+  authentication none
+  authorization policy_bound
+  evidence required
+  security_claims none
+
+  purpose ["a2a", "bridge-contract", "dry-run"]
+  notes "metadata only; no A2A runtime"
+}

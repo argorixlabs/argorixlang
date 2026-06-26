@@ -36,6 +36,10 @@ pub struct IrProgram {
     pub atrust_handshakes: Vec<IrATrustHandshake>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trust_ledgers: Vec<IrTrustLedger>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_bridge_contracts: Vec<IrMcpBridgeContract>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub a2a_bridge_contracts: Vec<IrA2ABridgeContract>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -363,6 +367,64 @@ pub struct IrTrustLedgerEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrMcpBridgeContract {
+    pub name: String,
+    pub agent: String,
+    pub passport: String,
+    pub identity: String,
+    pub boundary: String,
+    pub transport: String,
+    pub protocol: String,
+    pub direction: String,
+    pub tools: Vec<String>,
+    pub resources: Vec<String>,
+    pub prompts: Vec<String>,
+    pub network: String,
+    pub external_execution: String,
+    pub tool_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub authentication: String,
+    pub authorization: String,
+    pub evidence: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrA2ABridgeContract {
+    pub name: String,
+    pub initiator: String,
+    pub responder: String,
+    pub initiator_passport: String,
+    pub responder_passport: String,
+    pub initiator_identity: String,
+    pub responder_identity: String,
+    pub handshake: String,
+    pub trust_ledger: String,
+    pub boundary: String,
+    pub protocol: String,
+    pub transport: String,
+    pub direction: String,
+    pub message_contracts: Vec<String>,
+    pub capabilities: Vec<String>,
+    pub network: String,
+    pub external_execution: String,
+    pub agent_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub authentication: String,
+    pub authorization: String,
+    pub evidence: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
@@ -516,7 +578,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.30".to_owned(),
+            ir_version: "0.31".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -834,6 +896,70 @@ impl From<&Program> for IrProgram {
                     notes: l.notes.as_ref().map(|v| v.value.clone()),
                 })
                 .collect(),
+            mcp_bridge_contracts: program
+                .mcp_bridge_contracts
+                .iter()
+                .map(|c| IrMcpBridgeContract {
+                    name: c.name.value.clone(),
+                    agent: c.agent.value.clone(),
+                    passport: c.passport.value.clone(),
+                    identity: c.identity.value.clone(),
+                    boundary: c.boundary.value.clone(),
+                    transport: c.transport.value.source_name().to_owned(),
+                    protocol: c.protocol.value.source_name().to_owned(),
+                    direction: c.direction.value.source_name().to_owned(),
+                    tools: c.tools.iter().map(|v| v.value.clone()).collect(),
+                    resources: c.resources.iter().map(|v| v.value.clone()).collect(),
+                    prompts: c.prompts.iter().map(|v| v.value.clone()).collect(),
+                    network: c.network.value.source_name().to_owned(),
+                    external_execution: c.external_execution.value.source_name().to_owned(),
+                    tool_execution: c.tool_execution.value.source_name().to_owned(),
+                    secret_material: c.secret_material.value.source_name().to_owned(),
+                    key_material: c.key_material.value.source_name().to_owned(),
+                    authentication: c.authentication.value.source_name().to_owned(),
+                    authorization: c.authorization.value.source_name().to_owned(),
+                    evidence: c.evidence.value.source_name().to_owned(),
+                    security_claims: c.security_claims.value.source_name().to_owned(),
+                    purpose: c.purpose.iter().map(|v| v.value.clone()).collect(),
+                    notes: c.notes.as_ref().map(|v| v.value.clone()),
+                })
+                .collect(),
+            a2a_bridge_contracts: program
+                .a2a_bridge_contracts
+                .iter()
+                .map(|c| IrA2ABridgeContract {
+                    name: c.name.value.clone(),
+                    initiator: c.initiator.value.clone(),
+                    responder: c.responder.value.clone(),
+                    initiator_passport: c.initiator_passport.value.clone(),
+                    responder_passport: c.responder_passport.value.clone(),
+                    initiator_identity: c.initiator_identity.value.clone(),
+                    responder_identity: c.responder_identity.value.clone(),
+                    handshake: c.handshake.value.clone(),
+                    trust_ledger: c.trust_ledger.value.clone(),
+                    boundary: c.boundary.value.clone(),
+                    protocol: c.protocol.value.source_name().to_owned(),
+                    transport: c.transport.value.source_name().to_owned(),
+                    direction: c.direction.value.source_name().to_owned(),
+                    message_contracts: c
+                        .message_contracts
+                        .iter()
+                        .map(|v| v.value.clone())
+                        .collect(),
+                    capabilities: c.capabilities.iter().map(|v| v.value.clone()).collect(),
+                    network: c.network.value.source_name().to_owned(),
+                    external_execution: c.external_execution.value.source_name().to_owned(),
+                    agent_execution: c.agent_execution.value.source_name().to_owned(),
+                    secret_material: c.secret_material.value.source_name().to_owned(),
+                    key_material: c.key_material.value.source_name().to_owned(),
+                    authentication: c.authentication.value.source_name().to_owned(),
+                    authorization: c.authorization.value.source_name().to_owned(),
+                    evidence: c.evidence.value.source_name().to_owned(),
+                    security_claims: c.security_claims.value.source_name().to_owned(),
+                    purpose: c.purpose.iter().map(|v| v.value.clone()).collect(),
+                    notes: c.notes.as_ref().map(|v| v.value.clone()),
+                })
+                .collect(),
             assertions: program
                 .assertions
                 .iter()
@@ -1093,7 +1219,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.30");
+        assert_eq!(ir.ir_version, "0.31");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -1131,7 +1257,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.30");
+        assert_eq!(ir.ir_version, "0.31");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -1166,7 +1292,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.30");
+        assert_eq!(ir.ir_version, "0.31");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");

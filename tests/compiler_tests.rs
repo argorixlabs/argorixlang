@@ -130,7 +130,7 @@ fn emits_versioned_v02_ir_with_capabilities() {
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
 
-    assert_eq!(json["ir_version"], "0.30");
+    assert_eq!(json["ir_version"], "0.31");
     assert_eq!(json["language"], "Argorix Lang");
     assert_eq!(json["capabilities"][3]["name"], "runtime.halt");
     assert_eq!(json["capabilities"][3]["requires_approval"], true);
@@ -258,7 +258,7 @@ fn ir_includes_intrinsic_instructions() {
     let ast = parse_source(include_str!("../examples/prompt_defense_v06.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.30");
+    assert_eq!(json["ir_version"], "0.31");
     assert_eq!(
         json["agents"][0]["handlers"][0]["instructions"][0]["op"],
         "intrinsic"
@@ -561,7 +561,7 @@ fn ir_preserves_populated_provider_allowlists() {
     .unwrap();
     check_program(&ast).unwrap();
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.30");
+    assert_eq!(ir.ir_version, "0.31");
     assert_eq!(
         ir.providers[0].allowed_targets,
         vec!["GuardModel", "WebSearch"]
@@ -571,7 +571,7 @@ fn ir_preserves_populated_provider_allowlists() {
         vec!["model.invoke", "web.search"]
     );
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.30");
+    assert_eq!(bytecode.bytecode_version, "0.31");
     assert_eq!(
         bytecode.providers[0].allowed_targets,
         vec!["GuardModel", "WebSearch"]
@@ -600,14 +600,14 @@ fn ir_and_bytecode_include_declarative_provider_contracts() {
     let ast = parse_source(source).unwrap();
     check_program(&ast).unwrap();
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.30");
+    assert_eq!(ir.ir_version, "0.31");
     assert_eq!(ir.providers[0].name, "OpenAI");
     assert_eq!(ir.providers[0].kind, "external");
     assert!(ir.providers[0].allowed_targets.is_empty());
     assert!(ir.providers[0].allowed_capabilities.is_empty());
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.30");
+    assert_eq!(bytecode.bytecode_version, "0.31");
     assert_eq!(bytecode.providers[0].name, "OpenAI");
     assert!(bytecode.providers[0].allowed_targets.is_empty());
     assert!(bytecode.providers[0].allowed_capabilities.is_empty());
@@ -637,12 +637,12 @@ fn ir_and_bytecode_make_tool_provider_explicit() {
     assert!(ast.tools[0].provider.is_none());
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.30");
+    assert_eq!(ir.ir_version, "0.31");
     assert_eq!(ir.tools[0].provider, "simulated");
     assert_eq!(ir.models.len(), 0);
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.30");
+    assert_eq!(bytecode.bytecode_version, "0.31");
     assert_eq!(bytecode.tools[0].provider, "simulated");
     assert!(bytecode.instructions.iter().any(|instruction| matches!(
         instruction,
@@ -749,7 +749,7 @@ fn ir_includes_tools_and_call_instruction() {
     let ast = parse_source(include_str!("../examples/tool_call_v07.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.30");
+    assert_eq!(json["ir_version"], "0.31");
     assert_eq!(json["tools"][0]["name"], "WebSearch");
     assert_eq!(json["agents"][0]["tools"][0], "WebSearch");
     assert_eq!(
@@ -831,7 +831,7 @@ fn ir_includes_models_and_ask() {
     let ast = parse_source(include_str!("../examples/model_call_v08.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.30");
+    assert_eq!(json["ir_version"], "0.31");
     assert_eq!(json["models"][0]["name"], "GuardModel");
     assert_eq!(json["agents"][1]["models"][0], "GuardModel");
     assert_eq!(
@@ -881,7 +881,7 @@ fn parses_and_emits_v09_policies() {
     assert!(ast.failures[0].trace_required);
 
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.30");
+    assert_eq!(json["ir_version"], "0.31");
     assert_eq!(json["assertions"][0]["name"], "no_unhandled_messages");
     assert_eq!(json["failures"][0]["trace"], "required");
 }
@@ -932,7 +932,7 @@ fn v016_fixture_remains_verifiable_after_v017_default_emission() {
     ))
     .unwrap();
 
-    assert_eq!(emitted.bytecode_version, "0.30");
+    assert_eq!(emitted.bytecode_version, "0.31");
     assert_eq!(fixture.bytecode_version, "0.16");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
 }
@@ -946,7 +946,7 @@ fn v017_policy_fixture_remains_verifiable_after_v018_default_emission() {
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/policy_v017.argbc.json")).unwrap();
 
-    assert_eq!(emitted.bytecode_version, "0.30");
+    assert_eq!(emitted.bytecode_version, "0.31");
     assert_eq!(fixture.bytecode_version, "0.17");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.policies.len(), 2);
@@ -959,7 +959,7 @@ fn v018_typed_message_fixture_remains_verifiable_after_v019_default_emission() {
     let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/typed_messages_v018.argbc.json")).unwrap();
-    assert_eq!(emitted.bytecode_version, "0.30");
+    assert_eq!(emitted.bytecode_version, "0.31");
     assert_eq!(fixture.bytecode_version, "0.18");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.types[0].fields[0].field_type, "string");
@@ -972,7 +972,7 @@ fn v019_passport_fixture_remains_verifiable_after_v020_default_emission() {
     let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/agent_passport_v019.argbc.json")).unwrap();
-    assert_eq!(emitted.bytecode_version, "0.30");
+    assert_eq!(emitted.bytecode_version, "0.31");
     assert_eq!(fixture.bytecode_version, "0.19");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.passports[0].agent, "ResearchAgent");
@@ -992,7 +992,7 @@ fn v021_feature_secret_fixture_matches_fresh_output() {
     ))
     .unwrap();
     assert_eq!(emitted, fixture);
-    assert_eq!(emitted.bytecode_version, "0.30");
+    assert_eq!(emitted.bytecode_version, "0.31");
     assert_eq!(emitted.provider_harnesses[0].name, "OpenAIHarness");
     assert_eq!(
         emitted.provider_harnesses[0].feature.as_deref(),
@@ -1043,7 +1043,7 @@ fn v021_vm_preserves_feature_and_secret_boundary_evidence() {
     // Trace preserves feature and secret metadata.
     assert_eq!(trace.features[0].name, "OpenAIAdapter");
     assert_eq!(trace.secrets[0].name, "OpenAISecret");
-    assert_eq!(trace.vm_version, "0.30");
+    assert_eq!(trace.vm_version, "0.31");
 
     // Ledger records governance-only events, never real secret reads.
     let events = &outcome.state.trace_ledger.events;
@@ -1056,7 +1056,7 @@ fn v021_vm_preserves_feature_and_secret_boundary_evidence() {
 
     // SecurityReport summarizes the boundary without exposing secret material.
     let report = argorix_vm::SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.30");
+    assert_eq!(report.report_version, "0.31");
     assert_eq!(report.feature_flags.total, 1);
     assert_eq!(report.feature_flags.requires_approval, 1);
     assert_eq!(report.feature_flags.linked_providers, vec!["OpenAI"]);
@@ -1084,7 +1084,7 @@ fn v029_atrust_handshake_pipeline_and_fixture() {
 
     // IR carries the dry-run handshake metadata at version 0.29.
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.30");
+    assert_eq!(ir.ir_version, "0.31");
     assert_eq!(ir.atrust_handshakes.len(), 1);
     let hs = &ir.atrust_handshakes[0];
     assert_eq!(hs.name, "ResearchHandshake");
@@ -1098,7 +1098,7 @@ fn v029_atrust_handshake_pipeline_and_fixture() {
 
     // Bytecode preserves the metadata and verifies.
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.30");
+    assert_eq!(bytecode.bytecode_version, "0.31");
     assert_eq!(bytecode.atrust_handshakes.len(), 1);
     argorix_bytecode::verify_bytecode(&bytecode).unwrap();
 
@@ -1134,7 +1134,7 @@ fn v029_verifier_accepts_v028_and_v029_bytecode() {
     let ast = parse_source(include_str!("../examples/atrust_handshake_v029.argx")).unwrap();
     check_program(&ast).unwrap();
     let v029 = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
-    assert_eq!(v029.bytecode_version, "0.30");
+    assert_eq!(v029.bytecode_version, "0.31");
     argorix_bytecode::verify_bytecode(&v029).unwrap();
 
     // A 0.28 fixture remains verifiable (backward compatibility preserved).
@@ -1170,7 +1170,7 @@ fn v029_security_report_covers_handshakes_without_claims() {
     // SecurityReport summarizes the declared dry-run handshake and makes NO
     // security claim about it.
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.30");
+    assert_eq!(report.report_version, "0.31");
     assert_eq!(report.atrust_handshakes, 1);
     let serialized = serde_json::to_string(&report).unwrap();
     assert!(!serialized.contains("handshake_secure"));
@@ -1359,7 +1359,7 @@ fn v030_trust_ledger_pipeline_and_fixture() {
     check_program(&ast).unwrap();
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.30");
+    assert_eq!(ir.ir_version, "0.31");
     assert_eq!(ir.trust_ledgers.len(), 1);
     let l = &ir.trust_ledgers[0];
     assert_eq!(l.name, "ATrustLedger");
@@ -1372,7 +1372,7 @@ fn v030_trust_ledger_pipeline_and_fixture() {
     assert_eq!(l.security_claims, "none");
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.30");
+    assert_eq!(bytecode.bytecode_version, "0.31");
     assert_eq!(bytecode.trust_ledgers.len(), 1);
     argorix_bytecode::verify_bytecode(&bytecode).unwrap();
 
@@ -1405,7 +1405,7 @@ fn v030_verifier_accepts_v029_and_v030_bytecode() {
     let ast = parse_source(include_str!("../examples/trust_ledger_v030.argx")).unwrap();
     check_program(&ast).unwrap();
     let v030 = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
-    assert_eq!(v030.bytecode_version, "0.30");
+    assert_eq!(v030.bytecode_version, "0.31");
     argorix_bytecode::verify_bytecode(&v030).unwrap();
 
     // A 0.29 bytecode remains verifiable (backward compatibility preserved).
@@ -1434,9 +1434,285 @@ fn v030_security_report_covers_trust_ledgers_without_claims() {
     );
 
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.30");
+    assert_eq!(report.report_version, "0.31");
     assert_eq!(report.trust_ledgers, 1);
     let serialized = serde_json::to_string(&report).unwrap();
     assert!(!serialized.contains("blockchain_verified"));
     assert!(!serialized.contains("tamper_proof"));
+}
+
+// ---------------------------------------------------------------------------
+// v0.31 — MCP / A2A Bridge Contracts
+// ---------------------------------------------------------------------------
+
+const BRIDGE_V031: &str = include_str!("../examples/bridge_contracts_v031.argx");
+
+#[test]
+fn v031_parses_mcp_and_a2a_bridge_contracts() {
+    let ast = parse_source(BRIDGE_V031).unwrap();
+    assert_eq!(ast.mcp_bridge_contracts.len(), 1);
+    assert_eq!(ast.a2a_bridge_contracts.len(), 1);
+    assert_eq!(ast.mcp_bridge_contracts[0].name.value, "ResearchMcpBridge");
+    assert_eq!(ast.a2a_bridge_contracts[0].name.value, "ResearchA2ABridge");
+}
+
+#[test]
+fn v031_semantic_accepts_valid_bridge_contracts() {
+    let ast = parse_source(BRIDGE_V031).unwrap();
+    check_program(&ast).expect("valid bridge contracts pass semantic checking");
+}
+
+#[test]
+fn v031_ir_and_bytecode_include_bridge_contracts() {
+    let ast = parse_source(BRIDGE_V031).unwrap();
+    check_program(&ast).unwrap();
+
+    let ir = IrProgram::from(&ast);
+    assert_eq!(ir.ir_version, "0.31");
+    assert_eq!(ir.mcp_bridge_contracts.len(), 1);
+    assert_eq!(ir.a2a_bridge_contracts.len(), 1);
+    assert_eq!(ir.mcp_bridge_contracts[0].protocol, "mcp");
+    assert_eq!(ir.a2a_bridge_contracts[0].protocol, "a2a");
+
+    let bytecode = argorix_bytecode::lower_ir(&ir);
+    assert_eq!(bytecode.bytecode_version, "0.31");
+    assert_eq!(bytecode.mcp_bridge_contracts.len(), 1);
+    assert_eq!(bytecode.a2a_bridge_contracts.len(), 1);
+    argorix_bytecode::verify_bytecode(&bytecode).unwrap();
+
+    let fixture: argorix_bytecode::BytecodeProgram =
+        serde_json::from_str(include_str!("../examples/bridge_contracts_v031.argbc.json")).unwrap();
+    assert_eq!(bytecode, fixture);
+}
+
+#[test]
+fn v031_verifier_accepts_v030_and_v031_bytecode() {
+    let ast = parse_source(BRIDGE_V031).unwrap();
+    check_program(&ast).unwrap();
+    let v031 = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+    assert_eq!(v031.bytecode_version, "0.31");
+    argorix_bytecode::verify_bytecode(&v031).unwrap();
+
+    let mut legacy = v031.clone();
+    legacy.bytecode_version = "0.30".into();
+    legacy.mcp_bridge_contracts.clear();
+    legacy.a2a_bridge_contracts.clear();
+    argorix_bytecode::verify_bytecode(&legacy).unwrap();
+
+    legacy.bytecode_version = "0.29".into();
+    legacy.trust_ledgers.clear();
+    argorix_bytecode::verify_bytecode(&legacy).unwrap();
+}
+
+#[test]
+fn v031_security_report_and_trace_cover_bridges_without_claims() {
+    use argorix_vm::{SecurityReport, Vm};
+
+    let ast = parse_source(BRIDGE_V031).unwrap();
+    check_program(&ast).unwrap();
+    let bytecode = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+
+    let outcome = Vm::new().run_reactive_outcome(
+        &bytecode,
+        argorix_vm::InjectedMessage {
+            from: "User".into(),
+            to: "ResearchAgent".into(),
+            act: "tell".into(),
+            message_type: "UserPrompt".into(),
+        },
+    );
+
+    let report = SecurityReport::from_outcome(&bytecode, &outcome);
+    assert_eq!(report.report_version, "0.31");
+    assert_eq!(report.mcp_bridge_contracts.total, 1);
+    assert_eq!(report.a2a_bridge_contracts.total, 1);
+    assert_eq!(report.mcp_bridge_contracts.network.get("denied"), Some(&1));
+    assert_eq!(
+        report.mcp_bridge_contracts.tool_execution.get("disabled"),
+        Some(&1)
+    );
+    assert_eq!(
+        report.a2a_bridge_contracts.agent_execution.get("disabled"),
+        Some(&1)
+    );
+    assert_eq!(
+        report.mcp_bridge_contracts.security_claims.get("none"),
+        Some(&1)
+    );
+
+    let serialized = serde_json::to_string(&report).unwrap();
+    for forbidden in [
+        "mcp_connected",
+        "a2a_connected",
+        "tool_verified",
+        "agent_verified",
+        "secure_bridge",
+    ] {
+        assert!(!serialized.contains(forbidden), "leaked claim {forbidden}");
+    }
+
+    let trace = outcome.result.expect("reactive run succeeds");
+    let events = serde_json::to_string(&trace.events).unwrap();
+    for declared in [
+        "McpBridgeContractDeclared",
+        "McpBridgeNetworkDenied",
+        "A2ABridgeContractDeclared",
+        "A2AAgentExecutionDisabled",
+        "BridgeSecurityClaimsDenied",
+    ] {
+        assert!(events.contains(declared), "missing event {declared}");
+    }
+    for forbidden in [
+        "McpConnected",
+        "McpToolCalled",
+        "McpServerStarted",
+        "A2AMessageSent",
+        "A2AAgentExecuted",
+        "NetworkRequest",
+        "ApiKeyLoaded",
+        "OAuthCompleted",
+    ] {
+        assert!(!events.contains(forbidden), "unexpected event {forbidden}");
+    }
+}
+
+#[test]
+fn v031_bytecode_has_no_executable_bridge_instructions() {
+    let ast = parse_source(BRIDGE_V031).unwrap();
+    check_program(&ast).unwrap();
+    let bytecode = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+    let json = serde_json::to_value(&bytecode).unwrap();
+    let instrs = serde_json::to_string(&json["instructions"]).unwrap();
+    for forbidden in [
+        "OpenMcpConnection",
+        "CallMcpTool",
+        "SendA2AMessage",
+        "ExecuteAgent",
+        "OpenNetwork",
+        "ReadApiKey",
+        "ResolveDid",
+        "VerifyCredential",
+        "RunHandshake",
+    ] {
+        assert!(
+            !instrs.contains(forbidden),
+            "unexpected bridge instruction {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn v031_duplicate_bridge_name_is_rejected() {
+    let mut doubled = String::from(BRIDGE_V031);
+    let block = concat!(
+        "mcp_bridge_contract ResearchMcpBridge {\n",
+        "  agent ResearchAgent\n  passport ResearchPassport\n  identity ResearchIdentity\n",
+        "  boundary AgentTrustBoundary\n  transport declared_only\n  protocol mcp\n",
+        "  direction outbound\n  tools []\n  resources []\n  prompts []\n",
+        "  network denied\n  external_execution disabled\n  tool_execution disabled\n",
+        "  secret_material denied\n  key_material denied\n  authentication none\n",
+        "  authorization policy_bound\n  evidence required\n  security_claims none\n",
+        "  purpose [\"mcp\"]\n}\n"
+    );
+    doubled.push_str(block);
+    let ast = parse_source(&doubled).unwrap();
+    let err = check_program(&ast).expect_err("duplicate bridge name must be rejected");
+    assert!(err
+        .iter()
+        .any(|d| d.message.contains("duplicate mcp_bridge_contract")));
+}
+
+#[test]
+fn invalid_bridge_contract_fixtures_all_fail() {
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    const EXPECTED: [&str; 32] = [
+        "missing_mcp_agent.argx",
+        "unknown_mcp_agent.argx",
+        "mcp_passport_agent_mismatch.argx",
+        "mcp_identity_agent_mismatch.argx",
+        "mcp_boundary_mismatch.argx",
+        "mcp_transport_live.argx",
+        "mcp_network_allowed.argx",
+        "mcp_external_execution_enabled.argx",
+        "mcp_tool_execution_enabled.argx",
+        "mcp_secret_material_allowed.argx",
+        "mcp_key_material_allowed.argx",
+        "mcp_authentication_api_key.argx",
+        "mcp_security_claim_secure_bridge.argx",
+        "missing_a2a_initiator.argx",
+        "same_a2a_agents.argx",
+        "a2a_passport_agent_mismatch.argx",
+        "a2a_identity_agent_mismatch.argx",
+        "a2a_unknown_handshake.argx",
+        "a2a_handshake_agent_mismatch.argx",
+        "a2a_unknown_trust_ledger.argx",
+        "a2a_ledger_missing_handshake.argx",
+        "a2a_unknown_message_contract.argx",
+        "a2a_transport_live.argx",
+        "a2a_network_allowed.argx",
+        "a2a_external_execution_enabled.argx",
+        "a2a_agent_execution_enabled.argx",
+        "a2a_secret_material_allowed.argx",
+        "a2a_key_material_allowed.argx",
+        "a2a_authentication_api_key.argx",
+        "a2a_security_claim_secure_bridge.argx",
+        "duplicate_mcp_bridge_name.argx",
+        "duplicate_a2a_bridge_name.argx",
+    ];
+
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/invalid_bridge_contracts");
+    let actual: BTreeSet<String> = std::fs::read_dir(&dir)
+        .expect("invalid_bridge_contracts directory must exist")
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".argx"))
+        .collect();
+    assert!(!actual.is_empty(), "invalid fixture directory is empty");
+    let expected: BTreeSet<String> = EXPECTED.iter().map(|s| s.to_string()).collect();
+    assert_eq!(actual, expected, "fixture set drift in {}", dir.display());
+    for name in EXPECTED {
+        let path = dir.join(name);
+        let src = std::fs::read_to_string(&path).expect("fixture file must be readable");
+        let compiles = parse_source(&src)
+            .ok()
+            .map(|ast| check_program(&ast).is_ok())
+            .unwrap_or(false);
+        assert!(
+            !compiles,
+            "invalid bridge fixture `{name}` unexpectedly passed semantic checking"
+        );
+    }
+}
+
+#[test]
+fn v031_declares_no_network_secret_or_runtime_surface() {
+    let ast = parse_source(BRIDGE_V031).unwrap();
+    check_program(&ast).unwrap();
+    let bytecode = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+    assert!(bytecode.secrets.is_empty(), "no secret boundaries declared");
+    for c in &bytecode.mcp_bridge_contracts {
+        assert_eq!(c.network, "denied");
+        assert_eq!(c.external_execution, "disabled");
+        assert_eq!(c.tool_execution, "disabled");
+        assert_eq!(c.secret_material, "denied");
+        assert_eq!(c.key_material, "denied");
+        assert!(matches!(
+            c.authentication.as_str(),
+            "none" | "declared_only"
+        ));
+        assert_eq!(c.security_claims, "none");
+    }
+    for c in &bytecode.a2a_bridge_contracts {
+        assert_eq!(c.network, "denied");
+        assert_eq!(c.external_execution, "disabled");
+        assert_eq!(c.agent_execution, "disabled");
+        assert_eq!(c.secret_material, "denied");
+        assert_eq!(c.key_material, "denied");
+        assert!(matches!(
+            c.authentication.as_str(),
+            "none" | "declared_only"
+        ));
+        assert_eq!(c.security_claims, "none");
+    }
 }

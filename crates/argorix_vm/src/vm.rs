@@ -264,6 +264,92 @@ impl Vm {
                 EventFields::default(),
             );
         }
+        // v0.31 MCP/A2A bridge contracts are declarative interoperability
+        // surfaces. Declaring a bridge never connects it: no network is opened,
+        // no MCP server starts, no tool runs, and no agent executes. We record
+        // the closed boundary as evidence only.
+        for c in &bytecode.mcp_bridge_contracts {
+            state.trace_ledger.record(
+                EventType::McpBridgeContractDeclared,
+                "declared",
+                format!("mcp_bridge_contract {} declared as metadata only", c.name),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::McpBridgeRuntimeDisabled,
+                "disabled",
+                format!(
+                    "mcp_bridge_contract {} runtime disabled; no MCP server, no tool execution",
+                    c.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::McpBridgeNetworkDenied,
+                "denied",
+                format!(
+                    "mcp_bridge_contract {} network denied; no sockets opened",
+                    c.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::McpBridgeToolExecutionDisabled,
+                "disabled",
+                format!("mcp_bridge_contract {} tool execution disabled", c.name),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::BridgeSecurityClaimsDenied,
+                "none",
+                format!(
+                    "mcp_bridge_contract {} declares no security claims; declared != connected",
+                    c.name
+                ),
+                EventFields::default(),
+            );
+        }
+        for c in &bytecode.a2a_bridge_contracts {
+            state.trace_ledger.record(
+                EventType::A2ABridgeContractDeclared,
+                "declared",
+                format!("a2a_bridge_contract {} declared as metadata only", c.name),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::A2ABridgeRuntimeDisabled,
+                "disabled",
+                format!(
+                    "a2a_bridge_contract {} runtime disabled; no agent messages sent",
+                    c.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::A2ABridgeNetworkDenied,
+                "denied",
+                format!(
+                    "a2a_bridge_contract {} network denied; no sockets opened",
+                    c.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::A2AAgentExecutionDisabled,
+                "disabled",
+                format!("a2a_bridge_contract {} agent execution disabled", c.name),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::BridgeSecurityClaimsDenied,
+                "none",
+                format!(
+                    "a2a_bridge_contract {} declares no security claims; declared != connected",
+                    c.name
+                ),
+                EventFields::default(),
+            );
+        }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
             Err(error) => {
@@ -387,7 +473,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.30".into(),
+            vm_version: "0.31".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -949,6 +1035,8 @@ mod tests {
             atrust_credential_contracts: vec![],
             atrust_handshakes: vec![],
             trust_ledgers: vec![],
+            mcp_bridge_contracts: vec![],
+            a2a_bridge_contracts: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -1102,7 +1190,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.30");
+        assert_eq!(json["vm_version"], "0.31");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -1124,7 +1212,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.30");
+        assert_eq!(json["vm_version"], "0.31");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -1146,7 +1234,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.30");
+        assert_eq!(json["vm_version"], "0.31");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -1201,7 +1289,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.30");
+        assert_eq!(trace.vm_version, "0.31");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -1275,7 +1363,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.30");
+        assert_eq!(trace.vm_version, "0.31");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1327,7 +1415,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.30");
+        assert_eq!(json["vm_version"], "0.31");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -1577,7 +1665,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.30");
+        assert_eq!(trace.vm_version, "0.31");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [

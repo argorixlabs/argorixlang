@@ -1,9 +1,9 @@
 use crate::{
-    BytecodeATrustBoundary, BytecodeATrustCredentialContract, BytecodeATrustHandshake,
-    BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent,
-    BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
-    BytecodeDidMethod, BytecodeFailure, BytecodeFeature, BytecodeModel, BytecodeModule,
-    BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodeA2ABridgeContract, BytecodeATrustBoundary, BytecodeATrustCredentialContract,
+    BytecodeATrustHandshake, BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile,
+    BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
+    BytecodeDidMethod, BytecodeFailure, BytecodeFeature, BytecodeMcpBridgeContract, BytecodeModel,
+    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
     BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeTrustLedger,
     BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
@@ -175,7 +175,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.30".to_owned(),
+        bytecode_version: "0.31".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -449,6 +449,66 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 notes: l.notes.clone(),
             })
             .collect(),
+        mcp_bridge_contracts: ir
+            .mcp_bridge_contracts
+            .iter()
+            .map(|c| BytecodeMcpBridgeContract {
+                name: c.name.clone(),
+                agent: c.agent.clone(),
+                passport: c.passport.clone(),
+                identity: c.identity.clone(),
+                boundary: c.boundary.clone(),
+                transport: c.transport.clone(),
+                protocol: c.protocol.clone(),
+                direction: c.direction.clone(),
+                tools: c.tools.clone(),
+                resources: c.resources.clone(),
+                prompts: c.prompts.clone(),
+                network: c.network.clone(),
+                external_execution: c.external_execution.clone(),
+                tool_execution: c.tool_execution.clone(),
+                secret_material: c.secret_material.clone(),
+                key_material: c.key_material.clone(),
+                authentication: c.authentication.clone(),
+                authorization: c.authorization.clone(),
+                evidence: c.evidence.clone(),
+                security_claims: c.security_claims.clone(),
+                purpose: c.purpose.clone(),
+                notes: c.notes.clone(),
+            })
+            .collect(),
+        a2a_bridge_contracts: ir
+            .a2a_bridge_contracts
+            .iter()
+            .map(|c| BytecodeA2ABridgeContract {
+                name: c.name.clone(),
+                initiator: c.initiator.clone(),
+                responder: c.responder.clone(),
+                initiator_passport: c.initiator_passport.clone(),
+                responder_passport: c.responder_passport.clone(),
+                initiator_identity: c.initiator_identity.clone(),
+                responder_identity: c.responder_identity.clone(),
+                handshake: c.handshake.clone(),
+                trust_ledger: c.trust_ledger.clone(),
+                boundary: c.boundary.clone(),
+                protocol: c.protocol.clone(),
+                transport: c.transport.clone(),
+                direction: c.direction.clone(),
+                message_contracts: c.message_contracts.clone(),
+                capabilities: c.capabilities.clone(),
+                network: c.network.clone(),
+                external_execution: c.external_execution.clone(),
+                agent_execution: c.agent_execution.clone(),
+                secret_material: c.secret_material.clone(),
+                key_material: c.key_material.clone(),
+                authentication: c.authentication.clone(),
+                authorization: c.authorization.clone(),
+                evidence: c.evidence.clone(),
+                security_claims: c.security_claims.clone(),
+                purpose: c.purpose.clone(),
+                notes: c.notes.clone(),
+            })
+            .collect(),
         imports: ir
             .imports
             .iter()
@@ -632,6 +692,8 @@ mod tests {
             atrust_credential_contracts: vec![],
             atrust_handshakes: vec![],
             trust_ledgers: vec![],
+            mcp_bridge_contracts: vec![],
+            a2a_bridge_contracts: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -697,7 +759,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.30");
+        assert_eq!(bytecode.bytecode_version, "0.31");
         assert!(bytecode
             .instructions
             .iter()
@@ -793,6 +855,8 @@ mod tests {
             atrust_credential_contracts: vec![],
             atrust_handshakes: vec![],
             trust_ledgers: vec![],
+            mcp_bridge_contracts: vec![],
+            a2a_bridge_contracts: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -806,7 +870,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.30");
+        assert_eq!(bytecode.bytecode_version, "0.31");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

@@ -1,26 +1,28 @@
 use crate::{
     ast::{
-        ATrustBoundaryDecl, ATrustCredentialContractDecl, ATrustCredentialMode,
-        ATrustCredentialPresentation, ATrustCredentialStatus, ATrustCredentialVerification,
-        ATrustEvidenceRequirement, ATrustExecution, ATrustHandshakeChallenge, ATrustHandshakeDecl,
-        ATrustHandshakeDirection, ATrustHandshakeDryRunMode, ATrustHandshakeMode,
-        ATrustHandshakeResponse, ATrustHandshakeTranscript, ATrustHandshakeVerification,
-        ATrustIdentityDecl, ATrustIdentityFormat, ATrustIdentityStatus, ATrustIdentityValidation,
+        A2ABridgeContractDecl, A2AProtocol, ATrustBoundaryDecl, ATrustCredentialContractDecl,
+        ATrustCredentialMode, ATrustCredentialPresentation, ATrustCredentialStatus,
+        ATrustCredentialVerification, ATrustEvidenceRequirement, ATrustExecution,
+        ATrustHandshakeChallenge, ATrustHandshakeDecl, ATrustHandshakeDirection,
+        ATrustHandshakeDryRunMode, ATrustHandshakeMode, ATrustHandshakeResponse,
+        ATrustHandshakeTranscript, ATrustHandshakeVerification, ATrustIdentityDecl,
+        ATrustIdentityFormat, ATrustIdentityStatus, ATrustIdentityValidation,
         ATrustMaterialBoundary, ATrustNetworkBoundary, ATrustPostQuantumRequirement,
         ATrustResolutionMode, ATrustSecurityClaims, AdapterDecl, AdapterExecution,
         AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork, AdapterProfileApiStyle,
         AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution, AdapterProfileFamily,
         AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, AgentDecl, Approval,
-        AssertionDecl, CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind,
-        CryptoStatus, CryptoStrength, DidLedgerMode, DidMethodDecl, DidMethodStatus,
-        DidResolutionMode, EnumDecl, FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus,
-        FieldDecl, HandlerDecl, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
-        HarnessSecrets, ImportDecl, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl,
-        PolicyDecl, PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl,
-        Program, ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
-        ReceiveDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, ToolDecl,
-        TrustLedgerChainPolicy, TrustLedgerDecl, TrustLedgerEntryDecl, TrustLedgerEntryKind,
-        TrustLedgerMode, TrustLedgerScope, TypeDecl,
+        AssertionDecl, BridgeAuthentication, BridgeAuthorization, BridgeDirection, BridgeTransport,
+        CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind, CryptoStatus,
+        CryptoStrength, DidLedgerMode, DidMethodDecl, DidMethodStatus, DidResolutionMode, EnumDecl,
+        FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl,
+        HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
+        ImportDecl, McpBridgeContractDecl, McpProtocol, MessageFieldType, ModelDecl,
+        PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule, PolicyRuleDecl,
+        PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl, ProtocolStep,
+        ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl, SecretAccess, SecretDecl,
+        SecretScope, SecretSource, SendDecl, ToolDecl, TrustLedgerChainPolicy, TrustLedgerDecl,
+        TrustLedgerEntryDecl, TrustLedgerEntryKind, TrustLedgerMode, TrustLedgerScope, TypeDecl,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -48,6 +50,45 @@ pub fn is_valid_module_name(name: &str) -> bool {
 pub fn parse_source(source: &str) -> Result<Program, Vec<Diagnostic>> {
     let tokens = lex(source)?;
     Parser::new(tokens).parse().map_err(|error| vec![error])
+}
+
+fn parse_bridge_direction(value: &str) -> BridgeDirection {
+    match value {
+        "inbound" => BridgeDirection::Inbound,
+        "outbound" => BridgeDirection::Outbound,
+        "bidirectional" => BridgeDirection::Bidirectional,
+        other => BridgeDirection::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_bridge_execution(value: &str) -> ATrustExecution {
+    match value {
+        "disabled" => ATrustExecution::Disabled,
+        other => ATrustExecution::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_bridge_material(value: &str) -> ATrustMaterialBoundary {
+    match value {
+        "denied" => ATrustMaterialBoundary::Denied,
+        other => ATrustMaterialBoundary::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_bridge_authentication(value: &str) -> BridgeAuthentication {
+    match value {
+        "none" => BridgeAuthentication::None,
+        "declared_only" => BridgeAuthentication::DeclaredOnly,
+        other => BridgeAuthentication::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_bridge_authorization(value: &str) -> BridgeAuthorization {
+    match value {
+        "policy_bound" => BridgeAuthorization::PolicyBound,
+        "declared_only" => BridgeAuthorization::DeclaredOnly,
+        other => BridgeAuthorization::Unknown(other.to_owned()),
+    }
 }
 
 struct Parser {
@@ -90,6 +131,8 @@ impl Parser {
             atrust_credential_contracts: Vec::new(),
             atrust_handshakes: Vec::new(),
             trust_ledgers: Vec::new(),
+            mcp_bridge_contracts: Vec::new(),
+            a2a_bridge_contracts: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -122,6 +165,12 @@ impl Parser {
                 Some("atrust_credential_contract") => program.atrust_credential_contracts.push(self.parse_atrust_credential_contract()?),
                 Some("atrust_handshake") => program.atrust_handshakes.push(self.parse_atrust_handshake()?),
                 Some("trust_ledger") => program.trust_ledgers.push(self.parse_trust_ledger()?),
+                Some("mcp_bridge_contract") => program
+                    .mcp_bridge_contracts
+                    .push(self.parse_mcp_bridge_contract()?),
+                Some("a2a_bridge_contract") => program
+                    .a2a_bridge_contracts
+                    .push(self.parse_a2a_bridge_contract()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -141,7 +190,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -2797,6 +2846,589 @@ impl Parser {
         })
     }
 
+    fn parse_mcp_bridge_contract(&mut self) -> Result<McpBridgeContractDecl, Diagnostic> {
+        self.expect_keyword("mcp_bridge_contract")?;
+        let name = self.expect_identifier("mcp_bridge_contract name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut agent = None;
+        let mut passport = None;
+        let mut identity = None;
+        let mut boundary = None;
+        let mut transport = None;
+        let mut protocol = None;
+        let mut direction = None;
+        let mut tools: Option<Vec<Spanned<String>>> = None;
+        let mut resources: Option<Vec<Spanned<String>>> = None;
+        let mut prompts: Option<Vec<Spanned<String>>> = None;
+        let mut network = None;
+        let mut external_execution = None;
+        let mut tool_execution = None;
+        let mut secret_material = None;
+        let mut key_material = None;
+        let mut authentication = None;
+        let mut authorization = None;
+        let mut evidence = None;
+        let mut security_claims = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated mcp_bridge_contract declaration")?;
+            match self.peek_identifier() {
+                Some("agent") => {
+                    self.set_block_field(&mut agent, "mcp_bridge_contract", "agent", |p| {
+                        p.expect_identifier("mcp_bridge_contract agent reference")
+                    })?
+                }
+                Some("passport") => {
+                    self.set_block_field(&mut passport, "mcp_bridge_contract", "passport", |p| {
+                        p.expect_identifier("mcp_bridge_contract passport reference")
+                    })?
+                }
+                Some("identity") => {
+                    self.set_block_field(&mut identity, "mcp_bridge_contract", "identity", |p| {
+                        p.expect_identifier("mcp_bridge_contract identity reference")
+                    })?
+                }
+                Some("boundary") => {
+                    self.set_block_field(&mut boundary, "mcp_bridge_contract", "boundary", |p| {
+                        p.expect_identifier("mcp_bridge_contract boundary reference")
+                    })?
+                }
+                Some("transport") => {
+                    self.set_block_field(&mut transport, "mcp_bridge_contract", "transport", |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract transport")?;
+                        let value = match token.value.as_str() {
+                            "declared_only" => BridgeTransport::DeclaredOnly,
+                            "disabled" => BridgeTransport::Disabled,
+                            other => BridgeTransport::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("protocol") => {
+                    self.set_block_field(&mut protocol, "mcp_bridge_contract", "protocol", |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract protocol")?;
+                        let value = match token.value.as_str() {
+                            "mcp" => McpProtocol::Mcp,
+                            other => McpProtocol::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("direction") => {
+                    self.set_block_field(&mut direction, "mcp_bridge_contract", "direction", |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract direction")?;
+                        Ok(Spanned::new(
+                            parse_bridge_direction(&token.value),
+                            token.span,
+                        ))
+                    })?
+                }
+                Some("tools") => {
+                    self.set_block_field(&mut tools, "mcp_bridge_contract", "tools", |p| {
+                        p.parse_string_array("mcp_bridge_contract tools")
+                    })?
+                }
+                Some("resources") => {
+                    self.set_block_field(&mut resources, "mcp_bridge_contract", "resources", |p| {
+                        p.parse_string_array("mcp_bridge_contract resources")
+                    })?
+                }
+                Some("prompts") => {
+                    self.set_block_field(&mut prompts, "mcp_bridge_contract", "prompts", |p| {
+                        p.parse_string_array("mcp_bridge_contract prompts")
+                    })?
+                }
+                Some("network") => {
+                    self.set_block_field(&mut network, "mcp_bridge_contract", "network", |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract network")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustNetworkBoundary::Denied,
+                            other => ATrustNetworkBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("external_execution") => self.set_block_field(
+                    &mut external_execution,
+                    "mcp_bridge_contract",
+                    "external_execution",
+                    |p| {
+                        let token =
+                            p.expect_identifier("mcp_bridge_contract external_execution")?;
+                        Ok(Spanned::new(
+                            parse_bridge_execution(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("tool_execution") => self.set_block_field(
+                    &mut tool_execution,
+                    "mcp_bridge_contract",
+                    "tool_execution",
+                    |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract tool_execution")?;
+                        Ok(Spanned::new(
+                            parse_bridge_execution(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "mcp_bridge_contract",
+                    "secret_material",
+                    |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract secret_material")?;
+                        Ok(Spanned::new(
+                            parse_bridge_material(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "mcp_bridge_contract",
+                    "key_material",
+                    |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract key_material")?;
+                        Ok(Spanned::new(
+                            parse_bridge_material(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("authentication") => self.set_block_field(
+                    &mut authentication,
+                    "mcp_bridge_contract",
+                    "authentication",
+                    |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract authentication")?;
+                        Ok(Spanned::new(
+                            parse_bridge_authentication(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("authorization") => self.set_block_field(
+                    &mut authorization,
+                    "mcp_bridge_contract",
+                    "authorization",
+                    |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract authorization")?;
+                        Ok(Spanned::new(
+                            parse_bridge_authorization(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("evidence") => {
+                    self.set_block_field(&mut evidence, "mcp_bridge_contract", "evidence", |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract evidence")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "mcp_bridge_contract",
+                    "security_claims",
+                    |p| {
+                        let token = p.expect_identifier("mcp_bridge_contract security_claims")?;
+                        let value = match token.value.as_str() {
+                            "none" => ATrustSecurityClaims::None,
+                            other => ATrustSecurityClaims::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "mcp_bridge_contract", "purpose", |p| {
+                        p.parse_string_array("mcp_bridge_contract purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "mcp_bridge_contract", "notes", |p| {
+                        p.expect_string("mcp_bridge_contract notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected mcp_bridge_contract item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected an mcp_bridge_contract field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback = name.span;
+        let empty = || Spanned::new(String::new(), fallback);
+        Ok(McpBridgeContractDecl {
+            name,
+            agent: agent.unwrap_or_else(empty),
+            passport: passport.unwrap_or_else(empty),
+            identity: identity.unwrap_or_else(empty),
+            boundary: boundary.unwrap_or_else(empty),
+            transport: transport
+                .unwrap_or_else(|| Spanned::new(BridgeTransport::Unknown(String::new()), fallback)),
+            protocol: protocol
+                .unwrap_or_else(|| Spanned::new(McpProtocol::Unknown(String::new()), fallback)),
+            direction: direction
+                .unwrap_or_else(|| Spanned::new(BridgeDirection::Unknown(String::new()), fallback)),
+            tools: tools.unwrap_or_default(),
+            resources: resources.unwrap_or_default(),
+            prompts: prompts.unwrap_or_default(),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback)
+            }),
+            external_execution: external_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            tool_execution: tool_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            secret_material: secret_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            key_material: key_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            authentication: authentication.unwrap_or_else(|| {
+                Spanned::new(BridgeAuthentication::Unknown(String::new()), fallback)
+            }),
+            authorization: authorization.unwrap_or_else(|| {
+                Spanned::new(BridgeAuthorization::Unknown(String::new()), fallback)
+            }),
+            evidence: evidence.unwrap_or_else(|| {
+                Spanned::new(ATrustEvidenceRequirement::Unknown(String::new()), fallback)
+            }),
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_a2a_bridge_contract(&mut self) -> Result<A2ABridgeContractDecl, Diagnostic> {
+        self.expect_keyword("a2a_bridge_contract")?;
+        let name = self.expect_identifier("a2a_bridge_contract name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut initiator = None;
+        let mut responder = None;
+        let mut initiator_passport = None;
+        let mut responder_passport = None;
+        let mut initiator_identity = None;
+        let mut responder_identity = None;
+        let mut handshake = None;
+        let mut trust_ledger = None;
+        let mut boundary = None;
+        let mut protocol = None;
+        let mut transport = None;
+        let mut direction = None;
+        let mut message_contracts: Option<Vec<Spanned<String>>> = None;
+        let mut capabilities: Option<Vec<Spanned<String>>> = None;
+        let mut network = None;
+        let mut external_execution = None;
+        let mut agent_execution = None;
+        let mut secret_material = None;
+        let mut key_material = None;
+        let mut authentication = None;
+        let mut authorization = None;
+        let mut evidence = None;
+        let mut security_claims = None;
+        let mut purpose: Option<Vec<Spanned<String>>> = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated a2a_bridge_contract declaration")?;
+            match self.peek_identifier() {
+                Some("initiator") => {
+                    self.set_block_field(&mut initiator, "a2a_bridge_contract", "initiator", |p| {
+                        p.expect_identifier("a2a_bridge_contract initiator reference")
+                    })?
+                }
+                Some("responder") => {
+                    self.set_block_field(&mut responder, "a2a_bridge_contract", "responder", |p| {
+                        p.expect_identifier("a2a_bridge_contract responder reference")
+                    })?
+                }
+                Some("initiator_passport") => self.set_block_field(
+                    &mut initiator_passport,
+                    "a2a_bridge_contract",
+                    "initiator_passport",
+                    |p| p.expect_identifier("a2a_bridge_contract initiator_passport reference"),
+                )?,
+                Some("responder_passport") => self.set_block_field(
+                    &mut responder_passport,
+                    "a2a_bridge_contract",
+                    "responder_passport",
+                    |p| p.expect_identifier("a2a_bridge_contract responder_passport reference"),
+                )?,
+                Some("initiator_identity") => self.set_block_field(
+                    &mut initiator_identity,
+                    "a2a_bridge_contract",
+                    "initiator_identity",
+                    |p| p.expect_identifier("a2a_bridge_contract initiator_identity reference"),
+                )?,
+                Some("responder_identity") => self.set_block_field(
+                    &mut responder_identity,
+                    "a2a_bridge_contract",
+                    "responder_identity",
+                    |p| p.expect_identifier("a2a_bridge_contract responder_identity reference"),
+                )?,
+                Some("handshake") => {
+                    self.set_block_field(&mut handshake, "a2a_bridge_contract", "handshake", |p| {
+                        p.expect_identifier("a2a_bridge_contract handshake reference")
+                    })?
+                }
+                Some("trust_ledger") => self.set_block_field(
+                    &mut trust_ledger,
+                    "a2a_bridge_contract",
+                    "trust_ledger",
+                    |p| p.expect_identifier("a2a_bridge_contract trust_ledger reference"),
+                )?,
+                Some("boundary") => {
+                    self.set_block_field(&mut boundary, "a2a_bridge_contract", "boundary", |p| {
+                        p.expect_identifier("a2a_bridge_contract boundary reference")
+                    })?
+                }
+                Some("protocol") => {
+                    self.set_block_field(&mut protocol, "a2a_bridge_contract", "protocol", |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract protocol")?;
+                        let value = match token.value.as_str() {
+                            "a2a" => A2AProtocol::A2A,
+                            other => A2AProtocol::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("transport") => {
+                    self.set_block_field(&mut transport, "a2a_bridge_contract", "transport", |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract transport")?;
+                        let value = match token.value.as_str() {
+                            "declared_only" => BridgeTransport::DeclaredOnly,
+                            "disabled" => BridgeTransport::Disabled,
+                            other => BridgeTransport::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("direction") => {
+                    self.set_block_field(&mut direction, "a2a_bridge_contract", "direction", |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract direction")?;
+                        Ok(Spanned::new(
+                            parse_bridge_direction(&token.value),
+                            token.span,
+                        ))
+                    })?
+                }
+                Some("message_contracts") => self.set_block_field(
+                    &mut message_contracts,
+                    "a2a_bridge_contract",
+                    "message_contracts",
+                    |p| p.parse_string_array("a2a_bridge_contract message_contracts"),
+                )?,
+                Some("capabilities") => self.set_block_field(
+                    &mut capabilities,
+                    "a2a_bridge_contract",
+                    "capabilities",
+                    |p| p.parse_string_array("a2a_bridge_contract capabilities"),
+                )?,
+                Some("network") => {
+                    self.set_block_field(&mut network, "a2a_bridge_contract", "network", |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract network")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustNetworkBoundary::Denied,
+                            other => ATrustNetworkBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("external_execution") => self.set_block_field(
+                    &mut external_execution,
+                    "a2a_bridge_contract",
+                    "external_execution",
+                    |p| {
+                        let token =
+                            p.expect_identifier("a2a_bridge_contract external_execution")?;
+                        Ok(Spanned::new(
+                            parse_bridge_execution(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("agent_execution") => self.set_block_field(
+                    &mut agent_execution,
+                    "a2a_bridge_contract",
+                    "agent_execution",
+                    |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract agent_execution")?;
+                        Ok(Spanned::new(
+                            parse_bridge_execution(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "a2a_bridge_contract",
+                    "secret_material",
+                    |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract secret_material")?;
+                        Ok(Spanned::new(
+                            parse_bridge_material(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "a2a_bridge_contract",
+                    "key_material",
+                    |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract key_material")?;
+                        Ok(Spanned::new(
+                            parse_bridge_material(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("authentication") => self.set_block_field(
+                    &mut authentication,
+                    "a2a_bridge_contract",
+                    "authentication",
+                    |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract authentication")?;
+                        Ok(Spanned::new(
+                            parse_bridge_authentication(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("authorization") => self.set_block_field(
+                    &mut authorization,
+                    "a2a_bridge_contract",
+                    "authorization",
+                    |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract authorization")?;
+                        Ok(Spanned::new(
+                            parse_bridge_authorization(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("evidence") => {
+                    self.set_block_field(&mut evidence, "a2a_bridge_contract", "evidence", |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract evidence")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "a2a_bridge_contract",
+                    "security_claims",
+                    |p| {
+                        let token = p.expect_identifier("a2a_bridge_contract security_claims")?;
+                        let value = match token.value.as_str() {
+                            "none" => ATrustSecurityClaims::None,
+                            other => ATrustSecurityClaims::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "a2a_bridge_contract", "purpose", |p| {
+                        p.parse_string_array("a2a_bridge_contract purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "a2a_bridge_contract", "notes", |p| {
+                        p.expect_string("a2a_bridge_contract notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected a2a_bridge_contract item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected an a2a_bridge_contract field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback = name.span;
+        let empty = || Spanned::new(String::new(), fallback);
+        Ok(A2ABridgeContractDecl {
+            name,
+            initiator: initiator.unwrap_or_else(empty),
+            responder: responder.unwrap_or_else(empty),
+            initiator_passport: initiator_passport.unwrap_or_else(empty),
+            responder_passport: responder_passport.unwrap_or_else(empty),
+            initiator_identity: initiator_identity.unwrap_or_else(empty),
+            responder_identity: responder_identity.unwrap_or_else(empty),
+            handshake: handshake.unwrap_or_else(empty),
+            trust_ledger: trust_ledger.unwrap_or_else(empty),
+            boundary: boundary.unwrap_or_else(empty),
+            protocol: protocol
+                .unwrap_or_else(|| Spanned::new(A2AProtocol::Unknown(String::new()), fallback)),
+            transport: transport
+                .unwrap_or_else(|| Spanned::new(BridgeTransport::Unknown(String::new()), fallback)),
+            direction: direction
+                .unwrap_or_else(|| Spanned::new(BridgeDirection::Unknown(String::new()), fallback)),
+            message_contracts: message_contracts.unwrap_or_default(),
+            capabilities: capabilities.unwrap_or_default(),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback)
+            }),
+            external_execution: external_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            agent_execution: agent_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            secret_material: secret_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            key_material: key_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            authentication: authentication.unwrap_or_else(|| {
+                Spanned::new(BridgeAuthentication::Unknown(String::new()), fallback)
+            }),
+            authorization: authorization.unwrap_or_else(|| {
+                Spanned::new(BridgeAuthorization::Unknown(String::new()), fallback)
+            }),
+            evidence: evidence.unwrap_or_else(|| {
+                Spanned::new(ATrustEvidenceRequirement::Unknown(String::new()), fallback)
+            }),
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -3068,6 +3700,36 @@ impl Parser {
             "trust_ledger_security_claims_absent" => PolicyRule::TrustLedgerSecurityClaimsAbsent,
             "trust_ledger_blockchain_absent" => PolicyRule::TrustLedgerBlockchainAbsent,
             "trust_ledger_signature_absent" => PolicyRule::TrustLedgerSignatureAbsent,
+            "mcp_bridge_contracts_declared" => PolicyRule::McpBridgeContractsDeclared,
+            "mcp_bridge_agents_bound" => PolicyRule::McpBridgeAgentsBound,
+            "mcp_bridge_passports_bound" => PolicyRule::McpBridgePassportsBound,
+            "mcp_bridge_identities_bound" => PolicyRule::McpBridgeIdentitiesBound,
+            "mcp_bridge_boundaries_bound" => PolicyRule::McpBridgeBoundariesBound,
+            "mcp_bridge_network_denied" => PolicyRule::McpBridgeNetworkDenied,
+            "mcp_bridge_external_execution_disabled" => {
+                PolicyRule::McpBridgeExternalExecutionDisabled
+            }
+            "mcp_bridge_tool_execution_disabled" => PolicyRule::McpBridgeToolExecutionDisabled,
+            "mcp_bridge_secret_material_denied" => PolicyRule::McpBridgeSecretMaterialDenied,
+            "mcp_bridge_key_material_denied" => PolicyRule::McpBridgeKeyMaterialDenied,
+            "mcp_bridge_authentication_non_secret" => PolicyRule::McpBridgeAuthenticationNonSecret,
+            "mcp_bridge_security_claims_absent" => PolicyRule::McpBridgeSecurityClaimsAbsent,
+            "a2a_bridge_contracts_declared" => PolicyRule::A2ABridgeContractsDeclared,
+            "a2a_bridge_agents_bound" => PolicyRule::A2ABridgeAgentsBound,
+            "a2a_bridge_passports_bound" => PolicyRule::A2ABridgePassportsBound,
+            "a2a_bridge_identities_bound" => PolicyRule::A2ABridgeIdentitiesBound,
+            "a2a_bridge_handshakes_bound" => PolicyRule::A2ABridgeHandshakesBound,
+            "a2a_bridge_trust_ledgers_bound" => PolicyRule::A2ABridgeTrustLedgersBound,
+            "a2a_bridge_message_contracts_bound" => PolicyRule::A2ABridgeMessageContractsBound,
+            "a2a_bridge_network_denied" => PolicyRule::A2ABridgeNetworkDenied,
+            "a2a_bridge_external_execution_disabled" => {
+                PolicyRule::A2ABridgeExternalExecutionDisabled
+            }
+            "a2a_bridge_agent_execution_disabled" => PolicyRule::A2ABridgeAgentExecutionDisabled,
+            "a2a_bridge_secret_material_denied" => PolicyRule::A2ABridgeSecretMaterialDenied,
+            "a2a_bridge_key_material_denied" => PolicyRule::A2ABridgeKeyMaterialDenied,
+            "a2a_bridge_authentication_non_secret" => PolicyRule::A2ABridgeAuthenticationNonSecret,
+            "a2a_bridge_security_claims_absent" => PolicyRule::A2ABridgeSecurityClaimsAbsent,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

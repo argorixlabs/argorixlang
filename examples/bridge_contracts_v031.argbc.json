@@ -1,0 +1,607 @@
+{
+  "bytecode_version": "0.31",
+  "language": "Argorix Lang",
+  "module": "BridgeContractsDemo",
+  "providers": [],
+  "provider_harnesses": [],
+  "cryptos": [
+    {
+      "name": "sha256",
+      "kind": "hash",
+      "status": "allowed",
+      "strength": "classical",
+      "purpose": [
+        "digest"
+      ],
+      "output_bits": 256
+    },
+    {
+      "name": "ml_dsa",
+      "kind": "signature",
+      "status": "post_quantum_candidate",
+      "strength": "post_quantum",
+      "purpose": [
+        "signature"
+      ]
+    },
+    {
+      "name": "ml_kem",
+      "kind": "kem",
+      "status": "post_quantum_candidate",
+      "strength": "post_quantum",
+      "purpose": [
+        "kem"
+      ]
+    }
+  ],
+  "crypto_boundaries": [
+    {
+      "name": "TrustBoundary",
+      "allowed_hashes": [
+        "sha256"
+      ],
+      "allowed_signatures": [
+        "ml_dsa"
+      ],
+      "allowed_kems": [
+        "ml_kem"
+      ],
+      "allowed_aeads": [],
+      "legacy_allowed": [],
+      "denied": [],
+      "purpose": [
+        "handshake"
+      ],
+      "min_hash_bits": 256,
+      "post_quantum_ready": true,
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled"
+    }
+  ],
+  "did_methods": [
+    {
+      "name": "argorix",
+      "status": "experimental",
+      "resolution": "embedded",
+      "ledger": "local",
+      "crypto_boundary": "TrustBoundary",
+      "purpose": [
+        "identity"
+      ]
+    }
+  ],
+  "atrust_boundaries": [
+    {
+      "name": "AgentTrustBoundary",
+      "crypto_boundary": "TrustBoundary",
+      "did_methods": [
+        "argorix"
+      ],
+      "identity_format": "did",
+      "credential_mode": "declared_only",
+      "handshake": "disabled",
+      "resolution": "disabled",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "security_claims": "none",
+      "purpose": [
+        "identity"
+      ]
+    }
+  ],
+  "atrust_identities": [
+    {
+      "name": "ResearchIdentity",
+      "subject": "ResearchAgent",
+      "did": "did:argorix:research-agent-v1",
+      "method": "argorix",
+      "boundary": "AgentTrustBoundary",
+      "status": "active",
+      "validation": "dry_run",
+      "resolution": "disabled",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "identity"
+      ]
+    },
+    {
+      "name": "VerifierIdentity",
+      "subject": "VerifierAgent",
+      "did": "did:argorix:verifier-v1",
+      "method": "argorix",
+      "boundary": "AgentTrustBoundary",
+      "status": "active",
+      "validation": "dry_run",
+      "resolution": "disabled",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "identity"
+      ]
+    }
+  ],
+  "atrust_credential_contracts": [
+    {
+      "name": "ResearchCredential",
+      "subject": "ResearchAgent",
+      "identity": "ResearchIdentity",
+      "boundary": "AgentTrustBoundary",
+      "method": "argorix",
+      "issuer_did": "did:argorix:issuer-v1",
+      "holder_did": "did:argorix:research-agent-v1",
+      "credential_type": "ResearchAccessCredential",
+      "schema": "argorix:credential:research-access:v1",
+      "status": "declared",
+      "verification": "declared_only",
+      "presentation": "disabled",
+      "resolution": "disabled",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "claims": [
+        "role",
+        "scope"
+      ],
+      "purpose": [
+        "credential"
+      ]
+    }
+  ],
+  "atrust_handshakes": [
+    {
+      "name": "ResearchHandshake",
+      "initiator": "ResearchAgent",
+      "responder": "VerifierAgent",
+      "initiator_identity": "ResearchIdentity",
+      "responder_identity": "VerifierIdentity",
+      "credential_contracts": [
+        "ResearchCredential"
+      ],
+      "boundary": "AgentTrustBoundary",
+      "method": "argorix",
+      "mode": "dry_run",
+      "direction": "mutual",
+      "challenge": "declared_only",
+      "response": "declared_only",
+      "transcript": "evidence_only",
+      "verification": "declared_only",
+      "resolution": "disabled",
+      "network": "denied",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "handshake",
+        "dry-run"
+      ]
+    }
+  ],
+  "trust_ledgers": [
+    {
+      "name": "ATrustLedger",
+      "scope": "local",
+      "mode": "dry_run",
+      "hash_algorithm": "sha256",
+      "chain_policy": "append_only",
+      "entries": [
+        {
+          "id": "entry-001",
+          "kind": "identity",
+          "subject": "ResearchIdentity",
+          "previous_hash": "GENESIS",
+          "entry_hash": "sha256:declared-entry-001",
+          "evidence_ref": "bundle:identity"
+        },
+        {
+          "id": "entry-002",
+          "kind": "credential",
+          "subject": "ResearchCredential",
+          "previous_hash": "sha256:declared-entry-001",
+          "entry_hash": "sha256:declared-entry-002",
+          "evidence_ref": "bundle:credential"
+        },
+        {
+          "id": "entry-003",
+          "kind": "handshake",
+          "subject": "ResearchHandshake",
+          "previous_hash": "sha256:declared-entry-002",
+          "entry_hash": "sha256:declared-entry-003",
+          "evidence_ref": "bundle:handshake"
+        }
+      ],
+      "chain_root": "sha256:declared-entry-003",
+      "network": "denied",
+      "key_material": "denied",
+      "secret_material": "denied",
+      "execution": "disabled",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "trust-ledger",
+        "evidence-chain",
+        "dry-run"
+      ],
+      "notes": "metadata only; no blockchain, no signing, no network"
+    }
+  ],
+  "mcp_bridge_contracts": [
+    {
+      "name": "ResearchMcpBridge",
+      "agent": "ResearchAgent",
+      "passport": "ResearchPassport",
+      "identity": "ResearchIdentity",
+      "boundary": "AgentTrustBoundary",
+      "transport": "declared_only",
+      "protocol": "mcp",
+      "direction": "outbound",
+      "tools": [
+        "search.read",
+        "memory.read"
+      ],
+      "resources": [
+        "docs.public",
+        "kb.public"
+      ],
+      "prompts": [
+        "research.summary"
+      ],
+      "network": "denied",
+      "external_execution": "disabled",
+      "tool_execution": "disabled",
+      "secret_material": "denied",
+      "key_material": "denied",
+      "authentication": "none",
+      "authorization": "policy_bound",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "mcp",
+        "bridge-contract",
+        "dry-run"
+      ],
+      "notes": "metadata only; no MCP runtime"
+    }
+  ],
+  "a2a_bridge_contracts": [
+    {
+      "name": "ResearchA2ABridge",
+      "initiator": "ResearchAgent",
+      "responder": "VerifierAgent",
+      "initiator_passport": "ResearchPassport",
+      "responder_passport": "VerifierPassport",
+      "initiator_identity": "ResearchIdentity",
+      "responder_identity": "VerifierIdentity",
+      "handshake": "ResearchHandshake",
+      "trust_ledger": "ATrustLedger",
+      "boundary": "AgentTrustBoundary",
+      "protocol": "a2a",
+      "transport": "declared_only",
+      "direction": "bidirectional",
+      "message_contracts": [
+        "ResearchRequest",
+        "ResearchResponse"
+      ],
+      "capabilities": [
+        "ask.llm",
+        "respond.safe"
+      ],
+      "network": "denied",
+      "external_execution": "disabled",
+      "agent_execution": "disabled",
+      "secret_material": "denied",
+      "key_material": "denied",
+      "authentication": "none",
+      "authorization": "policy_bound",
+      "evidence": "required",
+      "security_claims": "none",
+      "purpose": [
+        "a2a",
+        "bridge-contract",
+        "dry-run"
+      ],
+      "notes": "metadata only; no A2A runtime"
+    }
+  ],
+  "assertions": [],
+  "policies": [
+    {
+      "name": "BridgePolicy",
+      "rules": [
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_contracts_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_agents_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_passports_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_identities_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_boundaries_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_network_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_external_execution_disabled"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_tool_execution_disabled"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_secret_material_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_key_material_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_authentication_non_secret"
+        },
+        {
+          "effect": "require",
+          "rule": "mcp_bridge_security_claims_absent"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_contracts_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_agents_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_passports_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_identities_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_handshakes_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_trust_ledgers_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_message_contracts_bound"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_network_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_external_execution_disabled"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_agent_execution_disabled"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_secret_material_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_key_material_denied"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_authentication_non_secret"
+        },
+        {
+          "effect": "require",
+          "rule": "a2a_bridge_security_claims_absent"
+        }
+      ],
+      "on_violation": {
+        "action": "review",
+        "trace_required": true
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "UserPrompt",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ResearchRequest",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ResearchResponse",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "passports": [
+    {
+      "name": "ResearchPassport",
+      "agent": "ResearchAgent",
+      "agent_name": "Research Agent",
+      "global_id": "argx:agent:01HZX9RESEARCHAGENT",
+      "identity": "did:argorix:research-agent-v1",
+      "provider": "Argorix",
+      "version": "1.0.0",
+      "country": "CL",
+      "jurisdiction": "CL",
+      "data_residency": [
+        "CL",
+        "EU"
+      ],
+      "risk_level": "medium",
+      "data_scope": [
+        "internal"
+      ],
+      "intent": "research",
+      "intended_use": [
+        "research",
+        "summary"
+      ],
+      "prohibited_use": [
+        "external-execution",
+        "credential-access"
+      ],
+      "attestations": [
+        "redteam",
+        "policy-check",
+        "evidence-bundle"
+      ]
+    },
+    {
+      "name": "VerifierPassport",
+      "agent": "VerifierAgent",
+      "agent_name": "Verifier Agent",
+      "global_id": "argx:agent:01HZX9VERIFIERAGENT",
+      "identity": "did:argorix:verifier-v1",
+      "provider": "Argorix",
+      "version": "1.0.0",
+      "country": "CL",
+      "jurisdiction": "CL",
+      "data_residency": [
+        "CL",
+        "EU"
+      ],
+      "risk_level": "medium",
+      "data_scope": [
+        "internal"
+      ],
+      "intent": "verification",
+      "intended_use": [
+        "verification",
+        "policy-review"
+      ],
+      "prohibited_use": [
+        "external-execution",
+        "credential-access"
+      ],
+      "attestations": [
+        "redteam",
+        "policy-check",
+        "evidence-bundle"
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "name": "ResearchAgent",
+      "approval": "denied"
+    },
+    {
+      "name": "VerifierAgent",
+      "approval": "denied"
+    }
+  ],
+  "capabilities": [],
+  "tools": [],
+  "models": [],
+  "instructions": [
+    {
+      "op": "DeclareAgent",
+      "name": "ResearchAgent",
+      "approval": "denied"
+    },
+    {
+      "op": "DeclareHandler",
+      "agent": "ResearchAgent",
+      "message_type": "UserPrompt",
+      "binding": "prompt"
+    },
+    {
+      "op": "TraceValue",
+      "agent": "ResearchAgent",
+      "binding": "prompt"
+    },
+    {
+      "op": "EndHandler"
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "VerifierAgent",
+      "approval": "denied"
+    },
+    {
+      "op": "DeclareHandler",
+      "agent": "VerifierAgent",
+      "message_type": "UserPrompt",
+      "binding": "prompt"
+    },
+    {
+      "op": "TraceValue",
+      "agent": "VerifierAgent",
+      "binding": "prompt"
+    },
+    {
+      "op": "EndHandler"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "Demo"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol Demo completed"
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}

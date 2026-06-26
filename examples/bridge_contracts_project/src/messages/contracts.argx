@@ -1,0 +1,4 @@
+module messages.contracts
+
+type ResearchRequest { content: string }
+type ResearchResponse { content: string }

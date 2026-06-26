@@ -45,6 +45,8 @@ pub fn check_program_with_options(
     check_atrust_credential_contracts(program, &symbols, &mut diagnostics);
     check_atrust_handshakes(program, &symbols, &mut diagnostics);
     check_trust_ledgers(program, &symbols, &mut diagnostics);
+    check_mcp_bridge_contracts(program, &symbols, &mut diagnostics);
+    check_a2a_bridge_contracts(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -3473,6 +3475,629 @@ fn check_trust_ledgers(program: &Program, _symbols: &Symbols, diagnostics: &mut 
                 diagnostics.push(Diagnostic::new(
                     format!("trust_ledger `{name}` chain_root must match the final entry_hash"),
                     l.chain_root.span,
+                ));
+            }
+        }
+    }
+}
+
+fn check_mcp_bridge_contracts(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    use std::collections::HashMap;
+
+    // Bridge contracts are declarative interoperability surfaces (v0.31). They
+    // describe how an agent *could* talk to MCP tools/resources/prompts; they
+    // never open network access, start a server, or execute tools.
+    let passports: HashMap<&str, &argorix_parser::ast::PassportDecl> = program
+        .passports
+        .iter()
+        .map(|p| (p.name.value.as_str(), p))
+        .collect();
+    let identities: HashMap<&str, &argorix_parser::ast::ATrustIdentityDecl> = program
+        .atrust_identities
+        .iter()
+        .map(|i| (i.name.value.as_str(), i))
+        .collect();
+
+    let mut names = HashSet::new();
+    for c in &program.mcp_bridge_contracts {
+        report_duplicate(&mut names, &c.name, "mcp_bridge_contract", diagnostics);
+        let name = c.name.value.clone();
+
+        for (field, value) in [
+            ("agent", &c.agent),
+            ("passport", &c.passport),
+            ("identity", &c.identity),
+            ("boundary", &c.boundary),
+        ] {
+            if value.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("mcp_bridge_contract `{name}` is missing required field `{field}`"),
+                    value.span,
+                ));
+            }
+        }
+        if c.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` is missing required field `purpose`"),
+                c.name.span,
+            ));
+        }
+        for p in &c.purpose {
+            if p.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("mcp_bridge_contract `{name}` purpose must not contain empty strings"),
+                    p.span,
+                ));
+            }
+        }
+        for (field, items) in [
+            ("tools", &c.tools),
+            ("resources", &c.resources),
+            ("prompts", &c.prompts),
+        ] {
+            for item in items {
+                if item.value.trim().is_empty() {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "mcp_bridge_contract `{name}` {field} must not contain empty strings"
+                        ),
+                        item.span,
+                    ));
+                }
+            }
+        }
+        if let Some(notes) = &c.notes {
+            if notes.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("mcp_bridge_contract `{name}` notes must not be empty"),
+                    notes.span,
+                ));
+            }
+        }
+
+        // --- enumerated security boundaries ---
+        if !matches!(
+            c.transport.value.source_name(),
+            "declared_only" | "disabled"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "mcp_bridge_contract `{name}` requires transport `declared_only` or `disabled`"
+                ),
+                c.transport.span,
+            ));
+        }
+        if c.protocol.value.source_name() != "mcp" {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires protocol `mcp`"),
+                c.protocol.span,
+            ));
+        }
+        if !matches!(
+            c.direction.value.source_name(),
+            "inbound" | "outbound" | "bidirectional"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires direction `inbound`, `outbound`, or `bidirectional`"),
+                c.direction.span,
+            ));
+        }
+        if c.network.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires network `denied`"),
+                c.network.span,
+            ));
+        }
+        if c.external_execution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires external_execution `disabled`"),
+                c.external_execution.span,
+            ));
+        }
+        if c.tool_execution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires tool_execution `disabled`"),
+                c.tool_execution.span,
+            ));
+        }
+        if c.secret_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires secret_material `denied`"),
+                c.secret_material.span,
+            ));
+        }
+        if c.key_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires key_material `denied`"),
+                c.key_material.span,
+            ));
+        }
+        if !matches!(
+            c.authentication.value.source_name(),
+            "none" | "declared_only"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires authentication `none` or `declared_only`"),
+                c.authentication.span,
+            ));
+        }
+        if !matches!(
+            c.authorization.value.source_name(),
+            "policy_bound" | "declared_only"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires authorization `policy_bound` or `declared_only`"),
+                c.authorization.span,
+            ));
+        }
+        if c.evidence.value.source_name() != "required" {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires evidence `required`"),
+                c.evidence.span,
+            ));
+        }
+        if c.security_claims.value.source_name() != "none" {
+            diagnostics.push(Diagnostic::new(
+                format!("mcp_bridge_contract `{name}` requires security_claims `none`"),
+                c.security_claims.span,
+            ));
+        }
+
+        // --- cross-reference validation ---
+        if !c.agent.value.is_empty() && !symbols.agents.contains(&c.agent.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "mcp_bridge_contract `{name}` references unknown agent `{}`",
+                    c.agent.value
+                ),
+                c.agent.span,
+            ));
+        }
+        if !c.boundary.value.is_empty() && !symbols.atrust_boundaries.contains(&c.boundary.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "mcp_bridge_contract `{name}` references unknown atrust_boundary `{}`",
+                    c.boundary.value
+                ),
+                c.boundary.span,
+            ));
+        }
+        if !c.passport.value.is_empty() {
+            match passports.get(c.passport.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "mcp_bridge_contract `{name}` references unknown passport `{}`",
+                        c.passport.value
+                    ),
+                    c.passport.span,
+                )),
+                Some(passport) => {
+                    if !c.agent.value.is_empty() && passport.agent.value != c.agent.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("mcp_bridge_contract `{name}` passport `{}` is not bound to agent `{}`", c.passport.value, c.agent.value),
+                            c.passport.span,
+                        ));
+                    }
+                }
+            }
+        }
+        if !c.identity.value.is_empty() {
+            match identities.get(c.identity.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "mcp_bridge_contract `{name}` references unknown identity `{}`",
+                        c.identity.value
+                    ),
+                    c.identity.span,
+                )),
+                Some(identity) => {
+                    if !c.agent.value.is_empty() && identity.subject.value != c.agent.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("mcp_bridge_contract `{name}` identity `{}` is not bound to agent `{}`", c.identity.value, c.agent.value),
+                            c.identity.span,
+                        ));
+                    }
+                    if !c.boundary.value.is_empty() && identity.boundary.value != c.boundary.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!("mcp_bridge_contract `{name}` identity boundary `{}` does not match boundary `{}`", identity.boundary.value, c.boundary.value),
+                            c.identity.span,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn check_a2a_bridge_contracts(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    use std::collections::HashMap;
+
+    let passports: HashMap<&str, &argorix_parser::ast::PassportDecl> = program
+        .passports
+        .iter()
+        .map(|p| (p.name.value.as_str(), p))
+        .collect();
+    let identities: HashMap<&str, &argorix_parser::ast::ATrustIdentityDecl> = program
+        .atrust_identities
+        .iter()
+        .map(|i| (i.name.value.as_str(), i))
+        .collect();
+    let handshakes: HashMap<&str, &argorix_parser::ast::ATrustHandshakeDecl> = program
+        .atrust_handshakes
+        .iter()
+        .map(|h| (h.name.value.as_str(), h))
+        .collect();
+    let ledgers: HashMap<&str, &argorix_parser::ast::TrustLedgerDecl> = program
+        .trust_ledgers
+        .iter()
+        .map(|l| (l.name.value.as_str(), l))
+        .collect();
+
+    let mut names = HashSet::new();
+    for c in &program.a2a_bridge_contracts {
+        report_duplicate(&mut names, &c.name, "a2a_bridge_contract", diagnostics);
+        let name = c.name.value.clone();
+
+        for (field, value) in [
+            ("initiator", &c.initiator),
+            ("responder", &c.responder),
+            ("initiator_passport", &c.initiator_passport),
+            ("responder_passport", &c.responder_passport),
+            ("initiator_identity", &c.initiator_identity),
+            ("responder_identity", &c.responder_identity),
+            ("handshake", &c.handshake),
+            ("trust_ledger", &c.trust_ledger),
+            ("boundary", &c.boundary),
+        ] {
+            if value.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("a2a_bridge_contract `{name}` is missing required field `{field}`"),
+                    value.span,
+                ));
+            }
+        }
+        if c.message_contracts.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "a2a_bridge_contract `{name}` is missing required field `message_contracts`"
+                ),
+                c.name.span,
+            ));
+        }
+        if c.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` is missing required field `purpose`"),
+                c.name.span,
+            ));
+        }
+        for p in &c.purpose {
+            if p.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("a2a_bridge_contract `{name}` purpose must not contain empty strings"),
+                    p.span,
+                ));
+            }
+        }
+        for item in &c.capabilities {
+            if item.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "a2a_bridge_contract `{name}` capabilities must not contain empty strings"
+                    ),
+                    item.span,
+                ));
+            }
+        }
+        if let Some(notes) = &c.notes {
+            if notes.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("a2a_bridge_contract `{name}` notes must not be empty"),
+                    notes.span,
+                ));
+            }
+        }
+
+        // --- enumerated security boundaries ---
+        if c.protocol.value.source_name() != "a2a" {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires protocol `a2a`"),
+                c.protocol.span,
+            ));
+        }
+        if !matches!(
+            c.transport.value.source_name(),
+            "declared_only" | "disabled"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "a2a_bridge_contract `{name}` requires transport `declared_only` or `disabled`"
+                ),
+                c.transport.span,
+            ));
+        }
+        if !matches!(
+            c.direction.value.source_name(),
+            "inbound" | "outbound" | "bidirectional"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires direction `inbound`, `outbound`, or `bidirectional`"),
+                c.direction.span,
+            ));
+        }
+        if c.network.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires network `denied`"),
+                c.network.span,
+            ));
+        }
+        if c.external_execution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires external_execution `disabled`"),
+                c.external_execution.span,
+            ));
+        }
+        if c.agent_execution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires agent_execution `disabled`"),
+                c.agent_execution.span,
+            ));
+        }
+        if c.secret_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires secret_material `denied`"),
+                c.secret_material.span,
+            ));
+        }
+        if c.key_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires key_material `denied`"),
+                c.key_material.span,
+            ));
+        }
+        if !matches!(
+            c.authentication.value.source_name(),
+            "none" | "declared_only"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires authentication `none` or `declared_only`"),
+                c.authentication.span,
+            ));
+        }
+        if !matches!(
+            c.authorization.value.source_name(),
+            "policy_bound" | "declared_only"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires authorization `policy_bound` or `declared_only`"),
+                c.authorization.span,
+            ));
+        }
+        if c.evidence.value.source_name() != "required" {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires evidence `required`"),
+                c.evidence.span,
+            ));
+        }
+        if c.security_claims.value.source_name() != "none" {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` requires security_claims `none`"),
+                c.security_claims.span,
+            ));
+        }
+
+        // --- cross-reference validation ---
+        if !c.initiator.value.is_empty() && !symbols.agents.contains(&c.initiator.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "a2a_bridge_contract `{name}` references unknown initiator agent `{}`",
+                    c.initiator.value
+                ),
+                c.initiator.span,
+            ));
+        }
+        if !c.responder.value.is_empty() && !symbols.agents.contains(&c.responder.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "a2a_bridge_contract `{name}` references unknown responder agent `{}`",
+                    c.responder.value
+                ),
+                c.responder.span,
+            ));
+        }
+        if !c.initiator.value.is_empty() && c.initiator.value == c.responder.value {
+            diagnostics.push(Diagnostic::new(
+                format!("a2a_bridge_contract `{name}` initiator and responder must be distinct"),
+                c.responder.span,
+            ));
+        }
+        if !c.boundary.value.is_empty() && !symbols.atrust_boundaries.contains(&c.boundary.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "a2a_bridge_contract `{name}` references unknown atrust_boundary `{}`",
+                    c.boundary.value
+                ),
+                c.boundary.span,
+            ));
+        }
+        check_a2a_passport_binding(
+            &name,
+            &c.initiator_passport,
+            &c.initiator,
+            &passports,
+            diagnostics,
+        );
+        check_a2a_passport_binding(
+            &name,
+            &c.responder_passport,
+            &c.responder,
+            &passports,
+            diagnostics,
+        );
+        check_a2a_identity_binding(
+            &name,
+            &c.initiator_identity,
+            &c.initiator,
+            &c.boundary,
+            &identities,
+            diagnostics,
+        );
+        check_a2a_identity_binding(
+            &name,
+            &c.responder_identity,
+            &c.responder,
+            &c.boundary,
+            &identities,
+            diagnostics,
+        );
+
+        // handshake must exist and bind initiator/responder
+        if !c.handshake.value.is_empty() {
+            match handshakes.get(c.handshake.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "a2a_bridge_contract `{name}` references unknown handshake `{}`",
+                        c.handshake.value
+                    ),
+                    c.handshake.span,
+                )),
+                Some(handshake) => {
+                    let matches_pair = (handshake.initiator.value == c.initiator.value
+                        && handshake.responder.value == c.responder.value)
+                        || (handshake.initiator.value == c.responder.value
+                            && handshake.responder.value == c.initiator.value);
+                    if !c.initiator.value.is_empty()
+                        && !c.responder.value.is_empty()
+                        && !matches_pair
+                    {
+                        diagnostics.push(Diagnostic::new(
+                            format!("a2a_bridge_contract `{name}` handshake `{}` does not bind initiator `{}` and responder `{}`", c.handshake.value, c.initiator.value, c.responder.value),
+                            c.handshake.span,
+                        ));
+                    }
+                }
+            }
+        }
+
+        // trust_ledger must exist and include a handshake entry for this handshake
+        if !c.trust_ledger.value.is_empty() {
+            match ledgers.get(c.trust_ledger.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "a2a_bridge_contract `{name}` references unknown trust_ledger `{}`",
+                        c.trust_ledger.value
+                    ),
+                    c.trust_ledger.span,
+                )),
+                Some(ledger) => {
+                    if !c.handshake.value.is_empty() {
+                        let has_entry = ledger.entries.iter().any(|e| {
+                            e.kind.value.source_name() == "handshake"
+                                && e.subject.value == c.handshake.value
+                        });
+                        if !has_entry {
+                            diagnostics.push(Diagnostic::new(
+                                format!("a2a_bridge_contract `{name}` trust_ledger `{}` does not contain a handshake entry for `{}`", c.trust_ledger.value, c.handshake.value),
+                                c.trust_ledger.span,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // message_contracts must reference declared message types
+        for m in &c.message_contracts {
+            if m.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("a2a_bridge_contract `{name}` message_contracts must not contain empty strings"),
+                    m.span,
+                ));
+            } else if !symbols.types.contains(&m.value) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "a2a_bridge_contract `{name}` references unknown message_contract `{}`",
+                        m.value
+                    ),
+                    m.span,
+                ));
+            }
+        }
+    }
+}
+
+fn check_a2a_passport_binding(
+    name: &str,
+    passport_ref: &Spanned<String>,
+    agent_ref: &Spanned<String>,
+    passports: &std::collections::HashMap<&str, &argorix_parser::ast::PassportDecl>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if passport_ref.value.is_empty() {
+        return;
+    }
+    match passports.get(passport_ref.value.as_str()) {
+        None => diagnostics.push(Diagnostic::new(
+            format!(
+                "a2a_bridge_contract `{name}` references unknown passport `{}`",
+                passport_ref.value
+            ),
+            passport_ref.span,
+        )),
+        Some(passport) => {
+            if !agent_ref.value.is_empty() && passport.agent.value != agent_ref.value {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "a2a_bridge_contract `{name}` passport `{}` is not bound to agent `{}`",
+                        passport_ref.value, agent_ref.value
+                    ),
+                    passport_ref.span,
+                ));
+            }
+        }
+    }
+}
+
+fn check_a2a_identity_binding(
+    name: &str,
+    identity_ref: &Spanned<String>,
+    agent_ref: &Spanned<String>,
+    boundary_ref: &Spanned<String>,
+    identities: &std::collections::HashMap<&str, &argorix_parser::ast::ATrustIdentityDecl>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if identity_ref.value.is_empty() {
+        return;
+    }
+    match identities.get(identity_ref.value.as_str()) {
+        None => diagnostics.push(Diagnostic::new(
+            format!(
+                "a2a_bridge_contract `{name}` references unknown identity `{}`",
+                identity_ref.value
+            ),
+            identity_ref.span,
+        )),
+        Some(identity) => {
+            if !agent_ref.value.is_empty() && identity.subject.value != agent_ref.value {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "a2a_bridge_contract `{name}` identity `{}` is not bound to agent `{}`",
+                        identity_ref.value, agent_ref.value
+                    ),
+                    identity_ref.span,
+                ));
+            }
+            if !boundary_ref.value.is_empty() && identity.boundary.value != boundary_ref.value {
+                diagnostics.push(Diagnostic::new(
+                    format!("a2a_bridge_contract `{name}` identity boundary `{}` does not match boundary `{}`", identity.boundary.value, boundary_ref.value),
+                    identity_ref.span,
                 ));
             }
         }
