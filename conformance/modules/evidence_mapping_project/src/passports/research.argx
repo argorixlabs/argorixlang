@@ -1,0 +1,18 @@
+module passports.research
+
+passport ResearchPassport {
+    agent ResearchAgent
+    agent_name "Research Agent"
+    global_id "argx:agent:01HZX9RESEARCHAGENT"
+    identity "did:argorix:research-agent-v1"
+    provider "Argorix"
+    version "1.0.0"
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL", "EU"]
+    intent "research"
+    risk_level "high"
+    intended_use ["policy-review", "research"]
+    prohibited_use ["external-execution", "credential-access"]
+    attestations ["redteam", "policy-check"]
+}

@@ -47,6 +47,24 @@ pub struct PolicyEvidenceContext {
     pub crypto_execution_absent: bool,
     pub crypto_boundaries_declared: bool,
     pub post_quantum_readiness_declared: bool,
+    pub atrust_evidence_maps_declared: bool,
+    pub atrust_evidence_map_agents_bound: bool,
+    pub atrust_evidence_map_passports_bound: bool,
+    pub atrust_evidence_map_identities_bound: bool,
+    pub atrust_evidence_map_credentials_bound: bool,
+    pub atrust_evidence_map_handshakes_bound: bool,
+    pub atrust_evidence_map_ledgers_bound: bool,
+    pub atrust_evidence_map_bridges_bound: bool,
+    pub atrust_evidence_map_policies_bound: bool,
+    pub atrust_evidence_map_coverage_required: bool,
+    pub atrust_evidence_map_verification_non_verifying: bool,
+    pub atrust_evidence_map_resolution_disabled: bool,
+    pub atrust_evidence_map_network_denied: bool,
+    pub atrust_evidence_map_external_execution_disabled: bool,
+    pub atrust_evidence_map_secret_material_denied: bool,
+    pub atrust_evidence_map_key_material_denied: bool,
+    pub atrust_evidence_map_execution_disabled: bool,
+    pub atrust_evidence_map_security_claims_absent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -300,6 +318,78 @@ pub fn evaluate_rule(
         "post_quantum_readiness_declared" => (
             context.post_quantum_readiness_declared,
             "no crypto boundary declares post-quantum readiness",
+        ),
+        "atrust_evidence_maps_declared" => (
+            context.atrust_evidence_maps_declared,
+            "no atrust_evidence_map is declared",
+        ),
+        "atrust_evidence_map_agents_bound" => (
+            context.atrust_evidence_map_agents_bound,
+            "one or more evidence maps lack an agent binding",
+        ),
+        "atrust_evidence_map_passports_bound" => (
+            context.atrust_evidence_map_passports_bound,
+            "one or more evidence maps lack a passport binding",
+        ),
+        "atrust_evidence_map_identities_bound" => (
+            context.atrust_evidence_map_identities_bound,
+            "one or more evidence maps lack an identity binding",
+        ),
+        "atrust_evidence_map_credentials_bound" => (
+            context.atrust_evidence_map_credentials_bound,
+            "one or more evidence maps lack a credential binding",
+        ),
+        "atrust_evidence_map_handshakes_bound" => (
+            context.atrust_evidence_map_handshakes_bound,
+            "one or more evidence maps lack a handshake binding",
+        ),
+        "atrust_evidence_map_ledgers_bound" => (
+            context.atrust_evidence_map_ledgers_bound,
+            "one or more evidence maps lack a ledger binding",
+        ),
+        "atrust_evidence_map_bridges_bound" => (
+            context.atrust_evidence_map_bridges_bound,
+            "one or more evidence maps lack bridge bindings",
+        ),
+        "atrust_evidence_map_policies_bound" => (
+            context.atrust_evidence_map_policies_bound,
+            "one or more evidence maps lack policy bindings",
+        ),
+        "atrust_evidence_map_coverage_required" => (
+            context.atrust_evidence_map_coverage_required,
+            "one or more evidence maps do not require coverage",
+        ),
+        "atrust_evidence_map_verification_non_verifying" => (
+            context.atrust_evidence_map_verification_non_verifying,
+            "one or more evidence maps claim real verification",
+        ),
+        "atrust_evidence_map_resolution_disabled" => (
+            context.atrust_evidence_map_resolution_disabled,
+            "one or more evidence maps allow resolution",
+        ),
+        "atrust_evidence_map_network_denied" => (
+            context.atrust_evidence_map_network_denied,
+            "one or more evidence maps do not deny network access",
+        ),
+        "atrust_evidence_map_external_execution_disabled" => (
+            context.atrust_evidence_map_external_execution_disabled,
+            "one or more evidence maps allow external execution",
+        ),
+        "atrust_evidence_map_secret_material_denied" => (
+            context.atrust_evidence_map_secret_material_denied,
+            "one or more evidence maps allow secret material",
+        ),
+        "atrust_evidence_map_key_material_denied" => (
+            context.atrust_evidence_map_key_material_denied,
+            "one or more evidence maps allow key material",
+        ),
+        "atrust_evidence_map_execution_disabled" => (
+            context.atrust_evidence_map_execution_disabled,
+            "one or more evidence maps allow execution",
+        ),
+        "atrust_evidence_map_security_claims_absent" => (
+            context.atrust_evidence_map_security_claims_absent,
+            "one or more evidence maps declare security claims",
         ),
         _ => (false, "unknown policy rule"),
     };

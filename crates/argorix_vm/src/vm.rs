@@ -350,6 +350,47 @@ impl Vm {
                 EventFields::default(),
             );
         }
+        for map in &bytecode.atrust_evidence_maps {
+            state.trace_ledger.record(
+                EventType::ATrustEvidenceMapDeclared,
+                "declared",
+                format!("atrust_evidence_map {} declared as metadata only", map.name),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ATrustEvidenceMapCoverageRequired,
+                "required",
+                format!("atrust_evidence_map {} coverage {}", map.name, map.coverage),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ATrustEvidenceMapLinksValidated,
+                "validated",
+                format!(
+                    "atrust_evidence_map {} links identity, credential, handshake, ledger, bridges, policy and evidence metadata without verification",
+                    map.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ATrustEvidenceMapRuntimeDisabled,
+                "disabled",
+                format!(
+                    "atrust_evidence_map {} runtime disabled; no identity, credential, handshake, bridge, signature, or blockchain verification",
+                    map.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ATrustEvidenceMapSecurityClaimsDenied,
+                "none",
+                format!(
+                    "atrust_evidence_map {} declares security_claims none; mapped != verified",
+                    map.name
+                ),
+                EventFields::default(),
+            );
+        }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
             Err(error) => {
@@ -473,7 +514,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.31".into(),
+            vm_version: "0.32".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -493,6 +534,7 @@ impl Vm {
             adapters: bytecode.adapters.clone(),
             adapter_profiles: bytecode.adapter_profiles.clone(),
             cryptos: bytecode.cryptos.clone(),
+            atrust_evidence_maps: bytecode.atrust_evidence_maps.clone(),
             injected,
             steps,
             mailboxes,
@@ -789,6 +831,7 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
     let harnesses = &bytecode.provider_harnesses;
     let features = &bytecode.features;
     let secrets = &bytecode.secrets;
+    let evidence_maps = &bytecode.atrust_evidence_maps;
     PolicyEvidenceContext {
         agent_passport_declared,
         agent_passport_attested: !passports.is_empty()
@@ -972,6 +1015,91 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
             .crypto_boundaries
             .iter()
             .any(|b| b.post_quantum_ready == Some(true)),
+        atrust_evidence_maps_declared: !evidence_maps.is_empty(),
+        atrust_evidence_map_agents_bound: !evidence_maps.is_empty()
+            && evidence_maps
+                .iter()
+                .all(|m| bytecode.agents.iter().any(|a| a.name == m.agent)),
+        atrust_evidence_map_passports_bound: !evidence_maps.is_empty()
+            && evidence_maps
+                .iter()
+                .all(|m| bytecode.passports.iter().any(|p| p.name == m.passport)),
+        atrust_evidence_map_identities_bound: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| {
+                bytecode
+                    .atrust_identities
+                    .iter()
+                    .any(|i| i.name == m.identity)
+            }),
+        atrust_evidence_map_credentials_bound: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| {
+                bytecode
+                    .atrust_credential_contracts
+                    .iter()
+                    .any(|c| c.name == m.credential_contract)
+            }),
+        atrust_evidence_map_handshakes_bound: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| {
+                bytecode
+                    .atrust_handshakes
+                    .iter()
+                    .any(|h| h.name == m.handshake)
+            }),
+        atrust_evidence_map_ledgers_bound: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| {
+                bytecode
+                    .trust_ledgers
+                    .iter()
+                    .any(|l| l.name == m.trust_ledger)
+            }),
+        atrust_evidence_map_bridges_bound: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| {
+                !m.mcp_bridges.is_empty()
+                    && !m.a2a_bridges.is_empty()
+                    && m.mcp_bridges.iter().all(|name| {
+                        bytecode
+                            .mcp_bridge_contracts
+                            .iter()
+                            .any(|b| b.name == *name)
+                    })
+                    && m.a2a_bridges.iter().all(|name| {
+                        bytecode
+                            .a2a_bridge_contracts
+                            .iter()
+                            .any(|b| b.name == *name)
+                    })
+            }),
+        atrust_evidence_map_policies_bound: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| {
+                !m.policies.is_empty()
+                    && m.policies
+                        .iter()
+                        .all(|name| bytecode.policies.iter().any(|p| p.name == *name))
+            }),
+        atrust_evidence_map_coverage_required: !evidence_maps.is_empty()
+            && evidence_maps
+                .iter()
+                .all(|m| matches!(m.coverage.as_str(), "required" | "complete")),
+        atrust_evidence_map_verification_non_verifying: !evidence_maps.is_empty()
+            && evidence_maps
+                .iter()
+                .all(|m| matches!(m.verification.as_str(), "declared_only" | "disabled")),
+        atrust_evidence_map_resolution_disabled: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| m.resolution == "disabled"),
+        atrust_evidence_map_network_denied: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| m.network == "denied"),
+        atrust_evidence_map_external_execution_disabled: !evidence_maps.is_empty()
+            && evidence_maps
+                .iter()
+                .all(|m| m.external_execution == "disabled"),
+        atrust_evidence_map_secret_material_denied: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| m.secret_material == "denied"),
+        atrust_evidence_map_key_material_denied: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| m.key_material == "denied"),
+        atrust_evidence_map_execution_disabled: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| m.execution == "disabled"),
+        atrust_evidence_map_security_claims_absent: !evidence_maps.is_empty()
+            && evidence_maps.iter().all(|m| m.security_claims == "none"),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -1037,6 +1165,7 @@ mod tests {
             trust_ledgers: vec![],
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
+            atrust_evidence_maps: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -1190,7 +1319,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.31");
+        assert_eq!(json["vm_version"], "0.32");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -1212,7 +1341,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.31");
+        assert_eq!(json["vm_version"], "0.32");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -1234,7 +1363,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.31");
+        assert_eq!(json["vm_version"], "0.32");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -1289,7 +1418,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.31");
+        assert_eq!(trace.vm_version, "0.32");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -1363,7 +1492,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.31");
+        assert_eq!(trace.vm_version, "0.32");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1415,7 +1544,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.31");
+        assert_eq!(json["vm_version"], "0.32");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -1665,7 +1794,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.31");
+        assert_eq!(trace.vm_version, "0.32");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [

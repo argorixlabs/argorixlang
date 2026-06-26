@@ -1,0 +1,6 @@
+[package]
+name = "argorix-bridge-contracts-example"
+version = "0.32.0"
+
+[entry]
+main = "src/main.argx"

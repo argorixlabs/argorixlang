@@ -1,16 +1,17 @@
 use crate::symbols::{Symbols, COMMUNICATIVE_ACTS};
 use argorix_parser::{
     ast::{
-        ATrustCredentialContractDecl, ATrustCredentialMode, ATrustEvidenceRequirement,
-        ATrustExecution, ATrustHandshakeMode, ATrustIdentityFormat, ATrustIdentityStatus,
-        ATrustIdentityValidation, ATrustMaterialBoundary, ATrustResolutionMode,
-        ATrustSecurityClaims, AdapterExecution, AdapterFilesystem, AdapterKind, AdapterMode,
-        AdapterNetwork, AdapterProfileApiStyle, AdapterProfileAuth, AdapterProfileExecution,
-        AdapterProfileFamily, AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets,
-        Approval, CapabilityLevel, CryptoKind, CryptoStatus, CryptoStrength, DidLedgerMode,
-        DidMethodStatus, DidResolutionMode, FeatureDefault, FeatureStatus, HandlerInstruction,
-        HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets, PolicyRule, PolicyRuleDecl,
-        PolicyViolationAction, Program, SecretAccess, SecretScope, SecretSource,
+        ATrustCredentialContractDecl, ATrustCredentialMode, ATrustEvidenceMapCoverage,
+        ATrustEvidenceMapMappingMode, ATrustEvidenceRequirement, ATrustExecution,
+        ATrustHandshakeMode, ATrustIdentityFormat, ATrustIdentityStatus, ATrustIdentityValidation,
+        ATrustMaterialBoundary, ATrustResolutionMode, ATrustSecurityClaims, AdapterExecution,
+        AdapterFilesystem, AdapterKind, AdapterMode, AdapterNetwork, AdapterProfileApiStyle,
+        AdapterProfileAuth, AdapterProfileExecution, AdapterProfileFamily, AdapterProfileNetwork,
+        AdapterProfileSecrets, AdapterSecrets, Approval, CapabilityLevel, CryptoKind, CryptoStatus,
+        CryptoStrength, DidLedgerMode, DidMethodStatus, DidResolutionMode, FeatureDefault,
+        FeatureStatus, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
+        HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program, SecretAccess,
+        SecretScope, SecretSource,
     },
     diagnostics::Diagnostic,
     span::Spanned,
@@ -47,6 +48,7 @@ pub fn check_program_with_options(
     check_trust_ledgers(program, &symbols, &mut diagnostics);
     check_mcp_bridge_contracts(program, &symbols, &mut diagnostics);
     check_a2a_bridge_contracts(program, &symbols, &mut diagnostics);
+    check_atrust_evidence_maps(program, &symbols, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -4101,6 +4103,431 @@ fn check_a2a_identity_binding(
                 ));
             }
         }
+    }
+}
+
+fn check_atrust_evidence_maps(
+    program: &Program,
+    symbols: &Symbols,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    use std::collections::HashMap;
+
+    let passports: HashMap<&str, &argorix_parser::ast::PassportDecl> = program
+        .passports
+        .iter()
+        .map(|p| (p.name.value.as_str(), p))
+        .collect();
+    let identities: HashMap<&str, &argorix_parser::ast::ATrustIdentityDecl> = program
+        .atrust_identities
+        .iter()
+        .map(|i| (i.name.value.as_str(), i))
+        .collect();
+    let credentials: HashMap<&str, &ATrustCredentialContractDecl> = program
+        .atrust_credential_contracts
+        .iter()
+        .map(|c| (c.name.value.as_str(), c))
+        .collect();
+    let handshakes: HashMap<&str, &argorix_parser::ast::ATrustHandshakeDecl> = program
+        .atrust_handshakes
+        .iter()
+        .map(|h| (h.name.value.as_str(), h))
+        .collect();
+    let ledgers: HashMap<&str, &argorix_parser::ast::TrustLedgerDecl> = program
+        .trust_ledgers
+        .iter()
+        .map(|l| (l.name.value.as_str(), l))
+        .collect();
+    let mcp_bridges: HashMap<&str, &argorix_parser::ast::McpBridgeContractDecl> = program
+        .mcp_bridge_contracts
+        .iter()
+        .map(|b| (b.name.value.as_str(), b))
+        .collect();
+    let a2a_bridges: HashMap<&str, &argorix_parser::ast::A2ABridgeContractDecl> = program
+        .a2a_bridge_contracts
+        .iter()
+        .map(|b| (b.name.value.as_str(), b))
+        .collect();
+    let policies = program
+        .policies
+        .iter()
+        .map(|p| p.name.value.as_str())
+        .collect::<HashSet<_>>();
+
+    let mut names = HashSet::new();
+    for map in &program.atrust_evidence_maps {
+        report_duplicate(&mut names, &map.name, "atrust_evidence_map", diagnostics);
+        let name = map.name.value.as_str();
+
+        for (field, value) in [
+            ("agent", &map.agent),
+            ("passport", &map.passport),
+            ("identity", &map.identity),
+            ("credential_contract", &map.credential_contract),
+            ("handshake", &map.handshake),
+            ("trust_ledger", &map.trust_ledger),
+        ] {
+            if value.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("atrust_evidence_map `{name}` is missing required field `{field}`"),
+                    value.span,
+                ));
+            }
+        }
+        for (field, values) in [
+            ("mcp_bridges", &map.mcp_bridges),
+            ("a2a_bridges", &map.a2a_bridges),
+            ("policies", &map.policies),
+            ("purpose", &map.purpose),
+        ] {
+            if values.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("atrust_evidence_map `{name}` is missing required field `{field}`"),
+                    map.name.span,
+                ));
+            }
+            for value in values {
+                if value.value.trim().is_empty() {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "atrust_evidence_map `{name}` {field} must not contain empty strings"
+                        ),
+                        value.span,
+                    ));
+                }
+            }
+        }
+        if let Some(notes) = &map.notes {
+            if notes.value.trim().is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("atrust_evidence_map `{name}` notes must not be empty"),
+                    notes.span,
+                ));
+            }
+        }
+
+        if !map.agent.value.is_empty() && !symbols.agents.contains(&map.agent.value) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_evidence_map `{name}` references unknown agent `{}`",
+                    map.agent.value
+                ),
+                map.agent.span,
+            ));
+        }
+        match passports.get(map.passport.value.as_str()) {
+            None if !map.passport.value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_evidence_map `{name}` references unknown passport `{}`",
+                    map.passport.value
+                ),
+                map.passport.span,
+            )),
+            Some(passport)
+                if !map.agent.value.is_empty() && passport.agent.value != map.agent.value =>
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_evidence_map `{name}` passport `{}` is not bound to agent `{}`",
+                        map.passport.value, map.agent.value
+                    ),
+                    map.passport.span,
+                ));
+            }
+            _ => {}
+        }
+        match identities.get(map.identity.value.as_str()) {
+            None if !map.identity.value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_evidence_map `{name}` references unknown identity `{}`",
+                    map.identity.value
+                ),
+                map.identity.span,
+            )),
+            Some(identity)
+                if !map.agent.value.is_empty() && identity.subject.value != map.agent.value =>
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_evidence_map `{name}` identity `{}` is not bound to agent `{}`",
+                        map.identity.value, map.agent.value
+                    ),
+                    map.identity.span,
+                ));
+            }
+            _ => {}
+        }
+        match credentials.get(map.credential_contract.value.as_str()) {
+            None if !map.credential_contract.value.is_empty() => {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_evidence_map `{name}` references unknown credential_contract `{}`",
+                        map.credential_contract.value
+                    ),
+                    map.credential_contract.span,
+                ));
+            }
+            Some(credential) => {
+                if !map.identity.value.is_empty() && credential.identity.value != map.identity.value
+                {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "atrust_evidence_map `{name}` credential_contract `{}` is not bound to identity `{}`",
+                            map.credential_contract.value, map.identity.value
+                        ),
+                        map.credential_contract.span,
+                    ));
+                }
+                if !map.agent.value.is_empty() && credential.subject.value != map.agent.value {
+                    diagnostics.push(Diagnostic::new(
+                        format!(
+                            "atrust_evidence_map `{name}` credential_contract `{}` is not bound to agent `{}`",
+                            map.credential_contract.value, map.agent.value
+                        ),
+                        map.credential_contract.span,
+                    ));
+                }
+            }
+            _ => {}
+        }
+        match handshakes.get(map.handshake.value.as_str()) {
+            None if !map.handshake.value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_evidence_map `{name}` references unknown handshake `{}`",
+                    map.handshake.value
+                ),
+                map.handshake.span,
+            )),
+            Some(handshake)
+                if !map.agent.value.is_empty()
+                    && handshake.initiator.value != map.agent.value
+                    && handshake.responder.value != map.agent.value =>
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_evidence_map `{name}` handshake `{}` does not include agent `{}`",
+                        map.handshake.value, map.agent.value
+                    ),
+                    map.handshake.span,
+                ));
+            }
+            _ => {}
+        }
+
+        match ledgers.get(map.trust_ledger.value.as_str()) {
+            None if !map.trust_ledger.value.is_empty() => diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_evidence_map `{name}` references unknown trust_ledger `{}`",
+                    map.trust_ledger.value
+                ),
+                map.trust_ledger.span,
+            )),
+            Some(ledger) => {
+                require_ledger_entry(
+                    name,
+                    ledger,
+                    "identity",
+                    &map.identity.value,
+                    &map.trust_ledger,
+                    diagnostics,
+                );
+                require_ledger_entry(
+                    name,
+                    ledger,
+                    "credential",
+                    &map.credential_contract.value,
+                    &map.trust_ledger,
+                    diagnostics,
+                );
+                require_ledger_entry(
+                    name,
+                    ledger,
+                    "handshake",
+                    &map.handshake.value,
+                    &map.trust_ledger,
+                    diagnostics,
+                );
+            }
+            _ => {}
+        }
+
+        for bridge_ref in &map.mcp_bridges {
+            match mcp_bridges.get(bridge_ref.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_evidence_map `{name}` references unknown mcp_bridge `{}`",
+                        bridge_ref.value
+                    ),
+                    bridge_ref.span,
+                )),
+                Some(bridge) => {
+                    if bridge.agent.value != map.agent.value
+                        || bridge.passport.value != map.passport.value
+                        || bridge.identity.value != map.identity.value
+                    {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "atrust_evidence_map `{name}` mcp_bridge `{}` has incompatible agent/passport/identity binding",
+                                bridge_ref.value
+                            ),
+                            bridge_ref.span,
+                        ));
+                    }
+                }
+            }
+        }
+        for bridge_ref in &map.a2a_bridges {
+            match a2a_bridges.get(bridge_ref.value.as_str()) {
+                None => diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_evidence_map `{name}` references unknown a2a_bridge `{}`",
+                        bridge_ref.value
+                    ),
+                    bridge_ref.span,
+                )),
+                Some(bridge) => {
+                    if bridge.handshake.value != map.handshake.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "atrust_evidence_map `{name}` a2a_bridge `{}` handshake mismatch",
+                                bridge_ref.value
+                            ),
+                            bridge_ref.span,
+                        ));
+                    }
+                    if bridge.trust_ledger.value != map.trust_ledger.value {
+                        diagnostics.push(Diagnostic::new(
+                            format!(
+                                "atrust_evidence_map `{name}` a2a_bridge `{}` ledger mismatch",
+                                bridge_ref.value
+                            ),
+                            bridge_ref.span,
+                        ));
+                    }
+                }
+            }
+        }
+        for policy in &map.policies {
+            if !policies.contains(policy.value.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "atrust_evidence_map `{name}` references unknown policy `{}`",
+                        policy.value
+                    ),
+                    policy.span,
+                ));
+            }
+        }
+
+        if !matches!(
+            map.coverage.value,
+            ATrustEvidenceMapCoverage::Required | ATrustEvidenceMapCoverage::Complete
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires coverage `required` or `complete`"),
+                map.coverage.span,
+            ));
+        }
+        if !matches!(
+            map.mapping_mode.value,
+            ATrustEvidenceMapMappingMode::DeclaredOnly | ATrustEvidenceMapMappingMode::EvidenceOnly
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "atrust_evidence_map `{name}` requires mapping_mode `declared_only` or `evidence_only`"
+                ),
+                map.mapping_mode.span,
+            ));
+        }
+        if !matches!(
+            map.verification.value.source_name(),
+            "declared_only" | "disabled"
+        ) {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires verification `declared_only` or `disabled`"),
+                map.verification.span,
+            ));
+        }
+        if map.resolution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires resolution `disabled`"),
+                map.resolution.span,
+            ));
+        }
+        for (field, value) in [
+            ("evidence_bundle", &map.evidence_bundle),
+            ("security_report", &map.security_report),
+            ("trace", &map.trace),
+        ] {
+            if value.value.source_name() != "required" {
+                diagnostics.push(Diagnostic::new(
+                    format!("atrust_evidence_map `{name}` requires {field} `required`"),
+                    value.span,
+                ));
+            }
+        }
+        if map.network.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires network `denied`"),
+                map.network.span,
+            ));
+        }
+        if map.external_execution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires external_execution `disabled`"),
+                map.external_execution.span,
+            ));
+        }
+        if map.secret_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires secret_material `denied`"),
+                map.secret_material.span,
+            ));
+        }
+        if map.key_material.value.source_name() != "denied" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires key_material `denied`"),
+                map.key_material.span,
+            ));
+        }
+        if map.execution.value.source_name() != "disabled" {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires execution `disabled`"),
+                map.execution.span,
+            ));
+        }
+        if !matches!(map.security_claims.value, ATrustSecurityClaims::None) {
+            diagnostics.push(Diagnostic::new(
+                format!("atrust_evidence_map `{name}` requires security_claims `none`"),
+                map.security_claims.span,
+            ));
+        }
+    }
+}
+
+fn require_ledger_entry(
+    map_name: &str,
+    ledger: &argorix_parser::ast::TrustLedgerDecl,
+    kind: &str,
+    subject: &str,
+    span_source: &Spanned<String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if subject.is_empty() {
+        return;
+    }
+    let found = ledger
+        .entries
+        .iter()
+        .any(|entry| entry.kind.value.source_name() == kind && entry.subject.value == subject);
+    if !found {
+        diagnostics.push(Diagnostic::new(
+            format!(
+                "atrust_evidence_map `{map_name}` trust_ledger `{}` does not contain {kind} `{subject}`",
+                ledger.name.value
+            ),
+            span_source.span,
+        ));
     }
 }
 

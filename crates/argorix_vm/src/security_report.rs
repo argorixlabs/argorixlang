@@ -44,6 +44,8 @@ pub struct SecurityReport {
     pub mcp_bridge_contracts: McpBridgeContractsSummary,
     #[serde(default)]
     pub a2a_bridge_contracts: A2ABridgeContractsSummary,
+    #[serde(default)]
+    pub atrust_evidence_maps: ATrustEvidenceMapsSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -96,6 +98,27 @@ pub struct A2ABridgeContractsSummary {
     pub external_execution: BTreeMap<String, usize>,
     pub agent_execution: BTreeMap<String, usize>,
     pub security_claims: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ATrustEvidenceMapsSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub coverage: BTreeMap<String, usize>,
+    pub mapping_mode: BTreeMap<String, usize>,
+    pub verification: BTreeMap<String, usize>,
+    pub evidence_bundle: BTreeMap<String, usize>,
+    pub security_report: BTreeMap<String, usize>,
+    pub trace: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub execution: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
+    pub identity_links_total: usize,
+    pub credential_links_total: usize,
+    pub handshake_links_total: usize,
+    pub ledger_links_total: usize,
+    pub bridge_links_total: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -577,7 +600,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.31".into(),
+            report_version: "0.32".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -585,7 +608,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.31".into()),
+                .unwrap_or_else(|| "0.32".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -601,6 +624,7 @@ impl SecurityReport {
             trust_ledgers: bytecode.trust_ledgers.len(),
             mcp_bridge_contracts: mcp_bridge_contracts_summary(&bytecode.mcp_bridge_contracts),
             a2a_bridge_contracts: a2a_bridge_contracts_summary(&bytecode.a2a_bridge_contracts),
+            atrust_evidence_maps: atrust_evidence_maps_summary(&bytecode.atrust_evidence_maps),
             policy,
             provider_boundary,
             calls,
@@ -609,6 +633,52 @@ impl SecurityReport {
             verdict,
         }
     }
+}
+
+fn atrust_evidence_maps_summary(
+    maps: &[argorix_bytecode::BytecodeATrustEvidenceMap],
+) -> ATrustEvidenceMapsSummary {
+    let mut summary = ATrustEvidenceMapsSummary {
+        total: maps.len(),
+        ..Default::default()
+    };
+    for map in maps {
+        summary.names.push(map.name.clone());
+        *summary.coverage.entry(map.coverage.clone()).or_insert(0) += 1;
+        *summary
+            .mapping_mode
+            .entry(map.mapping_mode.clone())
+            .or_insert(0) += 1;
+        *summary
+            .verification
+            .entry(map.verification.clone())
+            .or_insert(0) += 1;
+        *summary
+            .evidence_bundle
+            .entry(map.evidence_bundle.clone())
+            .or_insert(0) += 1;
+        *summary
+            .security_report
+            .entry(map.security_report.clone())
+            .or_insert(0) += 1;
+        *summary.trace.entry(map.trace.clone()).or_insert(0) += 1;
+        *summary.network.entry(map.network.clone()).or_insert(0) += 1;
+        *summary
+            .external_execution
+            .entry(map.external_execution.clone())
+            .or_insert(0) += 1;
+        *summary.execution.entry(map.execution.clone()).or_insert(0) += 1;
+        *summary
+            .security_claims
+            .entry(map.security_claims.clone())
+            .or_insert(0) += 1;
+        summary.identity_links_total += usize::from(!map.identity.is_empty());
+        summary.credential_links_total += usize::from(!map.credential_contract.is_empty());
+        summary.handshake_links_total += usize::from(!map.handshake.is_empty());
+        summary.ledger_links_total += usize::from(!map.trust_ledger.is_empty());
+        summary.bridge_links_total += map.mcp_bridges.len() + map.a2a_bridges.len();
+    }
+    summary
 }
 
 fn mcp_bridge_contracts_summary(

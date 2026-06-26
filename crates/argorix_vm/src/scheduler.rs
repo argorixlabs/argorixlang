@@ -227,6 +227,7 @@ mod tests {
             trust_ledgers: vec![],
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
+            atrust_evidence_maps: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

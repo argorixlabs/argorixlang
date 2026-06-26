@@ -1,12 +1,13 @@
 use crate::{
     BytecodeA2ABridgeContract, BytecodeATrustBoundary, BytecodeATrustCredentialContract,
-    BytecodeATrustHandshake, BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile,
-    BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
-    BytecodeDidMethod, BytecodeFailure, BytecodeFeature, BytecodeMcpBridgeContract, BytecodeModel,
-    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
-    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
-    BytecodeProviderHarness, BytecodeSecret, BytecodeTool, BytecodeTrustLedger,
-    BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeATrustEvidenceMap, BytecodeATrustHandshake, BytecodeATrustIdentity, BytecodeAdapter,
+    BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeCrypto,
+    BytecodeCryptoBoundary, BytecodeDidMethod, BytecodeFailure, BytecodeFeature,
+    BytecodeMcpBridgeContract, BytecodeModel, BytecodeModule, BytecodeModuleImport,
+    BytecodePassport, BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule,
+    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness,
+    BytecodeSecret, BytecodeTool, BytecodeTrustLedger, BytecodeTrustLedgerEntry, BytecodeType,
+    BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -175,7 +176,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.31".to_owned(),
+        bytecode_version: "0.32".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -509,6 +510,37 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 notes: c.notes.clone(),
             })
             .collect(),
+        atrust_evidence_maps: ir
+            .atrust_evidence_maps
+            .iter()
+            .map(|m| BytecodeATrustEvidenceMap {
+                name: m.name.clone(),
+                agent: m.agent.clone(),
+                passport: m.passport.clone(),
+                identity: m.identity.clone(),
+                credential_contract: m.credential_contract.clone(),
+                handshake: m.handshake.clone(),
+                trust_ledger: m.trust_ledger.clone(),
+                mcp_bridges: m.mcp_bridges.clone(),
+                a2a_bridges: m.a2a_bridges.clone(),
+                policies: m.policies.clone(),
+                coverage: m.coverage.clone(),
+                mapping_mode: m.mapping_mode.clone(),
+                verification: m.verification.clone(),
+                resolution: m.resolution.clone(),
+                evidence_bundle: m.evidence_bundle.clone(),
+                security_report: m.security_report.clone(),
+                trace: m.trace.clone(),
+                network: m.network.clone(),
+                external_execution: m.external_execution.clone(),
+                secret_material: m.secret_material.clone(),
+                key_material: m.key_material.clone(),
+                execution: m.execution.clone(),
+                security_claims: m.security_claims.clone(),
+                purpose: m.purpose.clone(),
+                notes: m.notes.clone(),
+            })
+            .collect(),
         imports: ir
             .imports
             .iter()
@@ -694,6 +726,7 @@ mod tests {
             trust_ledgers: vec![],
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
+            atrust_evidence_maps: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -759,7 +792,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.31");
+        assert_eq!(bytecode.bytecode_version, "0.32");
         assert!(bytecode
             .instructions
             .iter()
@@ -857,6 +890,7 @@ mod tests {
             trust_ledgers: vec![],
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
+            atrust_evidence_maps: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -870,7 +904,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.31");
+        assert_eq!(bytecode.bytecode_version, "0.32");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

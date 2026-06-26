@@ -191,3 +191,23 @@ fn official_v031_suite_passes_with_bridge_contract_cases() {
         .any(|case| case.category == "bridge_contracts"));
     fs::remove_dir_all(workdir).unwrap();
 }
+
+#[test]
+fn official_v032_suite_passes_with_atrust_evidence_map_cases() {
+    let suite_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../conformance/suite.v032.json");
+    let suite: ConformanceSuite = serde_json::from_slice(&fs::read(&suite_path).unwrap()).unwrap();
+    let workdir = temp_workdir().join("v032");
+    let result = run_suite(&suite, &suite_path, &workdir).unwrap();
+    assert!(result.passed, "{:?}", result.failures);
+    assert!(result
+        .case_results
+        .iter()
+        .filter(|case| case.category == "atrust_evidence_maps")
+        .all(|case| case.passed));
+    assert!(result
+        .case_results
+        .iter()
+        .any(|case| case.category == "atrust_evidence_maps"));
+    fs::remove_dir_all(workdir).unwrap();
+}

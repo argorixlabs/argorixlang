@@ -11,6 +11,7 @@ pub mod trace;
 pub mod vm;
 
 pub use errors::VmError;
+pub use evidence::{EvidenceBundle, EvidenceVerificationResult};
 pub use injection::parse_injection;
 pub use mailbox::{AgentMailbox, MessageEnvelope};
 pub use reactive::ReactiveScheduler;

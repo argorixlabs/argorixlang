@@ -40,6 +40,8 @@ pub struct IrProgram {
     pub mcp_bridge_contracts: Vec<IrMcpBridgeContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub a2a_bridge_contracts: Vec<IrA2ABridgeContract>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atrust_evidence_maps: Vec<IrATrustEvidenceMap>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -425,6 +427,36 @@ pub struct IrA2ABridgeContract {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrATrustEvidenceMap {
+    pub name: String,
+    pub agent: String,
+    pub passport: String,
+    pub identity: String,
+    pub credential_contract: String,
+    pub handshake: String,
+    pub trust_ledger: String,
+    pub mcp_bridges: Vec<String>,
+    pub a2a_bridges: Vec<String>,
+    pub policies: Vec<String>,
+    pub coverage: String,
+    pub mapping_mode: String,
+    pub verification: String,
+    pub resolution: String,
+    pub evidence_bundle: String,
+    pub security_report: String,
+    pub trace: String,
+    pub network: String,
+    pub external_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
@@ -578,7 +610,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.31".to_owned(),
+            ir_version: "0.32".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -960,6 +992,37 @@ impl From<&Program> for IrProgram {
                     notes: c.notes.as_ref().map(|v| v.value.clone()),
                 })
                 .collect(),
+            atrust_evidence_maps: program
+                .atrust_evidence_maps
+                .iter()
+                .map(|m| IrATrustEvidenceMap {
+                    name: m.name.value.clone(),
+                    agent: m.agent.value.clone(),
+                    passport: m.passport.value.clone(),
+                    identity: m.identity.value.clone(),
+                    credential_contract: m.credential_contract.value.clone(),
+                    handshake: m.handshake.value.clone(),
+                    trust_ledger: m.trust_ledger.value.clone(),
+                    mcp_bridges: spanned_values(&m.mcp_bridges),
+                    a2a_bridges: spanned_values(&m.a2a_bridges),
+                    policies: spanned_values(&m.policies),
+                    coverage: m.coverage.value.source_name().to_owned(),
+                    mapping_mode: m.mapping_mode.value.source_name().to_owned(),
+                    verification: m.verification.value.source_name().to_owned(),
+                    resolution: m.resolution.value.source_name().to_owned(),
+                    evidence_bundle: m.evidence_bundle.value.source_name().to_owned(),
+                    security_report: m.security_report.value.source_name().to_owned(),
+                    trace: m.trace.value.source_name().to_owned(),
+                    network: m.network.value.source_name().to_owned(),
+                    external_execution: m.external_execution.value.source_name().to_owned(),
+                    secret_material: m.secret_material.value.source_name().to_owned(),
+                    key_material: m.key_material.value.source_name().to_owned(),
+                    execution: m.execution.value.source_name().to_owned(),
+                    security_claims: m.security_claims.value.source_name().to_owned(),
+                    purpose: spanned_values(&m.purpose),
+                    notes: m.notes.as_ref().map(|v| v.value.clone()),
+                })
+                .collect(),
             assertions: program
                 .assertions
                 .iter()
@@ -1219,7 +1282,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.31");
+        assert_eq!(ir.ir_version, "0.32");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -1257,7 +1320,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.31");
+        assert_eq!(ir.ir_version, "0.32");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -1292,7 +1355,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.31");
+        assert_eq!(ir.ir_version, "0.32");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");

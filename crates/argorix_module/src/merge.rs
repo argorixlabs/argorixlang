@@ -29,6 +29,7 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         trust_ledgers: Vec::new(),
         mcp_bridge_contracts: Vec::new(),
         a2a_bridge_contracts: Vec::new(),
+        atrust_evidence_maps: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -90,6 +91,9 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         merged
             .a2a_bridge_contracts
             .extend(program.a2a_bridge_contracts.iter().cloned());
+        merged
+            .atrust_evidence_maps
+            .extend(program.atrust_evidence_maps.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());

@@ -50,11 +50,38 @@ source language
 
 ## Current status
 
-**Version:** `0.31`
+**Version:** `0.32`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
+
+Version 0.32 adds ATrust Evidence Mapping: a top-level
+`atrust_evidence_map` block that links an agent passport, ATrust identity,
+credential contract, handshake, trust ledger, MCP/A2A bridge contracts,
+policies, SecurityReport, trace, and EvidenceBundle as declared evidence
+metadata.
+
+The core rule is: evidence must be mapped before trust can be evaluated. A map
+can say an identity is declared, a credential is declared, a dry-run handshake is
+declared, a ledger contains the referenced event, bridge contracts are declared,
+and an evidence bundle covers those pieces. It never says identity verified,
+credential verified, handshake executed or secure, MCP/A2A connected, signature
+verified, tamper-proof, blockchain verified, or post-quantum secure.
+
+`atrust_evidence_map` is locked to non-runtime boundaries: `mapping_mode
+declared_only` or `evidence_only`, `verification declared_only` or `disabled`,
+`resolution disabled`, `network denied`, `external_execution disabled`,
+`secret_material denied`, `key_material denied`, `execution disabled`, and
+`security_claims none`.
+
+SecurityReport v0.32 includes an `atrust_evidence_maps` summary with totals,
+names, required coverage, non-verifying mode counts, denied network/execution
+counts, `security_claims none`, and identity/credential/handshake/ledger/bridge
+link totals. EvidenceBundle v0.32 covers the resulting bytecode, trace, report,
+and ledger digests. Policy v2 adds `atrust_evidence_map_*` rules for declared
+maps, bound links, required coverage, disabled resolution/execution, denied
+network/material, and absent security claims.
 
 Version 0.31 adds MCP / A2A Bridge Contracts: two top-level blocks,
 `mcp_bridge_contract` and `a2a_bridge_contract`, that declare *how* an agent

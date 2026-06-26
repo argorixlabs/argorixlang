@@ -20,6 +20,7 @@ pub struct Program {
     pub trust_ledgers: Vec<TrustLedgerDecl>,
     pub mcp_bridge_contracts: Vec<McpBridgeContractDecl>,
     pub a2a_bridge_contracts: Vec<A2ABridgeContractDecl>,
+    pub atrust_evidence_maps: Vec<ATrustEvidenceMapDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -870,6 +871,24 @@ pub enum PolicyRule {
     A2ABridgeKeyMaterialDenied,
     A2ABridgeAuthenticationNonSecret,
     A2ABridgeSecurityClaimsAbsent,
+    ATrustEvidenceMapsDeclared,
+    ATrustEvidenceMapAgentsBound,
+    ATrustEvidenceMapPassportsBound,
+    ATrustEvidenceMapIdentitiesBound,
+    ATrustEvidenceMapCredentialsBound,
+    ATrustEvidenceMapHandshakesBound,
+    ATrustEvidenceMapLedgersBound,
+    ATrustEvidenceMapBridgesBound,
+    ATrustEvidenceMapPoliciesBound,
+    ATrustEvidenceMapCoverageRequired,
+    ATrustEvidenceMapVerificationNonVerifying,
+    ATrustEvidenceMapResolutionDisabled,
+    ATrustEvidenceMapNetworkDenied,
+    ATrustEvidenceMapExternalExecutionDisabled,
+    ATrustEvidenceMapSecretMaterialDenied,
+    ATrustEvidenceMapKeyMaterialDenied,
+    ATrustEvidenceMapExecutionDisabled,
+    ATrustEvidenceMapSecurityClaimsAbsent,
     Unknown(String),
 }
 
@@ -1045,6 +1064,32 @@ impl PolicyRule {
             Self::A2ABridgeKeyMaterialDenied => "a2a_bridge_key_material_denied",
             Self::A2ABridgeAuthenticationNonSecret => "a2a_bridge_authentication_non_secret",
             Self::A2ABridgeSecurityClaimsAbsent => "a2a_bridge_security_claims_absent",
+            Self::ATrustEvidenceMapsDeclared => "atrust_evidence_maps_declared",
+            Self::ATrustEvidenceMapAgentsBound => "atrust_evidence_map_agents_bound",
+            Self::ATrustEvidenceMapPassportsBound => "atrust_evidence_map_passports_bound",
+            Self::ATrustEvidenceMapIdentitiesBound => "atrust_evidence_map_identities_bound",
+            Self::ATrustEvidenceMapCredentialsBound => "atrust_evidence_map_credentials_bound",
+            Self::ATrustEvidenceMapHandshakesBound => "atrust_evidence_map_handshakes_bound",
+            Self::ATrustEvidenceMapLedgersBound => "atrust_evidence_map_ledgers_bound",
+            Self::ATrustEvidenceMapBridgesBound => "atrust_evidence_map_bridges_bound",
+            Self::ATrustEvidenceMapPoliciesBound => "atrust_evidence_map_policies_bound",
+            Self::ATrustEvidenceMapCoverageRequired => "atrust_evidence_map_coverage_required",
+            Self::ATrustEvidenceMapVerificationNonVerifying => {
+                "atrust_evidence_map_verification_non_verifying"
+            }
+            Self::ATrustEvidenceMapResolutionDisabled => "atrust_evidence_map_resolution_disabled",
+            Self::ATrustEvidenceMapNetworkDenied => "atrust_evidence_map_network_denied",
+            Self::ATrustEvidenceMapExternalExecutionDisabled => {
+                "atrust_evidence_map_external_execution_disabled"
+            }
+            Self::ATrustEvidenceMapSecretMaterialDenied => {
+                "atrust_evidence_map_secret_material_denied"
+            }
+            Self::ATrustEvidenceMapKeyMaterialDenied => "atrust_evidence_map_key_material_denied",
+            Self::ATrustEvidenceMapExecutionDisabled => "atrust_evidence_map_execution_disabled",
+            Self::ATrustEvidenceMapSecurityClaimsAbsent => {
+                "atrust_evidence_map_security_claims_absent"
+            }
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -2003,6 +2048,73 @@ pub struct A2ABridgeContractDecl {
     pub security_claims: Spanned<ATrustSecurityClaims>,
     pub purpose: Vec<Spanned<String>>,
     pub notes: Option<Spanned<String>>,
+}
+
+/// A top-level `atrust_evidence_map` block linking ATrust identity,
+/// credential, handshake, ledger and bridge metadata. v0.32 is mapping only:
+/// it records declared evidence coverage without real verification, network,
+/// signing, key access, or bridge runtime connectivity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ATrustEvidenceMapDecl {
+    pub name: Spanned<String>,
+    pub agent: Spanned<String>,
+    pub passport: Spanned<String>,
+    pub identity: Spanned<String>,
+    pub credential_contract: Spanned<String>,
+    pub handshake: Spanned<String>,
+    pub trust_ledger: Spanned<String>,
+    pub mcp_bridges: Vec<Spanned<String>>,
+    pub a2a_bridges: Vec<Spanned<String>>,
+    pub policies: Vec<Spanned<String>>,
+    pub coverage: Spanned<ATrustEvidenceMapCoverage>,
+    pub mapping_mode: Spanned<ATrustEvidenceMapMappingMode>,
+    pub verification: Spanned<ATrustHandshakeVerification>,
+    pub resolution: Spanned<ATrustResolutionMode>,
+    pub evidence_bundle: Spanned<ATrustEvidenceRequirement>,
+    pub security_report: Spanned<ATrustEvidenceRequirement>,
+    pub trace: Spanned<ATrustEvidenceRequirement>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub external_execution: Spanned<ATrustExecution>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustEvidenceMapCoverage {
+    Required,
+    Complete,
+    Unknown(String),
+}
+
+impl ATrustEvidenceMapCoverage {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::Required => "required",
+            Self::Complete => "complete",
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ATrustEvidenceMapMappingMode {
+    DeclaredOnly,
+    EvidenceOnly,
+    Unknown(String),
+}
+
+impl ATrustEvidenceMapMappingMode {
+    pub fn source_name(&self) -> &str {
+        match self {
+            Self::DeclaredOnly => "declared_only",
+            Self::EvidenceOnly => "evidence_only",
+            Self::Unknown(value) => value,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

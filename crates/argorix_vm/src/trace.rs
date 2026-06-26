@@ -93,6 +93,11 @@ pub enum EventType {
     A2ABridgeNetworkDenied,
     A2AAgentExecutionDisabled,
     BridgeSecurityClaimsDenied,
+    ATrustEvidenceMapDeclared,
+    ATrustEvidenceMapCoverageRequired,
+    ATrustEvidenceMapLinksValidated,
+    ATrustEvidenceMapRuntimeDisabled,
+    ATrustEvidenceMapSecurityClaimsDenied,
     VmCompleted,
     VmFailed,
 }
@@ -191,6 +196,8 @@ pub struct ReactiveExecutionTrace {
     pub adapter_profiles: Vec<argorix_bytecode::BytecodeAdapterProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cryptos: Vec<argorix_bytecode::BytecodeCrypto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atrust_evidence_maps: Vec<argorix_bytecode::BytecodeATrustEvidenceMap>,
     pub injected: InjectedMessage,
     pub steps: Vec<ReactiveStep>,
     pub mailboxes: Vec<MailboxSummary>,

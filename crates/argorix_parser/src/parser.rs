@@ -2,7 +2,8 @@ use crate::{
     ast::{
         A2ABridgeContractDecl, A2AProtocol, ATrustBoundaryDecl, ATrustCredentialContractDecl,
         ATrustCredentialMode, ATrustCredentialPresentation, ATrustCredentialStatus,
-        ATrustCredentialVerification, ATrustEvidenceRequirement, ATrustExecution,
+        ATrustCredentialVerification, ATrustEvidenceMapCoverage, ATrustEvidenceMapDecl,
+        ATrustEvidenceMapMappingMode, ATrustEvidenceRequirement, ATrustExecution,
         ATrustHandshakeChallenge, ATrustHandshakeDecl, ATrustHandshakeDirection,
         ATrustHandshakeDryRunMode, ATrustHandshakeMode, ATrustHandshakeResponse,
         ATrustHandshakeTranscript, ATrustHandshakeVerification, ATrustIdentityDecl,
@@ -133,6 +134,7 @@ impl Parser {
             trust_ledgers: Vec::new(),
             mcp_bridge_contracts: Vec::new(),
             a2a_bridge_contracts: Vec::new(),
+            atrust_evidence_maps: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -171,6 +173,9 @@ impl Parser {
                 Some("a2a_bridge_contract") => program
                     .a2a_bridge_contracts
                     .push(self.parse_a2a_bridge_contract()?),
+                Some("atrust_evidence_map") => program
+                    .atrust_evidence_maps
+                    .push(self.parse_atrust_evidence_map()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -190,7 +195,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -3429,6 +3434,333 @@ impl Parser {
         })
     }
 
+    fn parse_atrust_evidence_map(&mut self) -> Result<ATrustEvidenceMapDecl, Diagnostic> {
+        self.expect_keyword("atrust_evidence_map")?;
+        let name = self.expect_identifier("atrust_evidence_map name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut agent = None;
+        let mut passport = None;
+        let mut identity = None;
+        let mut credential_contract = None;
+        let mut handshake = None;
+        let mut trust_ledger = None;
+        let mut mcp_bridges = None;
+        let mut a2a_bridges = None;
+        let mut policies = None;
+        let mut coverage = None;
+        let mut mapping_mode = None;
+        let mut verification = None;
+        let mut resolution = None;
+        let mut evidence_bundle = None;
+        let mut security_report = None;
+        let mut trace = None;
+        let mut network = None;
+        let mut external_execution = None;
+        let mut secret_material = None;
+        let mut key_material = None;
+        let mut execution = None;
+        let mut security_claims = None;
+        let mut purpose = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated atrust_evidence_map declaration")?;
+            match self.peek_identifier() {
+                Some("agent") => {
+                    self.set_block_field(&mut agent, "atrust_evidence_map", "agent", |p| {
+                        p.expect_identifier("evidence map agent")
+                    })?
+                }
+                Some("passport") => {
+                    self.set_block_field(&mut passport, "atrust_evidence_map", "passport", |p| {
+                        p.expect_identifier("evidence map passport")
+                    })?
+                }
+                Some("identity") => {
+                    self.set_block_field(&mut identity, "atrust_evidence_map", "identity", |p| {
+                        p.expect_identifier("evidence map identity")
+                    })?
+                }
+                Some("credential_contract") => self.set_block_field(
+                    &mut credential_contract,
+                    "atrust_evidence_map",
+                    "credential_contract",
+                    |p| p.expect_identifier("evidence map credential_contract"),
+                )?,
+                Some("handshake") => {
+                    self.set_block_field(&mut handshake, "atrust_evidence_map", "handshake", |p| {
+                        p.expect_identifier("evidence map handshake")
+                    })?
+                }
+                Some("trust_ledger") => self.set_block_field(
+                    &mut trust_ledger,
+                    "atrust_evidence_map",
+                    "trust_ledger",
+                    |p| p.expect_identifier("evidence map trust_ledger"),
+                )?,
+                Some("mcp_bridges") => self.set_block_field(
+                    &mut mcp_bridges,
+                    "atrust_evidence_map",
+                    "mcp_bridges",
+                    |p| p.parse_string_array("evidence map mcp_bridge"),
+                )?,
+                Some("a2a_bridges") => self.set_block_field(
+                    &mut a2a_bridges,
+                    "atrust_evidence_map",
+                    "a2a_bridges",
+                    |p| p.parse_string_array("evidence map a2a_bridge"),
+                )?,
+                Some("policies") => {
+                    self.set_block_field(&mut policies, "atrust_evidence_map", "policies", |p| {
+                        p.parse_string_array("evidence map policy")
+                    })?
+                }
+                Some("coverage") => {
+                    self.set_block_field(&mut coverage, "atrust_evidence_map", "coverage", |p| {
+                        let token = p.expect_identifier("evidence map coverage")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceMapCoverage::Required,
+                            "complete" => ATrustEvidenceMapCoverage::Complete,
+                            other => ATrustEvidenceMapCoverage::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("mapping_mode") => self.set_block_field(
+                    &mut mapping_mode,
+                    "atrust_evidence_map",
+                    "mapping_mode",
+                    |p| {
+                        let token = p.expect_identifier("evidence map mapping_mode")?;
+                        let value = match token.value.as_str() {
+                            "declared_only" => ATrustEvidenceMapMappingMode::DeclaredOnly,
+                            "evidence_only" => ATrustEvidenceMapMappingMode::EvidenceOnly,
+                            other => ATrustEvidenceMapMappingMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("verification") => self.set_block_field(
+                    &mut verification,
+                    "atrust_evidence_map",
+                    "verification",
+                    |p| {
+                        let token = p.expect_identifier("evidence map verification")?;
+                        let value = match token.value.as_str() {
+                            "declared_only" => ATrustHandshakeVerification::DeclaredOnly,
+                            "disabled" => ATrustHandshakeVerification::Disabled,
+                            other => ATrustHandshakeVerification::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("resolution") => self.set_block_field(
+                    &mut resolution,
+                    "atrust_evidence_map",
+                    "resolution",
+                    |p| {
+                        let token = p.expect_identifier("evidence map resolution")?;
+                        let value = match token.value.as_str() {
+                            "disabled" => ATrustResolutionMode::Disabled,
+                            "embedded" => ATrustResolutionMode::Embedded,
+                            "local" => ATrustResolutionMode::Local,
+                            other => ATrustResolutionMode::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("evidence_bundle") => self.set_block_field(
+                    &mut evidence_bundle,
+                    "atrust_evidence_map",
+                    "evidence_bundle",
+                    |p| {
+                        let token = p.expect_identifier("evidence map evidence_bundle")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("security_report") => self.set_block_field(
+                    &mut security_report,
+                    "atrust_evidence_map",
+                    "security_report",
+                    |p| {
+                        let token = p.expect_identifier("evidence map security_report")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("trace") => {
+                    self.set_block_field(&mut trace, "atrust_evidence_map", "trace", |p| {
+                        let token = p.expect_identifier("evidence map trace")?;
+                        let value = match token.value.as_str() {
+                            "required" => ATrustEvidenceRequirement::Required,
+                            other => ATrustEvidenceRequirement::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("network") => {
+                    self.set_block_field(&mut network, "atrust_evidence_map", "network", |p| {
+                        let token = p.expect_identifier("evidence map network")?;
+                        let value = match token.value.as_str() {
+                            "denied" => ATrustNetworkBoundary::Denied,
+                            other => ATrustNetworkBoundary::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    })?
+                }
+                Some("external_execution") => self.set_block_field(
+                    &mut external_execution,
+                    "atrust_evidence_map",
+                    "external_execution",
+                    |p| {
+                        let token = p.expect_identifier("evidence map external_execution")?;
+                        Ok(Spanned::new(
+                            parse_bridge_execution(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "atrust_evidence_map",
+                    "secret_material",
+                    |p| {
+                        let token = p.expect_identifier("evidence map secret_material")?;
+                        Ok(Spanned::new(
+                            parse_bridge_material(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "atrust_evidence_map",
+                    "key_material",
+                    |p| {
+                        let token = p.expect_identifier("evidence map key_material")?;
+                        Ok(Spanned::new(
+                            parse_bridge_material(&token.value),
+                            token.span,
+                        ))
+                    },
+                )?,
+                Some("execution") => {
+                    self.set_block_field(&mut execution, "atrust_evidence_map", "execution", |p| {
+                        let token = p.expect_identifier("evidence map execution")?;
+                        Ok(Spanned::new(
+                            parse_bridge_execution(&token.value),
+                            token.span,
+                        ))
+                    })?
+                }
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "atrust_evidence_map",
+                    "security_claims",
+                    |p| {
+                        let token = p.expect_identifier("evidence map security_claims")?;
+                        let value = match token.value.as_str() {
+                            "none" => ATrustSecurityClaims::None,
+                            other => ATrustSecurityClaims::Unknown(other.to_owned()),
+                        };
+                        Ok(Spanned::new(value, token.span))
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "atrust_evidence_map", "purpose", |p| {
+                        p.parse_string_array("evidence map purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "atrust_evidence_map", "notes", |p| {
+                        p.expect_string("evidence map notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected atrust_evidence_map item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected atrust_evidence_map field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback = name.span;
+        let empty = || Spanned::new(String::new(), fallback);
+        Ok(ATrustEvidenceMapDecl {
+            name,
+            agent: agent.unwrap_or_else(empty),
+            passport: passport.unwrap_or_else(empty),
+            identity: identity.unwrap_or_else(empty),
+            credential_contract: credential_contract.unwrap_or_else(empty),
+            handshake: handshake.unwrap_or_else(empty),
+            trust_ledger: trust_ledger.unwrap_or_else(empty),
+            mcp_bridges: mcp_bridges.unwrap_or_default(),
+            a2a_bridges: a2a_bridges.unwrap_or_default(),
+            policies: policies.unwrap_or_default(),
+            coverage: coverage.unwrap_or_else(|| {
+                Spanned::new(ATrustEvidenceMapCoverage::Unknown(String::new()), fallback)
+            }),
+            mapping_mode: mapping_mode.unwrap_or_else(|| {
+                Spanned::new(
+                    ATrustEvidenceMapMappingMode::Unknown(String::new()),
+                    fallback,
+                )
+            }),
+            verification: verification.unwrap_or_else(|| {
+                Spanned::new(
+                    ATrustHandshakeVerification::Unknown(String::new()),
+                    fallback,
+                )
+            }),
+            resolution: resolution.unwrap_or_else(|| {
+                Spanned::new(ATrustResolutionMode::Unknown(String::new()), fallback)
+            }),
+            evidence_bundle: evidence_bundle.unwrap_or_else(|| {
+                Spanned::new(ATrustEvidenceRequirement::Unknown(String::new()), fallback)
+            }),
+            security_report: security_report.unwrap_or_else(|| {
+                Spanned::new(ATrustEvidenceRequirement::Unknown(String::new()), fallback)
+            }),
+            trace: trace.unwrap_or_else(|| {
+                Spanned::new(ATrustEvidenceRequirement::Unknown(String::new()), fallback)
+            }),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback)
+            }),
+            external_execution: external_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            secret_material: secret_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            key_material: key_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            execution: execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -3730,6 +4062,42 @@ impl Parser {
             "a2a_bridge_key_material_denied" => PolicyRule::A2ABridgeKeyMaterialDenied,
             "a2a_bridge_authentication_non_secret" => PolicyRule::A2ABridgeAuthenticationNonSecret,
             "a2a_bridge_security_claims_absent" => PolicyRule::A2ABridgeSecurityClaimsAbsent,
+            "atrust_evidence_maps_declared" => PolicyRule::ATrustEvidenceMapsDeclared,
+            "atrust_evidence_map_agents_bound" => PolicyRule::ATrustEvidenceMapAgentsBound,
+            "atrust_evidence_map_passports_bound" => PolicyRule::ATrustEvidenceMapPassportsBound,
+            "atrust_evidence_map_identities_bound" => PolicyRule::ATrustEvidenceMapIdentitiesBound,
+            "atrust_evidence_map_credentials_bound" => {
+                PolicyRule::ATrustEvidenceMapCredentialsBound
+            }
+            "atrust_evidence_map_handshakes_bound" => PolicyRule::ATrustEvidenceMapHandshakesBound,
+            "atrust_evidence_map_ledgers_bound" => PolicyRule::ATrustEvidenceMapLedgersBound,
+            "atrust_evidence_map_bridges_bound" => PolicyRule::ATrustEvidenceMapBridgesBound,
+            "atrust_evidence_map_policies_bound" => PolicyRule::ATrustEvidenceMapPoliciesBound,
+            "atrust_evidence_map_coverage_required" => {
+                PolicyRule::ATrustEvidenceMapCoverageRequired
+            }
+            "atrust_evidence_map_verification_non_verifying" => {
+                PolicyRule::ATrustEvidenceMapVerificationNonVerifying
+            }
+            "atrust_evidence_map_resolution_disabled" => {
+                PolicyRule::ATrustEvidenceMapResolutionDisabled
+            }
+            "atrust_evidence_map_network_denied" => PolicyRule::ATrustEvidenceMapNetworkDenied,
+            "atrust_evidence_map_external_execution_disabled" => {
+                PolicyRule::ATrustEvidenceMapExternalExecutionDisabled
+            }
+            "atrust_evidence_map_secret_material_denied" => {
+                PolicyRule::ATrustEvidenceMapSecretMaterialDenied
+            }
+            "atrust_evidence_map_key_material_denied" => {
+                PolicyRule::ATrustEvidenceMapKeyMaterialDenied
+            }
+            "atrust_evidence_map_execution_disabled" => {
+                PolicyRule::ATrustEvidenceMapExecutionDisabled
+            }
+            "atrust_evidence_map_security_claims_absent" => {
+                PolicyRule::ATrustEvidenceMapSecurityClaimsAbsent
+            }
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

@@ -45,6 +45,8 @@ pub struct BytecodeProgram {
     pub mcp_bridge_contracts: Vec<BytecodeMcpBridgeContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub a2a_bridge_contracts: Vec<BytecodeA2ABridgeContract>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atrust_evidence_maps: Vec<BytecodeATrustEvidenceMap>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -401,6 +403,36 @@ pub struct BytecodeA2ABridgeContract {
     pub authentication: String,
     pub authorization: String,
     pub evidence: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeATrustEvidenceMap {
+    pub name: String,
+    pub agent: String,
+    pub passport: String,
+    pub identity: String,
+    pub credential_contract: String,
+    pub handshake: String,
+    pub trust_ledger: String,
+    pub mcp_bridges: Vec<String>,
+    pub a2a_bridges: Vec<String>,
+    pub policies: Vec<String>,
+    pub coverage: String,
+    pub mapping_mode: String,
+    pub verification: String,
+    pub resolution: String,
+    pub evidence_bundle: String,
+    pub security_report: String,
+    pub trace: String,
+    pub network: String,
+    pub external_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
     pub security_claims: String,
     pub purpose: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -785,6 +817,12 @@ pub enum BytecodeError {
     DuplicateA2ABridgeContract(String),
     #[error("invalid a2a bridge contract `{name}`: {reason}")]
     InvalidA2ABridgeContract { name: String, reason: String },
+    #[error("atrust_evidence_maps require bytecode_version 0.32")]
+    ATrustEvidenceMapsRequireV032,
+    #[error("duplicate atrust_evidence_map `{0}`")]
+    DuplicateATrustEvidenceMap(String),
+    #[error("invalid atrust_evidence_map `{name}`: {reason}")]
+    InvalidATrustEvidenceMap { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -821,6 +859,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.29"
             | "0.30"
             | "0.31"
+            | "0.32"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -852,6 +891,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.29"
             | "0.30"
             | "0.31"
+            | "0.32"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -875,6 +915,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.29"
                 | "0.30"
                 | "0.31"
+                | "0.32"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -909,6 +950,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.29"
                 | "0.30"
                 | "0.31"
+                | "0.32"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -922,7 +964,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapters.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.22" | "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31"
+            "0.22"
+                | "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
+                | "0.32"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -930,7 +982,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapter_profiles.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31"
+            "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -938,7 +990,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.cryptos.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31"
+            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -946,7 +998,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.crypto_boundaries.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31"
+            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
@@ -954,7 +1006,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_credential_contracts.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.28" | "0.29" | "0.30" | "0.31"
+            "0.28" | "0.29" | "0.30" | "0.31" | "0.32"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -962,7 +1014,10 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         ));
     }
     if !program.atrust_handshakes.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.29" | "0.30" | "0.31")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.29" | "0.30" | "0.31" | "0.32"
+        )
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -970,7 +1025,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     validate_atrust_handshakes(program, &mut errors);
     if !program.trust_ledgers.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.30" | "0.31")
+        && !matches!(program.bytecode_version.as_str(), "0.30" | "0.31" | "0.32")
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -978,7 +1033,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     validate_trust_ledgers(program, &mut errors);
     if (!program.mcp_bridge_contracts.is_empty() || !program.a2a_bridge_contracts.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.31")
+        && !matches!(program.bytecode_version.as_str(), "0.31" | "0.32")
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -986,6 +1041,12 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     validate_mcp_bridge_contracts(program, &mut errors);
     validate_a2a_bridge_contracts(program, &mut errors);
+    if !program.atrust_evidence_maps.is_empty()
+        && !matches!(program.bytecode_version.as_str(), "0.32")
+    {
+        errors.push(BytecodeError::ATrustEvidenceMapsRequireV032);
+    }
+    validate_atrust_evidence_maps(program, &mut errors);
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
@@ -1271,6 +1332,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.29"
                 | "0.30"
                 | "0.31"
+                | "0.32"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -1331,6 +1393,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
                 | "0.29"
                 | "0.30"
                 | "0.31"
+                | "0.32"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1422,6 +1485,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
                 | "0.29"
                 | "0.30"
                 | "0.31"
+                | "0.32"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1533,6 +1597,7 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
                 | "0.29"
                 | "0.30"
                 | "0.31"
+                | "0.32"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -1603,6 +1668,7 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
                 | "0.29"
                 | "0.30"
                 | "0.31"
+                | "0.32"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);
@@ -2331,6 +2397,130 @@ fn validate_a2a_bridge_contracts(program: &BytecodeProgram, errors: &mut Vec<Byt
     }
 }
 
+fn validate_atrust_evidence_maps(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    for map in &program.atrust_evidence_maps {
+        if !names.insert(map.name.as_str()) {
+            errors.push(BytecodeError::DuplicateATrustEvidenceMap(map.name.clone()));
+        }
+        let required_scalar = [
+            ("agent", map.agent.as_str()),
+            ("passport", map.passport.as_str()),
+            ("identity", map.identity.as_str()),
+            ("credential_contract", map.credential_contract.as_str()),
+            ("handshake", map.handshake.as_str()),
+            ("trust_ledger", map.trust_ledger.as_str()),
+        ];
+        for (field, value) in required_scalar {
+            if value.trim().is_empty() {
+                errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                    name: map.name.clone(),
+                    reason: format!("missing required field `{field}`"),
+                });
+            }
+        }
+        for (field, values) in [
+            ("mcp_bridges", &map.mcp_bridges),
+            ("a2a_bridges", &map.a2a_bridges),
+            ("policies", &map.policies),
+            ("purpose", &map.purpose),
+        ] {
+            if values.is_empty() {
+                errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                    name: map.name.clone(),
+                    reason: format!("missing required field `{field}`"),
+                });
+            }
+            if values.iter().any(|value| value.trim().is_empty()) {
+                errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                    name: map.name.clone(),
+                    reason: format!("`{field}` must not contain empty strings"),
+                });
+            }
+        }
+        if !matches!(map.coverage.as_str(), "required" | "complete") {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "coverage must be required or complete".into(),
+            });
+        }
+        if !matches!(map.mapping_mode.as_str(), "declared_only" | "evidence_only") {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "mapping_mode must be declared_only or evidence_only".into(),
+            });
+        }
+        if !matches!(map.verification.as_str(), "declared_only" | "disabled") {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "verification must be declared_only or disabled".into(),
+            });
+        }
+        if map.resolution != "disabled" {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "resolution must be disabled".into(),
+            });
+        }
+        for (field, value) in [
+            ("evidence_bundle", map.evidence_bundle.as_str()),
+            ("security_report", map.security_report.as_str()),
+            ("trace", map.trace.as_str()),
+        ] {
+            if value != "required" {
+                errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                    name: map.name.clone(),
+                    reason: format!("{field} must be required"),
+                });
+            }
+        }
+        if map.network != "denied" {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "network must be denied".into(),
+            });
+        }
+        if map.external_execution != "disabled" {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "external_execution must be disabled".into(),
+            });
+        }
+        if map.secret_material != "denied" {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "secret_material must be denied".into(),
+            });
+        }
+        if map.key_material != "denied" {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "key_material must be denied".into(),
+            });
+        }
+        if map.execution != "disabled" {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "execution must be disabled".into(),
+            });
+        }
+        if map.security_claims != "none" {
+            errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                name: map.name.clone(),
+                reason: "security_claims must be none".into(),
+            });
+        }
+        if let Some(notes) = &map.notes {
+            if notes.trim().is_empty() {
+                errors.push(BytecodeError::InvalidATrustEvidenceMap {
+                    name: map.name.clone(),
+                    reason: "notes must not be empty".into(),
+                });
+            }
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -2484,6 +2674,24 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "a2a_bridge_key_material_denied",
         "a2a_bridge_authentication_non_secret",
         "a2a_bridge_security_claims_absent",
+        "atrust_evidence_maps_declared",
+        "atrust_evidence_map_agents_bound",
+        "atrust_evidence_map_passports_bound",
+        "atrust_evidence_map_identities_bound",
+        "atrust_evidence_map_credentials_bound",
+        "atrust_evidence_map_handshakes_bound",
+        "atrust_evidence_map_ledgers_bound",
+        "atrust_evidence_map_bridges_bound",
+        "atrust_evidence_map_policies_bound",
+        "atrust_evidence_map_coverage_required",
+        "atrust_evidence_map_verification_non_verifying",
+        "atrust_evidence_map_resolution_disabled",
+        "atrust_evidence_map_network_denied",
+        "atrust_evidence_map_external_execution_disabled",
+        "atrust_evidence_map_secret_material_denied",
+        "atrust_evidence_map_key_material_denied",
+        "atrust_evidence_map_execution_disabled",
+        "atrust_evidence_map_security_claims_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -2595,6 +2803,7 @@ mod tests {
             trust_ledgers: vec![],
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
+            atrust_evidence_maps: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
