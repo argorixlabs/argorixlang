@@ -54,6 +54,8 @@ pub fn check_program_with_options(
     check_atrust_evidence_maps(program, &symbols, &mut diagnostics);
     check_governance_profiles(program, &mut diagnostics);
     check_regulatory_mappings(program, &mut diagnostics);
+    check_third_party_verifiers(program, &mut diagnostics);
+    check_public_conformance_reports(program, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -4924,6 +4926,478 @@ fn require_governance_text(
             format!("governance_profile `{name}` {field} must not be empty"),
             value.span,
         ));
+    }
+}
+
+pub fn check_third_party_verifiers(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let mut names = HashSet::new();
+    for verifier in &program.third_party_verifiers {
+        let name = verifier.name.value.as_str();
+        report_duplicate(
+            &mut names,
+            &verifier.name,
+            "third_party_verifier",
+            diagnostics,
+        );
+        for (field, value, allowed, span) in [
+            (
+                "verifier_type",
+                verifier.verifier_type.value.source_name(),
+                &[
+                    "internal",
+                    "community",
+                    "academic",
+                    "vendor",
+                    "independent_lab",
+                    "custom",
+                ][..],
+                verifier.verifier_type.span,
+            ),
+            (
+                "independence",
+                verifier.independence.value.source_name(),
+                &["declared", "self_attested", "independent_declared"][..],
+                verifier.independence.span,
+            ),
+            (
+                "identity_mode",
+                verifier.identity_mode.value.source_name(),
+                &["declared_only", "document_only"][..],
+                verifier.identity_mode.span,
+            ),
+            (
+                "verification_mode",
+                verifier.verification_mode.value.source_name(),
+                &[
+                    "reproducible_artifacts",
+                    "document_review",
+                    "conformance_replay",
+                ][..],
+                verifier.verification_mode.span,
+            ),
+        ] {
+            if !allowed.contains(&value) {
+                diagnostics.push(Diagnostic::new(
+                    format!("third_party_verifier `{name}` has invalid {field} `{value}`"),
+                    span,
+                ));
+            }
+        }
+        for (field, value) in [
+            ("name", &verifier.display_name),
+            ("organization", &verifier.organization),
+            ("jurisdiction", &verifier.jurisdiction),
+        ] {
+            require_public_conformance_text(
+                "third_party_verifier",
+                name,
+                field,
+                value,
+                diagnostics,
+            );
+        }
+        require_non_empty_string_list(
+            "third_party_verifier",
+            name,
+            "allowed_scopes",
+            &verifier.allowed_scopes,
+            verifier.name.span,
+            diagnostics,
+        );
+        require_non_empty_string_list(
+            "third_party_verifier",
+            name,
+            "disallowed_claims",
+            &verifier.disallowed_claims,
+            verifier.name.span,
+            diagnostics,
+        );
+        require_non_empty_string_list(
+            "third_party_verifier",
+            name,
+            "purpose",
+            &verifier.purpose,
+            verifier.name.span,
+            diagnostics,
+        );
+        require_public_denied_boundaries(
+            "third_party_verifier",
+            name,
+            verifier.network.value.source_name(),
+            verifier.network.span,
+            verifier.external_execution.value.source_name(),
+            verifier.external_execution.span,
+            verifier.secret_material.value.source_name(),
+            verifier.secret_material.span,
+            verifier.key_material.value.source_name(),
+            verifier.key_material.span,
+            verifier.execution.value.source_name(),
+            verifier.execution.span,
+            &verifier.legal_claims,
+            &verifier.certification,
+            verifier.security_claims.value.source_name(),
+            verifier.security_claims.span,
+            diagnostics,
+        );
+        if let Some(notes) = &verifier.notes {
+            require_public_conformance_text(
+                "third_party_verifier",
+                name,
+                "notes",
+                notes,
+                diagnostics,
+            );
+        }
+    }
+}
+
+pub fn check_public_conformance_reports(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let verifiers: HashSet<&str> = program
+        .third_party_verifiers
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let governance_profiles: std::collections::HashMap<&str, _> = program
+        .governance_profiles
+        .iter()
+        .map(|value| (value.name.value.as_str(), value))
+        .collect();
+    let regulatory_mappings: std::collections::HashMap<&str, _> = program
+        .regulatory_mappings
+        .iter()
+        .map(|value| (value.name.value.as_str(), value))
+        .collect();
+    let trust_ledgers: HashSet<&str> = program
+        .trust_ledgers
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for report in &program.public_conformance_reports {
+        let name = report.name.value.as_str();
+        report_duplicate(
+            &mut names,
+            &report.name,
+            "public_conformance_report",
+            diagnostics,
+        );
+        for (kind, reference, known) in [
+            (
+                "third_party_verifier",
+                &report.verifier,
+                verifiers.contains(report.verifier.value.as_str()),
+            ),
+            (
+                "evidence_map",
+                &report.evidence_map,
+                evidence_maps.contains(report.evidence_map.value.as_str()),
+            ),
+            (
+                "governance_profile",
+                &report.governance_profile,
+                governance_profiles.contains_key(report.governance_profile.value.as_str()),
+            ),
+            (
+                "regulatory_mapping",
+                &report.regulatory_mapping,
+                regulatory_mappings.contains_key(report.regulatory_mapping.value.as_str()),
+            ),
+            (
+                "trust_ledger",
+                &report.trust_ledger,
+                trust_ledgers.contains(report.trust_ledger.value.as_str()),
+            ),
+        ] {
+            if !known {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "public_conformance_report `{name}` references unknown {kind} `{}`",
+                        reference.value
+                    ),
+                    reference.span,
+                ));
+            }
+        }
+        if let Some(profile) = governance_profiles.get(report.governance_profile.value.as_str()) {
+            if profile.evidence_map.value != report.evidence_map.value {
+                diagnostics.push(Diagnostic::new(
+                    format!("public_conformance_report `{name}` governance/evidence_map mismatch"),
+                    report.evidence_map.span,
+                ));
+            }
+        }
+        if let Some(mapping) = regulatory_mappings.get(report.regulatory_mapping.value.as_str()) {
+            if mapping.governance_profile.value != report.governance_profile.value {
+                diagnostics.push(Diagnostic::new(
+                    format!("public_conformance_report `{name}` regulatory/governance mismatch"),
+                    report.regulatory_mapping.span,
+                ));
+            }
+            if mapping.evidence_map.value != report.evidence_map.value {
+                diagnostics.push(Diagnostic::new(
+                    format!("public_conformance_report `{name}` regulatory/evidence_map mismatch"),
+                    report.regulatory_mapping.span,
+                ));
+            }
+        }
+        for (field, value) in [
+            ("suite", &report.suite),
+            ("suite_version", &report.suite_version),
+            ("source_artifact", &report.source_artifact),
+            ("bytecode_artifact", &report.bytecode_artifact),
+        ] {
+            require_public_conformance_text(
+                "public_conformance_report",
+                name,
+                field,
+                value,
+                diagnostics,
+            );
+        }
+        if report.suite_version.value != "0.34" {
+            diagnostics.push(Diagnostic::new(
+                format!("public_conformance_report `{name}` requires suite_version `0.34`"),
+                report.suite_version.span,
+            ));
+        }
+        for (field, value, allowed, span) in [
+            (
+                "result",
+                report.result.value.source_name(),
+                &["passed", "failed", "pending_review"][..],
+                report.result.span,
+            ),
+            (
+                "reproducibility",
+                report.reproducibility.value.source_name(),
+                &["declared", "replayable_locally", "document_only"][..],
+                report.reproducibility.span,
+            ),
+            (
+                "review_status",
+                report.review_status.value.source_name(),
+                &["draft", "reviewed", "published", "deprecated"][..],
+                report.review_status.span,
+            ),
+        ] {
+            if !allowed.contains(&value) {
+                diagnostics.push(Diagnostic::new(
+                    format!("public_conformance_report `{name}` has invalid {field} `{value}`"),
+                    span,
+                ));
+            }
+        }
+        for (field, value) in [
+            ("security_report", &report.security_report),
+            ("evidence_bundle", &report.evidence_bundle),
+            ("trace", &report.trace),
+        ] {
+            if value.value != "required" {
+                diagnostics.push(Diagnostic::new(
+                    format!("public_conformance_report `{name}` requires {field} `required`"),
+                    value.span,
+                ));
+            }
+        }
+        if report.claims.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("public_conformance_report `{name}` requires non-empty claims"),
+                report.name.span,
+            ));
+        }
+        let mut claim_ids = HashSet::new();
+        for claim in &report.claims {
+            report_duplicate(
+                &mut claim_ids,
+                &claim.id,
+                "public conformance claim id",
+                diagnostics,
+            );
+            for (field, value) in [
+                ("id", &claim.id),
+                ("statement", &claim.statement),
+                ("evidence_ref", &claim.evidence_ref),
+            ] {
+                require_public_conformance_text(
+                    "public_conformance_report",
+                    name,
+                    field,
+                    value,
+                    diagnostics,
+                );
+            }
+            if ![
+                "conformance",
+                "evidence",
+                "security_report",
+                "governance",
+                "regulatory_mapping",
+                "bytecode",
+                "source",
+                "policy",
+                "runtime_boundary",
+                "custom",
+            ]
+            .contains(&claim.category.value.source_name())
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!("public_conformance_report `{name}` has invalid claim category"),
+                    claim.category.span,
+                ));
+            }
+            if !["mapped", "declared", "pending_review", "not_applicable"]
+                .contains(&claim.status.value.source_name())
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!("public_conformance_report `{name}` has invalid claim status"),
+                    claim.status.span,
+                ));
+            }
+        }
+        require_non_empty_string_list(
+            "public_conformance_report",
+            name,
+            "purpose",
+            &report.purpose,
+            report.name.span,
+            diagnostics,
+        );
+        require_public_denied_boundaries(
+            "public_conformance_report",
+            name,
+            report.network.value.source_name(),
+            report.network.span,
+            report.external_execution.value.source_name(),
+            report.external_execution.span,
+            report.secret_material.value.source_name(),
+            report.secret_material.span,
+            report.key_material.value.source_name(),
+            report.key_material.span,
+            report.execution.value.source_name(),
+            report.execution.span,
+            &report.legal_claims,
+            &report.certification,
+            report.security_claims.value.source_name(),
+            report.security_claims.span,
+            diagnostics,
+        );
+        if let Some(notes) = &report.notes {
+            require_public_conformance_text(
+                "public_conformance_report",
+                name,
+                "notes",
+                notes,
+                diagnostics,
+            );
+        }
+    }
+}
+
+fn require_public_conformance_text(
+    kind: &str,
+    name: &str,
+    field: &str,
+    value: &Spanned<String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if value.value.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            format!("{kind} `{name}` {field} must not be empty"),
+            value.span,
+        ));
+    }
+}
+
+fn require_non_empty_string_list(
+    kind: &str,
+    name: &str,
+    field: &str,
+    values: &[Spanned<String>],
+    fallback: argorix_parser::span::Span,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if values.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            format!("{kind} `{name}` requires non-empty {field}"),
+            fallback,
+        ));
+    }
+    for value in values {
+        if value.value.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("{kind} `{name}` {field} must not contain empty strings"),
+                value.span,
+            ));
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn require_public_denied_boundaries(
+    kind: &str,
+    name: &str,
+    network: &str,
+    network_span: argorix_parser::span::Span,
+    external_execution: &str,
+    external_execution_span: argorix_parser::span::Span,
+    secret_material: &str,
+    secret_material_span: argorix_parser::span::Span,
+    key_material: &str,
+    key_material_span: argorix_parser::span::Span,
+    execution: &str,
+    execution_span: argorix_parser::span::Span,
+    legal_claims: &Spanned<String>,
+    certification: &Spanned<String>,
+    security_claims: &str,
+    security_claims_span: argorix_parser::span::Span,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for (field, actual, required, span) in [
+        ("network", network, "denied", network_span),
+        (
+            "external_execution",
+            external_execution,
+            "disabled",
+            external_execution_span,
+        ),
+        (
+            "secret_material",
+            secret_material,
+            "denied",
+            secret_material_span,
+        ),
+        ("key_material", key_material, "denied", key_material_span),
+        ("execution", execution, "disabled", execution_span),
+        (
+            "legal_claims",
+            legal_claims.value.as_str(),
+            "none",
+            legal_claims.span,
+        ),
+        (
+            "certification",
+            certification.value.as_str(),
+            "none",
+            certification.span,
+        ),
+        (
+            "security_claims",
+            security_claims,
+            "none",
+            security_claims_span,
+        ),
+    ] {
+        if actual != required {
+            diagnostics.push(Diagnostic::new(
+                format!("{kind} `{name}` requires {field} `{required}`"),
+                span,
+            ));
+        }
     }
 }
 

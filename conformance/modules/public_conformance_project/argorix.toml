@@ -1,0 +1,6 @@
+[package]
+name = "argorix-public-conformance-example"
+version = "0.34.0"
+
+[entry]
+main = "src/main.argx"

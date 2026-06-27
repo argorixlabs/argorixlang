@@ -51,6 +51,10 @@ pub struct BytecodeProgram {
     pub governance_profiles: Vec<BytecodeGovernanceProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub regulatory_mappings: Vec<BytecodeRegulatoryMapping>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub third_party_verifiers: Vec<BytecodeThirdPartyVerifier>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub public_conformance_reports: Vec<BytecodePublicConformanceReport>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -513,6 +517,72 @@ pub struct BytecodeRegulatoryObligation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeThirdPartyVerifier {
+    pub name: String,
+    pub verifier_type: String,
+    pub independence: String,
+    pub identity_mode: String,
+    pub verification_mode: String,
+    pub display_name: String,
+    pub organization: String,
+    pub jurisdiction: String,
+    pub allowed_scopes: Vec<String>,
+    pub disallowed_claims: Vec<String>,
+    pub network: String,
+    pub external_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodePublicConformanceReport {
+    pub name: String,
+    pub verifier: String,
+    pub suite: String,
+    pub suite_version: String,
+    pub source_artifact: String,
+    pub bytecode_artifact: String,
+    pub evidence_map: String,
+    pub governance_profile: String,
+    pub regulatory_mapping: String,
+    pub trust_ledger: String,
+    pub security_report: String,
+    pub evidence_bundle: String,
+    pub trace: String,
+    pub result: String,
+    pub reproducibility: String,
+    pub review_status: String,
+    pub claims: Vec<BytecodePublicConformanceClaim>,
+    pub network: String,
+    pub external_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodePublicConformanceClaim {
+    pub id: String,
+    pub category: String,
+    pub statement: String,
+    pub evidence_ref: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BytecodeProviderHarness {
     pub name: String,
     pub provider: String,
@@ -906,6 +976,16 @@ pub enum BytecodeError {
     DuplicateRegulatoryMapping(String),
     #[error("invalid regulatory_mapping `{name}`: {reason}")]
     InvalidRegulatoryMapping { name: String, reason: String },
+    #[error("third_party_verifiers and public_conformance_reports require bytecode_version 0.34")]
+    PublicConformanceRequiresV034,
+    #[error("duplicate third_party_verifier `{0}`")]
+    DuplicateThirdPartyVerifier(String),
+    #[error("invalid third_party_verifier `{name}`: {reason}")]
+    InvalidThirdPartyVerifier { name: String, reason: String },
+    #[error("duplicate public_conformance_report `{0}`")]
+    DuplicatePublicConformanceReport(String),
+    #[error("invalid public_conformance_report `{name}`: {reason}")]
+    InvalidPublicConformanceReport { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -944,6 +1024,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.31"
             | "0.32"
             | "0.33"
+            | "0.34"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -977,6 +1058,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.31"
             | "0.32"
             | "0.33"
+            | "0.34"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -1002,6 +1084,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -1038,6 +1121,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -1063,6 +1147,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -1081,6 +1166,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -1088,7 +1174,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.cryptos.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+            "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
+                | "0.32"
+                | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -1096,7 +1192,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.crypto_boundaries.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
@@ -1104,7 +1200,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_credential_contracts.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1114,7 +1210,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_handshakes.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+            "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1125,7 +1221,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.trust_ledgers.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.30" | "0.31" | "0.32" | "0.33"
+            "0.30" | "0.31" | "0.32" | "0.33" | "0.34"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1134,7 +1230,10 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     validate_trust_ledgers(program, &mut errors);
     if (!program.mcp_bridge_contracts.is_empty() || !program.a2a_bridge_contracts.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.31" | "0.32" | "0.33")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.31" | "0.32" | "0.33" | "0.34"
+        )
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -1143,18 +1242,25 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     validate_mcp_bridge_contracts(program, &mut errors);
     validate_a2a_bridge_contracts(program, &mut errors);
     if !program.atrust_evidence_maps.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.32" | "0.33")
+        && !matches!(program.bytecode_version.as_str(), "0.32" | "0.33" | "0.34")
     {
         errors.push(BytecodeError::ATrustEvidenceMapsRequireV032);
     }
     validate_atrust_evidence_maps(program, &mut errors);
     if (!program.governance_profiles.is_empty() || !program.regulatory_mappings.is_empty())
-        && program.bytecode_version != "0.33"
+        && !matches!(program.bytecode_version.as_str(), "0.33" | "0.34")
     {
         errors.push(BytecodeError::GovernanceMappingsRequireV033);
     }
     validate_governance_profiles(program, &mut errors);
     validate_regulatory_mappings(program, &mut errors);
+    if (!program.third_party_verifiers.is_empty() || !program.public_conformance_reports.is_empty())
+        && program.bytecode_version != "0.34"
+    {
+        errors.push(BytecodeError::PublicConformanceRequiresV034);
+    }
+    validate_third_party_verifiers(program, &mut errors);
+    validate_public_conformance_reports(program, &mut errors);
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
@@ -1442,6 +1548,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -1504,6 +1611,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1597,6 +1705,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1710,6 +1819,7 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -1782,6 +1892,7 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
                 | "0.31"
                 | "0.32"
                 | "0.33"
+                | "0.34"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);
@@ -2887,6 +2998,225 @@ fn validate_regulatory_mappings(program: &BytecodeProgram, errors: &mut Vec<Byte
     }
 }
 
+fn validate_third_party_verifiers(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    for verifier in &program.third_party_verifiers {
+        if !names.insert(verifier.name.as_str()) {
+            errors.push(BytecodeError::DuplicateThirdPartyVerifier(
+                verifier.name.clone(),
+            ));
+        }
+        let mut reasons = Vec::new();
+        if !matches!(
+            verifier.verifier_type.as_str(),
+            "internal" | "community" | "academic" | "vendor" | "independent_lab" | "custom"
+        ) {
+            reasons.push("invalid verifier_type");
+        }
+        if !matches!(
+            verifier.independence.as_str(),
+            "declared" | "self_attested" | "independent_declared"
+        ) {
+            reasons.push("invalid independence");
+        }
+        if !matches!(
+            verifier.identity_mode.as_str(),
+            "declared_only" | "document_only"
+        ) {
+            reasons.push("invalid identity_mode");
+        }
+        if !matches!(
+            verifier.verification_mode.as_str(),
+            "reproducible_artifacts" | "document_review" | "conformance_replay"
+        ) {
+            reasons.push("invalid verification_mode");
+        }
+        if verifier.display_name.trim().is_empty()
+            || verifier.organization.trim().is_empty()
+            || verifier.jurisdiction.trim().is_empty()
+        {
+            reasons.push("identity metadata must not be empty");
+        }
+        if verifier.allowed_scopes.is_empty()
+            || verifier.allowed_scopes.iter().any(|value| value.is_empty())
+            || verifier.disallowed_claims.is_empty()
+            || verifier
+                .disallowed_claims
+                .iter()
+                .any(|value| value.is_empty())
+            || verifier.purpose.is_empty()
+            || verifier.purpose.iter().any(|value| value.is_empty())
+        {
+            reasons.push("scope, disallowed claims, and purpose must not be empty");
+        }
+        if verifier.network != "denied"
+            || verifier.external_execution != "disabled"
+            || verifier.secret_material != "denied"
+            || verifier.key_material != "denied"
+            || verifier.execution != "disabled"
+            || verifier.legal_claims != "none"
+            || verifier.certification != "none"
+            || verifier.security_claims != "none"
+        {
+            reasons.push("runtime, legal, certification, and security claims must remain denied");
+        }
+        if verifier
+            .notes
+            .as_ref()
+            .is_some_and(|value| value.is_empty())
+        {
+            reasons.push("notes must not be empty");
+        }
+        for reason in reasons {
+            errors.push(BytecodeError::InvalidThirdPartyVerifier {
+                name: verifier.name.clone(),
+                reason: reason.into(),
+            });
+        }
+    }
+}
+
+fn validate_public_conformance_reports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let verifiers: HashSet<&str> = program
+        .third_party_verifiers
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let profiles: std::collections::HashMap<&str, &BytecodeGovernanceProfile> = program
+        .governance_profiles
+        .iter()
+        .map(|value| (value.name.as_str(), value))
+        .collect();
+    let mappings: std::collections::HashMap<&str, &BytecodeRegulatoryMapping> = program
+        .regulatory_mappings
+        .iter()
+        .map(|value| (value.name.as_str(), value))
+        .collect();
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let ledgers: HashSet<&str> = program
+        .trust_ledgers
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for report in &program.public_conformance_reports {
+        if !names.insert(report.name.as_str()) {
+            errors.push(BytecodeError::DuplicatePublicConformanceReport(
+                report.name.clone(),
+            ));
+        }
+        let mut reasons = Vec::new();
+        let profile = profiles.get(report.governance_profile.as_str()).copied();
+        let mapping = mappings.get(report.regulatory_mapping.as_str()).copied();
+        if !verifiers.contains(report.verifier.as_str()) {
+            reasons.push("unknown third_party_verifier");
+        }
+        if !evidence_maps.contains(report.evidence_map.as_str()) {
+            reasons.push("unknown evidence_map");
+        }
+        if profile.is_none() {
+            reasons.push("unknown governance_profile");
+        }
+        if mapping.is_none() {
+            reasons.push("unknown regulatory_mapping");
+        }
+        if !ledgers.contains(report.trust_ledger.as_str()) {
+            reasons.push("unknown trust_ledger");
+        }
+        if profile.is_some_and(|value| value.evidence_map != report.evidence_map) {
+            reasons.push("governance/evidence_map mismatch");
+        }
+        if mapping.is_some_and(|value| value.governance_profile != report.governance_profile) {
+            reasons.push("regulatory/governance mismatch");
+        }
+        if mapping.is_some_and(|value| value.evidence_map != report.evidence_map) {
+            reasons.push("regulatory/evidence_map mismatch");
+        }
+        if report.suite.trim().is_empty()
+            || report.suite_version != "0.34"
+            || report.source_artifact.trim().is_empty()
+            || report.bytecode_artifact.trim().is_empty()
+        {
+            reasons.push("suite and artifacts must be non-empty and suite_version 0.34");
+        }
+        if !matches!(
+            report.result.as_str(),
+            "passed" | "failed" | "pending_review"
+        ) || !matches!(
+            report.reproducibility.as_str(),
+            "declared" | "replayable_locally" | "document_only"
+        ) || !matches!(
+            report.review_status.as_str(),
+            "draft" | "reviewed" | "published" | "deprecated"
+        ) {
+            reasons.push("invalid result, reproducibility, or review_status");
+        }
+        if report.security_report != "required"
+            || report.evidence_bundle != "required"
+            || report.trace != "required"
+        {
+            reasons.push("security_report, evidence_bundle, and trace must be required");
+        }
+        if report.claims.is_empty() {
+            reasons.push("claims must not be empty");
+        }
+        let mut claim_ids = HashSet::new();
+        for claim in &report.claims {
+            if !claim_ids.insert(claim.id.as_str()) {
+                reasons.push("duplicate claim id");
+            }
+            if claim.id.is_empty() || claim.statement.is_empty() || claim.evidence_ref.is_empty() {
+                reasons.push("claim fields must not be empty");
+            }
+            if !matches!(
+                claim.category.as_str(),
+                "conformance"
+                    | "evidence"
+                    | "security_report"
+                    | "governance"
+                    | "regulatory_mapping"
+                    | "bytecode"
+                    | "source"
+                    | "policy"
+                    | "runtime_boundary"
+                    | "custom"
+            ) || !matches!(
+                claim.status.as_str(),
+                "mapped" | "declared" | "pending_review" | "not_applicable"
+            ) {
+                reasons.push("invalid claim category or status");
+            }
+        }
+        if report.network != "denied"
+            || report.external_execution != "disabled"
+            || report.secret_material != "denied"
+            || report.key_material != "denied"
+            || report.execution != "disabled"
+            || report.legal_claims != "none"
+            || report.certification != "none"
+            || report.security_claims != "none"
+        {
+            reasons.push("runtime, legal, certification, and security claims must remain denied");
+        }
+        if report.purpose.is_empty() || report.purpose.iter().any(|value| value.is_empty()) {
+            reasons.push("purpose must not be empty");
+        }
+        if report.notes.as_ref().is_some_and(|value| value.is_empty()) {
+            reasons.push("notes must not be empty");
+        }
+        for reason in reasons {
+            errors.push(BytecodeError::InvalidPublicConformanceReport {
+                name: report.name.clone(),
+                reason: reason.into(),
+            });
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -3072,6 +3402,24 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "regulatory_mappings_certification_absent",
         "regulatory_mappings_runtime_disabled",
         "regulatory_mappings_security_claims_absent",
+        "third_party_verifiers_declared",
+        "third_party_verifiers_identity_declared",
+        "third_party_verifiers_scope_bounded",
+        "third_party_verifiers_runtime_disabled",
+        "third_party_verifiers_legal_claims_absent",
+        "third_party_verifiers_certification_absent",
+        "third_party_verifiers_security_claims_absent",
+        "public_conformance_reports_declared",
+        "public_conformance_reports_verifiers_bound",
+        "public_conformance_reports_artifacts_declared",
+        "public_conformance_reports_evidence_bound",
+        "public_conformance_reports_governance_bound",
+        "public_conformance_reports_regulatory_bound",
+        "public_conformance_reports_replayable",
+        "public_conformance_reports_runtime_disabled",
+        "public_conformance_reports_legal_claims_absent",
+        "public_conformance_reports_certification_absent",
+        "public_conformance_reports_security_claims_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -3186,6 +3534,8 @@ mod tests {
             atrust_evidence_maps: vec![],
             governance_profiles: vec![],
             regulatory_mappings: vec![],
+            third_party_verifiers: vec![],
+            public_conformance_reports: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

@@ -23,6 +23,8 @@ pub struct Program {
     pub atrust_evidence_maps: Vec<ATrustEvidenceMapDecl>,
     pub governance_profiles: Vec<GovernanceProfileDecl>,
     pub regulatory_mappings: Vec<RegulatoryMappingDecl>,
+    pub third_party_verifiers: Vec<ThirdPartyVerifierDecl>,
+    pub public_conformance_reports: Vec<PublicConformanceReportDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -905,6 +907,24 @@ pub enum PolicyRule {
     RegulatoryMappingsCertificationAbsent,
     RegulatoryMappingsRuntimeDisabled,
     RegulatoryMappingsSecurityClaimsAbsent,
+    ThirdPartyVerifiersDeclared,
+    ThirdPartyVerifiersIdentityDeclared,
+    ThirdPartyVerifiersScopeBounded,
+    ThirdPartyVerifiersRuntimeDisabled,
+    ThirdPartyVerifiersLegalClaimsAbsent,
+    ThirdPartyVerifiersCertificationAbsent,
+    ThirdPartyVerifiersSecurityClaimsAbsent,
+    PublicConformanceReportsDeclared,
+    PublicConformanceReportsVerifiersBound,
+    PublicConformanceReportsArtifactsDeclared,
+    PublicConformanceReportsEvidenceBound,
+    PublicConformanceReportsGovernanceBound,
+    PublicConformanceReportsRegulatoryBound,
+    PublicConformanceReportsReplayable,
+    PublicConformanceReportsRuntimeDisabled,
+    PublicConformanceReportsLegalClaimsAbsent,
+    PublicConformanceReportsCertificationAbsent,
+    PublicConformanceReportsSecurityClaimsAbsent,
     Unknown(String),
 }
 
@@ -1127,6 +1147,48 @@ impl PolicyRule {
             Self::RegulatoryMappingsRuntimeDisabled => "regulatory_mappings_runtime_disabled",
             Self::RegulatoryMappingsSecurityClaimsAbsent => {
                 "regulatory_mappings_security_claims_absent"
+            }
+            Self::ThirdPartyVerifiersDeclared => "third_party_verifiers_declared",
+            Self::ThirdPartyVerifiersIdentityDeclared => "third_party_verifiers_identity_declared",
+            Self::ThirdPartyVerifiersScopeBounded => "third_party_verifiers_scope_bounded",
+            Self::ThirdPartyVerifiersRuntimeDisabled => "third_party_verifiers_runtime_disabled",
+            Self::ThirdPartyVerifiersLegalClaimsAbsent => {
+                "third_party_verifiers_legal_claims_absent"
+            }
+            Self::ThirdPartyVerifiersCertificationAbsent => {
+                "third_party_verifiers_certification_absent"
+            }
+            Self::ThirdPartyVerifiersSecurityClaimsAbsent => {
+                "third_party_verifiers_security_claims_absent"
+            }
+            Self::PublicConformanceReportsDeclared => "public_conformance_reports_declared",
+            Self::PublicConformanceReportsVerifiersBound => {
+                "public_conformance_reports_verifiers_bound"
+            }
+            Self::PublicConformanceReportsArtifactsDeclared => {
+                "public_conformance_reports_artifacts_declared"
+            }
+            Self::PublicConformanceReportsEvidenceBound => {
+                "public_conformance_reports_evidence_bound"
+            }
+            Self::PublicConformanceReportsGovernanceBound => {
+                "public_conformance_reports_governance_bound"
+            }
+            Self::PublicConformanceReportsRegulatoryBound => {
+                "public_conformance_reports_regulatory_bound"
+            }
+            Self::PublicConformanceReportsReplayable => "public_conformance_reports_replayable",
+            Self::PublicConformanceReportsRuntimeDisabled => {
+                "public_conformance_reports_runtime_disabled"
+            }
+            Self::PublicConformanceReportsLegalClaimsAbsent => {
+                "public_conformance_reports_legal_claims_absent"
+            }
+            Self::PublicConformanceReportsCertificationAbsent => {
+                "public_conformance_reports_certification_absent"
+            }
+            Self::PublicConformanceReportsSecurityClaimsAbsent => {
+                "public_conformance_reports_security_claims_absent"
             }
             Self::Unknown(value) => value,
         }
@@ -2318,6 +2380,131 @@ pub struct RegulatoryObligationDecl {
     pub control: Spanned<String>,
     pub evidence_ref: Spanned<String>,
     pub status: Spanned<RegulatoryObligationStatus>,
+}
+
+source_enum!(ThirdPartyVerifierType {
+    Internal => "internal",
+    Community => "community",
+    Academic => "academic",
+    Vendor => "vendor",
+    IndependentLab => "independent_lab",
+    Custom => "custom",
+});
+source_enum!(VerifierIndependence {
+    Declared => "declared",
+    SelfAttested => "self_attested",
+    IndependentDeclared => "independent_declared",
+});
+source_enum!(VerifierIdentityMode {
+    DeclaredOnly => "declared_only",
+    DocumentOnly => "document_only",
+});
+source_enum!(VerifierVerificationMode {
+    ReproducibleArtifacts => "reproducible_artifacts",
+    DocumentReview => "document_review",
+    ConformanceReplay => "conformance_replay",
+});
+source_enum!(PublicConformanceResult {
+    Passed => "passed",
+    Failed => "failed",
+    PendingReview => "pending_review",
+});
+source_enum!(PublicConformanceReproducibility {
+    Declared => "declared",
+    ReplayableLocally => "replayable_locally",
+    DocumentOnly => "document_only",
+});
+source_enum!(PublicConformanceReviewStatus {
+    Draft => "draft",
+    Reviewed => "reviewed",
+    Published => "published",
+    Deprecated => "deprecated",
+});
+source_enum!(PublicConformanceClaimCategory {
+    Conformance => "conformance",
+    Evidence => "evidence",
+    SecurityReport => "security_report",
+    Governance => "governance",
+    RegulatoryMapping => "regulatory_mapping",
+    Bytecode => "bytecode",
+    Source => "source",
+    Policy => "policy",
+    RuntimeBoundary => "runtime_boundary",
+    Custom => "custom",
+});
+source_enum!(PublicConformanceClaimStatus {
+    Mapped => "mapped",
+    Declared => "declared",
+    PendingReview => "pending_review",
+    NotApplicable => "not_applicable",
+});
+
+/// Declared reviewer metadata only; it does not prove identity, independence,
+/// certification, or cryptographic endorsement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThirdPartyVerifierDecl {
+    pub name: Spanned<String>,
+    pub verifier_type: Spanned<ThirdPartyVerifierType>,
+    pub independence: Spanned<VerifierIndependence>,
+    pub identity_mode: Spanned<VerifierIdentityMode>,
+    pub verification_mode: Spanned<VerifierVerificationMode>,
+    pub display_name: Spanned<String>,
+    pub organization: Spanned<String>,
+    pub jurisdiction: Spanned<String>,
+    pub allowed_scopes: Vec<Spanned<String>>,
+    pub disallowed_claims: Vec<Spanned<String>>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub external_execution: Spanned<ATrustExecution>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub legal_claims: Spanned<String>,
+    pub certification: Spanned<String>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+/// Reproducible public conformance metadata. It is not legal certification,
+/// regulator approval, or evidence that external execution occurred.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicConformanceReportDecl {
+    pub name: Spanned<String>,
+    pub verifier: Spanned<String>,
+    pub suite: Spanned<String>,
+    pub suite_version: Spanned<String>,
+    pub source_artifact: Spanned<String>,
+    pub bytecode_artifact: Spanned<String>,
+    pub evidence_map: Spanned<String>,
+    pub governance_profile: Spanned<String>,
+    pub regulatory_mapping: Spanned<String>,
+    pub trust_ledger: Spanned<String>,
+    pub security_report: Spanned<String>,
+    pub evidence_bundle: Spanned<String>,
+    pub trace: Spanned<String>,
+    pub result: Spanned<PublicConformanceResult>,
+    pub reproducibility: Spanned<PublicConformanceReproducibility>,
+    pub review_status: Spanned<PublicConformanceReviewStatus>,
+    pub claims: Vec<PublicConformanceClaimDecl>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub external_execution: Spanned<ATrustExecution>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub legal_claims: Spanned<String>,
+    pub certification: Spanned<String>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicConformanceClaimDecl {
+    pub id: Spanned<String>,
+    pub category: Spanned<PublicConformanceClaimCategory>,
+    pub statement: Spanned<String>,
+    pub evidence_ref: Spanned<String>,
+    pub status: Spanned<PublicConformanceClaimStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

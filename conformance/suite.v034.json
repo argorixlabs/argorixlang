@@ -1,0 +1,1265 @@
+{
+    "suite_version":  "0.34",
+    "cases":  [
+                  {
+                      "id":  "parser",
+                      "name":  "Feature and secret parse",
+                      "category":  "parser",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse"
+                                 ]
+                  },
+                  {
+                      "id":  "semantics",
+                      "name":  "Feature and secret check",
+                      "category":  "semantics",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ]
+                  },
+                  {
+                      "id":  "ir",
+                      "name":  "IR preserves features and secrets",
+                      "category":  "ir",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir"
+                                 ]
+                  },
+                  {
+                      "id":  "bytecode",
+                      "name":  "Bytecode preserves features and secrets",
+                      "category":  "bytecode",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "vm",
+                      "name":  "VM preserves features and secrets",
+                      "category":  "vm",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "trace_out"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "policy",
+                      "name":  "Legacy policy remains compatible",
+                      "category":  "policy",
+                      "source_path":  "sources/policy_v017.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ]
+                  },
+                  {
+                      "id":  "policy-v2",
+                      "name":  "Policy v2 secret boundary rules pass",
+                      "category":  "policy_v2",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "provider-boundary",
+                      "name":  "Provider boundary remains compatible",
+                      "category":  "provider_boundary",
+                      "bytecode_path":  "bytecode/compat_v010.argbc.json",
+                      "stages":  [
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "adapter-contracts",
+                      "name":  "Adapter contracts remain compatible",
+                      "category":  "adapter_contracts",
+                      "bytecode_path":  "bytecode/compat_v011.argbc.json",
+                      "stages":  [
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "allowlists",
+                      "name":  "Provider allowlists remain compatible",
+                      "category":  "allowlists",
+                      "bytecode_path":  "bytecode/compat_v012.argbc.json",
+                      "stages":  [
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "security-report",
+                      "name":  "SecurityReport summarizes features and secrets",
+                      "category":  "security_report",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "evidence-bundle",
+                      "name":  "EvidenceBundle covers features and secrets",
+                      "category":  "evidence_bundle",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report",
+                                     "trace_out",
+                                     "evidence_bundle",
+                                     "verify_evidence"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "offline-verification",
+                      "name":  "Boundary evidence verifies offline",
+                      "category":  "offline_verification",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report",
+                                     "trace_out",
+                                     "evidence_bundle",
+                                     "verify_evidence"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "compatibility-019",
+                      "name":  "Bytecode 0.19 remains compatible",
+                      "category":  "compatibility",
+                      "bytecode_path":  "bytecode/compat_v019.argbc.json",
+                      "stages":  [
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "compatibility-020",
+                      "name":  "Bytecode 0.20 remains compatible",
+                      "category":  "compatibility",
+                      "bytecode_path":  "bytecode/compat_v020.argbc.json",
+                      "stages":  [
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "modules",
+                      "name":  "Imported feature and secret enter IR",
+                      "category":  "modules",
+                      "manifest_path":  "modules/feature_secret_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "check_package",
+                                     "emit_ir_package"
+                                 ]
+                  },
+                  {
+                      "id":  "package",
+                      "name":  "Feature and secret package compiles",
+                      "category":  "package",
+                      "manifest_path":  "modules/feature_secret_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "check_package",
+                                     "emit_ir_package",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "module-graph",
+                      "name":  "Feature and secret graph resolves",
+                      "category":  "module_graph",
+                      "manifest_path":  "modules/feature_secret_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "graph_package"
+                                 ]
+                  },
+                  {
+                      "id":  "multi-file",
+                      "name":  "Imported feature and secret run",
+                      "category":  "multi_file_semantics",
+                      "manifest_path":  "modules/feature_secret_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "check_package",
+                                     "emit_ir_package",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "typed-messages",
+                      "name":  "Typed messages remain compatible",
+                      "category":  "typed_messages",
+                      "source_path":  "sources/typed_messages_v018.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "agent-passport",
+                      "name":  "Agent passports remain compatible",
+                      "category":  "agent_passport",
+                      "source_path":  "sources/agent_passport_v019.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "provider-harness",
+                      "name":  "Provider harness remains compatible",
+                      "category":  "provider_harness",
+                      "source_path":  "sources/provider_harness_v020.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "feature-parse",
+                      "name":  "Feature parses",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse"
+                                 ]
+                  },
+                  {
+                      "id":  "feature-semantics",
+                      "name":  "Feature semantic check passes",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ]
+                  },
+                  {
+                      "id":  "feature-linked",
+                      "name":  "Feature linked to declared provider",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir"
+                                 ]
+                  },
+                  {
+                      "id":  "feature-ir-bytecode",
+                      "name":  "Feature metadata preserved in IR and Bytecode",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "feature-trace",
+                      "name":  "Feature metadata preserved in VM trace",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "trace_out"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "feature-report",
+                      "name":  "SecurityReport includes feature_flags",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "feature-policy",
+                      "name":  "Policy v2 feature rules pass",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "feature-package",
+                      "name":  "Imported feature works",
+                      "category":  "feature_flags",
+                      "manifest_path":  "modules/feature_secret_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "check_package",
+                                     "emit_ir_package",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "feature-missing-status",
+                      "name":  "Missing feature status fails",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/missing_feature_status.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "missing required field"
+                  },
+                  {
+                      "id":  "feature-missing-default",
+                      "name":  "Missing feature default fails",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/missing_feature_default.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "missing required field"
+                  },
+                  {
+                      "id":  "feature-invalid-status",
+                      "name":  "Invalid feature status fails",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/invalid_feature_status.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "invalid status"
+                  },
+                  {
+                      "id":  "feature-invalid-default",
+                      "name":  "Invalid feature default fails",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/invalid_feature_default.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "invalid default"
+                  },
+                  {
+                      "id":  "feature-experimental-approval",
+                      "name":  "Experimental without approval fails",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/experimental_without_approval.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "requires approval"
+                  },
+                  {
+                      "id":  "feature-external-enabled",
+                      "name":  "External feature enabled fails",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/external_feature_enabled.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "must default to disabled"
+                  },
+                  {
+                      "id":  "feature-duplicate",
+                      "name":  "Duplicate feature name fails",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/duplicate_feature_name.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "duplicate feature"
+                  },
+                  {
+                      "id":  "feature-unknown-provider",
+                      "name":  "Unknown provider in feature fails",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/unknown_feature_provider.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "unknown provider"
+                  },
+                  {
+                      "id":  "feature-policy-missing",
+                      "name":  "Feature declaration policy fails when missing",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/policy_missing_feature.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:Worker:tell:Ping",
+                      "expected_failure_stage":  "run_vm",
+                      "expected_failure_contains":  "block"
+                  },
+                  {
+                      "id":  "feature-policy-gated",
+                      "name":  "External provider feature gating policy fails when missing",
+                      "category":  "feature_flags",
+                      "source_path":  "sources/policy_external_provider_not_feature_gated.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:Worker:tell:Ping",
+                      "expected_failure_stage":  "run_vm",
+                      "expected_failure_contains":  "block"
+                  },
+                  {
+                      "id":  "secret-parse",
+                      "name":  "Secret boundary parses",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse"
+                                 ]
+                  },
+                  {
+                      "id":  "secret-semantics",
+                      "name":  "Secret boundary semantic check passes",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ]
+                  },
+                  {
+                      "id":  "secret-linked",
+                      "name":  "Secret linked to provider and feature",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir"
+                                 ]
+                  },
+                  {
+                      "id":  "secret-ir-bytecode",
+                      "name":  "Secret metadata preserved in IR and Bytecode",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "secret-trace",
+                      "name":  "Secret metadata preserved in VM trace",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "trace_out"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "secret-report",
+                      "name":  "SecurityReport includes secret_boundaries",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "secret-bundle",
+                      "name":  "EvidenceBundle verifies secret metadata",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report",
+                                     "trace_out",
+                                     "evidence_bundle",
+                                     "verify_evidence"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "secret-policy",
+                      "name":  "Policy v2 secret rules pass",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "secret-package",
+                      "name":  "Imported secret works",
+                      "category":  "secret_boundary",
+                      "manifest_path":  "modules/feature_secret_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "check_package",
+                                     "emit_ir_package",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "secret-missing-handle",
+                      "name":  "Missing secret handle fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/missing_secret_handle.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "missing required field"
+                  },
+                  {
+                      "id":  "secret-missing-scope",
+                      "name":  "Missing secret scope fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/missing_secret_scope.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "missing required field"
+                  },
+                  {
+                      "id":  "secret-missing-access",
+                      "name":  "Missing secret access fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/missing_secret_access.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "missing required field"
+                  },
+                  {
+                      "id":  "secret-missing-source",
+                      "name":  "Missing secret source fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/missing_secret_source.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "missing required field"
+                  },
+                  {
+                      "id":  "secret-invalid-scope",
+                      "name":  "Invalid secret scope fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/invalid_secret_scope.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "invalid scope"
+                  },
+                  {
+                      "id":  "secret-access-allowed",
+                      "name":  "Secret access allowed fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/secret_access_allowed.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "invalid access"
+                  },
+                  {
+                      "id":  "secret-source-env",
+                      "name":  "Secret source env fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/secret_source_env.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "invalid source"
+                  },
+                  {
+                      "id":  "secret-value-present",
+                      "name":  "Secret value present fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/secret_value_present.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "parse",
+                      "expected_failure_contains":  "secret material"
+                  },
+                  {
+                      "id":  "secret-duplicate",
+                      "name":  "Duplicate secret name fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/duplicate_secret_name.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "duplicate secret"
+                  },
+                  {
+                      "id":  "secret-unknown-provider",
+                      "name":  "Unknown provider in secret fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/unknown_secret_provider.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "unknown provider"
+                  },
+                  {
+                      "id":  "secret-unknown-required-by",
+                      "name":  "Unknown required_by feature fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/unknown_required_by_feature.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "unknown feature"
+                  },
+                  {
+                      "id":  "secret-policy-missing",
+                      "name":  "Secret boundary policy fails when missing",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/policy_missing_secret_boundary.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:Worker:tell:Ping",
+                      "expected_failure_stage":  "run_vm",
+                      "expected_failure_contains":  "block"
+                  },
+                  {
+                      "id":  "secret-policy-coverage",
+                      "name":  "External provider secret boundary policy fails when missing",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/policy_external_provider_missing_secret_boundary.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:Worker:tell:Ping",
+                      "expected_failure_stage":  "run_vm",
+                      "expected_failure_contains":  "block"
+                  },
+                  {
+                      "id":  "harness-feature-ref",
+                      "name":  "Harness references feature",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/feature_secret_boundary_v021.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "harness-unknown-feature",
+                      "name":  "Harness unknown feature fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/harness_unknown_feature.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "unknown feature"
+                  },
+                  {
+                      "id":  "harness-unknown-secret",
+                      "name":  "Harness unknown secret fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/harness_unknown_secret.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "unknown secret"
+                  },
+                  {
+                      "id":  "harness-feature-mismatch",
+                      "name":  "Harness provider/feature mismatch fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/harness_feature_provider_mismatch.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "does not match feature"
+                  },
+                  {
+                      "id":  "harness-secret-mismatch",
+                      "name":  "Harness provider/secret mismatch fails",
+                      "category":  "secret_boundary",
+                      "source_path":  "sources/harness_secret_provider_mismatch.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ],
+                      "expected_failure_stage":  "semantic_check",
+                      "expected_failure_contains":  "does not match secret"
+                  },
+                  {
+                      "id":  "crypto-parse",
+                      "name":  "crypto primitive parses",
+                      "category":  "crypto_registry",
+                      "source_path":  "sources/crypto_registry.argx",
+                      "stages":  [
+                                     "parse"
+                                 ]
+                  },
+                  {
+                      "id":  "crypto-semantics",
+                      "name":  "crypto semantic check passes",
+                      "category":  "crypto_registry",
+                      "source_path":  "sources/crypto_registry.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ]
+                  },
+                  {
+                      "id":  "crypto-ir",
+                      "name":  "IR 0.24 includes cryptos",
+                      "category":  "crypto_registry",
+                      "source_path":  "sources/crypto_registry.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir"
+                                 ]
+                  },
+                  {
+                      "id":  "crypto-bytecode",
+                      "name":  "Bytecode 0.24 includes cryptos",
+                      "category":  "crypto_registry",
+                      "source_path":  "sources/crypto_registry.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "crypto-policy",
+                      "name":  "Policy v2 crypto rules pass",
+                      "category":  "crypto_registry",
+                      "source_path":  "sources/crypto_registry.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:X:tell:T"
+                  },
+                  {
+                      "id":  "crypto-boundary-parse",
+                      "name":  "crypto boundary parses",
+                      "category":  "crypto_boundaries",
+                      "source_path":  "sources/crypto_boundary.argx",
+                      "stages":  [
+                                     "parse"
+                                 ]
+                  },
+                  {
+                      "id":  "crypto-boundary-semantics",
+                      "name":  "crypto boundary semantic check passes",
+                      "category":  "crypto_boundaries",
+                      "source_path":  "sources/crypto_boundary.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ]
+                  },
+                  {
+                      "id":  "crypto-boundary-ir",
+                      "name":  "IR 0.25 includes crypto_boundaries",
+                      "category":  "crypto_boundaries",
+                      "source_path":  "sources/crypto_boundary.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir"
+                                 ]
+                  },
+                  {
+                      "id":  "crypto-boundary-bytecode",
+                      "name":  "Bytecode 0.25 includes crypto_boundaries",
+                      "category":  "crypto_boundaries",
+                      "source_path":  "sources/crypto_boundary.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "crypto-boundary-policy",
+                      "name":  "Policy v2 crypto boundary rules pass",
+                      "category":  "crypto_boundaries",
+                      "source_path":  "sources/crypto_boundary.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm"
+                                 ],
+                      "injection":  "User:X:tell:T"
+                  },
+                  {
+                      "source_path":  "sources/atrust_boundary_v026.argx",
+                      "category":  "atrust_boundaries",
+                      "name":  "ATrust base",
+                      "id":  "atrust-base",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "source_path":  "sources/atrust_boundary_v026.argx",
+                      "category":  "did_methods",
+                      "name":  "DID methods",
+                      "id":  "did-base",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "source_path":  "sources/atrust_identity_v027.argx",
+                      "category":  "atrust_identities",
+                      "name":  "ATrust Identity dry-run",
+                      "id":  "atrust-identity-base",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "source_path":  "sources/atrust_credential_v028.argx",
+                      "category":  "atrust_credential_contracts",
+                      "name":  "ATrust Credential contract",
+                      "id":  "atrust-cred-base",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "source_path":  "sources/atrust_handshake_v029.argx",
+                      "category":  "atrust_handshakes",
+                      "name":  "ATrust Handshake dry-run",
+                      "id":  "atrust-hs-base",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "trust-ledger-base",
+                      "name":  "Trust Ledger hash chain",
+                      "category":  "trust_ledgers",
+                      "source_path":  "sources/trust_ledger_v030.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "bridge-mcp-parse",
+                      "name":  "MCP bridge contract parses and checks",
+                      "category":  "bridge_contracts",
+                      "source_path":  "sources/bridge_contracts_v031.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ]
+                  },
+                  {
+                      "id":  "bridge-a2a-ir",
+                      "name":  "Bridge contracts lower to IR and bytecode",
+                      "category":  "bridge_contracts",
+                      "source_path":  "sources/bridge_contracts_v031.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "bridge-report",
+                      "name":  "SecurityReport includes bridge summary",
+                      "category":  "bridge_contracts",
+                      "source_path":  "sources/bridge_contracts_v031.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "bridge-evidence",
+                      "name":  "EvidenceBundle covers bridge contracts",
+                      "category":  "bridge_contracts",
+                      "source_path":  "sources/bridge_contracts_v031.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report",
+                                     "trace_out",
+                                     "evidence_bundle",
+                                     "verify_evidence"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "bridge-policy",
+                      "name":  "Bridge policy rules verify",
+                      "category":  "bridge_contracts",
+                      "source_path":  "sources/bridge_contracts_v031.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "bridge-package",
+                      "name":  "Imported bridge contracts resolve",
+                      "category":  "bridge_contracts",
+                      "manifest_path":  "modules/bridge_contracts_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "check_package",
+                                     "emit_ir_package",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "evidence-map-parse",
+                      "name":  "ATrust evidence map parses",
+                      "category":  "atrust_evidence_maps",
+                      "source_path":  "sources/evidence_mapping_v032.argx",
+                      "stages":  [
+                                     "parse"
+                                 ]
+                  },
+                  {
+                      "id":  "evidence-map-semantics",
+                      "name":  "ATrust evidence map semantic check passes",
+                      "category":  "atrust_evidence_maps",
+                      "source_path":  "sources/evidence_mapping_v032.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check"
+                                 ]
+                  },
+                  {
+                      "id":  "evidence-map-ir-bytecode",
+                      "name":  "IR and Bytecode include ATrust evidence maps",
+                      "category":  "atrust_evidence_maps",
+                      "source_path":  "sources/evidence_mapping_v032.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "evidence-map-report",
+                      "name":  "SecurityReport includes evidence map summary",
+                      "category":  "atrust_evidence_maps",
+                      "source_path":  "sources/evidence_mapping_v032.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "evidence-map-bundle",
+                      "name":  "EvidenceBundle covers evidence maps",
+                      "category":  "atrust_evidence_maps",
+                      "source_path":  "sources/evidence_mapping_v032.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report",
+                                     "trace_out",
+                                     "evidence_bundle",
+                                     "verify_evidence"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "evidence-map-package",
+                      "name":  "Imported evidence maps resolve in package",
+                      "category":  "atrust_evidence_maps",
+                      "manifest_path":  "modules/evidence_mapping_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "check_package",
+                                     "emit_ir_package",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "governance-mappings-v034",
+                      "name":  "Governance and regulatory mappings remain valid",
+                      "category":  "governance_mappings",
+                      "source_path":  "sources/public_conformance_v034.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  },
+                  {
+                      "id":  "public-conformance-v034",
+                      "name":  "Public conformance artifacts are reproducible offline",
+                      "category":  "public_conformance",
+                      "source_path":  "sources/public_conformance_v034.argx",
+                      "stages":  [
+                                     "parse",
+                                     "semantic_check",
+                                     "emit_ir",
+                                     "emit_bytecode",
+                                     "verify_bytecode",
+                                     "run_vm",
+                                     "security_report",
+                                     "trace_out",
+                                     "evidence_bundle",
+                                     "verify_evidence"
+                                 ],
+                      "injection":  "User:ResearchAgent:tell:UserPrompt"
+                  },
+                  {
+                      "id":  "public-conformance-package-v034",
+                      "name":  "Imported public conformance package passes",
+                      "category":  "public_conformance",
+                      "manifest_path":  "modules/public_conformance_project/argorix.toml",
+                      "stages":  [
+                                     "resolve_package",
+                                     "check_package",
+                                     "emit_ir_package",
+                                     "emit_bytecode",
+                                     "verify_bytecode"
+                                 ]
+                  }
+              ]
+}

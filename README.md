@@ -50,11 +50,50 @@ source language
 
 ## Current status
 
-**Version:** `0.33`
+**Version:** `0.34`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
-**Execution mode:** dry-run / simulated runtime only  
+**Execution mode:** dry-run / simulated runtime only
+
+Version 0.34 adds Third-Party Verification / Public Conformance. A top-level
+`third_party_verifier` declares reviewer identity metadata, organization,
+jurisdiction, independence, bounded review scopes, and explicitly disallowed
+claims. A top-level `public_conformance_report` binds that verifier to a local
+conformance suite, source and bytecode artifacts, ATrust Evidence Map,
+Governance Profile, Regulatory Mapping, Trust Ledger, SecurityReport, trace,
+EvidenceBundle, review result, reproducibility mode, and individually mapped
+claims.
+
+The governing rule is: public conformance must be reproducible before it can be
+trusted. These declarations are audit artifacts. A declared third-party
+verifier is not an externally authenticated legal auditor; a passed public
+conformance report is not regulator approval or legal certification; a mapped
+claim is not legally certified; and reproducible artifacts are not
+cryptographic endorsement. Published metadata does not mean a remote audit
+occurred and a passed suite does not mean risk was eliminated.
+
+Both declarations are fail-closed with `legal_claims none`, `certification
+none`, `network denied`, `external_execution disabled`, `secret_material
+denied`, `key_material denied`, `execution disabled`, and `security_claims
+none`. Argorix performs no network calls, secret/key reads, external verifier
+execution, signing, signature verification, DID/credential verification,
+remote attestation, regulator submission, or real MCP/A2A runtime.
+
+Policy v2 evaluates verifier scope, artifact bindings, evidence/governance/
+regulatory relationships, reproducibility, and absent runtime/legal/security
+claims offline. SecurityReport v0.34 summarizes both declaration families.
+EvidenceBundle v0.34 semantically covers the bytecode, trace, report, and
+ledger. This extends Governance Profiles, Regulatory Mapping, ATrust Evidence
+Mapping, Trust Ledger, and Policy v2 without converting any of them into legal
+or cryptographic proof.
+
+See
+[`examples/public_conformance_v034.argx`](examples/public_conformance_v034.argx),
+[`examples/public_conformance_v034.argbc.json`](examples/public_conformance_v034.argbc.json),
+and
+[`examples/public_conformance_project`](examples/public_conformance_project)
+for the single-file, bytecode, and package examples.
 
 Version 0.33 adds Governance Profiles + Regulatory Mapping. A top-level
 `governance_profile` records scope, ownership, jurisdiction, framework,

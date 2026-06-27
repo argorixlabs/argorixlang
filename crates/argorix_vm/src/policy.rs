@@ -79,6 +79,24 @@ pub struct PolicyEvidenceContext {
     pub regulatory_mappings_certification_absent: bool,
     pub regulatory_mappings_runtime_disabled: bool,
     pub regulatory_mappings_security_claims_absent: bool,
+    pub third_party_verifiers_declared: bool,
+    pub third_party_verifiers_identity_declared: bool,
+    pub third_party_verifiers_scope_bounded: bool,
+    pub third_party_verifiers_runtime_disabled: bool,
+    pub third_party_verifiers_legal_claims_absent: bool,
+    pub third_party_verifiers_certification_absent: bool,
+    pub third_party_verifiers_security_claims_absent: bool,
+    pub public_conformance_reports_declared: bool,
+    pub public_conformance_reports_verifiers_bound: bool,
+    pub public_conformance_reports_artifacts_declared: bool,
+    pub public_conformance_reports_evidence_bound: bool,
+    pub public_conformance_reports_governance_bound: bool,
+    pub public_conformance_reports_regulatory_bound: bool,
+    pub public_conformance_reports_replayable: bool,
+    pub public_conformance_reports_runtime_disabled: bool,
+    pub public_conformance_reports_legal_claims_absent: bool,
+    pub public_conformance_reports_certification_absent: bool,
+    pub public_conformance_reports_security_claims_absent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -460,6 +478,78 @@ pub fn evaluate_rule(
         "regulatory_mappings_security_claims_absent" => (
             context.regulatory_mappings_security_claims_absent,
             "one or more regulatory mappings declare security claims",
+        ),
+        "third_party_verifiers_declared" => (
+            context.third_party_verifiers_declared,
+            "no third_party_verifier is declared",
+        ),
+        "third_party_verifiers_identity_declared" => (
+            context.third_party_verifiers_identity_declared,
+            "one or more verifiers lack declared identity metadata",
+        ),
+        "third_party_verifiers_scope_bounded" => (
+            context.third_party_verifiers_scope_bounded,
+            "one or more verifiers lack bounded scopes or disallowed claims",
+        ),
+        "third_party_verifiers_runtime_disabled" => (
+            context.third_party_verifiers_runtime_disabled,
+            "one or more verifiers enable runtime capabilities",
+        ),
+        "third_party_verifiers_legal_claims_absent" => (
+            context.third_party_verifiers_legal_claims_absent,
+            "one or more verifiers declare legal claims",
+        ),
+        "third_party_verifiers_certification_absent" => (
+            context.third_party_verifiers_certification_absent,
+            "one or more verifiers declare certification",
+        ),
+        "third_party_verifiers_security_claims_absent" => (
+            context.third_party_verifiers_security_claims_absent,
+            "one or more verifiers declare security claims",
+        ),
+        "public_conformance_reports_declared" => (
+            context.public_conformance_reports_declared,
+            "no public_conformance_report is declared",
+        ),
+        "public_conformance_reports_verifiers_bound" => (
+            context.public_conformance_reports_verifiers_bound,
+            "one or more reports reference an unknown verifier",
+        ),
+        "public_conformance_reports_artifacts_declared" => (
+            context.public_conformance_reports_artifacts_declared,
+            "one or more reports lack suite/source/bytecode artifacts",
+        ),
+        "public_conformance_reports_evidence_bound" => (
+            context.public_conformance_reports_evidence_bound,
+            "one or more reports lack evidence bindings",
+        ),
+        "public_conformance_reports_governance_bound" => (
+            context.public_conformance_reports_governance_bound,
+            "one or more reports lack governance bindings",
+        ),
+        "public_conformance_reports_regulatory_bound" => (
+            context.public_conformance_reports_regulatory_bound,
+            "one or more reports lack regulatory bindings",
+        ),
+        "public_conformance_reports_replayable" => (
+            context.public_conformance_reports_replayable,
+            "one or more reports do not declare reproducibility",
+        ),
+        "public_conformance_reports_runtime_disabled" => (
+            context.public_conformance_reports_runtime_disabled,
+            "one or more reports enable runtime capabilities",
+        ),
+        "public_conformance_reports_legal_claims_absent" => (
+            context.public_conformance_reports_legal_claims_absent,
+            "one or more reports declare legal claims",
+        ),
+        "public_conformance_reports_certification_absent" => (
+            context.public_conformance_reports_certification_absent,
+            "one or more reports declare certification",
+        ),
+        "public_conformance_reports_security_claims_absent" => (
+            context.public_conformance_reports_security_claims_absent,
+            "one or more reports declare security claims",
         ),
         _ => (false, "unknown policy rule"),
     };

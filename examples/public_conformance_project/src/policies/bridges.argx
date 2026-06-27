@@ -1,0 +1,36 @@
+module policies.bridges
+
+policy BridgePolicy {
+  require mcp_bridge_contracts_declared
+  require mcp_bridge_agents_bound
+  require mcp_bridge_passports_bound
+  require mcp_bridge_identities_bound
+  require mcp_bridge_boundaries_bound
+  require mcp_bridge_network_denied
+  require mcp_bridge_external_execution_disabled
+  require mcp_bridge_tool_execution_disabled
+  require mcp_bridge_secret_material_denied
+  require mcp_bridge_key_material_denied
+  require mcp_bridge_authentication_non_secret
+  require mcp_bridge_security_claims_absent
+
+  require a2a_bridge_contracts_declared
+  require a2a_bridge_agents_bound
+  require a2a_bridge_passports_bound
+  require a2a_bridge_identities_bound
+  require a2a_bridge_handshakes_bound
+  require a2a_bridge_trust_ledgers_bound
+  require a2a_bridge_message_contracts_bound
+  require a2a_bridge_network_denied
+  require a2a_bridge_external_execution_disabled
+  require a2a_bridge_agent_execution_disabled
+  require a2a_bridge_secret_material_denied
+  require a2a_bridge_key_material_denied
+  require a2a_bridge_authentication_non_secret
+  require a2a_bridge_security_claims_absent
+
+  on violation {
+    action review
+    trace required
+  }
+}

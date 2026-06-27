@@ -10,8 +10,9 @@ pub use bytecode::{
     BytecodeGovernanceProfile, BytecodeMcpBridgeContract, BytecodeModel, BytecodeModule,
     BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
-    BytecodeProviderHarness, BytecodeRegulatoryMapping, BytecodeRegulatoryObligation,
-    BytecodeSecret, BytecodeTool, BytecodeTrustLedger, BytecodeTrustLedgerEntry, BytecodeType,
-    BytecodeTypeField, Instruction,
+    BytecodeProviderHarness, BytecodePublicConformanceClaim, BytecodePublicConformanceReport,
+    BytecodeRegulatoryMapping, BytecodeRegulatoryObligation, BytecodeSecret,
+    BytecodeThirdPartyVerifier, BytecodeTool, BytecodeTrustLedger, BytecodeTrustLedgerEntry,
+    BytecodeType, BytecodeTypeField, Instruction,
 };
 pub use lower::lower_ir;

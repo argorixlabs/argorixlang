@@ -65,7 +65,7 @@ fn package_ir_carries_module_metadata() {
     let package = resolve_package(&manifest("module_project/argorix.toml")).unwrap();
     let merged = check_package(&package).unwrap();
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.module, "app.main");
     assert_eq!(ir.modules.len(), 6);
     assert_eq!(ir.imports.len(), 5);
@@ -148,7 +148,7 @@ fn resolves_and_checks_atrust_handshake_package() {
 
     // The dry-run handshake metadata survives merge + IR construction at 0.29.
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.atrust_handshakes.len(), 1);
     let hs = &ir.atrust_handshakes[0];
     assert_eq!(hs.initiator, "ResearchAgent");
@@ -168,7 +168,7 @@ fn resolves_and_checks_trust_ledger_package() {
     assert_eq!(merged.trust_ledgers[0].name.value, "ATrustLedger");
 
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.trust_ledgers.len(), 1);
     let l = &ir.trust_ledgers[0];
     assert_eq!(l.hash_algorithm, "sha256");

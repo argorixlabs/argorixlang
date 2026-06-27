@@ -1,0 +1,17 @@
+module identity.research
+
+atrust_identity ResearchIdentity {
+  subject ResearchAgent
+  did "did:argorix:research-agent-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}

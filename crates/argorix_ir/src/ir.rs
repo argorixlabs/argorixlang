@@ -46,6 +46,10 @@ pub struct IrProgram {
     pub governance_profiles: Vec<IrGovernanceProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub regulatory_mappings: Vec<IrRegulatoryMapping>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub third_party_verifiers: Vec<IrThirdPartyVerifier>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub public_conformance_reports: Vec<IrPublicConformanceReport>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -530,6 +534,72 @@ pub struct IrRegulatoryObligation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrThirdPartyVerifier {
+    pub name: String,
+    pub verifier_type: String,
+    pub independence: String,
+    pub identity_mode: String,
+    pub verification_mode: String,
+    pub display_name: String,
+    pub organization: String,
+    pub jurisdiction: String,
+    pub allowed_scopes: Vec<String>,
+    pub disallowed_claims: Vec<String>,
+    pub network: String,
+    pub external_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrPublicConformanceReport {
+    pub name: String,
+    pub verifier: String,
+    pub suite: String,
+    pub suite_version: String,
+    pub source_artifact: String,
+    pub bytecode_artifact: String,
+    pub evidence_map: String,
+    pub governance_profile: String,
+    pub regulatory_mapping: String,
+    pub trust_ledger: String,
+    pub security_report: String,
+    pub evidence_bundle: String,
+    pub trace: String,
+    pub result: String,
+    pub reproducibility: String,
+    pub review_status: String,
+    pub claims: Vec<IrPublicConformanceClaim>,
+    pub network: String,
+    pub external_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrPublicConformanceClaim {
+    pub id: String,
+    pub category: String,
+    pub statement: String,
+    pub evidence_ref: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
@@ -683,7 +753,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.33".to_owned(),
+            ir_version: "0.34".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -1169,6 +1239,75 @@ impl From<&Program> for IrProgram {
                     notes: m.notes.as_ref().map(|v| v.value.clone()),
                 })
                 .collect(),
+            third_party_verifiers: program
+                .third_party_verifiers
+                .iter()
+                .map(|v| IrThirdPartyVerifier {
+                    name: v.name.value.clone(),
+                    verifier_type: v.verifier_type.value.source_name().to_owned(),
+                    independence: v.independence.value.source_name().to_owned(),
+                    identity_mode: v.identity_mode.value.source_name().to_owned(),
+                    verification_mode: v.verification_mode.value.source_name().to_owned(),
+                    display_name: v.display_name.value.clone(),
+                    organization: v.organization.value.clone(),
+                    jurisdiction: v.jurisdiction.value.clone(),
+                    allowed_scopes: spanned_values(&v.allowed_scopes),
+                    disallowed_claims: spanned_values(&v.disallowed_claims),
+                    network: v.network.value.source_name().to_owned(),
+                    external_execution: v.external_execution.value.source_name().to_owned(),
+                    secret_material: v.secret_material.value.source_name().to_owned(),
+                    key_material: v.key_material.value.source_name().to_owned(),
+                    execution: v.execution.value.source_name().to_owned(),
+                    legal_claims: v.legal_claims.value.clone(),
+                    certification: v.certification.value.clone(),
+                    security_claims: v.security_claims.value.source_name().to_owned(),
+                    purpose: spanned_values(&v.purpose),
+                    notes: v.notes.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
+            public_conformance_reports: program
+                .public_conformance_reports
+                .iter()
+                .map(|r| IrPublicConformanceReport {
+                    name: r.name.value.clone(),
+                    verifier: r.verifier.value.clone(),
+                    suite: r.suite.value.clone(),
+                    suite_version: r.suite_version.value.clone(),
+                    source_artifact: r.source_artifact.value.clone(),
+                    bytecode_artifact: r.bytecode_artifact.value.clone(),
+                    evidence_map: r.evidence_map.value.clone(),
+                    governance_profile: r.governance_profile.value.clone(),
+                    regulatory_mapping: r.regulatory_mapping.value.clone(),
+                    trust_ledger: r.trust_ledger.value.clone(),
+                    security_report: r.security_report.value.clone(),
+                    evidence_bundle: r.evidence_bundle.value.clone(),
+                    trace: r.trace.value.clone(),
+                    result: r.result.value.source_name().to_owned(),
+                    reproducibility: r.reproducibility.value.source_name().to_owned(),
+                    review_status: r.review_status.value.source_name().to_owned(),
+                    claims: r
+                        .claims
+                        .iter()
+                        .map(|c| IrPublicConformanceClaim {
+                            id: c.id.value.clone(),
+                            category: c.category.value.source_name().to_owned(),
+                            statement: c.statement.value.clone(),
+                            evidence_ref: c.evidence_ref.value.clone(),
+                            status: c.status.value.source_name().to_owned(),
+                        })
+                        .collect(),
+                    network: r.network.value.source_name().to_owned(),
+                    external_execution: r.external_execution.value.source_name().to_owned(),
+                    secret_material: r.secret_material.value.source_name().to_owned(),
+                    key_material: r.key_material.value.source_name().to_owned(),
+                    execution: r.execution.value.source_name().to_owned(),
+                    legal_claims: r.legal_claims.value.clone(),
+                    certification: r.certification.value.clone(),
+                    security_claims: r.security_claims.value.source_name().to_owned(),
+                    purpose: spanned_values(&r.purpose),
+                    notes: r.notes.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
             assertions: program
                 .assertions
                 .iter()
@@ -1428,7 +1567,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.33");
+        assert_eq!(ir.ir_version, "0.34");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -1466,7 +1605,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.33");
+        assert_eq!(ir.ir_version, "0.34");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -1501,7 +1640,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.33");
+        assert_eq!(ir.ir_version, "0.34");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");

@@ -230,6 +230,8 @@ mod tests {
             atrust_evidence_maps: vec![],
             governance_profiles: vec![],
             regulatory_mappings: vec![],
+            third_party_verifiers: vec![],
+            public_conformance_reports: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

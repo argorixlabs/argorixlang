@@ -50,6 +50,10 @@ pub struct SecurityReport {
     pub governance_profiles: GovernanceProfilesSummary,
     #[serde(default)]
     pub regulatory_mappings: RegulatoryMappingsSummary,
+    #[serde(default)]
+    pub third_party_verifiers: ThirdPartyVerifiersSummary,
+    #[serde(default)]
+    pub public_conformance_reports: PublicConformanceReportsSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -158,6 +162,42 @@ pub struct RegulatoryMappingsSummary {
     pub external_execution: BTreeMap<String, usize>,
     pub execution: BTreeMap<String, usize>,
     pub security_claims: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThirdPartyVerifiersSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub types: BTreeMap<String, usize>,
+    pub independence: BTreeMap<String, usize>,
+    pub identity_modes: BTreeMap<String, usize>,
+    pub verification_modes: BTreeMap<String, usize>,
+    pub network_denied: usize,
+    pub external_execution_disabled: usize,
+    pub execution_disabled: usize,
+    pub legal_claims_none: usize,
+    pub certification_none: usize,
+    pub security_claims_none: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicConformanceReportsSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub suite_versions: BTreeMap<String, usize>,
+    pub results: BTreeMap<String, usize>,
+    pub reproducibility: BTreeMap<String, usize>,
+    pub review_statuses: BTreeMap<String, usize>,
+    pub claims_total: usize,
+    pub security_report_required: usize,
+    pub evidence_bundle_required: usize,
+    pub trace_required: usize,
+    pub network_denied: usize,
+    pub external_execution_disabled: usize,
+    pub execution_disabled: usize,
+    pub legal_claims_none: usize,
+    pub certification_none: usize,
+    pub security_claims_none: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -639,7 +679,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.33".into(),
+            report_version: "0.34".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -647,7 +687,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.33".into()),
+                .unwrap_or_else(|| "0.34".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -666,6 +706,10 @@ impl SecurityReport {
             atrust_evidence_maps: atrust_evidence_maps_summary(&bytecode.atrust_evidence_maps),
             governance_profiles: governance_profiles_summary(&bytecode.governance_profiles),
             regulatory_mappings: regulatory_mappings_summary(&bytecode.regulatory_mappings),
+            third_party_verifiers: third_party_verifiers_summary(&bytecode.third_party_verifiers),
+            public_conformance_reports: public_conformance_reports_summary(
+                &bytecode.public_conformance_reports,
+            ),
             policy,
             provider_boundary,
             calls,
@@ -720,6 +764,78 @@ fn governance_profiles_summary(
             .security_claims
             .entry(profile.security_claims.clone())
             .or_insert(0) += 1;
+    }
+    summary
+}
+
+fn third_party_verifiers_summary(
+    verifiers: &[argorix_bytecode::BytecodeThirdPartyVerifier],
+) -> ThirdPartyVerifiersSummary {
+    let mut summary = ThirdPartyVerifiersSummary {
+        total: verifiers.len(),
+        ..Default::default()
+    };
+    for verifier in verifiers {
+        summary.names.push(verifier.name.clone());
+        *summary
+            .types
+            .entry(verifier.verifier_type.clone())
+            .or_insert(0) += 1;
+        *summary
+            .independence
+            .entry(verifier.independence.clone())
+            .or_insert(0) += 1;
+        *summary
+            .identity_modes
+            .entry(verifier.identity_mode.clone())
+            .or_insert(0) += 1;
+        *summary
+            .verification_modes
+            .entry(verifier.verification_mode.clone())
+            .or_insert(0) += 1;
+        summary.network_denied += usize::from(verifier.network == "denied");
+        summary.external_execution_disabled +=
+            usize::from(verifier.external_execution == "disabled");
+        summary.execution_disabled += usize::from(verifier.execution == "disabled");
+        summary.legal_claims_none += usize::from(verifier.legal_claims == "none");
+        summary.certification_none += usize::from(verifier.certification == "none");
+        summary.security_claims_none += usize::from(verifier.security_claims == "none");
+    }
+    summary
+}
+
+fn public_conformance_reports_summary(
+    reports: &[argorix_bytecode::BytecodePublicConformanceReport],
+) -> PublicConformanceReportsSummary {
+    let mut summary = PublicConformanceReportsSummary {
+        total: reports.len(),
+        ..Default::default()
+    };
+    for report in reports {
+        summary.names.push(report.name.clone());
+        *summary
+            .suite_versions
+            .entry(report.suite_version.clone())
+            .or_insert(0) += 1;
+        *summary.results.entry(report.result.clone()).or_insert(0) += 1;
+        *summary
+            .reproducibility
+            .entry(report.reproducibility.clone())
+            .or_insert(0) += 1;
+        *summary
+            .review_statuses
+            .entry(report.review_status.clone())
+            .or_insert(0) += 1;
+        summary.claims_total += report.claims.len();
+        summary.security_report_required += usize::from(report.security_report == "required");
+        summary.evidence_bundle_required += usize::from(report.evidence_bundle == "required");
+        summary.trace_required += usize::from(report.trace == "required");
+        summary.network_denied += usize::from(report.network == "denied");
+        summary.external_execution_disabled += usize::from(report.external_execution == "disabled");
+        summary.execution_disabled += usize::from(report.execution == "disabled");
+        summary.legal_claims_none += usize::from(report.legal_claims == "none");
+        summary.certification_none += usize::from(report.certification == "none");
+        summary.security_claims_none += usize::from(report.security_claims == "none");
     }
     summary
 }

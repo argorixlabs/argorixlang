@@ -460,6 +460,100 @@ impl Vm {
                 EventFields::default(),
             );
         }
+        for verifier in &bytecode.third_party_verifiers {
+            state.trace_ledger.record(
+                EventType::ThirdPartyVerifierDeclared,
+                "declared",
+                format!(
+                    "third_party_verifier {} declared as review metadata; identity and independence are not externally verified",
+                    verifier.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::PublicConformanceRuntimeDisabled,
+                "disabled",
+                format!(
+                    "third_party_verifier {} has network and external execution disabled",
+                    verifier.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::PublicConformanceSecurityClaimsDenied,
+                "none",
+                format!(
+                    "third_party_verifier {} has legal, certification and security claims denied",
+                    verifier.name
+                ),
+                EventFields::default(),
+            );
+        }
+        for report in &bytecode.public_conformance_reports {
+            state.trace_ledger.record(
+                EventType::PublicConformanceReportDeclared,
+                "declared",
+                format!(
+                    "public_conformance_report {} declared with result {}; passed is not certification",
+                    report.name, report.result
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::PublicConformanceArtifactsMapped,
+                "mapped",
+                format!(
+                    "public_conformance_report {} maps suite, source, bytecode, evidence, governance, regulatory and ledger artifacts",
+                    report.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::PublicConformanceReplayDeclared,
+                "declared",
+                format!(
+                    "public_conformance_report {} reproducibility {}; declaration is not remote verification",
+                    report.name, report.reproducibility
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::PublicConformanceRuntimeDisabled,
+                "disabled",
+                format!(
+                    "public_conformance_report {} cannot execute, publish remotely, or call an auditor",
+                    report.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::PublicConformanceSecurityClaimsDenied,
+                "none",
+                format!(
+                    "public_conformance_report {} has security_claims none",
+                    report.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::LegalCertificationDenied,
+                "none",
+                format!(
+                    "public_conformance_report {} is not legal certification or regulator approval",
+                    report.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::RemoteVerificationDenied,
+                "denied",
+                format!(
+                    "public_conformance_report {} performs no remote audit or attestation",
+                    report.name
+                ),
+                EventFields::default(),
+            );
+        }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
             Err(error) => {
@@ -583,7 +677,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.33".into(),
+            vm_version: "0.34".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -606,6 +700,8 @@ impl Vm {
             atrust_evidence_maps: bytecode.atrust_evidence_maps.clone(),
             governance_profiles: bytecode.governance_profiles.clone(),
             regulatory_mappings: bytecode.regulatory_mappings.clone(),
+            third_party_verifiers: bytecode.third_party_verifiers.clone(),
+            public_conformance_reports: bytecode.public_conformance_reports.clone(),
             injected,
             steps,
             mailboxes,
@@ -905,6 +1001,8 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
     let evidence_maps = &bytecode.atrust_evidence_maps;
     let governance_profiles = &bytecode.governance_profiles;
     let regulatory_mappings = &bytecode.regulatory_mappings;
+    let third_party_verifiers = &bytecode.third_party_verifiers;
+    let public_conformance_reports = &bytecode.public_conformance_reports;
     PolicyEvidenceContext {
         agent_passport_declared,
         agent_passport_attested: !passports.is_empty()
@@ -1266,6 +1364,104 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
             && regulatory_mappings
                 .iter()
                 .all(|mapping| mapping.security_claims == "none"),
+        third_party_verifiers_declared: !third_party_verifiers.is_empty(),
+        third_party_verifiers_identity_declared: !third_party_verifiers.is_empty()
+            && third_party_verifiers.iter().all(|verifier| {
+                !verifier.display_name.is_empty()
+                    && !verifier.organization.is_empty()
+                    && !verifier.jurisdiction.is_empty()
+                    && matches!(
+                        verifier.identity_mode.as_str(),
+                        "declared_only" | "document_only"
+                    )
+            }),
+        third_party_verifiers_scope_bounded: !third_party_verifiers.is_empty()
+            && third_party_verifiers.iter().all(|verifier| {
+                !verifier.allowed_scopes.is_empty() && !verifier.disallowed_claims.is_empty()
+            }),
+        third_party_verifiers_runtime_disabled: !third_party_verifiers.is_empty()
+            && third_party_verifiers.iter().all(|verifier| {
+                verifier.network == "denied"
+                    && verifier.external_execution == "disabled"
+                    && verifier.secret_material == "denied"
+                    && verifier.key_material == "denied"
+                    && verifier.execution == "disabled"
+            }),
+        third_party_verifiers_legal_claims_absent: !third_party_verifiers.is_empty()
+            && third_party_verifiers
+                .iter()
+                .all(|verifier| verifier.legal_claims == "none"),
+        third_party_verifiers_certification_absent: !third_party_verifiers.is_empty()
+            && third_party_verifiers
+                .iter()
+                .all(|verifier| verifier.certification == "none"),
+        third_party_verifiers_security_claims_absent: !third_party_verifiers.is_empty()
+            && third_party_verifiers
+                .iter()
+                .all(|verifier| verifier.security_claims == "none"),
+        public_conformance_reports_declared: !public_conformance_reports.is_empty(),
+        public_conformance_reports_verifiers_bound: !public_conformance_reports.is_empty()
+            && public_conformance_reports.iter().all(|report| {
+                third_party_verifiers
+                    .iter()
+                    .any(|verifier| verifier.name == report.verifier)
+            }),
+        public_conformance_reports_artifacts_declared: !public_conformance_reports.is_empty()
+            && public_conformance_reports.iter().all(|report| {
+                !report.suite.is_empty()
+                    && report.suite_version == "0.34"
+                    && !report.source_artifact.is_empty()
+                    && !report.bytecode_artifact.is_empty()
+            }),
+        public_conformance_reports_evidence_bound: !public_conformance_reports.is_empty()
+            && public_conformance_reports.iter().all(|report| {
+                bytecode
+                    .atrust_evidence_maps
+                    .iter()
+                    .any(|map| map.name == report.evidence_map)
+                    && report.evidence_bundle == "required"
+                    && report.security_report == "required"
+                    && report.trace == "required"
+            }),
+        public_conformance_reports_governance_bound: !public_conformance_reports.is_empty()
+            && public_conformance_reports.iter().all(|report| {
+                governance_profiles
+                    .iter()
+                    .any(|profile| profile.name == report.governance_profile)
+            }),
+        public_conformance_reports_regulatory_bound: !public_conformance_reports.is_empty()
+            && public_conformance_reports.iter().all(|report| {
+                regulatory_mappings
+                    .iter()
+                    .any(|mapping| mapping.name == report.regulatory_mapping)
+            }),
+        public_conformance_reports_replayable: !public_conformance_reports.is_empty()
+            && public_conformance_reports.iter().all(|report| {
+                matches!(
+                    report.reproducibility.as_str(),
+                    "declared" | "replayable_locally" | "document_only"
+                )
+            }),
+        public_conformance_reports_runtime_disabled: !public_conformance_reports.is_empty()
+            && public_conformance_reports.iter().all(|report| {
+                report.network == "denied"
+                    && report.external_execution == "disabled"
+                    && report.secret_material == "denied"
+                    && report.key_material == "denied"
+                    && report.execution == "disabled"
+            }),
+        public_conformance_reports_legal_claims_absent: !public_conformance_reports.is_empty()
+            && public_conformance_reports
+                .iter()
+                .all(|report| report.legal_claims == "none"),
+        public_conformance_reports_certification_absent: !public_conformance_reports.is_empty()
+            && public_conformance_reports
+                .iter()
+                .all(|report| report.certification == "none"),
+        public_conformance_reports_security_claims_absent: !public_conformance_reports.is_empty()
+            && public_conformance_reports
+                .iter()
+                .all(|report| report.security_claims == "none"),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -1334,6 +1530,8 @@ mod tests {
             atrust_evidence_maps: vec![],
             governance_profiles: vec![],
             regulatory_mappings: vec![],
+            third_party_verifiers: vec![],
+            public_conformance_reports: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -1487,7 +1685,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.33");
+        assert_eq!(json["vm_version"], "0.34");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -1509,7 +1707,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.33");
+        assert_eq!(json["vm_version"], "0.34");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -1531,7 +1729,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.33");
+        assert_eq!(json["vm_version"], "0.34");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -1586,7 +1784,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.33");
+        assert_eq!(trace.vm_version, "0.34");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -1660,7 +1858,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.33");
+        assert_eq!(trace.vm_version, "0.34");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1712,7 +1910,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.33");
+        assert_eq!(json["vm_version"], "0.34");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -1962,7 +2160,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.33");
+        assert_eq!(trace.vm_version, "0.34");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [

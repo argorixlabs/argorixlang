@@ -130,7 +130,7 @@ fn emits_versioned_v02_ir_with_capabilities() {
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
 
-    assert_eq!(json["ir_version"], "0.33");
+    assert_eq!(json["ir_version"], "0.34");
     assert_eq!(json["language"], "Argorix Lang");
     assert_eq!(json["capabilities"][3]["name"], "runtime.halt");
     assert_eq!(json["capabilities"][3]["requires_approval"], true);
@@ -258,7 +258,7 @@ fn ir_includes_intrinsic_instructions() {
     let ast = parse_source(include_str!("../examples/prompt_defense_v06.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.33");
+    assert_eq!(json["ir_version"], "0.34");
     assert_eq!(
         json["agents"][0]["handlers"][0]["instructions"][0]["op"],
         "intrinsic"
@@ -561,7 +561,7 @@ fn ir_preserves_populated_provider_allowlists() {
     .unwrap();
     check_program(&ast).unwrap();
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(
         ir.providers[0].allowed_targets,
         vec!["GuardModel", "WebSearch"]
@@ -571,7 +571,7 @@ fn ir_preserves_populated_provider_allowlists() {
         vec!["model.invoke", "web.search"]
     );
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.33");
+    assert_eq!(bytecode.bytecode_version, "0.34");
     assert_eq!(
         bytecode.providers[0].allowed_targets,
         vec!["GuardModel", "WebSearch"]
@@ -600,14 +600,14 @@ fn ir_and_bytecode_include_declarative_provider_contracts() {
     let ast = parse_source(source).unwrap();
     check_program(&ast).unwrap();
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.providers[0].name, "OpenAI");
     assert_eq!(ir.providers[0].kind, "external");
     assert!(ir.providers[0].allowed_targets.is_empty());
     assert!(ir.providers[0].allowed_capabilities.is_empty());
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.33");
+    assert_eq!(bytecode.bytecode_version, "0.34");
     assert_eq!(bytecode.providers[0].name, "OpenAI");
     assert!(bytecode.providers[0].allowed_targets.is_empty());
     assert!(bytecode.providers[0].allowed_capabilities.is_empty());
@@ -637,12 +637,12 @@ fn ir_and_bytecode_make_tool_provider_explicit() {
     assert!(ast.tools[0].provider.is_none());
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.tools[0].provider, "simulated");
     assert_eq!(ir.models.len(), 0);
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.33");
+    assert_eq!(bytecode.bytecode_version, "0.34");
     assert_eq!(bytecode.tools[0].provider, "simulated");
     assert!(bytecode.instructions.iter().any(|instruction| matches!(
         instruction,
@@ -749,7 +749,7 @@ fn ir_includes_tools_and_call_instruction() {
     let ast = parse_source(include_str!("../examples/tool_call_v07.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.33");
+    assert_eq!(json["ir_version"], "0.34");
     assert_eq!(json["tools"][0]["name"], "WebSearch");
     assert_eq!(json["agents"][0]["tools"][0], "WebSearch");
     assert_eq!(
@@ -831,7 +831,7 @@ fn ir_includes_models_and_ask() {
     let ast = parse_source(include_str!("../examples/model_call_v08.argx")).unwrap();
     check_program(&ast).unwrap();
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.33");
+    assert_eq!(json["ir_version"], "0.34");
     assert_eq!(json["models"][0]["name"], "GuardModel");
     assert_eq!(json["agents"][1]["models"][0], "GuardModel");
     assert_eq!(
@@ -881,7 +881,7 @@ fn parses_and_emits_v09_policies() {
     assert!(ast.failures[0].trace_required);
 
     let json = serde_json::to_value(IrProgram::from(&ast)).unwrap();
-    assert_eq!(json["ir_version"], "0.33");
+    assert_eq!(json["ir_version"], "0.34");
     assert_eq!(json["assertions"][0]["name"], "no_unhandled_messages");
     assert_eq!(json["failures"][0]["trace"], "required");
 }
@@ -932,7 +932,7 @@ fn v016_fixture_remains_verifiable_after_v017_default_emission() {
     ))
     .unwrap();
 
-    assert_eq!(emitted.bytecode_version, "0.33");
+    assert_eq!(emitted.bytecode_version, "0.34");
     assert_eq!(fixture.bytecode_version, "0.16");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
 }
@@ -946,7 +946,7 @@ fn v017_policy_fixture_remains_verifiable_after_v018_default_emission() {
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/policy_v017.argbc.json")).unwrap();
 
-    assert_eq!(emitted.bytecode_version, "0.33");
+    assert_eq!(emitted.bytecode_version, "0.34");
     assert_eq!(fixture.bytecode_version, "0.17");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.policies.len(), 2);
@@ -959,7 +959,7 @@ fn v018_typed_message_fixture_remains_verifiable_after_v019_default_emission() {
     let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/typed_messages_v018.argbc.json")).unwrap();
-    assert_eq!(emitted.bytecode_version, "0.33");
+    assert_eq!(emitted.bytecode_version, "0.34");
     assert_eq!(fixture.bytecode_version, "0.18");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.types[0].fields[0].field_type, "string");
@@ -972,7 +972,7 @@ fn v019_passport_fixture_remains_verifiable_after_v020_default_emission() {
     let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
     let fixture: argorix_bytecode::BytecodeProgram =
         serde_json::from_str(include_str!("../examples/agent_passport_v019.argbc.json")).unwrap();
-    assert_eq!(emitted.bytecode_version, "0.33");
+    assert_eq!(emitted.bytecode_version, "0.34");
     assert_eq!(fixture.bytecode_version, "0.19");
     argorix_bytecode::verify_bytecode(&fixture).unwrap();
     assert_eq!(emitted.passports[0].agent, "ResearchAgent");
@@ -994,7 +994,7 @@ fn v021_feature_secret_fixture_matches_fresh_output() {
     assert_eq!(fixture.bytecode_version, "0.31");
     fixture.bytecode_version = emitted.bytecode_version.clone();
     assert_eq!(emitted, fixture);
-    assert_eq!(emitted.bytecode_version, "0.33");
+    assert_eq!(emitted.bytecode_version, "0.34");
     assert_eq!(emitted.provider_harnesses[0].name, "OpenAIHarness");
     assert_eq!(
         emitted.provider_harnesses[0].feature.as_deref(),
@@ -1045,7 +1045,7 @@ fn v021_vm_preserves_feature_and_secret_boundary_evidence() {
     // Trace preserves feature and secret metadata.
     assert_eq!(trace.features[0].name, "OpenAIAdapter");
     assert_eq!(trace.secrets[0].name, "OpenAISecret");
-    assert_eq!(trace.vm_version, "0.33");
+    assert_eq!(trace.vm_version, "0.34");
 
     // Ledger records governance-only events, never real secret reads.
     let events = &outcome.state.trace_ledger.events;
@@ -1058,7 +1058,7 @@ fn v021_vm_preserves_feature_and_secret_boundary_evidence() {
 
     // SecurityReport summarizes the boundary without exposing secret material.
     let report = argorix_vm::SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.33");
+    assert_eq!(report.report_version, "0.34");
     assert_eq!(report.feature_flags.total, 1);
     assert_eq!(report.feature_flags.requires_approval, 1);
     assert_eq!(report.feature_flags.linked_providers, vec!["OpenAI"]);
@@ -1086,7 +1086,7 @@ fn v029_atrust_handshake_pipeline_and_fixture() {
 
     // IR carries the dry-run handshake metadata at version 0.29.
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.atrust_handshakes.len(), 1);
     let hs = &ir.atrust_handshakes[0];
     assert_eq!(hs.name, "ResearchHandshake");
@@ -1100,7 +1100,7 @@ fn v029_atrust_handshake_pipeline_and_fixture() {
 
     // Bytecode preserves the metadata and verifies.
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.33");
+    assert_eq!(bytecode.bytecode_version, "0.34");
     assert_eq!(bytecode.atrust_handshakes.len(), 1);
     argorix_bytecode::verify_bytecode(&bytecode).unwrap();
 
@@ -1138,7 +1138,7 @@ fn v029_verifier_accepts_v028_and_v029_bytecode() {
     let ast = parse_source(include_str!("../examples/atrust_handshake_v029.argx")).unwrap();
     check_program(&ast).unwrap();
     let v029 = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
-    assert_eq!(v029.bytecode_version, "0.33");
+    assert_eq!(v029.bytecode_version, "0.34");
     argorix_bytecode::verify_bytecode(&v029).unwrap();
 
     // A 0.28 fixture remains verifiable (backward compatibility preserved).
@@ -1174,7 +1174,7 @@ fn v029_security_report_covers_handshakes_without_claims() {
     // SecurityReport summarizes the declared dry-run handshake and makes NO
     // security claim about it.
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.33");
+    assert_eq!(report.report_version, "0.34");
     assert_eq!(report.atrust_handshakes, 1);
     let serialized = serde_json::to_string(&report).unwrap();
     assert!(!serialized.contains("handshake_secure"));
@@ -1363,7 +1363,7 @@ fn v030_trust_ledger_pipeline_and_fixture() {
     check_program(&ast).unwrap();
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.trust_ledgers.len(), 1);
     let l = &ir.trust_ledgers[0];
     assert_eq!(l.name, "ATrustLedger");
@@ -1376,7 +1376,7 @@ fn v030_trust_ledger_pipeline_and_fixture() {
     assert_eq!(l.security_claims, "none");
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.33");
+    assert_eq!(bytecode.bytecode_version, "0.34");
     assert_eq!(bytecode.trust_ledgers.len(), 1);
     argorix_bytecode::verify_bytecode(&bytecode).unwrap();
 
@@ -1411,7 +1411,7 @@ fn v030_verifier_accepts_v029_and_v030_bytecode() {
     let ast = parse_source(include_str!("../examples/trust_ledger_v030.argx")).unwrap();
     check_program(&ast).unwrap();
     let v030 = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
-    assert_eq!(v030.bytecode_version, "0.33");
+    assert_eq!(v030.bytecode_version, "0.34");
     argorix_bytecode::verify_bytecode(&v030).unwrap();
 
     // A 0.29 bytecode remains verifiable (backward compatibility preserved).
@@ -1440,7 +1440,7 @@ fn v030_security_report_covers_trust_ledgers_without_claims() {
     );
 
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.33");
+    assert_eq!(report.report_version, "0.34");
     assert_eq!(report.trust_ledgers, 1);
     let serialized = serde_json::to_string(&report).unwrap();
     assert!(!serialized.contains("blockchain_verified"));
@@ -1569,14 +1569,14 @@ fn v031_ir_and_bytecode_include_bridge_contracts() {
     check_program(&ast).unwrap();
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.mcp_bridge_contracts.len(), 1);
     assert_eq!(ir.a2a_bridge_contracts.len(), 1);
     assert_eq!(ir.mcp_bridge_contracts[0].protocol, "mcp");
     assert_eq!(ir.a2a_bridge_contracts[0].protocol, "a2a");
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.33");
+    assert_eq!(bytecode.bytecode_version, "0.34");
     assert_eq!(bytecode.mcp_bridge_contracts.len(), 1);
     assert_eq!(bytecode.a2a_bridge_contracts.len(), 1);
     argorix_bytecode::verify_bytecode(&bytecode).unwrap();
@@ -1593,7 +1593,7 @@ fn v031_verifier_accepts_v030_and_v031_bytecode() {
     let ast = parse_source(BRIDGE_V031).unwrap();
     check_program(&ast).unwrap();
     let v031 = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
-    assert_eq!(v031.bytecode_version, "0.33");
+    assert_eq!(v031.bytecode_version, "0.34");
     argorix_bytecode::verify_bytecode(&v031).unwrap();
 
     let mut legacy = v031.clone();
@@ -1626,7 +1626,7 @@ fn v031_security_report_and_trace_cover_bridges_without_claims() {
     );
 
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.33");
+    assert_eq!(report.report_version, "0.34");
     assert_eq!(report.mcp_bridge_contracts.total, 1);
     assert_eq!(report.a2a_bridge_contracts.total, 1);
     assert_eq!(report.mcp_bridge_contracts.network.get("denied"), Some(&1));
@@ -1902,12 +1902,12 @@ fn v032_ir_bytecode_vm_report_and_bundle_cover_evidence_maps_without_real_trust_
     check_program(&ast).unwrap();
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.atrust_evidence_maps.len(), 1);
     assert_eq!(ir.atrust_evidence_maps[0].mapping_mode, "declared_only");
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.33");
+    assert_eq!(bytecode.bytecode_version, "0.34");
     assert_eq!(bytecode.atrust_evidence_maps.len(), 1);
     argorix_bytecode::verify_bytecode(&bytecode).unwrap();
 
@@ -1921,7 +1921,7 @@ fn v032_ir_bytecode_vm_report_and_bundle_cover_evidence_maps_without_real_trust_
         },
     );
     let trace = outcome.result.as_ref().expect("reactive run succeeds");
-    assert_eq!(trace.vm_version, "0.33");
+    assert_eq!(trace.vm_version, "0.34");
     let events = serde_json::to_string(&trace.events).unwrap();
     for expected in [
         "ATrustEvidenceMapDeclared",
@@ -1934,7 +1934,7 @@ fn v032_ir_bytecode_vm_report_and_bundle_cover_evidence_maps_without_real_trust_
     }
 
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.33");
+    assert_eq!(report.report_version, "0.34");
     assert_eq!(report.atrust_evidence_maps.total, 1);
     assert_eq!(
         report.atrust_evidence_maps.names,
@@ -1952,7 +1952,7 @@ fn v032_ir_bytecode_vm_report_and_bundle_cover_evidence_maps_without_real_trust_
         None,
     )
     .unwrap();
-    assert_eq!(bundle.bundle_version, "0.33");
+    assert_eq!(bundle.bundle_version, "0.34");
 
     let serialized = serde_json::to_string(&(bytecode, trace, report, bundle)).unwrap();
     for forbidden in [
@@ -1979,7 +1979,7 @@ fn v032_verifier_accepts_v031_and_v032_bytecode() {
     let ast = parse_source(EVIDENCE_MAPPING_V032).unwrap();
     check_program(&ast).unwrap();
     let v032 = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
-    assert_eq!(v032.bytecode_version, "0.33");
+    assert_eq!(v032.bytecode_version, "0.34");
     argorix_bytecode::verify_bytecode(&v032).unwrap();
 
     let mut legacy = v032.clone();
@@ -2196,7 +2196,7 @@ fn v033_ir_and_bytecode_preserve_governance_mappings_and_v032_compatibility() {
     check_program(&ast).unwrap();
 
     let ir = IrProgram::from(&ast);
-    assert_eq!(ir.ir_version, "0.33");
+    assert_eq!(ir.ir_version, "0.34");
     assert_eq!(ir.governance_profiles.len(), 1);
     assert_eq!(ir.governance_profiles[0].controls.len(), 2);
     assert_eq!(ir.governance_profiles[0].assurance, "declared_only");
@@ -2205,7 +2205,7 @@ fn v033_ir_and_bytecode_preserve_governance_mappings_and_v032_compatibility() {
     assert_eq!(ir.regulatory_mappings[0].legal_claims, "none");
 
     let bytecode = argorix_bytecode::lower_ir(&ir);
-    assert_eq!(bytecode.bytecode_version, "0.33");
+    assert_eq!(bytecode.bytecode_version, "0.34");
     assert_eq!(bytecode.governance_profiles.len(), 1);
     assert_eq!(bytecode.regulatory_mappings.len(), 1);
     argorix_bytecode::verify_bytecode(&bytecode).unwrap();
@@ -2235,7 +2235,7 @@ fn v033_vm_report_and_evidence_expose_governance_without_certification_claims() 
         },
     );
     let trace = outcome.result.as_ref().unwrap();
-    assert_eq!(trace.vm_version, "0.33");
+    assert_eq!(trace.vm_version, "0.34");
     assert_eq!(trace.governance_profiles.len(), 1);
     assert_eq!(trace.regulatory_mappings.len(), 1);
     let events = serde_json::to_string(&trace.events).unwrap();
@@ -2252,7 +2252,7 @@ fn v033_vm_report_and_evidence_expose_governance_without_certification_claims() 
     }
 
     let report = SecurityReport::from_outcome(&bytecode, &outcome);
-    assert_eq!(report.report_version, "0.33");
+    assert_eq!(report.report_version, "0.34");
     assert_eq!(report.governance_profiles.total, 1);
     assert_eq!(report.governance_profiles.controls_total, 2);
     assert_eq!(report.regulatory_mappings.total, 1);
@@ -2270,7 +2270,7 @@ fn v033_vm_report_and_evidence_expose_governance_without_certification_claims() 
         None,
     )
     .unwrap();
-    assert_eq!(bundle.bundle_version, "0.33");
+    assert_eq!(bundle.bundle_version, "0.34");
 
     let serialized = serde_json::to_string(&(trace, report, bundle)).unwrap();
     for forbidden in [
@@ -2353,4 +2353,343 @@ fn invalid_governance_mapping_fixtures_are_complete_and_all_fail() {
             "{filename} unexpectedly passed semantic checking"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// v0.34 — Third-Party Verification / Public Conformance
+// ---------------------------------------------------------------------------
+
+const PUBLIC_CONFORMANCE_V034_DECLS: &str = r#"
+module main
+
+third_party_verifier CommunityVerifier {
+  verifier_type community
+  independence declared
+  identity_mode declared_only
+  verification_mode reproducible_artifacts
+  name "Community Reviewer"
+  organization "Argorix Community"
+  jurisdiction "CL"
+  allowed_scopes ["conformance", "evidence", "security-report", "governance"]
+  disallowed_claims ["legal-certification", "regulator-approval", "cryptographic-endorsement"]
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  legal_claims none
+  certification none
+  security_claims none
+  purpose ["third-party-verifier", "public-conformance", "audit"]
+  notes "metadata only; no external verification runtime"
+}
+
+public_conformance_report PublicConformanceV034 {
+  verifier CommunityVerifier
+  suite "conformance/suite.v034.json"
+  suite_version "0.34"
+  source_artifact "conformance/sources/public_conformance_v034.argx"
+  bytecode_artifact "examples/public_conformance_v034.argbc.json"
+  evidence_map ChatbotEvidenceMap
+  governance_profile ChatbotGovernance
+  regulatory_mapping ChatbotRegulatoryMap
+  trust_ledger ATrustLedger
+  security_report required
+  evidence_bundle required
+  trace required
+  result passed
+  reproducibility declared
+  review_status draft
+  claims [
+    {
+      id "claim-conformance-replayable"
+      category conformance
+      statement "conformance suite can be replayed locally"
+      evidence_ref "conformance:suite.v034"
+      status mapped
+    },
+    {
+      id "claim-security-report-present"
+      category security_report
+      statement "security report is produced as an artifact"
+      evidence_ref "security-report:required"
+      status mapped
+    }
+  ]
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  legal_claims none
+  certification none
+  security_claims none
+  purpose ["public-conformance", "third-party-review", "audit", "dry-run"]
+  notes "public conformance metadata only; not certification"
+}
+
+policy PublicConformancePolicy {
+  require third_party_verifiers_declared
+  require third_party_verifiers_identity_declared
+  require third_party_verifiers_scope_bounded
+  require third_party_verifiers_runtime_disabled
+  require third_party_verifiers_legal_claims_absent
+  require third_party_verifiers_certification_absent
+  require third_party_verifiers_security_claims_absent
+  require public_conformance_reports_declared
+  require public_conformance_reports_verifiers_bound
+  require public_conformance_reports_artifacts_declared
+  require public_conformance_reports_evidence_bound
+  require public_conformance_reports_governance_bound
+  require public_conformance_reports_regulatory_bound
+  require public_conformance_reports_replayable
+  require public_conformance_reports_runtime_disabled
+  require public_conformance_reports_legal_claims_absent
+  require public_conformance_reports_certification_absent
+  require public_conformance_reports_security_claims_absent
+  on violation {
+    action review
+    trace required
+  }
+}
+"#;
+
+#[test]
+fn v034_parses_third_party_verifier_and_public_conformance_report() {
+    let ast = parse_source(PUBLIC_CONFORMANCE_V034_DECLS).unwrap();
+    assert_eq!(ast.third_party_verifiers.len(), 1);
+    assert_eq!(ast.third_party_verifiers[0].name.value, "CommunityVerifier");
+    assert_eq!(
+        ast.third_party_verifiers[0]
+            .verification_mode
+            .value
+            .source_name(),
+        "reproducible_artifacts"
+    );
+    assert_eq!(ast.public_conformance_reports.len(), 1);
+    let report = &ast.public_conformance_reports[0];
+    assert_eq!(report.name.value, "PublicConformanceV034");
+    assert_eq!(report.verifier.value, "CommunityVerifier");
+    assert_eq!(report.claims.len(), 2);
+    assert_eq!(report.claims[0].category.value.source_name(), "conformance");
+}
+
+fn public_conformance_v034_source() -> String {
+    format!(
+        "{}\n{}",
+        governance_mapping_v033_source(),
+        PUBLIC_CONFORMANCE_V034_DECLS.replacen("module main", "", 1)
+    )
+}
+
+#[test]
+fn v034_semantics_accept_valid_public_conformance() {
+    let ast = parse_source(&public_conformance_v034_source()).unwrap();
+    check_program(&ast).expect("valid public conformance declarations must pass");
+}
+
+#[test]
+fn v034_semantics_reject_unknown_verifier() {
+    let source = public_conformance_v034_source().replacen(
+        "verifier CommunityVerifier",
+        "verifier MissingVerifier",
+        1,
+    );
+    let diagnostics = check(&source).expect_err("unknown verifier must fail");
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown third_party_verifier")),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn v034_ir_and_bytecode_preserve_public_conformance_and_v033_compatibility() {
+    let ast = parse_source(&public_conformance_v034_source()).unwrap();
+    check_program(&ast).unwrap();
+    let ir = IrProgram::from(&ast);
+    assert_eq!(ir.ir_version, "0.34");
+    assert_eq!(ir.third_party_verifiers.len(), 1);
+    assert_eq!(ir.public_conformance_reports.len(), 1);
+    assert_eq!(ir.public_conformance_reports[0].claims.len(), 2);
+    let bytecode = argorix_bytecode::lower_ir(&ir);
+    assert_eq!(bytecode.bytecode_version, "0.34");
+    assert_eq!(bytecode.third_party_verifiers.len(), 1);
+    assert_eq!(bytecode.public_conformance_reports.len(), 1);
+    argorix_bytecode::verify_bytecode(&bytecode).unwrap();
+    let mut legacy = bytecode;
+    legacy.bytecode_version = "0.33".into();
+    legacy.third_party_verifiers.clear();
+    legacy.public_conformance_reports.clear();
+    argorix_bytecode::verify_bytecode(&legacy).unwrap();
+}
+
+#[test]
+fn v034_vm_trace_preserves_public_conformance_without_external_verification() {
+    use argorix_vm::Vm;
+    let ast = parse_source(&public_conformance_v034_source()).unwrap();
+    check_program(&ast).unwrap();
+    let bytecode = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+    let trace = Vm::new()
+        .run_reactive(
+            &bytecode,
+            argorix_vm::InjectedMessage {
+                from: "User".into(),
+                to: "ResearchAgent".into(),
+                act: "tell".into(),
+                message_type: "UserPrompt".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(trace.vm_version, "0.34");
+    assert_eq!(trace.third_party_verifiers.len(), 1);
+    assert_eq!(trace.public_conformance_reports.len(), 1);
+    let events = serde_json::to_string(&trace.events).unwrap();
+    for expected in [
+        "ThirdPartyVerifierDeclared",
+        "PublicConformanceReportDeclared",
+        "PublicConformanceArtifactsMapped",
+        "PublicConformanceReplayDeclared",
+        "PublicConformanceRuntimeDisabled",
+        "PublicConformanceSecurityClaimsDenied",
+        "LegalCertificationDenied",
+        "RemoteVerificationDenied",
+    ] {
+        assert!(events.contains(expected), "missing {expected}");
+    }
+    for forbidden in [
+        "ExternalAuditPassed",
+        "ComplianceCertified",
+        "RegulatorApproved",
+        "SignatureVerified",
+        "RemoteAttestationVerified",
+    ] {
+        assert!(!events.contains(forbidden), "leaked {forbidden}");
+    }
+}
+
+#[test]
+fn invalid_public_conformance_fixtures_are_complete_and_all_fail() {
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+    const EXPECTED: [&str; 37] = [
+        "unknown_verifier.argx",
+        "verifier_network_allowed.argx",
+        "verifier_external_execution_enabled.argx",
+        "verifier_secret_material_allowed.argx",
+        "verifier_key_material_allowed.argx",
+        "verifier_execution_enabled.argx",
+        "verifier_legal_claims_compliant.argx",
+        "verifier_certification_regulator_approved.argx",
+        "verifier_security_claim_cryptographically_verified.argx",
+        "empty_allowed_scopes.argx",
+        "empty_disallowed_claims.argx",
+        "unknown_report_verifier.argx",
+        "unknown_report_evidence_map.argx",
+        "unknown_report_governance_profile.argx",
+        "unknown_report_regulatory_mapping.argx",
+        "unknown_report_trust_ledger.argx",
+        "report_governance_evidence_mismatch.argx",
+        "report_regulatory_governance_mismatch.argx",
+        "report_regulatory_evidence_mismatch.argx",
+        "suite_version_wrong.argx",
+        "empty_claims.argx",
+        "duplicate_claim_id.argx",
+        "claim_empty_statement.argx",
+        "claim_empty_evidence_ref.argx",
+        "result_certified.argx",
+        "reproducibility_live_verified.argx",
+        "review_status_regulator_approved.argx",
+        "report_network_allowed.argx",
+        "report_external_execution_enabled.argx",
+        "report_secret_material_allowed.argx",
+        "report_key_material_allowed.argx",
+        "report_execution_enabled.argx",
+        "report_legal_claims_compliant.argx",
+        "report_certification_iso_certified.argx",
+        "report_security_claim_tamper_proof.argx",
+        "duplicate_third_party_verifier_name.argx",
+        "duplicate_public_conformance_report_name.argx",
+    ];
+    let directory =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/invalid_public_conformance");
+    let actual: BTreeSet<String> = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    let expected: BTreeSet<String> = EXPECTED.iter().map(|value| (*value).into()).collect();
+    assert!(
+        !actual.is_empty(),
+        "invalid fixture directory must not be empty"
+    );
+    assert_eq!(actual, expected, "invalid fixture inventory drift");
+    for name in EXPECTED {
+        let source = std::fs::read_to_string(directory.join(name)).unwrap();
+        let passes = parse_source(&source)
+            .ok()
+            .is_some_and(|program| check_program(&program).is_ok());
+        assert!(!passes, "invalid fixture `{name}` unexpectedly passed");
+    }
+}
+
+#[test]
+fn v034_security_report_and_evidence_cover_public_conformance() {
+    use argorix_vm::{EvidenceBundle, SecurityReport, Vm};
+    let ast = parse_source(&public_conformance_v034_source()).unwrap();
+    check_program(&ast).unwrap();
+    let bytecode = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+    let outcome = Vm::new().run_reactive_outcome(
+        &bytecode,
+        argorix_vm::InjectedMessage {
+            from: "User".into(),
+            to: "ResearchAgent".into(),
+            act: "tell".into(),
+            message_type: "UserPrompt".into(),
+        },
+    );
+    let trace = outcome.result.as_ref().unwrap();
+    let policy = trace
+        .policy_report
+        .policy_blocks
+        .iter()
+        .find(|policy| policy.name == "PublicConformancePolicy")
+        .expect("public conformance policy is evaluated");
+    assert!(policy.passed, "{policy:?}");
+    let report = SecurityReport::from_outcome(&bytecode, &outcome);
+    assert_eq!(report.report_version, "0.34");
+    assert_eq!(report.third_party_verifiers.total, 1);
+    assert_eq!(report.third_party_verifiers.network_denied, 1);
+    assert_eq!(report.third_party_verifiers.legal_claims_none, 1);
+    assert_eq!(report.public_conformance_reports.total, 1);
+    assert_eq!(report.public_conformance_reports.claims_total, 2);
+    assert_eq!(
+        report.public_conformance_reports.evidence_bundle_required,
+        1
+    );
+    let bundle = EvidenceBundle::from_outcome(
+        &bytecode,
+        &outcome,
+        &report,
+        std::path::Path::new("target/evidence-v034/bundle.json"),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(bundle.bundle_version, "0.34");
+}
+
+#[test]
+fn v034_single_file_and_bytecode_fixture_match() {
+    let source = include_str!("../examples/public_conformance_v034.argx");
+    let ast = parse_source(source).unwrap();
+    check_program(&ast).unwrap();
+    let emitted = argorix_bytecode::lower_ir(&IrProgram::from(&ast));
+    let fixture: argorix_bytecode::BytecodeProgram = serde_json::from_str(include_str!(
+        "../examples/public_conformance_v034.argbc.json"
+    ))
+    .unwrap();
+    assert_eq!(emitted, fixture);
+    argorix_bytecode::verify_bytecode(&fixture).unwrap();
 }

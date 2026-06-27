@@ -24,10 +24,14 @@ use crate::{
         McpProtocol, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl,
         PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program,
         ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
-        ReceiveDecl, RegulatoryAssessment, RegulatoryCoverage, RegulatoryMappingDecl,
-        RegulatoryObligationDecl, RegulatoryObligationStatus, SecretAccess, SecretDecl,
-        SecretScope, SecretSource, SendDecl, ToolDecl, TrustLedgerChainPolicy, TrustLedgerDecl,
+        PublicConformanceClaimCategory, PublicConformanceClaimDecl, PublicConformanceClaimStatus,
+        PublicConformanceReportDecl, PublicConformanceReproducibility, PublicConformanceResult,
+        PublicConformanceReviewStatus, ReceiveDecl, RegulatoryAssessment, RegulatoryCoverage,
+        RegulatoryMappingDecl, RegulatoryObligationDecl, RegulatoryObligationStatus, SecretAccess,
+        SecretDecl, SecretScope, SecretSource, SendDecl, ThirdPartyVerifierDecl,
+        ThirdPartyVerifierType, ToolDecl, TrustLedgerChainPolicy, TrustLedgerDecl,
         TrustLedgerEntryDecl, TrustLedgerEntryKind, TrustLedgerMode, TrustLedgerScope, TypeDecl,
+        VerifierIdentityMode, VerifierIndependence, VerifierVerificationMode,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -215,6 +219,98 @@ fn parse_regulatory_obligation_status(value: &str) -> RegulatoryObligationStatus
     }
 }
 
+fn parse_third_party_verifier_type(value: &str) -> ThirdPartyVerifierType {
+    match value {
+        "internal" => ThirdPartyVerifierType::Internal,
+        "community" => ThirdPartyVerifierType::Community,
+        "academic" => ThirdPartyVerifierType::Academic,
+        "vendor" => ThirdPartyVerifierType::Vendor,
+        "independent_lab" => ThirdPartyVerifierType::IndependentLab,
+        "custom" => ThirdPartyVerifierType::Custom,
+        other => ThirdPartyVerifierType::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_verifier_independence(value: &str) -> VerifierIndependence {
+    match value {
+        "declared" => VerifierIndependence::Declared,
+        "self_attested" => VerifierIndependence::SelfAttested,
+        "independent_declared" => VerifierIndependence::IndependentDeclared,
+        other => VerifierIndependence::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_verifier_identity_mode(value: &str) -> VerifierIdentityMode {
+    match value {
+        "declared_only" => VerifierIdentityMode::DeclaredOnly,
+        "document_only" => VerifierIdentityMode::DocumentOnly,
+        other => VerifierIdentityMode::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_verifier_verification_mode(value: &str) -> VerifierVerificationMode {
+    match value {
+        "reproducible_artifacts" => VerifierVerificationMode::ReproducibleArtifacts,
+        "document_review" => VerifierVerificationMode::DocumentReview,
+        "conformance_replay" => VerifierVerificationMode::ConformanceReplay,
+        other => VerifierVerificationMode::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_public_conformance_result(value: &str) -> PublicConformanceResult {
+    match value {
+        "passed" => PublicConformanceResult::Passed,
+        "failed" => PublicConformanceResult::Failed,
+        "pending_review" => PublicConformanceResult::PendingReview,
+        other => PublicConformanceResult::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_public_conformance_reproducibility(value: &str) -> PublicConformanceReproducibility {
+    match value {
+        "declared" => PublicConformanceReproducibility::Declared,
+        "replayable_locally" => PublicConformanceReproducibility::ReplayableLocally,
+        "document_only" => PublicConformanceReproducibility::DocumentOnly,
+        other => PublicConformanceReproducibility::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_public_conformance_review_status(value: &str) -> PublicConformanceReviewStatus {
+    match value {
+        "draft" => PublicConformanceReviewStatus::Draft,
+        "reviewed" => PublicConformanceReviewStatus::Reviewed,
+        "published" => PublicConformanceReviewStatus::Published,
+        "deprecated" => PublicConformanceReviewStatus::Deprecated,
+        other => PublicConformanceReviewStatus::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_public_conformance_claim_category(value: &str) -> PublicConformanceClaimCategory {
+    match value {
+        "conformance" => PublicConformanceClaimCategory::Conformance,
+        "evidence" => PublicConformanceClaimCategory::Evidence,
+        "security_report" => PublicConformanceClaimCategory::SecurityReport,
+        "governance" => PublicConformanceClaimCategory::Governance,
+        "regulatory_mapping" => PublicConformanceClaimCategory::RegulatoryMapping,
+        "bytecode" => PublicConformanceClaimCategory::Bytecode,
+        "source" => PublicConformanceClaimCategory::Source,
+        "policy" => PublicConformanceClaimCategory::Policy,
+        "runtime_boundary" => PublicConformanceClaimCategory::RuntimeBoundary,
+        "custom" => PublicConformanceClaimCategory::Custom,
+        other => PublicConformanceClaimCategory::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_public_conformance_claim_status(value: &str) -> PublicConformanceClaimStatus {
+    match value {
+        "mapped" => PublicConformanceClaimStatus::Mapped,
+        "declared" => PublicConformanceClaimStatus::Declared,
+        "pending_review" => PublicConformanceClaimStatus::PendingReview,
+        "not_applicable" => PublicConformanceClaimStatus::NotApplicable,
+        other => PublicConformanceClaimStatus::Unknown(other.to_owned()),
+    }
+}
+
 fn parse_governance_network(value: &str) -> ATrustNetworkBoundary {
     match value {
         "denied" => ATrustNetworkBoundary::Denied,
@@ -274,6 +370,8 @@ impl Parser {
             atrust_evidence_maps: Vec::new(),
             governance_profiles: Vec::new(),
             regulatory_mappings: Vec::new(),
+            third_party_verifiers: Vec::new(),
+            public_conformance_reports: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -321,6 +419,12 @@ impl Parser {
                 Some("regulatory_mapping") => program
                     .regulatory_mappings
                     .push(self.parse_regulatory_mapping()?),
+                Some("third_party_verifier") => program
+                    .third_party_verifiers
+                    .push(self.parse_third_party_verifier()?),
+                Some("public_conformance_report") => program
+                    .public_conformance_reports
+                    .push(self.parse_public_conformance_report()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -340,7 +444,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier`, `public_conformance_report`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -4455,6 +4559,646 @@ impl Parser {
         })
     }
 
+    fn parse_third_party_verifier(&mut self) -> Result<ThirdPartyVerifierDecl, Diagnostic> {
+        self.expect_keyword("third_party_verifier")?;
+        let name = self.expect_identifier("third_party_verifier name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut verifier_type = None;
+        let mut independence = None;
+        let mut identity_mode = None;
+        let mut verification_mode = None;
+        let mut display_name = None;
+        let mut organization = None;
+        let mut jurisdiction = None;
+        let mut allowed_scopes = None;
+        let mut disallowed_claims = None;
+        let mut network = None;
+        let mut external_execution = None;
+        let mut secret_material = None;
+        let mut key_material = None;
+        let mut execution = None;
+        let mut legal_claims = None;
+        let mut certification = None;
+        let mut security_claims = None;
+        let mut purpose = None;
+        let mut notes = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated third_party_verifier declaration")?;
+            match self.peek_identifier() {
+                Some("verifier_type") => self.set_block_field(
+                    &mut verifier_type,
+                    "third_party_verifier",
+                    "verifier_type",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier verifier_type",
+                            parse_third_party_verifier_type,
+                        )
+                    },
+                )?,
+                Some("independence") => self.set_block_field(
+                    &mut independence,
+                    "third_party_verifier",
+                    "independence",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier independence",
+                            parse_verifier_independence,
+                        )
+                    },
+                )?,
+                Some("identity_mode") => self.set_block_field(
+                    &mut identity_mode,
+                    "third_party_verifier",
+                    "identity_mode",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier identity_mode",
+                            parse_verifier_identity_mode,
+                        )
+                    },
+                )?,
+                Some("verification_mode") => self.set_block_field(
+                    &mut verification_mode,
+                    "third_party_verifier",
+                    "verification_mode",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier verification_mode",
+                            parse_verifier_verification_mode,
+                        )
+                    },
+                )?,
+                Some("name") => {
+                    self.set_block_field(&mut display_name, "third_party_verifier", "name", |p| {
+                        p.expect_string("third_party_verifier name")
+                    })?
+                }
+                Some("organization") => self.set_block_field(
+                    &mut organization,
+                    "third_party_verifier",
+                    "organization",
+                    |p| p.expect_string("third_party_verifier organization"),
+                )?,
+                Some("jurisdiction") => self.set_block_field(
+                    &mut jurisdiction,
+                    "third_party_verifier",
+                    "jurisdiction",
+                    |p| p.expect_string("third_party_verifier jurisdiction"),
+                )?,
+                Some("allowed_scopes") => self.set_block_field(
+                    &mut allowed_scopes,
+                    "third_party_verifier",
+                    "allowed_scopes",
+                    |p| p.parse_string_array("third_party_verifier allowed scope"),
+                )?,
+                Some("disallowed_claims") => self.set_block_field(
+                    &mut disallowed_claims,
+                    "third_party_verifier",
+                    "disallowed_claims",
+                    |p| p.parse_string_array("third_party_verifier disallowed claim"),
+                )?,
+                Some("network") => {
+                    self.set_block_field(&mut network, "third_party_verifier", "network", |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier network",
+                            parse_governance_network,
+                        )
+                    })?
+                }
+                Some("external_execution") => self.set_block_field(
+                    &mut external_execution,
+                    "third_party_verifier",
+                    "external_execution",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier external_execution",
+                            parse_bridge_execution,
+                        )
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "third_party_verifier",
+                    "secret_material",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier secret_material",
+                            parse_bridge_material,
+                        )
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "third_party_verifier",
+                    "key_material",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier key_material",
+                            parse_bridge_material,
+                        )
+                    },
+                )?,
+                Some("execution") => self.set_block_field(
+                    &mut execution,
+                    "third_party_verifier",
+                    "execution",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier execution",
+                            parse_bridge_execution,
+                        )
+                    },
+                )?,
+                Some("legal_claims") => self.set_block_field(
+                    &mut legal_claims,
+                    "third_party_verifier",
+                    "legal_claims",
+                    |p| p.expect_identifier("third_party_verifier legal_claims"),
+                )?,
+                Some("certification") => self.set_block_field(
+                    &mut certification,
+                    "third_party_verifier",
+                    "certification",
+                    |p| p.expect_identifier("third_party_verifier certification"),
+                )?,
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "third_party_verifier",
+                    "security_claims",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "third_party_verifier security_claims",
+                            parse_governance_security_claims,
+                        )
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "third_party_verifier", "purpose", |p| {
+                        p.parse_string_array("third_party_verifier purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "third_party_verifier", "notes", |p| {
+                        p.expect_string("third_party_verifier notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected third_party_verifier item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected third_party_verifier field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let empty = || Spanned::new(String::new(), fallback);
+        Ok(ThirdPartyVerifierDecl {
+            name,
+            verifier_type: verifier_type.unwrap_or_else(|| {
+                Spanned::new(ThirdPartyVerifierType::Unknown(String::new()), fallback)
+            }),
+            independence: independence.unwrap_or_else(|| {
+                Spanned::new(VerifierIndependence::Unknown(String::new()), fallback)
+            }),
+            identity_mode: identity_mode.unwrap_or_else(|| {
+                Spanned::new(VerifierIdentityMode::Unknown(String::new()), fallback)
+            }),
+            verification_mode: verification_mode.unwrap_or_else(|| {
+                Spanned::new(VerifierVerificationMode::Unknown(String::new()), fallback)
+            }),
+            display_name: display_name.unwrap_or_else(empty),
+            organization: organization.unwrap_or_else(empty),
+            jurisdiction: jurisdiction.unwrap_or_else(empty),
+            allowed_scopes: allowed_scopes.unwrap_or_default(),
+            disallowed_claims: disallowed_claims.unwrap_or_default(),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback)
+            }),
+            external_execution: external_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            secret_material: secret_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            key_material: key_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            execution: execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            legal_claims: legal_claims.unwrap_or_else(empty),
+            certification: certification.unwrap_or_else(empty),
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_public_conformance_report(
+        &mut self,
+    ) -> Result<PublicConformanceReportDecl, Diagnostic> {
+        self.expect_keyword("public_conformance_report")?;
+        let name = self.expect_identifier("public_conformance_report name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut verifier = None;
+        let mut suite = None;
+        let mut suite_version = None;
+        let mut source_artifact = None;
+        let mut bytecode_artifact = None;
+        let mut evidence_map = None;
+        let mut governance_profile = None;
+        let mut regulatory_mapping = None;
+        let mut trust_ledger = None;
+        let mut security_report = None;
+        let mut evidence_bundle = None;
+        let mut trace = None;
+        let mut result = None;
+        let mut reproducibility = None;
+        let mut review_status = None;
+        let mut claims = None;
+        let mut network = None;
+        let mut external_execution = None;
+        let mut secret_material = None;
+        let mut key_material = None;
+        let mut execution = None;
+        let mut legal_claims = None;
+        let mut certification = None;
+        let mut security_claims = None;
+        let mut purpose = None;
+        let mut notes = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated public_conformance_report declaration")?;
+            match self.peek_identifier() {
+                Some("verifier") => self.set_block_field(
+                    &mut verifier,
+                    "public_conformance_report",
+                    "verifier",
+                    |p| p.expect_identifier("public_conformance_report verifier"),
+                )?,
+                Some("suite") => {
+                    self.set_block_field(&mut suite, "public_conformance_report", "suite", |p| {
+                        p.expect_string("public_conformance_report suite")
+                    })?
+                }
+                Some("suite_version") => self.set_block_field(
+                    &mut suite_version,
+                    "public_conformance_report",
+                    "suite_version",
+                    |p| p.expect_string("public_conformance_report suite_version"),
+                )?,
+                Some("source_artifact") => self.set_block_field(
+                    &mut source_artifact,
+                    "public_conformance_report",
+                    "source_artifact",
+                    |p| p.expect_string("public_conformance_report source_artifact"),
+                )?,
+                Some("bytecode_artifact") => self.set_block_field(
+                    &mut bytecode_artifact,
+                    "public_conformance_report",
+                    "bytecode_artifact",
+                    |p| p.expect_string("public_conformance_report bytecode_artifact"),
+                )?,
+                Some("evidence_map") => self.set_block_field(
+                    &mut evidence_map,
+                    "public_conformance_report",
+                    "evidence_map",
+                    |p| p.expect_identifier("public_conformance_report evidence_map"),
+                )?,
+                Some("governance_profile") => self.set_block_field(
+                    &mut governance_profile,
+                    "public_conformance_report",
+                    "governance_profile",
+                    |p| p.expect_identifier("public_conformance_report governance_profile"),
+                )?,
+                Some("regulatory_mapping") => self.set_block_field(
+                    &mut regulatory_mapping,
+                    "public_conformance_report",
+                    "regulatory_mapping",
+                    |p| p.expect_identifier("public_conformance_report regulatory_mapping"),
+                )?,
+                Some("trust_ledger") => self.set_block_field(
+                    &mut trust_ledger,
+                    "public_conformance_report",
+                    "trust_ledger",
+                    |p| p.expect_identifier("public_conformance_report trust_ledger"),
+                )?,
+                Some("security_report") => self.set_block_field(
+                    &mut security_report,
+                    "public_conformance_report",
+                    "security_report",
+                    |p| p.expect_identifier("public_conformance_report security_report"),
+                )?,
+                Some("evidence_bundle") => self.set_block_field(
+                    &mut evidence_bundle,
+                    "public_conformance_report",
+                    "evidence_bundle",
+                    |p| p.expect_identifier("public_conformance_report evidence_bundle"),
+                )?,
+                Some("trace") => {
+                    self.set_block_field(&mut trace, "public_conformance_report", "trace", |p| {
+                        p.expect_identifier("public_conformance_report trace")
+                    })?
+                }
+                Some("result") => {
+                    self.set_block_field(&mut result, "public_conformance_report", "result", |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report result",
+                            parse_public_conformance_result,
+                        )
+                    })?
+                }
+                Some("reproducibility") => self.set_block_field(
+                    &mut reproducibility,
+                    "public_conformance_report",
+                    "reproducibility",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report reproducibility",
+                            parse_public_conformance_reproducibility,
+                        )
+                    },
+                )?,
+                Some("review_status") => self.set_block_field(
+                    &mut review_status,
+                    "public_conformance_report",
+                    "review_status",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report review_status",
+                            parse_public_conformance_review_status,
+                        )
+                    },
+                )?,
+                Some("claims") => {
+                    self.set_block_field(&mut claims, "public_conformance_report", "claims", |p| {
+                        p.parse_public_conformance_claims()
+                    })?
+                }
+                Some("network") => self.set_block_field(
+                    &mut network,
+                    "public_conformance_report",
+                    "network",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report network",
+                            parse_governance_network,
+                        )
+                    },
+                )?,
+                Some("external_execution") => self.set_block_field(
+                    &mut external_execution,
+                    "public_conformance_report",
+                    "external_execution",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report external_execution",
+                            parse_bridge_execution,
+                        )
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "public_conformance_report",
+                    "secret_material",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report secret_material",
+                            parse_bridge_material,
+                        )
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "public_conformance_report",
+                    "key_material",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report key_material",
+                            parse_bridge_material,
+                        )
+                    },
+                )?,
+                Some("execution") => self.set_block_field(
+                    &mut execution,
+                    "public_conformance_report",
+                    "execution",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report execution",
+                            parse_bridge_execution,
+                        )
+                    },
+                )?,
+                Some("legal_claims") => self.set_block_field(
+                    &mut legal_claims,
+                    "public_conformance_report",
+                    "legal_claims",
+                    |p| p.expect_identifier("public_conformance_report legal_claims"),
+                )?,
+                Some("certification") => self.set_block_field(
+                    &mut certification,
+                    "public_conformance_report",
+                    "certification",
+                    |p| p.expect_identifier("public_conformance_report certification"),
+                )?,
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "public_conformance_report",
+                    "security_claims",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public_conformance_report security_claims",
+                            parse_governance_security_claims,
+                        )
+                    },
+                )?,
+                Some("purpose") => self.set_block_field(
+                    &mut purpose,
+                    "public_conformance_report",
+                    "purpose",
+                    |p| p.parse_string_array("public_conformance_report purpose"),
+                )?,
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "public_conformance_report", "notes", |p| {
+                        p.expect_string("public_conformance_report notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected public_conformance_report item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected public_conformance_report field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let empty = || Spanned::new(String::new(), fallback);
+        Ok(PublicConformanceReportDecl {
+            name,
+            verifier: verifier.unwrap_or_else(empty),
+            suite: suite.unwrap_or_else(empty),
+            suite_version: suite_version.unwrap_or_else(empty),
+            source_artifact: source_artifact.unwrap_or_else(empty),
+            bytecode_artifact: bytecode_artifact.unwrap_or_else(empty),
+            evidence_map: evidence_map.unwrap_or_else(empty),
+            governance_profile: governance_profile.unwrap_or_else(empty),
+            regulatory_mapping: regulatory_mapping.unwrap_or_else(empty),
+            trust_ledger: trust_ledger.unwrap_or_else(empty),
+            security_report: security_report.unwrap_or_else(empty),
+            evidence_bundle: evidence_bundle.unwrap_or_else(empty),
+            trace: trace.unwrap_or_else(empty),
+            result: result.unwrap_or_else(|| {
+                Spanned::new(PublicConformanceResult::Unknown(String::new()), fallback)
+            }),
+            reproducibility: reproducibility.unwrap_or_else(|| {
+                Spanned::new(
+                    PublicConformanceReproducibility::Unknown(String::new()),
+                    fallback,
+                )
+            }),
+            review_status: review_status.unwrap_or_else(|| {
+                Spanned::new(
+                    PublicConformanceReviewStatus::Unknown(String::new()),
+                    fallback,
+                )
+            }),
+            claims: claims.unwrap_or_default(),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback)
+            }),
+            external_execution: external_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            secret_material: secret_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            key_material: key_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            execution: execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            legal_claims: legal_claims.unwrap_or_else(empty),
+            certification: certification.unwrap_or_else(empty),
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_public_conformance_claims(
+        &mut self,
+    ) -> Result<Vec<PublicConformanceClaimDecl>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut claims = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            self.ensure_not_eof("unterminated public_conformance_report claims array")?;
+            claims.push(self.parse_public_conformance_claim()?);
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.advance();
+        Ok(claims)
+    }
+
+    fn parse_public_conformance_claim(&mut self) -> Result<PublicConformanceClaimDecl, Diagnostic> {
+        let fallback = self.peek().span;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut id = None;
+        let mut category = None;
+        let mut statement = None;
+        let mut evidence_ref = None;
+        let mut status = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated public conformance claim")?;
+            match self.peek_identifier() {
+                Some("id") => {
+                    self.set_block_field(&mut id, "public conformance claim", "id", |p| {
+                        p.expect_string("public conformance claim id")
+                    })?
+                }
+                Some("category") => self.set_block_field(
+                    &mut category,
+                    "public conformance claim",
+                    "category",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "public conformance claim category",
+                            parse_public_conformance_claim_category,
+                        )
+                    },
+                )?,
+                Some("statement") => self.set_block_field(
+                    &mut statement,
+                    "public conformance claim",
+                    "statement",
+                    |p| p.expect_string("public conformance claim statement"),
+                )?,
+                Some("evidence_ref") => self.set_block_field(
+                    &mut evidence_ref,
+                    "public conformance claim",
+                    "evidence_ref",
+                    |p| p.expect_string("public conformance claim evidence_ref"),
+                )?,
+                Some("status") => {
+                    self.set_block_field(&mut status, "public conformance claim", "status", |p| {
+                        p.parse_mapped_identifier(
+                            "public conformance claim status",
+                            parse_public_conformance_claim_status,
+                        )
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected public conformance claim item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected public conformance claim field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        let empty = || Spanned::new(String::new(), fallback);
+        Ok(PublicConformanceClaimDecl {
+            id: id.unwrap_or_else(empty),
+            category: category.unwrap_or_else(|| {
+                Spanned::new(
+                    PublicConformanceClaimCategory::Unknown(String::new()),
+                    fallback,
+                )
+            }),
+            statement: statement.unwrap_or_else(empty),
+            evidence_ref: evidence_ref.unwrap_or_else(empty),
+            status: status.unwrap_or_else(|| {
+                Spanned::new(
+                    PublicConformanceClaimStatus::Unknown(String::new()),
+                    fallback,
+                )
+            }),
+        })
+    }
+
     fn parse_regulatory_obligations(
         &mut self,
     ) -> Result<Vec<RegulatoryObligationDecl>, Diagnostic> {
@@ -4917,6 +5661,54 @@ impl Parser {
             "regulatory_mappings_runtime_disabled" => PolicyRule::RegulatoryMappingsRuntimeDisabled,
             "regulatory_mappings_security_claims_absent" => {
                 PolicyRule::RegulatoryMappingsSecurityClaimsAbsent
+            }
+            "third_party_verifiers_declared" => PolicyRule::ThirdPartyVerifiersDeclared,
+            "third_party_verifiers_identity_declared" => {
+                PolicyRule::ThirdPartyVerifiersIdentityDeclared
+            }
+            "third_party_verifiers_scope_bounded" => PolicyRule::ThirdPartyVerifiersScopeBounded,
+            "third_party_verifiers_runtime_disabled" => {
+                PolicyRule::ThirdPartyVerifiersRuntimeDisabled
+            }
+            "third_party_verifiers_legal_claims_absent" => {
+                PolicyRule::ThirdPartyVerifiersLegalClaimsAbsent
+            }
+            "third_party_verifiers_certification_absent" => {
+                PolicyRule::ThirdPartyVerifiersCertificationAbsent
+            }
+            "third_party_verifiers_security_claims_absent" => {
+                PolicyRule::ThirdPartyVerifiersSecurityClaimsAbsent
+            }
+            "public_conformance_reports_declared" => PolicyRule::PublicConformanceReportsDeclared,
+            "public_conformance_reports_verifiers_bound" => {
+                PolicyRule::PublicConformanceReportsVerifiersBound
+            }
+            "public_conformance_reports_artifacts_declared" => {
+                PolicyRule::PublicConformanceReportsArtifactsDeclared
+            }
+            "public_conformance_reports_evidence_bound" => {
+                PolicyRule::PublicConformanceReportsEvidenceBound
+            }
+            "public_conformance_reports_governance_bound" => {
+                PolicyRule::PublicConformanceReportsGovernanceBound
+            }
+            "public_conformance_reports_regulatory_bound" => {
+                PolicyRule::PublicConformanceReportsRegulatoryBound
+            }
+            "public_conformance_reports_replayable" => {
+                PolicyRule::PublicConformanceReportsReplayable
+            }
+            "public_conformance_reports_runtime_disabled" => {
+                PolicyRule::PublicConformanceReportsRuntimeDisabled
+            }
+            "public_conformance_reports_legal_claims_absent" => {
+                PolicyRule::PublicConformanceReportsLegalClaimsAbsent
+            }
+            "public_conformance_reports_certification_absent" => {
+                PolicyRule::PublicConformanceReportsCertificationAbsent
+            }
+            "public_conformance_reports_security_claims_absent" => {
+                PolicyRule::PublicConformanceReportsSecurityClaimsAbsent
             }
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;

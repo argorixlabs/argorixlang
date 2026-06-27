@@ -32,6 +32,8 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         atrust_evidence_maps: Vec::new(),
         governance_profiles: Vec::new(),
         regulatory_mappings: Vec::new(),
+        third_party_verifiers: Vec::new(),
+        public_conformance_reports: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -102,6 +104,12 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         merged
             .regulatory_mappings
             .extend(program.regulatory_mappings.iter().cloned());
+        merged
+            .third_party_verifiers
+            .extend(program.third_party_verifiers.iter().cloned());
+        merged
+            .public_conformance_reports
+            .extend(program.public_conformance_reports.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());
