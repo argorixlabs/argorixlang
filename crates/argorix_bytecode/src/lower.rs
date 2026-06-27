@@ -7,9 +7,10 @@ use crate::{
     BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
     BytecodeProviderHarness, BytecodePublicConformanceClaim, BytecodePublicConformanceReport,
-    BytecodeRegulatoryMapping, BytecodeRegulatoryObligation, BytecodeSecret,
-    BytecodeThirdPartyVerifier, BytecodeTool, BytecodeTrustLedger, BytecodeTrustLedgerEntry,
-    BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeRegulatoryMapping, BytecodeRegulatoryObligation, BytecodeRuntimeHardeningProfile,
+    BytecodeSecret, BytecodeThirdPartyVerifier, BytecodeThreat, BytecodeThreatAsset,
+    BytecodeThreatMitigation, BytecodeThreatModel, BytecodeTool, BytecodeTrustLedger,
+    BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -178,7 +179,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.34".to_owned(),
+        bytecode_version: "0.35".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -685,6 +686,103 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 notes: r.notes.clone(),
             })
             .collect(),
+        runtime_hardening_profiles: ir
+            .runtime_hardening_profiles
+            .iter()
+            .map(|p| BytecodeRuntimeHardeningProfile {
+                name: p.name.clone(),
+                scope: p.scope.clone(),
+                mode: p.mode.clone(),
+                enforcement: p.enforcement.clone(),
+                sandbox: p.sandbox.clone(),
+                provider_execution: p.provider_execution.clone(),
+                external_providers: p.external_providers.clone(),
+                network: p.network.clone(),
+                tool_execution: p.tool_execution.clone(),
+                agent_execution: p.agent_execution.clone(),
+                filesystem_access: p.filesystem_access.clone(),
+                env_access: p.env_access.clone(),
+                secret_material: p.secret_material.clone(),
+                key_material: p.key_material.clone(),
+                allowlist: p.allowlist.clone(),
+                deny_by_default: p.deny_by_default,
+                approval: p.approval.clone(),
+                audit_log: p.audit_log.clone(),
+                evidence: p.evidence.clone(),
+                incident_response: p.incident_response.clone(),
+                evidence_map: p.evidence_map.clone(),
+                governance_profile: p.governance_profile.clone(),
+                public_conformance_report: p.public_conformance_report.clone(),
+                protected_assets: p.protected_assets.clone(),
+                runtime_boundaries: p.runtime_boundaries.clone(),
+                residual_risk: p.residual_risk.clone(),
+                review_status: p.review_status.clone(),
+                assurance: p.assurance.clone(),
+                security_claims: p.security_claims.clone(),
+                purpose: p.purpose.clone(),
+                notes: p.notes.clone(),
+            })
+            .collect(),
+        threat_models: ir
+            .threat_models
+            .iter()
+            .map(|m| BytecodeThreatModel {
+                name: m.name.clone(),
+                hardening_profile: m.hardening_profile.clone(),
+                evidence_map: m.evidence_map.clone(),
+                governance_profile: m.governance_profile.clone(),
+                public_conformance_report: m.public_conformance_report.clone(),
+                methodology: m.methodology.clone(),
+                scope: m.scope.clone(),
+                review_status: m.review_status.clone(),
+                assets: m
+                    .assets
+                    .iter()
+                    .map(|a| BytecodeThreatAsset {
+                        id: a.id.clone(),
+                        category: a.category.clone(),
+                        description: a.description.clone(),
+                        sensitivity: a.sensitivity.clone(),
+                        evidence_ref: a.evidence_ref.clone(),
+                    })
+                    .collect(),
+                threats: m
+                    .threats
+                    .iter()
+                    .map(|t| BytecodeThreat {
+                        id: t.id.clone(),
+                        category: t.category.clone(),
+                        target: t.target.clone(),
+                        impact: t.impact.clone(),
+                        mitigation: t.mitigation.clone(),
+                        status: t.status.clone(),
+                    })
+                    .collect(),
+                mitigations: m
+                    .mitigations
+                    .iter()
+                    .map(|x| BytecodeThreatMitigation {
+                        id: x.id.clone(),
+                        category: x.category.clone(),
+                        control_ref: x.control_ref.clone(),
+                        evidence_ref: x.evidence_ref.clone(),
+                        status: x.status.clone(),
+                    })
+                    .collect(),
+                residual_risk: m.residual_risk.clone(),
+                risk_acceptance: m.risk_acceptance.clone(),
+                network: m.network.clone(),
+                external_execution: m.external_execution.clone(),
+                tool_execution: m.tool_execution.clone(),
+                agent_execution: m.agent_execution.clone(),
+                secret_material: m.secret_material.clone(),
+                key_material: m.key_material.clone(),
+                execution: m.execution.clone(),
+                security_claims: m.security_claims.clone(),
+                purpose: m.purpose.clone(),
+                notes: m.notes.clone(),
+            })
+            .collect(),
         imports: ir
             .imports
             .iter()
@@ -875,6 +973,8 @@ mod tests {
             regulatory_mappings: vec![],
             third_party_verifiers: vec![],
             public_conformance_reports: vec![],
+            runtime_hardening_profiles: vec![],
+            threat_models: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -940,7 +1040,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.34");
+        assert_eq!(bytecode.bytecode_version, "0.35");
         assert!(bytecode
             .instructions
             .iter()
@@ -1043,6 +1143,8 @@ mod tests {
             regulatory_mappings: vec![],
             third_party_verifiers: vec![],
             public_conformance_reports: vec![],
+            runtime_hardening_profiles: vec![],
+            threat_models: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -1056,7 +1158,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.34");
+        assert_eq!(bytecode.bytecode_version, "0.35");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

@@ -1,0 +1,6 @@
+[package]
+name = "argorix-runtime-hardening-example"
+version = "0.35.0"
+
+[entry]
+main = "src/main.argx"

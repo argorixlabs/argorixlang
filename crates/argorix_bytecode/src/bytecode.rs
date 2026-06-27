@@ -55,6 +55,10 @@ pub struct BytecodeProgram {
     pub third_party_verifiers: Vec<BytecodeThirdPartyVerifier>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub public_conformance_reports: Vec<BytecodePublicConformanceReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runtime_hardening_profiles: Vec<BytecodeRuntimeHardeningProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub threat_models: Vec<BytecodeThreatModel>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -583,6 +587,98 @@ pub struct BytecodePublicConformanceClaim {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeRuntimeHardeningProfile {
+    pub name: String,
+    pub scope: String,
+    pub mode: String,
+    pub enforcement: String,
+    pub sandbox: String,
+    pub provider_execution: String,
+    pub external_providers: String,
+    pub network: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub filesystem_access: String,
+    pub env_access: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub allowlist: String,
+    pub deny_by_default: bool,
+    pub approval: String,
+    pub audit_log: String,
+    pub evidence: String,
+    pub incident_response: String,
+    pub evidence_map: String,
+    pub governance_profile: String,
+    pub public_conformance_report: String,
+    pub protected_assets: Vec<String>,
+    pub runtime_boundaries: Vec<String>,
+    pub residual_risk: String,
+    pub review_status: String,
+    pub assurance: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeThreatModel {
+    pub name: String,
+    pub hardening_profile: String,
+    pub evidence_map: String,
+    pub governance_profile: String,
+    pub public_conformance_report: String,
+    pub methodology: String,
+    pub scope: String,
+    pub review_status: String,
+    pub assets: Vec<BytecodeThreatAsset>,
+    pub threats: Vec<BytecodeThreat>,
+    pub mitigations: Vec<BytecodeThreatMitigation>,
+    pub residual_risk: String,
+    pub risk_acceptance: String,
+    pub network: String,
+    pub external_execution: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeThreatAsset {
+    pub id: String,
+    pub category: String,
+    pub description: String,
+    pub sensitivity: String,
+    pub evidence_ref: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeThreat {
+    pub id: String,
+    pub category: String,
+    pub target: String,
+    pub impact: String,
+    pub mitigation: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeThreatMitigation {
+    pub id: String,
+    pub category: String,
+    pub control_ref: String,
+    pub evidence_ref: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BytecodeProviderHarness {
     pub name: String,
     pub provider: String,
@@ -986,6 +1082,16 @@ pub enum BytecodeError {
     DuplicatePublicConformanceReport(String),
     #[error("invalid public_conformance_report `{name}`: {reason}")]
     InvalidPublicConformanceReport { name: String, reason: String },
+    #[error("runtime_hardening_profiles and threat_models require bytecode_version 0.35")]
+    RuntimeHardeningRequiresV035,
+    #[error("duplicate runtime_hardening_profile `{0}`")]
+    DuplicateRuntimeHardeningProfile(String),
+    #[error("invalid runtime_hardening_profile `{name}`: {reason}")]
+    InvalidRuntimeHardeningProfile { name: String, reason: String },
+    #[error("duplicate threat_model `{0}`")]
+    DuplicateThreatModel(String),
+    #[error("invalid threat_model `{name}`: {reason}")]
+    InvalidThreatModel { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -1025,6 +1131,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.32"
             | "0.33"
             | "0.34"
+            | "0.35"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -1059,6 +1166,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.32"
             | "0.33"
             | "0.34"
+            | "0.35"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -1085,6 +1193,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -1122,6 +1231,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -1148,6 +1258,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -1167,6 +1278,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -1185,6 +1297,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -1192,7 +1305,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.crypto_boundaries.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34"
+            "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
+                | "0.32"
+                | "0.33"
+                | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
@@ -1200,7 +1323,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_credential_contracts.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34"
+            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1210,7 +1333,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_handshakes.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34"
+            "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1221,7 +1344,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.trust_ledgers.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.30" | "0.31" | "0.32" | "0.33" | "0.34"
+            "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1232,7 +1355,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.mcp_bridge_contracts.is_empty() || !program.a2a_bridge_contracts.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.31" | "0.32" | "0.33" | "0.34"
+            "0.31" | "0.32" | "0.33" | "0.34" | "0.35"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1242,25 +1365,35 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     validate_mcp_bridge_contracts(program, &mut errors);
     validate_a2a_bridge_contracts(program, &mut errors);
     if !program.atrust_evidence_maps.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.32" | "0.33" | "0.34")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.32" | "0.33" | "0.34" | "0.35"
+        )
     {
         errors.push(BytecodeError::ATrustEvidenceMapsRequireV032);
     }
     validate_atrust_evidence_maps(program, &mut errors);
     if (!program.governance_profiles.is_empty() || !program.regulatory_mappings.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.33" | "0.34")
+        && !matches!(program.bytecode_version.as_str(), "0.33" | "0.34" | "0.35")
     {
         errors.push(BytecodeError::GovernanceMappingsRequireV033);
     }
     validate_governance_profiles(program, &mut errors);
     validate_regulatory_mappings(program, &mut errors);
     if (!program.third_party_verifiers.is_empty() || !program.public_conformance_reports.is_empty())
-        && program.bytecode_version != "0.34"
+        && !matches!(program.bytecode_version.as_str(), "0.34" | "0.35")
     {
         errors.push(BytecodeError::PublicConformanceRequiresV034);
     }
     validate_third_party_verifiers(program, &mut errors);
     validate_public_conformance_reports(program, &mut errors);
+    if (!program.runtime_hardening_profiles.is_empty() || !program.threat_models.is_empty())
+        && program.bytecode_version != "0.35"
+    {
+        errors.push(BytecodeError::RuntimeHardeningRequiresV035);
+    }
+    validate_runtime_hardening_profiles(program, &mut errors);
+    validate_threat_models(program, &mut errors);
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
@@ -1549,6 +1682,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -1612,6 +1746,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1706,6 +1841,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1820,6 +1956,7 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -1893,6 +2030,7 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
                 | "0.32"
                 | "0.33"
                 | "0.34"
+                | "0.35"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);
@@ -3217,6 +3355,331 @@ fn validate_public_conformance_reports(program: &BytecodeProgram, errors: &mut V
     }
 }
 
+fn validate_runtime_hardening_profiles(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let governance: HashSet<&str> = program
+        .governance_profiles
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let reports: HashSet<&str> = program
+        .public_conformance_reports
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for profile in &program.runtime_hardening_profiles {
+        if !names.insert(profile.name.as_str()) {
+            errors.push(BytecodeError::DuplicateRuntimeHardeningProfile(
+                profile.name.clone(),
+            ));
+        }
+        let mut reasons = Vec::new();
+        for (value, allowed, reason) in [
+            (
+                profile.scope.as_str(),
+                &["agent", "system", "package", "organization"][..],
+                "invalid scope",
+            ),
+            (
+                profile.mode.as_str(),
+                &["declared_only", "evidence_only"][..],
+                "invalid mode",
+            ),
+            (
+                profile.enforcement.as_str(),
+                &["declared_only", "evidence_only"][..],
+                "invalid enforcement",
+            ),
+            (
+                profile.sandbox.as_str(),
+                &["required", "declared"][..],
+                "invalid sandbox",
+            ),
+            (
+                profile.allowlist.as_str(),
+                &["required", "declared"][..],
+                "invalid allowlist",
+            ),
+            (
+                profile.approval.as_str(),
+                &["required", "declared"][..],
+                "invalid approval",
+            ),
+            (
+                profile.incident_response.as_str(),
+                &["declared", "required"][..],
+                "invalid incident_response",
+            ),
+            (
+                profile.residual_risk.as_str(),
+                &["low", "moderate", "high", "critical", "unknown"][..],
+                "invalid residual_risk",
+            ),
+            (
+                profile.review_status.as_str(),
+                &["draft", "reviewed", "approved_internal", "deprecated"][..],
+                "invalid review_status",
+            ),
+            (
+                profile.assurance.as_str(),
+                &["declared_only", "evidence_mapped", "manually_reviewed"][..],
+                "invalid assurance",
+            ),
+        ] {
+            if !allowed.contains(&value) {
+                reasons.push(reason);
+            }
+        }
+        if profile.provider_execution != "disabled"
+            || profile.external_providers != "disabled"
+            || profile.network != "denied"
+            || profile.tool_execution != "disabled"
+            || profile.agent_execution != "disabled"
+            || profile.filesystem_access != "denied"
+            || profile.env_access != "denied"
+            || profile.secret_material != "denied"
+            || profile.key_material != "denied"
+            || !profile.deny_by_default
+            || profile.audit_log != "required"
+            || profile.evidence != "required"
+            || profile.security_claims != "none"
+        {
+            reasons.push(
+                "runtime boundaries must remain denied, disabled, required, and deny-by-default",
+            );
+        }
+        if !evidence_maps.contains(profile.evidence_map.as_str())
+            || !governance.contains(profile.governance_profile.as_str())
+            || !reports.contains(profile.public_conformance_report.as_str())
+        {
+            reasons.push("unknown evidence, governance, or public conformance binding");
+        }
+        if profile.protected_assets.is_empty()
+            || profile
+                .protected_assets
+                .iter()
+                .any(|value| value.is_empty())
+            || profile.runtime_boundaries.is_empty()
+            || profile
+                .runtime_boundaries
+                .iter()
+                .any(|value| value.is_empty())
+            || profile.purpose.is_empty()
+            || profile.purpose.iter().any(|value| value.is_empty())
+        {
+            reasons.push("protected assets, runtime boundaries, and purpose must not be empty");
+        }
+        if profile.notes.as_ref().is_some_and(|value| value.is_empty()) {
+            reasons.push("notes must not be empty");
+        }
+        for reason in reasons {
+            errors.push(BytecodeError::InvalidRuntimeHardeningProfile {
+                name: profile.name.clone(),
+                reason: reason.into(),
+            });
+        }
+    }
+}
+
+fn validate_threat_models(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let profiles: std::collections::HashMap<&str, &BytecodeRuntimeHardeningProfile> = program
+        .runtime_hardening_profiles
+        .iter()
+        .map(|value| (value.name.as_str(), value))
+        .collect();
+    let mut names = HashSet::new();
+    for model in &program.threat_models {
+        if !names.insert(model.name.as_str()) {
+            errors.push(BytecodeError::DuplicateThreatModel(model.name.clone()));
+        }
+        let mut reasons = Vec::new();
+        let profile = profiles.get(model.hardening_profile.as_str()).copied();
+        if profile.is_none() {
+            reasons.push("unknown runtime_hardening_profile");
+        }
+        if profile.is_some_and(|profile| {
+            profile.evidence_map != model.evidence_map
+                || profile.governance_profile != model.governance_profile
+                || profile.public_conformance_report != model.public_conformance_report
+        }) {
+            reasons.push("hardening references mismatch");
+        }
+        for (value, allowed, reason) in [
+            (
+                model.methodology.as_str(),
+                &["declared", "structured", "internal_review"][..],
+                "invalid methodology",
+            ),
+            (
+                model.scope.as_str(),
+                &["agent", "system", "package", "organization"][..],
+                "invalid scope",
+            ),
+            (
+                model.review_status.as_str(),
+                &["draft", "reviewed", "approved_internal", "deprecated"][..],
+                "invalid review_status",
+            ),
+            (
+                model.residual_risk.as_str(),
+                &["low", "moderate", "high", "critical", "unknown"][..],
+                "invalid residual_risk",
+            ),
+            (
+                model.risk_acceptance.as_str(),
+                &["declared_only", "pending_review", "manually_reviewed"][..],
+                "invalid risk_acceptance",
+            ),
+        ] {
+            if !allowed.contains(&value) {
+                reasons.push(reason);
+            }
+        }
+        if model.network != "denied"
+            || model.external_execution != "disabled"
+            || model.tool_execution != "disabled"
+            || model.agent_execution != "disabled"
+            || model.secret_material != "denied"
+            || model.key_material != "denied"
+            || model.execution != "disabled"
+            || model.security_claims != "none"
+        {
+            reasons.push("threat model runtime and security boundaries must remain denied");
+        }
+        validate_bytecode_threat_collections(model, &mut reasons);
+        if model.purpose.is_empty() || model.purpose.iter().any(|value| value.is_empty()) {
+            reasons.push("purpose must not be empty");
+        }
+        if model.notes.as_ref().is_some_and(|value| value.is_empty()) {
+            reasons.push("notes must not be empty");
+        }
+        for reason in reasons {
+            errors.push(BytecodeError::InvalidThreatModel {
+                name: model.name.clone(),
+                reason: reason.into(),
+            });
+        }
+    }
+}
+
+fn validate_bytecode_threat_collections(
+    model: &BytecodeThreatModel,
+    reasons: &mut Vec<&'static str>,
+) {
+    if model.assets.is_empty() || model.threats.is_empty() || model.mitigations.is_empty() {
+        reasons.push("assets, threats, and mitigations must not be empty");
+    }
+    let mut ids = HashSet::new();
+    for asset in &model.assets {
+        if !ids.insert(asset.id.as_str()) {
+            reasons.push("duplicate asset id");
+        }
+        if asset.id.is_empty()
+            || asset.description.is_empty()
+            || asset.evidence_ref.is_empty()
+            || !matches!(
+                asset.category.as_str(),
+                "secret"
+                    | "key"
+                    | "identity"
+                    | "credential"
+                    | "handshake"
+                    | "ledger"
+                    | "bridge"
+                    | "evidence"
+                    | "policy"
+                    | "runtime"
+                    | "provider"
+                    | "user_data"
+                    | "custom"
+            )
+            || !matches!(
+                asset.sensitivity.as_str(),
+                "low" | "moderate" | "high" | "critical" | "unknown"
+            )
+        {
+            reasons.push("invalid asset");
+        }
+    }
+    ids.clear();
+    for threat in &model.threats {
+        if !ids.insert(threat.id.as_str()) {
+            reasons.push("duplicate threat id");
+        }
+        if threat.id.is_empty()
+            || threat.target.is_empty()
+            || threat.mitigation.is_empty()
+            || !matches!(
+                threat.category.as_str(),
+                "prompt_injection"
+                    | "secret_leakage"
+                    | "tool_abuse"
+                    | "network_exfiltration"
+                    | "identity_spoofing"
+                    | "credential_misuse"
+                    | "handshake_replay"
+                    | "bridge_misuse"
+                    | "evidence_tampering"
+                    | "policy_bypass"
+                    | "provider_misuse"
+                    | "runtime_escape"
+                    | "supply_chain"
+                    | "custom"
+            )
+            || !matches!(
+                threat.impact.as_str(),
+                "low" | "moderate" | "high" | "critical" | "unknown"
+            )
+            || !matches!(
+                threat.status.as_str(),
+                "declared"
+                    | "mitigated_declared"
+                    | "pending_review"
+                    | "accepted_risk"
+                    | "not_applicable"
+            )
+        {
+            reasons.push("invalid threat");
+        }
+    }
+    ids.clear();
+    for mitigation in &model.mitigations {
+        if !ids.insert(mitigation.id.as_str()) {
+            reasons.push("duplicate mitigation id");
+        }
+        if mitigation.id.is_empty()
+            || mitigation.control_ref.is_empty()
+            || mitigation.evidence_ref.is_empty()
+            || !matches!(
+                mitigation.category.as_str(),
+                "network_boundary"
+                    | "secret_boundary"
+                    | "key_boundary"
+                    | "tool_boundary"
+                    | "agent_boundary"
+                    | "provider_boundary"
+                    | "policy_enforcement"
+                    | "audit_logging"
+                    | "evidence_mapping"
+                    | "sandboxing"
+                    | "review_process"
+                    | "custom"
+            )
+            || !matches!(
+                mitigation.status.as_str(),
+                "mapped" | "declared" | "pending_review" | "not_applicable"
+            )
+        {
+            reasons.push("invalid mitigation");
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -3420,6 +3883,31 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "public_conformance_reports_legal_claims_absent",
         "public_conformance_reports_certification_absent",
         "public_conformance_reports_security_claims_absent",
+        "runtime_hardening_profiles_declared",
+        "runtime_hardening_evidence_bound",
+        "runtime_hardening_deny_by_default",
+        "runtime_hardening_sandbox_required",
+        "runtime_hardening_network_denied",
+        "runtime_hardening_external_providers_disabled",
+        "runtime_hardening_tool_execution_disabled",
+        "runtime_hardening_agent_execution_disabled",
+        "runtime_hardening_filesystem_denied",
+        "runtime_hardening_env_denied",
+        "runtime_hardening_secret_material_denied",
+        "runtime_hardening_key_material_denied",
+        "runtime_hardening_audit_log_required",
+        "runtime_hardening_security_claims_absent",
+        "threat_models_declared",
+        "threat_models_hardening_bound",
+        "threat_models_assets_mapped",
+        "threat_models_threats_mapped",
+        "threat_models_mitigations_mapped",
+        "threat_models_runtime_disabled",
+        "threat_models_network_denied",
+        "threat_models_secret_material_denied",
+        "threat_models_key_material_denied",
+        "threat_models_execution_disabled",
+        "threat_models_security_claims_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -3536,6 +4024,8 @@ mod tests {
             regulatory_mappings: vec![],
             third_party_verifiers: vec![],
             public_conformance_reports: vec![],
+            runtime_hardening_profiles: vec![],
+            threat_models: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

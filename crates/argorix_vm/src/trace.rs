@@ -112,6 +112,18 @@ pub enum EventType {
     PublicConformanceRuntimeDisabled,
     PublicConformanceSecurityClaimsDenied,
     RemoteVerificationDenied,
+    RuntimeHardeningProfileDeclared,
+    RuntimeDenyByDefaultDeclared,
+    RuntimeSandboxRequired,
+    RuntimeNetworkDenied,
+    RuntimeSecretsDenied,
+    RuntimeExecutionDisabled,
+    ThreatModelDeclared,
+    ThreatAssetsMapped,
+    ThreatsMapped,
+    MitigationsMapped,
+    ThreatModelRuntimeDisabled,
+    ThreatModelSecurityClaimsDenied,
     VmCompleted,
     VmFailed,
 }
@@ -220,6 +232,10 @@ pub struct ReactiveExecutionTrace {
     pub third_party_verifiers: Vec<argorix_bytecode::BytecodeThirdPartyVerifier>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub public_conformance_reports: Vec<argorix_bytecode::BytecodePublicConformanceReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runtime_hardening_profiles: Vec<argorix_bytecode::BytecodeRuntimeHardeningProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub threat_models: Vec<argorix_bytecode::BytecodeThreatModel>,
     pub injected: InjectedMessage,
     pub steps: Vec<ReactiveStep>,
     pub mailboxes: Vec<MailboxSummary>,

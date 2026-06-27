@@ -50,11 +50,33 @@ source language
 
 ## Current status
 
-**Version:** `0.34`
+**Version:** `0.35`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only
+
+Version 0.35 adds Runtime Hardening + Threat Model. A top-level
+`runtime_hardening_profile` binds deny-by-default enforcement, sandbox,
+network, provider, tool, agent, filesystem, environment, secret, and key
+boundaries to the existing evidence, governance, and public-conformance
+artifacts. A top-level `threat_model` maps assets, threats, mitigations,
+residual risk, and risk acceptance to that profile.
+
+Both declarations are offline metadata. They do not enable a runtime, execute
+agents or tools, call providers, open network connections, read environment
+variables, secrets, or keys, simulate attacks, execute exploits, verify a
+third party, certify security, eliminate risk, or provide legal certification.
+Their VM events and Policy v2 rules preserve those boundaries fail-closed.
+SecurityReport v0.35 summarizes hardening profiles and threat models;
+EvidenceBundle v0.35 covers the resulting bytecode, trace, report, and ledger
+while retaining verification compatibility with v0.33 and v0.34 artifacts.
+
+See
+[`examples/runtime_hardening_v035.argx`](examples/runtime_hardening_v035.argx),
+[`examples/runtime_hardening_v035.argbc.json`](examples/runtime_hardening_v035.argbc.json),
+and
+[`examples/runtime_hardening_project`](examples/runtime_hardening_project).
 
 Version 0.34 adds Third-Party Verification / Public Conformance. A top-level
 `third_party_verifier` declares reviewer identity metadata, organization,

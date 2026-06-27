@@ -27,9 +27,10 @@ use crate::{
         PublicConformanceClaimCategory, PublicConformanceClaimDecl, PublicConformanceClaimStatus,
         PublicConformanceReportDecl, PublicConformanceReproducibility, PublicConformanceResult,
         PublicConformanceReviewStatus, ReceiveDecl, RegulatoryAssessment, RegulatoryCoverage,
-        RegulatoryMappingDecl, RegulatoryObligationDecl, RegulatoryObligationStatus, SecretAccess,
-        SecretDecl, SecretScope, SecretSource, SendDecl, ThirdPartyVerifierDecl,
-        ThirdPartyVerifierType, ToolDecl, TrustLedgerChainPolicy, TrustLedgerDecl,
+        RegulatoryMappingDecl, RegulatoryObligationDecl, RegulatoryObligationStatus,
+        RuntimeHardeningProfileDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl,
+        ThirdPartyVerifierDecl, ThirdPartyVerifierType, ThreatAssetDecl, ThreatDecl,
+        ThreatMitigationDecl, ThreatModelDecl, ToolDecl, TrustLedgerChainPolicy, TrustLedgerDecl,
         TrustLedgerEntryDecl, TrustLedgerEntryKind, TrustLedgerMode, TrustLedgerScope, TypeDecl,
         VerifierIdentityMode, VerifierIndependence, VerifierVerificationMode,
     },
@@ -37,6 +38,7 @@ use crate::{
     lexer::{lex, Token, TokenKind},
     span::Spanned,
 };
+use std::collections::HashMap;
 
 /// Validate a dotted module path such as `agents.research`.
 ///
@@ -372,6 +374,8 @@ impl Parser {
             regulatory_mappings: Vec::new(),
             third_party_verifiers: Vec::new(),
             public_conformance_reports: Vec::new(),
+            runtime_hardening_profiles: Vec::new(),
+            threat_models: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -425,6 +429,10 @@ impl Parser {
                 Some("public_conformance_report") => program
                     .public_conformance_reports
                     .push(self.parse_public_conformance_report()?),
+                Some("runtime_hardening_profile") => program
+                    .runtime_hardening_profiles
+                    .push(self.parse_runtime_hardening_profile()?),
+                Some("threat_model") => program.threat_models.push(self.parse_threat_model()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -444,7 +452,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier`, `public_conformance_report`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier`, `public_conformance_report`, `runtime_hardening_profile`, `threat_model`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -5199,6 +5207,400 @@ impl Parser {
         })
     }
 
+    fn parse_runtime_hardening_profile(
+        &mut self,
+    ) -> Result<RuntimeHardeningProfileDecl, Diagnostic> {
+        self.expect_keyword("runtime_hardening_profile")?;
+        let name = self.expect_identifier("runtime_hardening_profile name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let scalar_names = [
+            "scope",
+            "mode",
+            "enforcement",
+            "sandbox",
+            "provider_execution",
+            "external_providers",
+            "network",
+            "tool_execution",
+            "agent_execution",
+            "filesystem_access",
+            "env_access",
+            "secret_material",
+            "key_material",
+            "allowlist",
+            "approval",
+            "audit_log",
+            "evidence",
+            "incident_response",
+            "evidence_map",
+            "governance_profile",
+            "public_conformance_report",
+            "residual_risk",
+            "review_status",
+            "assurance",
+            "security_claims",
+        ];
+        let mut fields: HashMap<String, Spanned<String>> = HashMap::new();
+        let mut deny_by_default = None;
+        let mut protected_assets = None;
+        let mut runtime_boundaries = None;
+        let mut purpose = None;
+        let mut notes = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated runtime_hardening_profile declaration")?;
+            match self.peek_identifier() {
+                Some("deny_by_default") => self.set_block_field(
+                    &mut deny_by_default,
+                    "runtime_hardening_profile",
+                    "deny_by_default",
+                    |p| p.expect_bool("runtime_hardening_profile deny_by_default"),
+                )?,
+                Some("protected_assets") => self.set_block_field(
+                    &mut protected_assets,
+                    "runtime_hardening_profile",
+                    "protected_assets",
+                    |p| p.parse_string_array("runtime_hardening_profile protected asset"),
+                )?,
+                Some("runtime_boundaries") => self.set_block_field(
+                    &mut runtime_boundaries,
+                    "runtime_hardening_profile",
+                    "runtime_boundaries",
+                    |p| p.parse_string_array("runtime_hardening_profile runtime boundary"),
+                )?,
+                Some("purpose") => self.set_block_field(
+                    &mut purpose,
+                    "runtime_hardening_profile",
+                    "purpose",
+                    |p| p.parse_string_array("runtime_hardening_profile purpose"),
+                )?,
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "runtime_hardening_profile", "notes", |p| {
+                        p.expect_string("runtime_hardening_profile notes")
+                    })?
+                }
+                Some(field) if scalar_names.contains(&field) => {
+                    let field = field.to_owned();
+                    self.advance();
+                    let value = self.expect_identifier("runtime_hardening_profile field value")?;
+                    if fields.insert(field.clone(), value).is_some() {
+                        return Err(Diagnostic::new(
+                            format!("duplicate runtime_hardening_profile field `{field}`"),
+                            self.peek().span,
+                        ));
+                    }
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected runtime_hardening_profile item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected runtime_hardening_profile field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let mut take = |field: &str| {
+            fields
+                .remove(field)
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback))
+        };
+        Ok(RuntimeHardeningProfileDecl {
+            name,
+            scope: take("scope"),
+            mode: take("mode"),
+            enforcement: take("enforcement"),
+            sandbox: take("sandbox"),
+            provider_execution: take("provider_execution"),
+            external_providers: take("external_providers"),
+            network: take("network"),
+            tool_execution: take("tool_execution"),
+            agent_execution: take("agent_execution"),
+            filesystem_access: take("filesystem_access"),
+            env_access: take("env_access"),
+            secret_material: take("secret_material"),
+            key_material: take("key_material"),
+            allowlist: take("allowlist"),
+            deny_by_default: deny_by_default.unwrap_or_else(|| Spanned::new(false, fallback)),
+            approval: take("approval"),
+            audit_log: take("audit_log"),
+            evidence: take("evidence"),
+            incident_response: take("incident_response"),
+            evidence_map: take("evidence_map"),
+            governance_profile: take("governance_profile"),
+            public_conformance_report: take("public_conformance_report"),
+            protected_assets: protected_assets.unwrap_or_default(),
+            runtime_boundaries: runtime_boundaries.unwrap_or_default(),
+            residual_risk: take("residual_risk"),
+            review_status: take("review_status"),
+            assurance: take("assurance"),
+            security_claims: take("security_claims"),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_threat_model(&mut self) -> Result<ThreatModelDecl, Diagnostic> {
+        self.expect_keyword("threat_model")?;
+        let name = self.expect_identifier("threat_model name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let scalar_names = [
+            "hardening_profile",
+            "evidence_map",
+            "governance_profile",
+            "public_conformance_report",
+            "methodology",
+            "scope",
+            "review_status",
+            "residual_risk",
+            "risk_acceptance",
+            "network",
+            "external_execution",
+            "tool_execution",
+            "agent_execution",
+            "secret_material",
+            "key_material",
+            "execution",
+            "security_claims",
+        ];
+        let mut fields: HashMap<String, Spanned<String>> = HashMap::new();
+        let mut assets = None;
+        let mut threats = None;
+        let mut mitigations = None;
+        let mut purpose = None;
+        let mut notes = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated threat_model declaration")?;
+            match self.peek_identifier() {
+                Some("assets") => {
+                    self.set_block_field(&mut assets, "threat_model", "assets", |p| {
+                        p.parse_threat_assets()
+                    })?
+                }
+                Some("threats") => {
+                    self.set_block_field(&mut threats, "threat_model", "threats", |p| {
+                        p.parse_threats()
+                    })?
+                }
+                Some("mitigations") => {
+                    self.set_block_field(&mut mitigations, "threat_model", "mitigations", |p| {
+                        p.parse_threat_mitigations()
+                    })?
+                }
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "threat_model", "purpose", |p| {
+                        p.parse_string_array("threat_model purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "threat_model", "notes", |p| {
+                        p.expect_string("threat_model notes")
+                    })?
+                }
+                Some(field) if scalar_names.contains(&field) => {
+                    let field = field.to_owned();
+                    self.advance();
+                    let value = self.expect_identifier("threat_model field value")?;
+                    if fields.insert(field.clone(), value).is_some() {
+                        return Err(Diagnostic::new(
+                            format!("duplicate threat_model field `{field}`"),
+                            self.peek().span,
+                        ));
+                    }
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected threat_model item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected threat_model field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let mut take = |field: &str| {
+            fields
+                .remove(field)
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback))
+        };
+        Ok(ThreatModelDecl {
+            name,
+            hardening_profile: take("hardening_profile"),
+            evidence_map: take("evidence_map"),
+            governance_profile: take("governance_profile"),
+            public_conformance_report: take("public_conformance_report"),
+            methodology: take("methodology"),
+            scope: take("scope"),
+            review_status: take("review_status"),
+            assets: assets.unwrap_or_default(),
+            threats: threats.unwrap_or_default(),
+            mitigations: mitigations.unwrap_or_default(),
+            residual_risk: take("residual_risk"),
+            risk_acceptance: take("risk_acceptance"),
+            network: take("network"),
+            external_execution: take("external_execution"),
+            tool_execution: take("tool_execution"),
+            agent_execution: take("agent_execution"),
+            secret_material: take("secret_material"),
+            key_material: take("key_material"),
+            execution: take("execution"),
+            security_claims: take("security_claims"),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_threat_assets(&mut self) -> Result<Vec<ThreatAssetDecl>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut values = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            values.push(self.parse_threat_asset()?);
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.advance();
+        Ok(values)
+    }
+
+    fn parse_threat_asset(&mut self) -> Result<ThreatAssetDecl, Diagnostic> {
+        let fields = self.parse_string_object(
+            "threat asset",
+            &[
+                ("id", true),
+                ("category", false),
+                ("description", true),
+                ("sensitivity", false),
+                ("evidence_ref", true),
+            ],
+        )?;
+        Ok(ThreatAssetDecl {
+            id: fields[0].clone(),
+            category: fields[1].clone(),
+            description: fields[2].clone(),
+            sensitivity: fields[3].clone(),
+            evidence_ref: fields[4].clone(),
+        })
+    }
+
+    fn parse_threats(&mut self) -> Result<Vec<ThreatDecl>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut values = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            let fields = self.parse_string_object(
+                "threat",
+                &[
+                    ("id", true),
+                    ("category", false),
+                    ("target", true),
+                    ("impact", false),
+                    ("mitigation", true),
+                    ("status", false),
+                ],
+            )?;
+            values.push(ThreatDecl {
+                id: fields[0].clone(),
+                category: fields[1].clone(),
+                target: fields[2].clone(),
+                impact: fields[3].clone(),
+                mitigation: fields[4].clone(),
+                status: fields[5].clone(),
+            });
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.advance();
+        Ok(values)
+    }
+
+    fn parse_threat_mitigations(&mut self) -> Result<Vec<ThreatMitigationDecl>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut values = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            let fields = self.parse_string_object(
+                "threat mitigation",
+                &[
+                    ("id", true),
+                    ("category", false),
+                    ("control_ref", true),
+                    ("evidence_ref", true),
+                    ("status", false),
+                ],
+            )?;
+            values.push(ThreatMitigationDecl {
+                id: fields[0].clone(),
+                category: fields[1].clone(),
+                control_ref: fields[2].clone(),
+                evidence_ref: fields[3].clone(),
+                status: fields[4].clone(),
+            });
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.advance();
+        Ok(values)
+    }
+
+    fn parse_string_object(
+        &mut self,
+        kind: &str,
+        schema: &[(&str, bool)],
+    ) -> Result<Vec<Spanned<String>>, Diagnostic> {
+        let fallback = self.peek().span;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut fields: HashMap<String, Spanned<String>> = HashMap::new();
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof(&format!("unterminated {kind}"))?;
+            let Some(field) = self.peek_identifier() else {
+                return Err(Diagnostic::new(
+                    format!("expected {kind} field"),
+                    self.peek().span,
+                ));
+            };
+            let Some((_, quoted)) = schema.iter().find(|(name, _)| *name == field) else {
+                return Err(Diagnostic::new(
+                    format!("unexpected {kind} field `{field}`"),
+                    self.peek().span,
+                ));
+            };
+            let field = field.to_owned();
+            self.advance();
+            let value = if *quoted {
+                self.expect_string(kind)?
+            } else {
+                self.expect_identifier(kind)?
+            };
+            if fields.insert(field.clone(), value).is_some() {
+                return Err(Diagnostic::new(
+                    format!("duplicate {kind} field `{field}`"),
+                    self.peek().span,
+                ));
+            }
+        }
+        self.advance();
+        Ok(schema
+            .iter()
+            .map(|(field, _)| {
+                fields
+                    .remove(*field)
+                    .unwrap_or_else(|| Spanned::new(String::new(), fallback))
+            })
+            .collect())
+    }
+
     fn parse_regulatory_obligations(
         &mut self,
     ) -> Result<Vec<RegulatoryObligationDecl>, Diagnostic> {
@@ -5710,6 +6112,43 @@ impl Parser {
             "public_conformance_reports_security_claims_absent" => {
                 PolicyRule::PublicConformanceReportsSecurityClaimsAbsent
             }
+            "runtime_hardening_profiles_declared" => PolicyRule::RuntimeHardeningProfilesDeclared,
+            "runtime_hardening_evidence_bound" => PolicyRule::RuntimeHardeningEvidenceBound,
+            "runtime_hardening_deny_by_default" => PolicyRule::RuntimeHardeningDenyByDefault,
+            "runtime_hardening_sandbox_required" => PolicyRule::RuntimeHardeningSandboxRequired,
+            "runtime_hardening_network_denied" => PolicyRule::RuntimeHardeningNetworkDenied,
+            "runtime_hardening_external_providers_disabled" => {
+                PolicyRule::RuntimeHardeningExternalProvidersDisabled
+            }
+            "runtime_hardening_tool_execution_disabled" => {
+                PolicyRule::RuntimeHardeningToolExecutionDisabled
+            }
+            "runtime_hardening_agent_execution_disabled" => {
+                PolicyRule::RuntimeHardeningAgentExecutionDisabled
+            }
+            "runtime_hardening_filesystem_denied" => PolicyRule::RuntimeHardeningFilesystemDenied,
+            "runtime_hardening_env_denied" => PolicyRule::RuntimeHardeningEnvDenied,
+            "runtime_hardening_secret_material_denied" => {
+                PolicyRule::RuntimeHardeningSecretMaterialDenied
+            }
+            "runtime_hardening_key_material_denied" => {
+                PolicyRule::RuntimeHardeningKeyMaterialDenied
+            }
+            "runtime_hardening_audit_log_required" => PolicyRule::RuntimeHardeningAuditLogRequired,
+            "runtime_hardening_security_claims_absent" => {
+                PolicyRule::RuntimeHardeningSecurityClaimsAbsent
+            }
+            "threat_models_declared" => PolicyRule::ThreatModelsDeclared,
+            "threat_models_hardening_bound" => PolicyRule::ThreatModelsHardeningBound,
+            "threat_models_assets_mapped" => PolicyRule::ThreatModelsAssetsMapped,
+            "threat_models_threats_mapped" => PolicyRule::ThreatModelsThreatsMapped,
+            "threat_models_mitigations_mapped" => PolicyRule::ThreatModelsMitigationsMapped,
+            "threat_models_runtime_disabled" => PolicyRule::ThreatModelsRuntimeDisabled,
+            "threat_models_network_denied" => PolicyRule::ThreatModelsNetworkDenied,
+            "threat_models_secret_material_denied" => PolicyRule::ThreatModelsSecretMaterialDenied,
+            "threat_models_key_material_denied" => PolicyRule::ThreatModelsKeyMaterialDenied,
+            "threat_models_execution_disabled" => PolicyRule::ThreatModelsExecutionDisabled,
+            "threat_models_security_claims_absent" => PolicyRule::ThreatModelsSecurityClaimsAbsent,
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

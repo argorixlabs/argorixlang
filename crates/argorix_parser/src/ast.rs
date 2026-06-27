@@ -25,6 +25,8 @@ pub struct Program {
     pub regulatory_mappings: Vec<RegulatoryMappingDecl>,
     pub third_party_verifiers: Vec<ThirdPartyVerifierDecl>,
     pub public_conformance_reports: Vec<PublicConformanceReportDecl>,
+    pub runtime_hardening_profiles: Vec<RuntimeHardeningProfileDecl>,
+    pub threat_models: Vec<ThreatModelDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -925,6 +927,31 @@ pub enum PolicyRule {
     PublicConformanceReportsLegalClaimsAbsent,
     PublicConformanceReportsCertificationAbsent,
     PublicConformanceReportsSecurityClaimsAbsent,
+    RuntimeHardeningProfilesDeclared,
+    RuntimeHardeningEvidenceBound,
+    RuntimeHardeningDenyByDefault,
+    RuntimeHardeningSandboxRequired,
+    RuntimeHardeningNetworkDenied,
+    RuntimeHardeningExternalProvidersDisabled,
+    RuntimeHardeningToolExecutionDisabled,
+    RuntimeHardeningAgentExecutionDisabled,
+    RuntimeHardeningFilesystemDenied,
+    RuntimeHardeningEnvDenied,
+    RuntimeHardeningSecretMaterialDenied,
+    RuntimeHardeningKeyMaterialDenied,
+    RuntimeHardeningAuditLogRequired,
+    RuntimeHardeningSecurityClaimsAbsent,
+    ThreatModelsDeclared,
+    ThreatModelsHardeningBound,
+    ThreatModelsAssetsMapped,
+    ThreatModelsThreatsMapped,
+    ThreatModelsMitigationsMapped,
+    ThreatModelsRuntimeDisabled,
+    ThreatModelsNetworkDenied,
+    ThreatModelsSecretMaterialDenied,
+    ThreatModelsKeyMaterialDenied,
+    ThreatModelsExecutionDisabled,
+    ThreatModelsSecurityClaimsAbsent,
     Unknown(String),
 }
 
@@ -1190,6 +1217,41 @@ impl PolicyRule {
             Self::PublicConformanceReportsSecurityClaimsAbsent => {
                 "public_conformance_reports_security_claims_absent"
             }
+            Self::RuntimeHardeningProfilesDeclared => "runtime_hardening_profiles_declared",
+            Self::RuntimeHardeningEvidenceBound => "runtime_hardening_evidence_bound",
+            Self::RuntimeHardeningDenyByDefault => "runtime_hardening_deny_by_default",
+            Self::RuntimeHardeningSandboxRequired => "runtime_hardening_sandbox_required",
+            Self::RuntimeHardeningNetworkDenied => "runtime_hardening_network_denied",
+            Self::RuntimeHardeningExternalProvidersDisabled => {
+                "runtime_hardening_external_providers_disabled"
+            }
+            Self::RuntimeHardeningToolExecutionDisabled => {
+                "runtime_hardening_tool_execution_disabled"
+            }
+            Self::RuntimeHardeningAgentExecutionDisabled => {
+                "runtime_hardening_agent_execution_disabled"
+            }
+            Self::RuntimeHardeningFilesystemDenied => "runtime_hardening_filesystem_denied",
+            Self::RuntimeHardeningEnvDenied => "runtime_hardening_env_denied",
+            Self::RuntimeHardeningSecretMaterialDenied => {
+                "runtime_hardening_secret_material_denied"
+            }
+            Self::RuntimeHardeningKeyMaterialDenied => "runtime_hardening_key_material_denied",
+            Self::RuntimeHardeningAuditLogRequired => "runtime_hardening_audit_log_required",
+            Self::RuntimeHardeningSecurityClaimsAbsent => {
+                "runtime_hardening_security_claims_absent"
+            }
+            Self::ThreatModelsDeclared => "threat_models_declared",
+            Self::ThreatModelsHardeningBound => "threat_models_hardening_bound",
+            Self::ThreatModelsAssetsMapped => "threat_models_assets_mapped",
+            Self::ThreatModelsThreatsMapped => "threat_models_threats_mapped",
+            Self::ThreatModelsMitigationsMapped => "threat_models_mitigations_mapped",
+            Self::ThreatModelsRuntimeDisabled => "threat_models_runtime_disabled",
+            Self::ThreatModelsNetworkDenied => "threat_models_network_denied",
+            Self::ThreatModelsSecretMaterialDenied => "threat_models_secret_material_denied",
+            Self::ThreatModelsKeyMaterialDenied => "threat_models_key_material_denied",
+            Self::ThreatModelsExecutionDisabled => "threat_models_execution_disabled",
+            Self::ThreatModelsSecurityClaimsAbsent => "threat_models_security_claims_absent",
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -2505,6 +2567,100 @@ pub struct PublicConformanceClaimDecl {
     pub statement: Spanned<String>,
     pub evidence_ref: Spanned<String>,
     pub status: Spanned<PublicConformanceClaimStatus>,
+}
+
+/// Declarative pre-runtime hardening metadata. No field enables runtime
+/// execution or active enforcement in v0.35.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeHardeningProfileDecl {
+    pub name: Spanned<String>,
+    pub scope: Spanned<String>,
+    pub mode: Spanned<String>,
+    pub enforcement: Spanned<String>,
+    pub sandbox: Spanned<String>,
+    pub provider_execution: Spanned<String>,
+    pub external_providers: Spanned<String>,
+    pub network: Spanned<String>,
+    pub tool_execution: Spanned<String>,
+    pub agent_execution: Spanned<String>,
+    pub filesystem_access: Spanned<String>,
+    pub env_access: Spanned<String>,
+    pub secret_material: Spanned<String>,
+    pub key_material: Spanned<String>,
+    pub allowlist: Spanned<String>,
+    pub deny_by_default: Spanned<bool>,
+    pub approval: Spanned<String>,
+    pub audit_log: Spanned<String>,
+    pub evidence: Spanned<String>,
+    pub incident_response: Spanned<String>,
+    pub evidence_map: Spanned<String>,
+    pub governance_profile: Spanned<String>,
+    pub public_conformance_report: Spanned<String>,
+    pub protected_assets: Vec<Spanned<String>>,
+    pub runtime_boundaries: Vec<Spanned<String>>,
+    pub residual_risk: Spanned<String>,
+    pub review_status: Spanned<String>,
+    pub assurance: Spanned<String>,
+    pub security_claims: Spanned<String>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+/// Declarative threat-model metadata. It cannot execute attacks or establish
+/// that a system is secure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreatModelDecl {
+    pub name: Spanned<String>,
+    pub hardening_profile: Spanned<String>,
+    pub evidence_map: Spanned<String>,
+    pub governance_profile: Spanned<String>,
+    pub public_conformance_report: Spanned<String>,
+    pub methodology: Spanned<String>,
+    pub scope: Spanned<String>,
+    pub review_status: Spanned<String>,
+    pub assets: Vec<ThreatAssetDecl>,
+    pub threats: Vec<ThreatDecl>,
+    pub mitigations: Vec<ThreatMitigationDecl>,
+    pub residual_risk: Spanned<String>,
+    pub risk_acceptance: Spanned<String>,
+    pub network: Spanned<String>,
+    pub external_execution: Spanned<String>,
+    pub tool_execution: Spanned<String>,
+    pub agent_execution: Spanned<String>,
+    pub secret_material: Spanned<String>,
+    pub key_material: Spanned<String>,
+    pub execution: Spanned<String>,
+    pub security_claims: Spanned<String>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreatAssetDecl {
+    pub id: Spanned<String>,
+    pub category: Spanned<String>,
+    pub description: Spanned<String>,
+    pub sensitivity: Spanned<String>,
+    pub evidence_ref: Spanned<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreatDecl {
+    pub id: Spanned<String>,
+    pub category: Spanned<String>,
+    pub target: Spanned<String>,
+    pub impact: Spanned<String>,
+    pub mitigation: Spanned<String>,
+    pub status: Spanned<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreatMitigationDecl {
+    pub id: Spanned<String>,
+    pub category: Spanned<String>,
+    pub control_ref: Spanned<String>,
+    pub evidence_ref: Spanned<String>,
+    pub status: Spanned<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

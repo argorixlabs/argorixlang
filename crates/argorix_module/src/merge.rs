@@ -34,6 +34,8 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         regulatory_mappings: Vec::new(),
         third_party_verifiers: Vec::new(),
         public_conformance_reports: Vec::new(),
+        runtime_hardening_profiles: Vec::new(),
+        threat_models: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -110,6 +112,12 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         merged
             .public_conformance_reports
             .extend(program.public_conformance_reports.iter().cloned());
+        merged
+            .runtime_hardening_profiles
+            .extend(program.runtime_hardening_profiles.iter().cloned());
+        merged
+            .threat_models
+            .extend(program.threat_models.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());
@@ -263,5 +271,18 @@ mod tests {
         assert!(messages
             .iter()
             .any(|message| message.contains("duplicate harness `Shared`")));
+    }
+
+    #[test]
+    fn rejects_duplicate_runtime_hardening_and_threat_models_across_modules() {
+        let source = include_str!("../../../examples/runtime_hardening_v035.argx");
+        let duplicate = package(&[("main", source), ("runtime.duplicate", source)]);
+        let messages = check_package(&duplicate).unwrap_err();
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate runtime_hardening_profile")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate threat_model")));
     }
 }

@@ -1,0 +1,39 @@
+module governance.profiles
+
+governance_profile ChatbotGovernance {
+  scope system
+  level audit
+  domain ai_agent
+  owner "Argorix"
+  jurisdiction "CL"
+  framework "Argorix Public Conformance"
+  evidence_map ChatbotEvidenceMap
+  trust_ledger ATrustLedger
+  policies ["BridgePolicy", "TrustLedgerPolicy"]
+  controls [
+    {
+      id "control-evidence-mapped"
+      category evidence
+      requirement "public conformance evidence is mapped"
+      evidence_ref "atrust-evidence-map:ChatbotEvidenceMap"
+      status mapped
+    },
+    {
+      id "control-runtime-disabled"
+      category runtime_boundary
+      requirement "verification runtime remains disabled"
+      evidence_ref "runtime:disabled"
+      status mapped
+    }
+  ]
+  risk_level moderate
+  review_status draft
+  assurance declared_only
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  security_claims none
+  purpose ["governance", "public-conformance", "audit"]
+}

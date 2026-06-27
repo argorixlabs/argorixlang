@@ -1,0 +1,18 @@
+module passports.verifier
+
+passport VerifierPassport {
+    agent VerifierAgent
+    agent_name "Verifier Agent"
+    global_id "argx:agent:01HZX9VERIFIERAGENT"
+    identity "did:argorix:verifier-v1"
+    provider "Argorix"
+    version "1.0.0"
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL", "EU"]
+    intent "verification"
+    risk_level "medium"
+    intended_use ["policy-review", "verification"]
+    prohibited_use ["external-execution", "credential-access"]
+    attestations ["policy-check"]
+}

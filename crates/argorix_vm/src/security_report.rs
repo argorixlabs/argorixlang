@@ -54,6 +54,10 @@ pub struct SecurityReport {
     pub third_party_verifiers: ThirdPartyVerifiersSummary,
     #[serde(default)]
     pub public_conformance_reports: PublicConformanceReportsSummary,
+    #[serde(default)]
+    pub runtime_hardening_profiles: RuntimeHardeningProfilesSummary,
+    #[serde(default)]
+    pub threat_models: ThreatModelsSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -198,6 +202,56 @@ pub struct PublicConformanceReportsSummary {
     pub legal_claims_none: usize,
     pub certification_none: usize,
     pub security_claims_none: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeHardeningProfilesSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub scopes: BTreeMap<String, usize>,
+    pub modes: BTreeMap<String, usize>,
+    pub enforcement: BTreeMap<String, usize>,
+    pub sandbox: BTreeMap<String, usize>,
+    pub provider_execution: BTreeMap<String, usize>,
+    pub external_providers: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub tool_execution: BTreeMap<String, usize>,
+    pub agent_execution: BTreeMap<String, usize>,
+    pub filesystem_access: BTreeMap<String, usize>,
+    pub env_access: BTreeMap<String, usize>,
+    pub secret_material: BTreeMap<String, usize>,
+    pub key_material: BTreeMap<String, usize>,
+    pub deny_by_default: BTreeMap<String, usize>,
+    pub audit_log: BTreeMap<String, usize>,
+    pub evidence: BTreeMap<String, usize>,
+    pub protected_assets_total: usize,
+    pub runtime_boundaries_total: usize,
+    pub residual_risks: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreatModelsSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub methodologies: BTreeMap<String, usize>,
+    pub scopes: BTreeMap<String, usize>,
+    pub assets_total: usize,
+    pub asset_categories: BTreeMap<String, usize>,
+    pub threats_total: usize,
+    pub threat_categories: BTreeMap<String, usize>,
+    pub mitigations_total: usize,
+    pub mitigation_categories: BTreeMap<String, usize>,
+    pub residual_risks: BTreeMap<String, usize>,
+    pub risk_acceptance: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub tool_execution: BTreeMap<String, usize>,
+    pub agent_execution: BTreeMap<String, usize>,
+    pub secret_material: BTreeMap<String, usize>,
+    pub key_material: BTreeMap<String, usize>,
+    pub execution: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -679,7 +733,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.34".into(),
+            report_version: "0.35".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -687,7 +741,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.34".into()),
+                .unwrap_or_else(|| "0.35".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -710,6 +764,10 @@ impl SecurityReport {
             public_conformance_reports: public_conformance_reports_summary(
                 &bytecode.public_conformance_reports,
             ),
+            runtime_hardening_profiles: runtime_hardening_profiles_summary(
+                &bytecode.runtime_hardening_profiles,
+            ),
+            threat_models: threat_models_summary(&bytecode.threat_models),
             policy,
             provider_boundary,
             calls,
@@ -718,6 +776,94 @@ impl SecurityReport {
             verdict,
         }
     }
+}
+
+fn runtime_hardening_profiles_summary(
+    profiles: &[argorix_bytecode::BytecodeRuntimeHardeningProfile],
+) -> RuntimeHardeningProfilesSummary {
+    let mut summary = RuntimeHardeningProfilesSummary {
+        total: profiles.len(),
+        ..Default::default()
+    };
+    for p in profiles {
+        summary.names.push(p.name.clone());
+        for (map, value) in [
+            (&mut summary.scopes, &p.scope),
+            (&mut summary.modes, &p.mode),
+            (&mut summary.enforcement, &p.enforcement),
+            (&mut summary.sandbox, &p.sandbox),
+            (&mut summary.provider_execution, &p.provider_execution),
+            (&mut summary.external_providers, &p.external_providers),
+            (&mut summary.network, &p.network),
+            (&mut summary.tool_execution, &p.tool_execution),
+            (&mut summary.agent_execution, &p.agent_execution),
+            (&mut summary.filesystem_access, &p.filesystem_access),
+            (&mut summary.env_access, &p.env_access),
+            (&mut summary.secret_material, &p.secret_material),
+            (&mut summary.key_material, &p.key_material),
+            (&mut summary.audit_log, &p.audit_log),
+            (&mut summary.evidence, &p.evidence),
+            (&mut summary.residual_risks, &p.residual_risk),
+            (&mut summary.security_claims, &p.security_claims),
+        ] {
+            *map.entry(value.clone()).or_insert(0) += 1;
+        }
+        *summary
+            .deny_by_default
+            .entry(p.deny_by_default.to_string())
+            .or_insert(0) += 1;
+        summary.protected_assets_total += p.protected_assets.len();
+        summary.runtime_boundaries_total += p.runtime_boundaries.len();
+    }
+    summary
+}
+
+fn threat_models_summary(models: &[argorix_bytecode::BytecodeThreatModel]) -> ThreatModelsSummary {
+    let mut summary = ThreatModelsSummary {
+        total: models.len(),
+        ..Default::default()
+    };
+    for model in models {
+        summary.names.push(model.name.clone());
+        for (map, value) in [
+            (&mut summary.methodologies, &model.methodology),
+            (&mut summary.scopes, &model.scope),
+            (&mut summary.residual_risks, &model.residual_risk),
+            (&mut summary.risk_acceptance, &model.risk_acceptance),
+            (&mut summary.network, &model.network),
+            (&mut summary.external_execution, &model.external_execution),
+            (&mut summary.tool_execution, &model.tool_execution),
+            (&mut summary.agent_execution, &model.agent_execution),
+            (&mut summary.secret_material, &model.secret_material),
+            (&mut summary.key_material, &model.key_material),
+            (&mut summary.execution, &model.execution),
+            (&mut summary.security_claims, &model.security_claims),
+        ] {
+            *map.entry(value.clone()).or_insert(0) += 1;
+        }
+        summary.assets_total += model.assets.len();
+        summary.threats_total += model.threats.len();
+        summary.mitigations_total += model.mitigations.len();
+        for asset in &model.assets {
+            *summary
+                .asset_categories
+                .entry(asset.category.clone())
+                .or_insert(0) += 1;
+        }
+        for threat in &model.threats {
+            *summary
+                .threat_categories
+                .entry(threat.category.clone())
+                .or_insert(0) += 1;
+        }
+        for mitigation in &model.mitigations {
+            *summary
+                .mitigation_categories
+                .entry(mitigation.category.clone())
+                .or_insert(0) += 1;
+        }
+    }
+    summary
 }
 
 fn governance_profiles_summary(

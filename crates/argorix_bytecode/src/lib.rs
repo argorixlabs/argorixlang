@@ -11,8 +11,9 @@ pub use bytecode::{
     BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
     BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
     BytecodeProviderHarness, BytecodePublicConformanceClaim, BytecodePublicConformanceReport,
-    BytecodeRegulatoryMapping, BytecodeRegulatoryObligation, BytecodeSecret,
-    BytecodeThirdPartyVerifier, BytecodeTool, BytecodeTrustLedger, BytecodeTrustLedgerEntry,
-    BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeRegulatoryMapping, BytecodeRegulatoryObligation, BytecodeRuntimeHardeningProfile,
+    BytecodeSecret, BytecodeThirdPartyVerifier, BytecodeThreat, BytecodeThreatAsset,
+    BytecodeThreatMitigation, BytecodeThreatModel, BytecodeTool, BytecodeTrustLedger,
+    BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
 };
 pub use lower::lower_ir;

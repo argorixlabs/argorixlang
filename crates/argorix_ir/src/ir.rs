@@ -50,6 +50,10 @@ pub struct IrProgram {
     pub third_party_verifiers: Vec<IrThirdPartyVerifier>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub public_conformance_reports: Vec<IrPublicConformanceReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runtime_hardening_profiles: Vec<IrRuntimeHardeningProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub threat_models: Vec<IrThreatModel>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -600,6 +604,98 @@ pub struct IrPublicConformanceClaim {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrRuntimeHardeningProfile {
+    pub name: String,
+    pub scope: String,
+    pub mode: String,
+    pub enforcement: String,
+    pub sandbox: String,
+    pub provider_execution: String,
+    pub external_providers: String,
+    pub network: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub filesystem_access: String,
+    pub env_access: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub allowlist: String,
+    pub deny_by_default: bool,
+    pub approval: String,
+    pub audit_log: String,
+    pub evidence: String,
+    pub incident_response: String,
+    pub evidence_map: String,
+    pub governance_profile: String,
+    pub public_conformance_report: String,
+    pub protected_assets: Vec<String>,
+    pub runtime_boundaries: Vec<String>,
+    pub residual_risk: String,
+    pub review_status: String,
+    pub assurance: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrThreatModel {
+    pub name: String,
+    pub hardening_profile: String,
+    pub evidence_map: String,
+    pub governance_profile: String,
+    pub public_conformance_report: String,
+    pub methodology: String,
+    pub scope: String,
+    pub review_status: String,
+    pub assets: Vec<IrThreatAsset>,
+    pub threats: Vec<IrThreat>,
+    pub mitigations: Vec<IrThreatMitigation>,
+    pub residual_risk: String,
+    pub risk_acceptance: String,
+    pub network: String,
+    pub external_execution: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrThreatAsset {
+    pub id: String,
+    pub category: String,
+    pub description: String,
+    pub sensitivity: String,
+    pub evidence_ref: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrThreat {
+    pub id: String,
+    pub category: String,
+    pub target: String,
+    pub impact: String,
+    pub mitigation: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrThreatMitigation {
+    pub id: String,
+    pub category: String,
+    pub control_ref: String,
+    pub evidence_ref: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
@@ -753,7 +849,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.34".to_owned(),
+            ir_version: "0.35".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -1308,6 +1404,103 @@ impl From<&Program> for IrProgram {
                     notes: r.notes.as_ref().map(|value| value.value.clone()),
                 })
                 .collect(),
+            runtime_hardening_profiles: program
+                .runtime_hardening_profiles
+                .iter()
+                .map(|p| IrRuntimeHardeningProfile {
+                    name: p.name.value.clone(),
+                    scope: p.scope.value.clone(),
+                    mode: p.mode.value.clone(),
+                    enforcement: p.enforcement.value.clone(),
+                    sandbox: p.sandbox.value.clone(),
+                    provider_execution: p.provider_execution.value.clone(),
+                    external_providers: p.external_providers.value.clone(),
+                    network: p.network.value.clone(),
+                    tool_execution: p.tool_execution.value.clone(),
+                    agent_execution: p.agent_execution.value.clone(),
+                    filesystem_access: p.filesystem_access.value.clone(),
+                    env_access: p.env_access.value.clone(),
+                    secret_material: p.secret_material.value.clone(),
+                    key_material: p.key_material.value.clone(),
+                    allowlist: p.allowlist.value.clone(),
+                    deny_by_default: p.deny_by_default.value,
+                    approval: p.approval.value.clone(),
+                    audit_log: p.audit_log.value.clone(),
+                    evidence: p.evidence.value.clone(),
+                    incident_response: p.incident_response.value.clone(),
+                    evidence_map: p.evidence_map.value.clone(),
+                    governance_profile: p.governance_profile.value.clone(),
+                    public_conformance_report: p.public_conformance_report.value.clone(),
+                    protected_assets: spanned_values(&p.protected_assets),
+                    runtime_boundaries: spanned_values(&p.runtime_boundaries),
+                    residual_risk: p.residual_risk.value.clone(),
+                    review_status: p.review_status.value.clone(),
+                    assurance: p.assurance.value.clone(),
+                    security_claims: p.security_claims.value.clone(),
+                    purpose: spanned_values(&p.purpose),
+                    notes: p.notes.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
+            threat_models: program
+                .threat_models
+                .iter()
+                .map(|m| IrThreatModel {
+                    name: m.name.value.clone(),
+                    hardening_profile: m.hardening_profile.value.clone(),
+                    evidence_map: m.evidence_map.value.clone(),
+                    governance_profile: m.governance_profile.value.clone(),
+                    public_conformance_report: m.public_conformance_report.value.clone(),
+                    methodology: m.methodology.value.clone(),
+                    scope: m.scope.value.clone(),
+                    review_status: m.review_status.value.clone(),
+                    assets: m
+                        .assets
+                        .iter()
+                        .map(|a| IrThreatAsset {
+                            id: a.id.value.clone(),
+                            category: a.category.value.clone(),
+                            description: a.description.value.clone(),
+                            sensitivity: a.sensitivity.value.clone(),
+                            evidence_ref: a.evidence_ref.value.clone(),
+                        })
+                        .collect(),
+                    threats: m
+                        .threats
+                        .iter()
+                        .map(|t| IrThreat {
+                            id: t.id.value.clone(),
+                            category: t.category.value.clone(),
+                            target: t.target.value.clone(),
+                            impact: t.impact.value.clone(),
+                            mitigation: t.mitigation.value.clone(),
+                            status: t.status.value.clone(),
+                        })
+                        .collect(),
+                    mitigations: m
+                        .mitigations
+                        .iter()
+                        .map(|x| IrThreatMitigation {
+                            id: x.id.value.clone(),
+                            category: x.category.value.clone(),
+                            control_ref: x.control_ref.value.clone(),
+                            evidence_ref: x.evidence_ref.value.clone(),
+                            status: x.status.value.clone(),
+                        })
+                        .collect(),
+                    residual_risk: m.residual_risk.value.clone(),
+                    risk_acceptance: m.risk_acceptance.value.clone(),
+                    network: m.network.value.clone(),
+                    external_execution: m.external_execution.value.clone(),
+                    tool_execution: m.tool_execution.value.clone(),
+                    agent_execution: m.agent_execution.value.clone(),
+                    secret_material: m.secret_material.value.clone(),
+                    key_material: m.key_material.value.clone(),
+                    execution: m.execution.value.clone(),
+                    security_claims: m.security_claims.value.clone(),
+                    purpose: spanned_values(&m.purpose),
+                    notes: m.notes.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
             assertions: program
                 .assertions
                 .iter()
@@ -1567,7 +1760,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.34");
+        assert_eq!(ir.ir_version, "0.35");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -1605,7 +1798,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.34");
+        assert_eq!(ir.ir_version, "0.35");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -1640,7 +1833,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.34");
+        assert_eq!(ir.ir_version, "0.35");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");

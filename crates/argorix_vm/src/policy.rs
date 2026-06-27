@@ -97,6 +97,31 @@ pub struct PolicyEvidenceContext {
     pub public_conformance_reports_legal_claims_absent: bool,
     pub public_conformance_reports_certification_absent: bool,
     pub public_conformance_reports_security_claims_absent: bool,
+    pub runtime_hardening_profiles_declared: bool,
+    pub runtime_hardening_evidence_bound: bool,
+    pub runtime_hardening_deny_by_default: bool,
+    pub runtime_hardening_sandbox_required: bool,
+    pub runtime_hardening_network_denied: bool,
+    pub runtime_hardening_external_providers_disabled: bool,
+    pub runtime_hardening_tool_execution_disabled: bool,
+    pub runtime_hardening_agent_execution_disabled: bool,
+    pub runtime_hardening_filesystem_denied: bool,
+    pub runtime_hardening_env_denied: bool,
+    pub runtime_hardening_secret_material_denied: bool,
+    pub runtime_hardening_key_material_denied: bool,
+    pub runtime_hardening_audit_log_required: bool,
+    pub runtime_hardening_security_claims_absent: bool,
+    pub threat_models_declared: bool,
+    pub threat_models_hardening_bound: bool,
+    pub threat_models_assets_mapped: bool,
+    pub threat_models_threats_mapped: bool,
+    pub threat_models_mitigations_mapped: bool,
+    pub threat_models_runtime_disabled: bool,
+    pub threat_models_network_denied: bool,
+    pub threat_models_secret_material_denied: bool,
+    pub threat_models_key_material_denied: bool,
+    pub threat_models_execution_disabled: bool,
+    pub threat_models_security_claims_absent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -550,6 +575,106 @@ pub fn evaluate_rule(
         "public_conformance_reports_security_claims_absent" => (
             context.public_conformance_reports_security_claims_absent,
             "one or more reports declare security claims",
+        ),
+        "runtime_hardening_profiles_declared" => (
+            context.runtime_hardening_profiles_declared,
+            "no runtime hardening profile is declared",
+        ),
+        "runtime_hardening_evidence_bound" => (
+            context.runtime_hardening_evidence_bound,
+            "one or more hardening profiles lack evidence bindings",
+        ),
+        "runtime_hardening_deny_by_default" => (
+            context.runtime_hardening_deny_by_default,
+            "one or more hardening profiles do not deny by default",
+        ),
+        "runtime_hardening_sandbox_required" => (
+            context.runtime_hardening_sandbox_required,
+            "one or more hardening profiles do not require a sandbox",
+        ),
+        "runtime_hardening_network_denied" => (
+            context.runtime_hardening_network_denied,
+            "one or more hardening profiles allow network access",
+        ),
+        "runtime_hardening_external_providers_disabled" => (
+            context.runtime_hardening_external_providers_disabled,
+            "one or more hardening profiles enable external providers",
+        ),
+        "runtime_hardening_tool_execution_disabled" => (
+            context.runtime_hardening_tool_execution_disabled,
+            "one or more hardening profiles enable tools",
+        ),
+        "runtime_hardening_agent_execution_disabled" => (
+            context.runtime_hardening_agent_execution_disabled,
+            "one or more hardening profiles enable agents",
+        ),
+        "runtime_hardening_filesystem_denied" => (
+            context.runtime_hardening_filesystem_denied,
+            "one or more hardening profiles allow filesystem access",
+        ),
+        "runtime_hardening_env_denied" => (
+            context.runtime_hardening_env_denied,
+            "one or more hardening profiles allow environment access",
+        ),
+        "runtime_hardening_secret_material_denied" => (
+            context.runtime_hardening_secret_material_denied,
+            "one or more hardening profiles allow secret material",
+        ),
+        "runtime_hardening_key_material_denied" => (
+            context.runtime_hardening_key_material_denied,
+            "one or more hardening profiles allow key material",
+        ),
+        "runtime_hardening_audit_log_required" => (
+            context.runtime_hardening_audit_log_required,
+            "one or more hardening profiles do not require audit logs",
+        ),
+        "runtime_hardening_security_claims_absent" => (
+            context.runtime_hardening_security_claims_absent,
+            "one or more hardening profiles declare security claims",
+        ),
+        "threat_models_declared" => (
+            context.threat_models_declared,
+            "no threat model is declared",
+        ),
+        "threat_models_hardening_bound" => (
+            context.threat_models_hardening_bound,
+            "one or more threat models lack hardening bindings",
+        ),
+        "threat_models_assets_mapped" => (
+            context.threat_models_assets_mapped,
+            "one or more threat models lack assets",
+        ),
+        "threat_models_threats_mapped" => (
+            context.threat_models_threats_mapped,
+            "one or more threat models lack threats",
+        ),
+        "threat_models_mitigations_mapped" => (
+            context.threat_models_mitigations_mapped,
+            "one or more threat models lack mitigations",
+        ),
+        "threat_models_runtime_disabled" => (
+            context.threat_models_runtime_disabled,
+            "one or more threat models enable runtime capabilities",
+        ),
+        "threat_models_network_denied" => (
+            context.threat_models_network_denied,
+            "one or more threat models allow network access",
+        ),
+        "threat_models_secret_material_denied" => (
+            context.threat_models_secret_material_denied,
+            "one or more threat models allow secret material",
+        ),
+        "threat_models_key_material_denied" => (
+            context.threat_models_key_material_denied,
+            "one or more threat models allow key material",
+        ),
+        "threat_models_execution_disabled" => (
+            context.threat_models_execution_disabled,
+            "one or more threat models enable execution",
+        ),
+        "threat_models_security_claims_absent" => (
+            context.threat_models_security_claims_absent,
+            "one or more threat models declare security claims",
         ),
         _ => (false, "unknown policy rule"),
     };

@@ -56,6 +56,8 @@ pub fn check_program_with_options(
     check_regulatory_mappings(program, &mut diagnostics);
     check_third_party_verifiers(program, &mut diagnostics);
     check_public_conformance_reports(program, &mut diagnostics);
+    check_runtime_hardening_profiles(program, &mut diagnostics);
+    check_threat_models(program, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -5308,6 +5310,548 @@ fn require_public_conformance_text(
     if value.value.is_empty() {
         diagnostics.push(Diagnostic::new(
             format!("{kind} `{name}` {field} must not be empty"),
+            value.span,
+        ));
+    }
+}
+
+pub fn check_runtime_hardening_profiles(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let governance_profiles: HashSet<&str> = program
+        .governance_profiles
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let public_reports: HashSet<&str> = program
+        .public_conformance_reports
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for profile in &program.runtime_hardening_profiles {
+        let name = profile.name.value.as_str();
+        report_duplicate(
+            &mut names,
+            &profile.name,
+            "runtime_hardening_profile",
+            diagnostics,
+        );
+        for (field, value, allowed) in [
+            (
+                "scope",
+                &profile.scope,
+                &["agent", "system", "package", "organization"][..],
+            ),
+            (
+                "mode",
+                &profile.mode,
+                &["declared_only", "evidence_only"][..],
+            ),
+            (
+                "enforcement",
+                &profile.enforcement,
+                &["declared_only", "evidence_only"][..],
+            ),
+            ("sandbox", &profile.sandbox, &["required", "declared"][..]),
+            (
+                "allowlist",
+                &profile.allowlist,
+                &["required", "declared"][..],
+            ),
+            ("approval", &profile.approval, &["required", "declared"][..]),
+            (
+                "incident_response",
+                &profile.incident_response,
+                &["declared", "required"][..],
+            ),
+            (
+                "residual_risk",
+                &profile.residual_risk,
+                &["low", "moderate", "high", "critical", "unknown"][..],
+            ),
+            (
+                "review_status",
+                &profile.review_status,
+                &["draft", "reviewed", "approved_internal", "deprecated"][..],
+            ),
+            (
+                "assurance",
+                &profile.assurance,
+                &["declared_only", "evidence_mapped", "manually_reviewed"][..],
+            ),
+        ] {
+            require_allowed_value(
+                "runtime_hardening_profile",
+                name,
+                field,
+                value,
+                allowed,
+                diagnostics,
+            );
+        }
+        for (field, value, required) in [
+            (
+                "provider_execution",
+                &profile.provider_execution,
+                "disabled",
+            ),
+            (
+                "external_providers",
+                &profile.external_providers,
+                "disabled",
+            ),
+            ("network", &profile.network, "denied"),
+            ("tool_execution", &profile.tool_execution, "disabled"),
+            ("agent_execution", &profile.agent_execution, "disabled"),
+            ("filesystem_access", &profile.filesystem_access, "denied"),
+            ("env_access", &profile.env_access, "denied"),
+            ("secret_material", &profile.secret_material, "denied"),
+            ("key_material", &profile.key_material, "denied"),
+            ("audit_log", &profile.audit_log, "required"),
+            ("evidence", &profile.evidence, "required"),
+            ("security_claims", &profile.security_claims, "none"),
+        ] {
+            require_exact_value(
+                "runtime_hardening_profile",
+                name,
+                field,
+                value,
+                required,
+                diagnostics,
+            );
+        }
+        if !profile.deny_by_default.value {
+            diagnostics.push(Diagnostic::new(
+                format!("runtime_hardening_profile `{name}` requires deny_by_default `true`"),
+                profile.deny_by_default.span,
+            ));
+        }
+        for (kind, value, known) in [
+            (
+                "evidence_map",
+                &profile.evidence_map,
+                evidence_maps.contains(profile.evidence_map.value.as_str()),
+            ),
+            (
+                "governance_profile",
+                &profile.governance_profile,
+                governance_profiles.contains(profile.governance_profile.value.as_str()),
+            ),
+            (
+                "public_conformance_report",
+                &profile.public_conformance_report,
+                public_reports.contains(profile.public_conformance_report.value.as_str()),
+            ),
+        ] {
+            if !known {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "runtime_hardening_profile `{name}` references unknown {kind} `{}`",
+                        value.value
+                    ),
+                    value.span,
+                ));
+            }
+        }
+        require_non_empty_string_list(
+            "runtime_hardening_profile",
+            name,
+            "protected_assets",
+            &profile.protected_assets,
+            profile.name.span,
+            diagnostics,
+        );
+        require_non_empty_string_list(
+            "runtime_hardening_profile",
+            name,
+            "runtime_boundaries",
+            &profile.runtime_boundaries,
+            profile.name.span,
+            diagnostics,
+        );
+        require_non_empty_string_list(
+            "runtime_hardening_profile",
+            name,
+            "purpose",
+            &profile.purpose,
+            profile.name.span,
+            diagnostics,
+        );
+        if let Some(notes) = &profile.notes {
+            require_public_conformance_text(
+                "runtime_hardening_profile",
+                name,
+                "notes",
+                notes,
+                diagnostics,
+            );
+        }
+    }
+}
+
+pub fn check_threat_models(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let hardening: std::collections::HashMap<&str, _> = program
+        .runtime_hardening_profiles
+        .iter()
+        .map(|value| (value.name.value.as_str(), value))
+        .collect();
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let governance_profiles: HashSet<&str> = program
+        .governance_profiles
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let public_reports: HashSet<&str> = program
+        .public_conformance_reports
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for model in &program.threat_models {
+        let name = model.name.value.as_str();
+        report_duplicate(&mut names, &model.name, "threat_model", diagnostics);
+        let profile = hardening
+            .get(model.hardening_profile.value.as_str())
+            .copied();
+        if profile.is_none() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "threat_model `{name}` references unknown runtime_hardening_profile `{}`",
+                    model.hardening_profile.value
+                ),
+                model.hardening_profile.span,
+            ));
+        }
+        for (kind, value, known) in [
+            (
+                "evidence_map",
+                &model.evidence_map,
+                evidence_maps.contains(model.evidence_map.value.as_str()),
+            ),
+            (
+                "governance_profile",
+                &model.governance_profile,
+                governance_profiles.contains(model.governance_profile.value.as_str()),
+            ),
+            (
+                "public_conformance_report",
+                &model.public_conformance_report,
+                public_reports.contains(model.public_conformance_report.value.as_str()),
+            ),
+        ] {
+            if !known {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "threat_model `{name}` references unknown {kind} `{}`",
+                        value.value
+                    ),
+                    value.span,
+                ));
+            }
+        }
+        if let Some(profile) = profile {
+            for (field, actual, expected, span) in [
+                (
+                    "evidence_map",
+                    model.evidence_map.value.as_str(),
+                    profile.evidence_map.value.as_str(),
+                    model.evidence_map.span,
+                ),
+                (
+                    "governance_profile",
+                    model.governance_profile.value.as_str(),
+                    profile.governance_profile.value.as_str(),
+                    model.governance_profile.span,
+                ),
+                (
+                    "public_conformance_report",
+                    model.public_conformance_report.value.as_str(),
+                    profile.public_conformance_report.value.as_str(),
+                    model.public_conformance_report.span,
+                ),
+            ] {
+                if actual != expected {
+                    diagnostics.push(Diagnostic::new(
+                        format!("threat_model `{name}` hardening/{field} mismatch"),
+                        span,
+                    ));
+                }
+            }
+        }
+        for (field, value, allowed) in [
+            (
+                "methodology",
+                &model.methodology,
+                &["declared", "structured", "internal_review"][..],
+            ),
+            (
+                "scope",
+                &model.scope,
+                &["agent", "system", "package", "organization"][..],
+            ),
+            (
+                "review_status",
+                &model.review_status,
+                &["draft", "reviewed", "approved_internal", "deprecated"][..],
+            ),
+            (
+                "residual_risk",
+                &model.residual_risk,
+                &["low", "moderate", "high", "critical", "unknown"][..],
+            ),
+            (
+                "risk_acceptance",
+                &model.risk_acceptance,
+                &["declared_only", "pending_review", "manually_reviewed"][..],
+            ),
+        ] {
+            require_allowed_value("threat_model", name, field, value, allowed, diagnostics);
+        }
+        for (field, value, required) in [
+            ("network", &model.network, "denied"),
+            ("external_execution", &model.external_execution, "disabled"),
+            ("tool_execution", &model.tool_execution, "disabled"),
+            ("agent_execution", &model.agent_execution, "disabled"),
+            ("secret_material", &model.secret_material, "denied"),
+            ("key_material", &model.key_material, "denied"),
+            ("execution", &model.execution, "disabled"),
+            ("security_claims", &model.security_claims, "none"),
+        ] {
+            require_exact_value("threat_model", name, field, value, required, diagnostics);
+        }
+        validate_threat_assets(name, &model.assets, diagnostics);
+        validate_threat_entries(name, &model.threats, diagnostics);
+        validate_threat_mitigations(name, &model.mitigations, diagnostics);
+        require_non_empty_string_list(
+            "threat_model",
+            name,
+            "purpose",
+            &model.purpose,
+            model.name.span,
+            diagnostics,
+        );
+        if let Some(notes) = &model.notes {
+            require_public_conformance_text("threat_model", name, "notes", notes, diagnostics);
+        }
+    }
+}
+
+fn validate_threat_assets(
+    name: &str,
+    assets: &[argorix_parser::ast::ThreatAssetDecl],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if assets.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            format!("threat_model `{name}` requires non-empty assets"),
+            argorix_parser::span::Span::new(0, 0, 1, 1),
+        ));
+    }
+    let mut ids = HashSet::new();
+    for asset in assets {
+        report_duplicate(&mut ids, &asset.id, "threat asset id", diagnostics);
+        for (field, value) in [
+            ("id", &asset.id),
+            ("description", &asset.description),
+            ("evidence_ref", &asset.evidence_ref),
+        ] {
+            require_public_conformance_text("threat_model", name, field, value, diagnostics);
+        }
+        require_allowed_value(
+            "threat_model",
+            name,
+            "asset category",
+            &asset.category,
+            &[
+                "secret",
+                "key",
+                "identity",
+                "credential",
+                "handshake",
+                "ledger",
+                "bridge",
+                "evidence",
+                "policy",
+                "runtime",
+                "provider",
+                "user_data",
+                "custom",
+            ],
+            diagnostics,
+        );
+        require_allowed_value(
+            "threat_model",
+            name,
+            "asset sensitivity",
+            &asset.sensitivity,
+            &["low", "moderate", "high", "critical", "unknown"],
+            diagnostics,
+        );
+    }
+}
+
+fn validate_threat_entries(
+    name: &str,
+    threats: &[argorix_parser::ast::ThreatDecl],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if threats.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            format!("threat_model `{name}` requires non-empty threats"),
+            argorix_parser::span::Span::new(0, 0, 1, 1),
+        ));
+    }
+    let mut ids = HashSet::new();
+    for threat in threats {
+        report_duplicate(&mut ids, &threat.id, "threat id", diagnostics);
+        for (field, value) in [
+            ("id", &threat.id),
+            ("target", &threat.target),
+            ("mitigation", &threat.mitigation),
+        ] {
+            require_public_conformance_text("threat_model", name, field, value, diagnostics);
+        }
+        require_allowed_value(
+            "threat_model",
+            name,
+            "threat category",
+            &threat.category,
+            &[
+                "prompt_injection",
+                "secret_leakage",
+                "tool_abuse",
+                "network_exfiltration",
+                "identity_spoofing",
+                "credential_misuse",
+                "handshake_replay",
+                "bridge_misuse",
+                "evidence_tampering",
+                "policy_bypass",
+                "provider_misuse",
+                "runtime_escape",
+                "supply_chain",
+                "custom",
+            ],
+            diagnostics,
+        );
+        require_allowed_value(
+            "threat_model",
+            name,
+            "threat impact",
+            &threat.impact,
+            &["low", "moderate", "high", "critical", "unknown"],
+            diagnostics,
+        );
+        require_allowed_value(
+            "threat_model",
+            name,
+            "threat status",
+            &threat.status,
+            &[
+                "declared",
+                "mitigated_declared",
+                "pending_review",
+                "accepted_risk",
+                "not_applicable",
+            ],
+            diagnostics,
+        );
+    }
+}
+
+fn validate_threat_mitigations(
+    name: &str,
+    mitigations: &[argorix_parser::ast::ThreatMitigationDecl],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if mitigations.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            format!("threat_model `{name}` requires non-empty mitigations"),
+            argorix_parser::span::Span::new(0, 0, 1, 1),
+        ));
+    }
+    let mut ids = HashSet::new();
+    for mitigation in mitigations {
+        report_duplicate(
+            &mut ids,
+            &mitigation.id,
+            "threat mitigation id",
+            diagnostics,
+        );
+        for (field, value) in [
+            ("id", &mitigation.id),
+            ("control_ref", &mitigation.control_ref),
+            ("evidence_ref", &mitigation.evidence_ref),
+        ] {
+            require_public_conformance_text("threat_model", name, field, value, diagnostics);
+        }
+        require_allowed_value(
+            "threat_model",
+            name,
+            "mitigation category",
+            &mitigation.category,
+            &[
+                "network_boundary",
+                "secret_boundary",
+                "key_boundary",
+                "tool_boundary",
+                "agent_boundary",
+                "provider_boundary",
+                "policy_enforcement",
+                "audit_logging",
+                "evidence_mapping",
+                "sandboxing",
+                "review_process",
+                "custom",
+            ],
+            diagnostics,
+        );
+        require_allowed_value(
+            "threat_model",
+            name,
+            "mitigation status",
+            &mitigation.status,
+            &["mapped", "declared", "pending_review", "not_applicable"],
+            diagnostics,
+        );
+    }
+}
+
+fn require_allowed_value(
+    kind: &str,
+    name: &str,
+    field: &str,
+    value: &Spanned<String>,
+    allowed: &[&str],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !allowed.contains(&value.value.as_str()) {
+        diagnostics.push(Diagnostic::new(
+            format!("{kind} `{name}` has invalid {field} `{}`", value.value),
+            value.span,
+        ));
+    }
+}
+
+fn require_exact_value(
+    kind: &str,
+    name: &str,
+    field: &str,
+    value: &Spanned<String>,
+    required: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if value.value != required {
+        diagnostics.push(Diagnostic::new(
+            format!("{kind} `{name}` requires {field} `{required}`"),
             value.span,
         ));
     }

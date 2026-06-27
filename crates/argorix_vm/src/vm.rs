@@ -554,6 +554,121 @@ impl Vm {
                 EventFields::default(),
             );
         }
+        for profile in &bytecode.runtime_hardening_profiles {
+            state.trace_ledger.record(
+                EventType::RuntimeHardeningProfileDeclared,
+                "declared",
+                format!(
+                    "runtime_hardening_profile {} declared as offline, fail-closed metadata",
+                    profile.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::RuntimeDenyByDefaultDeclared,
+                "required",
+                format!(
+                    "runtime_hardening_profile {} denies by default with enforcement {}",
+                    profile.name, profile.enforcement
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::RuntimeSandboxRequired,
+                "required",
+                format!(
+                    "runtime_hardening_profile {} requires sandbox {}",
+                    profile.name, profile.sandbox
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::RuntimeNetworkDenied,
+                "denied",
+                format!(
+                    "runtime_hardening_profile {} network {}",
+                    profile.name, profile.network
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::RuntimeSecretsDenied,
+                "denied",
+                format!(
+                    "runtime_hardening_profile {} secret material {} and environment access {}",
+                    profile.name, profile.secret_material, profile.env_access
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::RuntimeExecutionDisabled,
+                "disabled",
+                format!(
+                    "runtime_hardening_profile {} external execution, tools, agents, providers, MCP and A2A remain disabled",
+                    profile.name
+                ),
+                EventFields::default(),
+            );
+        }
+        for model in &bytecode.threat_models {
+            state.trace_ledger.record(
+                EventType::ThreatModelDeclared,
+                "declared",
+                format!(
+                    "threat_model {} declared for hardening profile {}",
+                    model.name, model.hardening_profile
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ThreatAssetsMapped,
+                "mapped",
+                format!(
+                    "threat_model {} maps {} assets",
+                    model.name,
+                    model.assets.len()
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ThreatsMapped,
+                "mapped",
+                format!(
+                    "threat_model {} maps {} threats",
+                    model.name,
+                    model.threats.len()
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::MitigationsMapped,
+                "mapped",
+                format!(
+                    "threat_model {} maps {} mitigations",
+                    model.name,
+                    model.mitigations.len()
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ThreatModelRuntimeDisabled,
+                "disabled",
+                format!(
+                    "threat_model {} performs no attack simulation, exploit execution, network access, or external verification",
+                    model.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ThreatModelSecurityClaimsDenied,
+                "none",
+                format!(
+                    "threat_model {} is declarative and does not certify security or eliminate risk",
+                    model.name
+                ),
+                EventFields::default(),
+            );
+        }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
             Err(error) => {
@@ -677,7 +792,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.34".into(),
+            vm_version: "0.35".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -702,6 +817,8 @@ impl Vm {
             regulatory_mappings: bytecode.regulatory_mappings.clone(),
             third_party_verifiers: bytecode.third_party_verifiers.clone(),
             public_conformance_reports: bytecode.public_conformance_reports.clone(),
+            runtime_hardening_profiles: bytecode.runtime_hardening_profiles.clone(),
+            threat_models: bytecode.threat_models.clone(),
             injected,
             steps,
             mailboxes,
@@ -1003,6 +1120,8 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
     let regulatory_mappings = &bytecode.regulatory_mappings;
     let third_party_verifiers = &bytecode.third_party_verifiers;
     let public_conformance_reports = &bytecode.public_conformance_reports;
+    let runtime_hardening_profiles = &bytecode.runtime_hardening_profiles;
+    let threat_models = &bytecode.threat_models;
     PolicyEvidenceContext {
         agent_passport_declared,
         agent_passport_attested: !passports.is_empty()
@@ -1409,7 +1528,7 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
         public_conformance_reports_artifacts_declared: !public_conformance_reports.is_empty()
             && public_conformance_reports.iter().all(|report| {
                 !report.suite.is_empty()
-                    && report.suite_version == "0.34"
+                    && matches!(report.suite_version.as_str(), "0.34" | "0.35")
                     && !report.source_artifact.is_empty()
                     && !report.bytecode_artifact.is_empty()
             }),
@@ -1462,6 +1581,108 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
             && public_conformance_reports
                 .iter()
                 .all(|report| report.security_claims == "none"),
+        runtime_hardening_profiles_declared: !runtime_hardening_profiles.is_empty(),
+        runtime_hardening_evidence_bound: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles.iter().all(|profile| {
+                bytecode
+                    .atrust_evidence_maps
+                    .iter()
+                    .any(|map| map.name == profile.evidence_map)
+                    && governance_profiles
+                        .iter()
+                        .any(|item| item.name == profile.governance_profile)
+                    && public_conformance_reports
+                        .iter()
+                        .any(|item| item.name == profile.public_conformance_report)
+                    && profile.evidence == "required"
+            }),
+        runtime_hardening_deny_by_default: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles.iter().all(|p| p.deny_by_default),
+        runtime_hardening_sandbox_required: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.sandbox == "required"),
+        runtime_hardening_network_denied: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.network == "denied"),
+        runtime_hardening_external_providers_disabled: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.external_providers == "disabled"),
+        runtime_hardening_tool_execution_disabled: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.tool_execution == "disabled"),
+        runtime_hardening_agent_execution_disabled: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.agent_execution == "disabled"),
+        runtime_hardening_filesystem_denied: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.filesystem_access == "denied"),
+        runtime_hardening_env_denied: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.env_access == "denied"),
+        runtime_hardening_secret_material_denied: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.secret_material == "denied"),
+        runtime_hardening_key_material_denied: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.key_material == "denied"),
+        runtime_hardening_audit_log_required: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.audit_log == "required"),
+        runtime_hardening_security_claims_absent: !runtime_hardening_profiles.is_empty()
+            && runtime_hardening_profiles
+                .iter()
+                .all(|p| p.security_claims == "none"),
+        threat_models_declared: !threat_models.is_empty(),
+        threat_models_hardening_bound: !threat_models.is_empty()
+            && threat_models.iter().all(|model| {
+                runtime_hardening_profiles
+                    .iter()
+                    .any(|profile| profile.name == model.hardening_profile)
+            }),
+        threat_models_assets_mapped: !threat_models.is_empty()
+            && threat_models.iter().all(|model| !model.assets.is_empty()),
+        threat_models_threats_mapped: !threat_models.is_empty()
+            && threat_models.iter().all(|model| !model.threats.is_empty()),
+        threat_models_mitigations_mapped: !threat_models.is_empty()
+            && threat_models
+                .iter()
+                .all(|model| !model.mitigations.is_empty()),
+        threat_models_runtime_disabled: !threat_models.is_empty()
+            && threat_models.iter().all(|model| {
+                model.network == "denied"
+                    && model.external_execution == "disabled"
+                    && model.tool_execution == "disabled"
+                    && model.agent_execution == "disabled"
+                    && model.execution == "disabled"
+            }),
+        threat_models_network_denied: !threat_models.is_empty()
+            && threat_models.iter().all(|model| model.network == "denied"),
+        threat_models_secret_material_denied: !threat_models.is_empty()
+            && threat_models
+                .iter()
+                .all(|model| model.secret_material == "denied"),
+        threat_models_key_material_denied: !threat_models.is_empty()
+            && threat_models
+                .iter()
+                .all(|model| model.key_material == "denied"),
+        threat_models_execution_disabled: !threat_models.is_empty()
+            && threat_models
+                .iter()
+                .all(|model| model.execution == "disabled"),
+        threat_models_security_claims_absent: !threat_models.is_empty()
+            && threat_models
+                .iter()
+                .all(|model| model.security_claims == "none"),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -1532,6 +1753,8 @@ mod tests {
             regulatory_mappings: vec![],
             third_party_verifiers: vec![],
             public_conformance_reports: vec![],
+            runtime_hardening_profiles: vec![],
+            threat_models: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -1685,7 +1908,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.34");
+        assert_eq!(json["vm_version"], "0.35");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -1707,7 +1930,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.34");
+        assert_eq!(json["vm_version"], "0.35");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -1729,7 +1952,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.34");
+        assert_eq!(json["vm_version"], "0.35");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -1784,7 +2007,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.34");
+        assert_eq!(trace.vm_version, "0.35");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -1858,7 +2081,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.34");
+        assert_eq!(trace.vm_version, "0.35");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1910,7 +2133,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.34");
+        assert_eq!(json["vm_version"], "0.35");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -2160,7 +2383,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.34");
+        assert_eq!(trace.vm_version, "0.35");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [

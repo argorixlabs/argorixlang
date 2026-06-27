@@ -232,6 +232,8 @@ mod tests {
             regulatory_mappings: vec![],
             third_party_verifiers: vec![],
             public_conformance_reports: vec![],
+            runtime_hardening_profiles: vec![],
+            threat_models: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
