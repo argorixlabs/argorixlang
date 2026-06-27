@@ -36,6 +36,8 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         public_conformance_reports: Vec::new(),
         runtime_hardening_profiles: Vec::new(),
         threat_models: Vec::new(),
+        spec_freezes: Vec::new(),
+        release_candidates: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -118,6 +120,12 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         merged
             .threat_models
             .extend(program.threat_models.iter().cloned());
+        merged
+            .spec_freezes
+            .extend(program.spec_freezes.iter().cloned());
+        merged
+            .release_candidates
+            .extend(program.release_candidates.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());
@@ -284,5 +292,18 @@ mod tests {
         assert!(messages
             .iter()
             .any(|message| message.contains("duplicate threat_model")));
+    }
+
+    #[test]
+    fn rejects_duplicate_spec_freezes_and_release_candidates_across_modules() {
+        let source = include_str!("../../../examples/spec_freeze_v036.argx");
+        let duplicate = package(&[("main", source), ("release.duplicate", source)]);
+        let messages = check_package(&duplicate).unwrap_err();
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate spec_freeze")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("duplicate release_candidate")));
     }
 }

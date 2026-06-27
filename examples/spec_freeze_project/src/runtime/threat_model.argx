@@ -1,0 +1,73 @@
+module runtime.threat_model
+
+threat_model AgentThreatModel {
+  hardening_profile HardenedRuntime
+  evidence_map ChatbotEvidenceMap
+  governance_profile ChatbotGovernance
+  public_conformance_report PublicConformanceV034
+  methodology declared
+  scope system
+  review_status draft
+  assets [
+    {
+      id "asset-api-keys"
+      category secret
+      description "provider API keys must not be exposed"
+      sensitivity high
+      evidence_ref "hardening:secret-boundary"
+    },
+    {
+      id "asset-evidence-bundle"
+      category evidence
+      description "evidence bundles must remain auditable"
+      sensitivity moderate
+      evidence_ref "evidence:bundle"
+    }
+  ]
+  threats [
+    {
+      id "threat-prompt-injection"
+      category prompt_injection
+      target "agent-runtime"
+      impact high
+      mitigation "deny external execution and require policy review"
+      status mitigated_declared
+    },
+    {
+      id "threat-secret-leakage"
+      category secret_leakage
+      target "provider-boundary"
+      impact critical
+      mitigation "env_access denied and secret_material denied"
+      status mitigated_declared
+    }
+  ]
+  mitigations [
+    {
+      id "mitigation-deny-network"
+      category network_boundary
+      control_ref "network"
+      evidence_ref "security-report:network-denied"
+      status mapped
+    },
+    {
+      id "mitigation-deny-secrets"
+      category secret_boundary
+      control_ref "secret_material"
+      evidence_ref "security-report:secrets-denied"
+      status mapped
+    }
+  ]
+  residual_risk moderate
+  risk_acceptance declared_only
+  network denied
+  external_execution disabled
+  tool_execution disabled
+  agent_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  security_claims none
+  purpose ["threat-model", "runtime-hardening", "audit", "dry-run"]
+  notes "metadata only; no attack execution or security certification"
+}

@@ -1,0 +1,30 @@
+module bridges.mcp
+
+mcp_bridge_contract ResearchMcpBridge {
+  agent ResearchAgent
+  passport ResearchPassport
+  identity ResearchIdentity
+  boundary AgentTrustBoundary
+
+  transport declared_only
+  protocol mcp
+  direction outbound
+
+  tools ["search.read", "memory.read"]
+  resources ["docs.public", "kb.public"]
+  prompts ["research.summary"]
+
+  network denied
+  external_execution disabled
+  tool_execution disabled
+  secret_material denied
+  key_material denied
+
+  authentication none
+  authorization policy_bound
+  evidence required
+  security_claims none
+
+  purpose ["mcp", "bridge-contract", "dry-run"]
+  notes "metadata only; no MCP runtime"
+}

@@ -50,11 +50,47 @@ source language
 
 ## Current status
 
-**Version:** `0.35`
+**Version:** `0.36`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only
+
+Version 0.36 adds Spec Freeze + v1.0 Release Candidate metadata. A top-level
+`spec_freeze` pins the frozen feature surface, accumulated compatible versions,
+required conformance suites, evidence requirements, and closed runtime
+boundaries. A top-level `release_candidate` binds that freeze to required local
+artifacts, release checks, a compatibility matrix, and known limitations.
+
+Spec freeze does not mean production runtime. Release-candidate metadata does
+not mean production, legal, compliance, regulator, or security certification.
+Both declarations require `runtime_status disabled`, `network denied`,
+`external_execution disabled`, `provider_execution disabled`,
+`tool_execution disabled`, `agent_execution disabled`, `env_access denied`,
+`filesystem_access denied`, `secret_material denied`, `key_material denied`,
+`security_claims none`, `legal_claims none`, and `certification none`.
+
+The freeze extends Runtime Hardening, Public Conformance, Governance Profiles,
+ATrust Evidence Mapping, Trust Ledger, Policy v2, SecurityReport, and
+EvidenceBundle. It does not change their prior semantics. SecurityReport and
+EvidenceBundle advance to v0.36 while offline compatibility with v0.34 and
+v0.35 remains explicit.
+
+### v1.0 RC boundaries
+
+Argorix v1.0 RC is still declarative. Runtime execution remains disabled.
+External providers remain non-executable unless a future sandbox explicitly
+enables them; `simulated` remains the only executable provider today. OpenAI
+API keys and OpenAI API support are not part of core Argorix Lang. MCP/A2A
+remain bridge contracts, not live bridges. DID, VC, credential, and handshake
+verification remains non-real and declared-only. No network, environment,
+filesystem, secret, key, signature, blockchain, regulator, or certification
+capability is introduced by the release candidate.
+
+See
+[`examples/spec_freeze_v036.argx`](examples/spec_freeze_v036.argx),
+[`examples/spec_freeze_v036.argbc.json`](examples/spec_freeze_v036.argbc.json),
+and [`examples/spec_freeze_project`](examples/spec_freeze_project).
 
 Version 0.35 adds Runtime Hardening + Threat Model. A top-level
 `runtime_hardening_profile` binds deny-by-default enforcement, sandbox,

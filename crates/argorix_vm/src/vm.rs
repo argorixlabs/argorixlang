@@ -669,6 +669,87 @@ impl Vm {
                 EventFields::default(),
             );
         }
+        for freeze in &bytecode.spec_freezes {
+            state.trace_ledger.record(
+                EventType::SpecFreezeDeclared,
+                "declared",
+                format!(
+                    "spec_freeze {} pins version {}",
+                    freeze.name, freeze.version
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::SpecFreezeCompatibilityDeclared,
+                "declared",
+                format!(
+                    "spec_freeze {} declares {} compatible versions and {} required suites",
+                    freeze.name,
+                    freeze.compatible_versions.len(),
+                    freeze.required_suites.len()
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::SpecFreezeRuntimeDisabled,
+                "disabled",
+                format!(
+                    "spec_freeze {} does not enable runtime, network, providers, tools, agents, secrets, keys, MCP or A2A",
+                    freeze.name
+                ),
+                EventFields::default(),
+            );
+        }
+        for candidate in &bytecode.release_candidates {
+            state.trace_ledger.record(
+                EventType::ReleaseCandidateDeclared,
+                "declared",
+                format!(
+                    "release_candidate {} declares readiness {} without production certification",
+                    candidate.name, candidate.readiness
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ReleaseCandidateArtifactsMapped,
+                "mapped",
+                format!(
+                    "release_candidate {} maps {} artifacts and {} checks",
+                    candidate.name,
+                    candidate.required_artifacts.len(),
+                    candidate.required_checks.len()
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ReleaseCandidateCompatibilityMapped,
+                "mapped",
+                format!(
+                    "release_candidate {} maps {} compatibility rows",
+                    candidate.name,
+                    candidate.compatibility_matrix.len()
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ReleaseCandidateRuntimeDisabled,
+                "disabled",
+                format!(
+                    "release_candidate {} keeps runtime and all external execution disabled",
+                    candidate.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ReleaseCandidateSecurityClaimsDenied,
+                "none",
+                format!(
+                    "release_candidate {} is not production, legal, compliance, or security certification",
+                    candidate.name
+                ),
+                EventFields::default(),
+            );
+        }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
             Err(error) => {
@@ -792,7 +873,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.35".into(),
+            vm_version: "0.36".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -819,6 +900,8 @@ impl Vm {
             public_conformance_reports: bytecode.public_conformance_reports.clone(),
             runtime_hardening_profiles: bytecode.runtime_hardening_profiles.clone(),
             threat_models: bytecode.threat_models.clone(),
+            spec_freezes: bytecode.spec_freezes.clone(),
+            release_candidates: bytecode.release_candidates.clone(),
             injected,
             steps,
             mailboxes,
@@ -1122,6 +1205,8 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
     let public_conformance_reports = &bytecode.public_conformance_reports;
     let runtime_hardening_profiles = &bytecode.runtime_hardening_profiles;
     let threat_models = &bytecode.threat_models;
+    let spec_freezes = &bytecode.spec_freezes;
+    let release_candidates = &bytecode.release_candidates;
     PolicyEvidenceContext {
         agent_passport_declared,
         agent_passport_attested: !passports.is_empty()
@@ -1683,6 +1768,140 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
             && threat_models
                 .iter()
                 .all(|model| model.security_claims == "none"),
+        spec_freezes_declared: !spec_freezes.is_empty(),
+        spec_freeze_versions_pinned: !spec_freezes.is_empty()
+            && spec_freezes.iter().all(|freeze| freeze.version == "0.36"),
+        spec_freeze_features_declared: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| !freeze.frozen_features.is_empty()),
+        spec_freeze_compatibility_declared: !spec_freezes.is_empty()
+            && spec_freezes.iter().all(|freeze| {
+                ["0.34", "0.35", "0.36"]
+                    .iter()
+                    .all(|version| freeze.compatible_versions.iter().any(|v| v == version))
+            }),
+        spec_freeze_required_suites_declared: !spec_freezes.is_empty()
+            && spec_freezes.iter().all(|freeze| {
+                freeze
+                    .required_suites
+                    .iter()
+                    .any(|suite| suite == "conformance/suite.v036.json")
+            }),
+        spec_freeze_runtime_disabled: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.runtime_status == "disabled"),
+        spec_freeze_network_denied: !spec_freezes.is_empty()
+            && spec_freezes.iter().all(|freeze| freeze.network == "denied"),
+        spec_freeze_external_execution_disabled: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.external_execution == "disabled"),
+        spec_freeze_provider_execution_disabled: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.provider_execution == "disabled"),
+        spec_freeze_secret_material_denied: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.secret_material == "denied"),
+        spec_freeze_key_material_denied: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.key_material == "denied"),
+        spec_freeze_env_denied: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.env_access == "denied"),
+        spec_freeze_filesystem_denied: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.filesystem_access == "denied"),
+        spec_freeze_security_claims_absent: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.security_claims == "none"),
+        spec_freeze_legal_claims_absent: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.legal_claims == "none"),
+        spec_freeze_certification_absent: !spec_freezes.is_empty()
+            && spec_freezes
+                .iter()
+                .all(|freeze| freeze.certification == "none"),
+        release_candidates_declared: !release_candidates.is_empty(),
+        release_candidates_spec_freeze_bound: !release_candidates.is_empty()
+            && release_candidates.iter().all(|candidate| {
+                spec_freezes
+                    .iter()
+                    .any(|freeze| freeze.name == candidate.spec_freeze)
+            }),
+        release_candidates_artifacts_declared: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| !candidate.required_artifacts.is_empty()),
+        release_candidates_checks_declared: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| !candidate.required_checks.is_empty()),
+        release_candidates_compatibility_matrix_declared: !release_candidates.is_empty()
+            && release_candidates.iter().all(|candidate| {
+                ["0.34", "0.35", "0.36"].iter().all(|version| {
+                    candidate
+                        .compatibility_matrix
+                        .iter()
+                        .any(|entry| entry.version == *version)
+                })
+            }),
+        release_candidates_limitations_declared: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| !candidate.known_limitations.is_empty()),
+        release_candidates_runtime_disabled: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.runtime_status == "disabled"),
+        release_candidates_network_denied: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.network == "denied"),
+        release_candidates_external_execution_disabled: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.external_execution == "disabled"),
+        release_candidates_provider_execution_disabled: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.provider_execution == "disabled"),
+        release_candidates_secret_material_denied: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.secret_material == "denied"),
+        release_candidates_key_material_denied: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.key_material == "denied"),
+        release_candidates_env_denied: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.env_access == "denied"),
+        release_candidates_filesystem_denied: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.filesystem_access == "denied"),
+        release_candidates_security_claims_absent: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.security_claims == "none"),
+        release_candidates_legal_claims_absent: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.legal_claims == "none"),
+        release_candidates_certification_absent: !release_candidates.is_empty()
+            && release_candidates
+                .iter()
+                .all(|candidate| candidate.certification == "none"),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -1755,6 +1974,8 @@ mod tests {
             public_conformance_reports: vec![],
             runtime_hardening_profiles: vec![],
             threat_models: vec![],
+            spec_freezes: vec![],
+            release_candidates: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -1908,7 +2129,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.35");
+        assert_eq!(json["vm_version"], "0.36");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -1930,7 +2151,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.35");
+        assert_eq!(json["vm_version"], "0.36");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -1952,7 +2173,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.35");
+        assert_eq!(json["vm_version"], "0.36");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -2007,7 +2228,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.35");
+        assert_eq!(trace.vm_version, "0.36");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -2081,7 +2302,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.35");
+        assert_eq!(trace.vm_version, "0.36");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -2133,7 +2354,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.35");
+        assert_eq!(json["vm_version"], "0.36");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -2383,7 +2604,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.35");
+        assert_eq!(trace.vm_version, "0.36");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [

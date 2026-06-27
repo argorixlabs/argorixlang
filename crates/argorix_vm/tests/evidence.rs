@@ -91,7 +91,7 @@ fn bundle_preserves_metadata_digests_and_relative_paths() {
     )
     .unwrap();
 
-    assert!(matches!(bundle.bundle_version.as_str(), "0.35"));
+    assert!(matches!(bundle.bundle_version.as_str(), "0.36"));
     assert_eq!(bundle.language, bytecode.language);
     assert_eq!(bundle.module, bytecode.module);
     assert_eq!(bundle.bytecode_version, bytecode.bytecode_version);
@@ -334,6 +334,40 @@ fn offline_verification_accepts_v034_bundle_and_report() {
     )
     .unwrap();
     bundle.bundle_version = "0.34".into();
+    write_json(&bytecode_path, &bytecode);
+    write_json(&trace_path, trace);
+    write_json(&report_path, &report);
+    write_json(&bundle_path, &bundle);
+    let result = verify_evidence(&bundle_path).unwrap();
+    assert!(result.passed, "{:?}", result.failures);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn offline_verification_accepts_v035_bundle_and_report() {
+    let root = temp_root("compat-v035");
+    let bundle_path = root.join("reports/run.bundle.json");
+    let bytecode_path = root.join("examples/program.argbc.json");
+    let trace_path = root.join("reports/run.trace.json");
+    let report_path = root.join("reports/run.security.json");
+    let bytecode = fixture();
+    let mut outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+    outcome.result.as_mut().unwrap().vm_version = "0.35".into();
+    let trace = outcome.result.as_ref().unwrap();
+    let mut report = SecurityReport::from_outcome(&bytecode, &outcome);
+    report.report_version = "0.35".into();
+    report.vm_version = "0.35".into();
+    let mut bundle = EvidenceBundle::from_outcome(
+        &bytecode,
+        &outcome,
+        &report,
+        &bundle_path,
+        Some(&bytecode_path),
+        Some(&trace_path),
+        Some(&report_path),
+    )
+    .unwrap();
+    bundle.bundle_version = "0.35".into();
     write_json(&bytecode_path, &bytecode);
     write_json(&trace_path, trace);
     write_json(&report_path, &report);

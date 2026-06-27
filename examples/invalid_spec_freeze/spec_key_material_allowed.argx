@@ -1,0 +1,771 @@
+module PublicConformanceV034
+
+agent ResearchAgent {
+    receives UserPrompt
+    capabilities { trace.write }
+    on UserPrompt as prompt { trace prompt }
+}
+
+agent VerifierAgent {
+    receives UserPrompt
+    capabilities { trace.write }
+    on UserPrompt as prompt { trace prompt }
+}
+
+crypto_boundary TrustBoundary {
+  allowed_hashes ["sha256"]
+  allowed_signatures ["ml_dsa"]
+  allowed_kems ["ml_kem"]
+  min_hash_bits 256
+  post_quantum_ready true
+  key_material denied
+  secret_material denied
+  execution disabled
+  purpose ["handshake"]
+}
+
+a2a_bridge_contract ResearchA2ABridge {
+  initiator ResearchAgent
+  responder VerifierAgent
+
+  initiator_passport ResearchPassport
+  responder_passport VerifierPassport
+
+  initiator_identity ResearchIdentity
+  responder_identity VerifierIdentity
+
+  handshake ResearchHandshake
+  trust_ledger ATrustLedger
+  boundary AgentTrustBoundary
+
+  protocol a2a
+  transport declared_only
+  direction bidirectional
+
+  message_contracts ["ResearchRequest", "ResearchResponse"]
+  capabilities ["ask.llm", "respond.safe"]
+
+  network denied
+  external_execution disabled
+  agent_execution disabled
+  secret_material denied
+  key_material denied
+
+  authentication none
+  authorization policy_bound
+  evidence required
+  security_claims none
+
+  purpose ["a2a", "bridge-contract", "dry-run"]
+  notes "metadata only; no A2A runtime"
+}
+
+mcp_bridge_contract ResearchMcpBridge {
+  agent ResearchAgent
+  passport ResearchPassport
+  identity ResearchIdentity
+  boundary AgentTrustBoundary
+
+  transport declared_only
+  protocol mcp
+  direction outbound
+
+  tools ["search.read", "memory.read"]
+  resources ["docs.public", "kb.public"]
+  prompts ["research.summary"]
+
+  network denied
+  external_execution disabled
+  tool_execution disabled
+  secret_material denied
+  key_material denied
+
+  authentication none
+  authorization policy_bound
+  evidence required
+  security_claims none
+
+  purpose ["mcp", "bridge-contract", "dry-run"]
+  notes "metadata only; no MCP runtime"
+}
+
+atrust_credential_contract ResearchCredential {
+  subject ResearchAgent
+  identity ResearchIdentity
+  boundary AgentTrustBoundary
+  method argorix
+  issuer_did "did:argorix:issuer-v1"
+  holder_did "did:argorix:research-agent-v1"
+  credential_type "ResearchAccessCredential"
+  schema "argorix:credential:research-access:v1"
+  status declared
+  verification declared_only
+  presentation disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  claims ["role", "scope"]
+  purpose ["credential"]
+}
+
+crypto sha256 { kind hash status allowed strength classical purpose ["digest"] output_bits 256 }
+crypto ml_dsa { kind signature status post_quantum_candidate strength post_quantum purpose ["signature"] }
+crypto ml_kem { kind kem status post_quantum_candidate strength post_quantum purpose ["kem"] }
+
+did_method argorix {
+  status experimental
+  resolution embedded
+  ledger local
+  crypto_boundary TrustBoundary
+  purpose ["identity"]
+}
+
+atrust_evidence_map ChatbotEvidenceMap {
+  agent ResearchAgent
+  passport ResearchPassport
+  identity ResearchIdentity
+  credential_contract ResearchCredential
+  handshake ResearchHandshake
+  trust_ledger ATrustLedger
+
+  mcp_bridges ["ResearchMcpBridge"]
+  a2a_bridges ["ResearchA2ABridge"]
+  policies ["BridgePolicy", "TrustLedgerPolicy"]
+
+  coverage required
+  mapping_mode declared_only
+  verification declared_only
+  resolution disabled
+
+  evidence_bundle required
+  security_report required
+  trace required
+
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+
+  security_claims none
+  purpose ["evidence-map", "atrust", "audit", "dry-run"]
+  notes "metadata only; no real verification"
+}
+
+governance_profile ChatbotGovernance {
+  scope system
+  level audit
+  domain ai_agent
+  owner "Argorix"
+  jurisdiction "CL"
+  framework "Argorix Public Conformance"
+  evidence_map ChatbotEvidenceMap
+  trust_ledger ATrustLedger
+  policies ["BridgePolicy", "TrustLedgerPolicy"]
+  controls [
+    {
+      id "control-evidence-mapped"
+      category evidence
+      requirement "public conformance evidence is mapped"
+      evidence_ref "atrust-evidence-map:ChatbotEvidenceMap"
+      status mapped
+    },
+    {
+      id "control-runtime-disabled"
+      category runtime_boundary
+      requirement "verification runtime remains disabled"
+      evidence_ref "runtime:disabled"
+      status mapped
+    }
+  ]
+  risk_level moderate
+  review_status draft
+  assurance declared_only
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  security_claims none
+  purpose ["governance", "public-conformance", "audit"]
+}
+
+regulatory_mapping ChatbotRegulatoryMap {
+  governance_profile ChatbotGovernance
+  evidence_map ChatbotEvidenceMap
+  jurisdiction "CL"
+  framework "Declarative Audit Mapping"
+  obligations [
+    {
+      id "obligation-public-evidence"
+      source "Argorix v0.34"
+      requirement "public evidence remains reproducible"
+      control "control-evidence-mapped"
+      evidence_ref "conformance:suite.v034"
+      status mapped
+    }
+  ]
+  coverage mapped
+  assessment declared_only
+  legal_claims none
+  certification none
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  security_claims none
+  purpose ["regulatory-mapping", "public-conformance", "audit"]
+}
+
+atrust_handshake ResearchHandshake {
+  initiator ResearchAgent
+  responder VerifierAgent
+  initiator_identity ResearchIdentity
+  responder_identity VerifierIdentity
+  credential_contracts ["ResearchCredential"]
+  boundary AgentTrustBoundary
+  method argorix
+  mode dry_run
+  direction mutual
+  challenge declared_only
+  response declared_only
+  transcript evidence_only
+  verification declared_only
+  resolution disabled
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["handshake", "identity-link", "credential-contract", "dry-run"]
+  notes "metadata only; no real handshake"
+}
+
+atrust_identity ResearchIdentity {
+  subject ResearchAgent
+  did "did:argorix:research-agent-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+atrust_identity VerifierIdentity {
+  subject VerifierAgent
+  did "did:argorix:verifier-v1"
+  method argorix
+  boundary AgentTrustBoundary
+  status active
+  validation dry_run
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+  purpose ["identity"]
+}
+
+trust_ledger ATrustLedger {
+  scope local
+  mode dry_run
+  hash_algorithm sha256
+  chain_policy append_only
+
+  entries [
+    {
+      id "entry-001"
+      kind identity
+      subject ResearchIdentity
+      previous_hash "GENESIS"
+      entry_hash "sha256:declared-entry-001"
+      evidence_ref "bundle:identity"
+    },
+    {
+      id "entry-002"
+      kind credential
+      subject ResearchCredential
+      previous_hash "sha256:declared-entry-001"
+      entry_hash "sha256:declared-entry-002"
+      evidence_ref "bundle:credential"
+    },
+    {
+      id "entry-003"
+      kind handshake
+      subject ResearchHandshake
+      previous_hash "sha256:declared-entry-002"
+      entry_hash "sha256:declared-entry-003"
+      evidence_ref "bundle:handshake"
+    }
+  ]
+
+  chain_root "sha256:declared-entry-003"
+
+  network denied
+  key_material denied
+  secret_material denied
+  execution disabled
+  evidence required
+  security_claims none
+
+  purpose ["trust-ledger", "evidence-chain", "dry-run"]
+  notes "metadata only; no blockchain, no signing, no network"
+}
+
+type UserPrompt { content: string }
+
+protocol Demo {
+    User -> ResearchAgent: tell UserPrompt
+}
+
+type ResearchRequest { content: string }
+type ResearchResponse { content: string }
+
+passport ResearchPassport {
+    agent ResearchAgent
+    agent_name "Research Agent"
+    global_id "argx:agent:01HZX9RESEARCHAGENT"
+    identity "did:argorix:research-agent-v1"
+    provider "Argorix"
+    version "1.0.0"
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL", "EU"]
+    intent "research"
+    risk_level "high"
+    intended_use ["policy-review", "research"]
+    prohibited_use ["external-execution", "credential-access"]
+    attestations ["redteam", "policy-check"]
+}
+
+passport VerifierPassport {
+    agent VerifierAgent
+    agent_name "Verifier Agent"
+    global_id "argx:agent:01HZX9VERIFIERAGENT"
+    identity "did:argorix:verifier-v1"
+    provider "Argorix"
+    version "1.0.0"
+    country "CL"
+    jurisdiction "CL"
+    data_residency ["CL", "EU"]
+    intent "verification"
+    risk_level "medium"
+    intended_use ["policy-review", "verification"]
+    prohibited_use ["external-execution", "credential-access"]
+    attestations ["policy-check"]
+}
+
+policy BridgePolicy {
+  require mcp_bridge_contracts_declared
+  require mcp_bridge_agents_bound
+  require mcp_bridge_passports_bound
+  require mcp_bridge_identities_bound
+  require mcp_bridge_boundaries_bound
+  require mcp_bridge_network_denied
+  require mcp_bridge_external_execution_disabled
+  require mcp_bridge_tool_execution_disabled
+  require mcp_bridge_secret_material_denied
+  require mcp_bridge_key_material_denied
+  require mcp_bridge_authentication_non_secret
+  require mcp_bridge_security_claims_absent
+
+  require a2a_bridge_contracts_declared
+  require a2a_bridge_agents_bound
+  require a2a_bridge_passports_bound
+  require a2a_bridge_identities_bound
+  require a2a_bridge_handshakes_bound
+  require a2a_bridge_trust_ledgers_bound
+  require a2a_bridge_message_contracts_bound
+  require a2a_bridge_network_denied
+  require a2a_bridge_external_execution_disabled
+  require a2a_bridge_agent_execution_disabled
+  require a2a_bridge_secret_material_denied
+  require a2a_bridge_key_material_denied
+  require a2a_bridge_authentication_non_secret
+  require a2a_bridge_security_claims_absent
+
+  on violation {
+    action review
+    trace required
+  }
+}
+
+policy PublicConformancePolicy {
+  require third_party_verifiers_declared
+  require third_party_verifiers_identity_declared
+  require third_party_verifiers_scope_bounded
+  require third_party_verifiers_runtime_disabled
+  require third_party_verifiers_legal_claims_absent
+  require third_party_verifiers_certification_absent
+  require third_party_verifiers_security_claims_absent
+  require public_conformance_reports_declared
+  require public_conformance_reports_verifiers_bound
+  require public_conformance_reports_artifacts_declared
+  require public_conformance_reports_evidence_bound
+  require public_conformance_reports_governance_bound
+  require public_conformance_reports_regulatory_bound
+  require public_conformance_reports_replayable
+  require public_conformance_reports_runtime_disabled
+  require public_conformance_reports_legal_claims_absent
+  require public_conformance_reports_certification_absent
+  require public_conformance_reports_security_claims_absent
+  on violation {
+    action review
+    trace required
+  }
+}
+
+capability trace.write { level safe }
+
+policy TrustLedgerPolicy {
+  require atrust_did_methods_declared
+  require atrust_boundaries_declared
+  require atrust_identity_declared
+  require atrust_credential_contract_declared
+  require atrust_handshake_declared
+  require trust_ledgers_declared
+  require trust_ledger_hash_algorithm_declared
+  require trust_ledger_chain_valid
+  require trust_ledger_entries_bound
+  require trust_ledger_append_only
+  require trust_ledger_network_denied
+  require trust_ledger_key_material_denied
+  require trust_ledger_secret_material_denied
+  require trust_ledger_execution_disabled
+  require trust_ledger_evidence_required
+  require trust_ledger_security_claims_absent
+  require trust_ledger_blockchain_absent
+  require trust_ledger_signature_absent
+
+  on violation {
+    action review
+    trace required
+  }
+}
+
+public_conformance_report PublicConformanceV034 {
+  verifier CommunityVerifier
+  suite "conformance/suite.v034.json"
+  suite_version "0.34"
+  source_artifact "conformance/sources/public_conformance_v034.argx"
+  bytecode_artifact "examples/public_conformance_v034.argbc.json"
+  evidence_map ChatbotEvidenceMap
+  governance_profile ChatbotGovernance
+  regulatory_mapping ChatbotRegulatoryMap
+  trust_ledger ATrustLedger
+  security_report required
+  evidence_bundle required
+  trace required
+  result passed
+  reproducibility replayable_locally
+  review_status draft
+  claims [
+    {
+      id "claim-conformance-replayable"
+      category conformance
+      statement "conformance suite can be replayed locally"
+      evidence_ref "conformance:suite.v034"
+      status mapped
+    },
+    {
+      id "claim-security-report-present"
+      category security_report
+      statement "security report is produced as an artifact"
+      evidence_ref "security-report:required"
+      status mapped
+    }
+  ]
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  legal_claims none
+  certification none
+  security_claims none
+  purpose ["public-conformance", "third-party-review", "audit", "dry-run"]
+  notes "public conformance metadata only; not certification"
+}
+
+third_party_verifier CommunityVerifier {
+  verifier_type community
+  independence declared
+  identity_mode declared_only
+  verification_mode reproducible_artifacts
+  name "Community Reviewer"
+  organization "Argorix Community"
+  jurisdiction "CL"
+  allowed_scopes ["conformance", "evidence", "security-report", "governance"]
+  disallowed_claims ["legal-certification", "regulator-approval", "cryptographic-endorsement"]
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  legal_claims none
+  certification none
+  security_claims none
+  purpose ["third-party-verifier", "public-conformance", "audit"]
+  notes "metadata only; no external verification runtime"
+}
+
+atrust_boundary AgentTrustBoundary {
+  crypto_boundary TrustBoundary
+  did_methods ["argorix"]
+  identity_format did
+  credential_mode declared_only
+  handshake disabled
+  resolution disabled
+  key_material denied
+  secret_material denied
+  execution disabled
+  security_claims none
+  purpose ["identity"]
+}
+runtime_hardening_profile HardenedRuntime {
+  scope system
+  mode declared_only
+  enforcement evidence_only
+  sandbox required
+  provider_execution disabled
+  external_providers disabled
+  network denied
+  tool_execution disabled
+  agent_execution disabled
+  filesystem_access denied
+  env_access denied
+  secret_material denied
+  key_material denied
+  allowlist required
+  deny_by_default true
+  approval required
+  audit_log required
+  evidence required
+  incident_response declared
+  evidence_map ChatbotEvidenceMap
+  governance_profile ChatbotGovernance
+  public_conformance_report PublicConformanceV034
+  protected_assets ["api-keys", "user-data", "agent-identity", "evidence-bundle"]
+  runtime_boundaries ["network", "secrets", "tools", "providers", "agents"]
+  residual_risk moderate
+  review_status draft
+  assurance declared_only
+  security_claims none
+  purpose ["runtime-hardening", "threat-model", "pre-runtime", "dry-run"]
+  notes "metadata only; no real runtime execution"
+}
+
+threat_model AgentThreatModel {
+  hardening_profile HardenedRuntime
+  evidence_map ChatbotEvidenceMap
+  governance_profile ChatbotGovernance
+  public_conformance_report PublicConformanceV034
+  methodology declared
+  scope system
+  review_status draft
+  assets [
+    {
+      id "asset-api-keys"
+      category secret
+      description "provider API keys must not be exposed"
+      sensitivity high
+      evidence_ref "hardening:secret-boundary"
+    },
+    {
+      id "asset-evidence-bundle"
+      category evidence
+      description "evidence bundles must remain auditable"
+      sensitivity moderate
+      evidence_ref "evidence:bundle"
+    }
+  ]
+  threats [
+    {
+      id "threat-prompt-injection"
+      category prompt_injection
+      target "agent-runtime"
+      impact high
+      mitigation "deny external execution and require policy review"
+      status mitigated_declared
+    },
+    {
+      id "threat-secret-leakage"
+      category secret_leakage
+      target "provider-boundary"
+      impact critical
+      mitigation "env_access denied and secret_material denied"
+      status mitigated_declared
+    }
+  ]
+  mitigations [
+    {
+      id "mitigation-deny-network"
+      category network_boundary
+      control_ref "network"
+      evidence_ref "security-report:network-denied"
+      status mapped
+    },
+    {
+      id "mitigation-deny-secrets"
+      category secret_boundary
+      control_ref "secret_material"
+      evidence_ref "security-report:secrets-denied"
+      status mapped
+    }
+  ]
+  residual_risk moderate
+  risk_acceptance declared_only
+  network denied
+  external_execution disabled
+  tool_execution disabled
+  agent_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  security_claims none
+  purpose ["threat-model", "runtime-hardening", "audit", "dry-run"]
+  notes "metadata only; no attack execution or security certification"
+}
+
+policy RuntimeHardeningPolicy {
+  require runtime_hardening_profiles_declared
+  require runtime_hardening_evidence_bound
+  require runtime_hardening_deny_by_default
+  require runtime_hardening_sandbox_required
+  require runtime_hardening_network_denied
+  require runtime_hardening_external_providers_disabled
+  require runtime_hardening_tool_execution_disabled
+  require runtime_hardening_agent_execution_disabled
+  require runtime_hardening_filesystem_denied
+  require runtime_hardening_env_denied
+  require runtime_hardening_secret_material_denied
+  require runtime_hardening_key_material_denied
+  require runtime_hardening_audit_log_required
+  require runtime_hardening_security_claims_absent
+  require threat_models_declared
+  require threat_models_hardening_bound
+  require threat_models_assets_mapped
+  require threat_models_threats_mapped
+  require threat_models_mitigations_mapped
+  require threat_models_runtime_disabled
+  require threat_models_network_denied
+  require threat_models_secret_material_denied
+  require threat_models_key_material_denied
+  require threat_models_execution_disabled
+  require threat_models_security_claims_absent
+  on violation {
+    action block
+    trace required
+  }
+}
+spec_freeze ArgorixSpecFreezeV036 {
+  version "0.36"
+  target "v1.0-rc"
+  freeze_scope language
+  compatibility cumulative
+  stability rc_candidate
+  frozen_features ["agent", "provider_contract", "module_system", "policy_v2", "message_contracts", "agent_passport", "sandboxed_provider_harness", "feature_flags", "secret_boundary", "adapter_framework", "adapter_profiles", "crypto_registry", "crypto_boundary", "did_methods", "atrust_boundary", "atrust_identity", "atrust_credential_contract", "atrust_handshake", "trust_ledger", "mcp_bridge_contract", "a2a_bridge_contract", "atrust_evidence_map", "governance_profile", "regulatory_mapping", "third_party_verifier", "public_conformance_report", "runtime_hardening_profile", "threat_model"]
+  compatible_versions ["0.29", "0.30", "0.31", "0.32", "0.33", "0.34", "0.35", "0.36"]
+  required_suites ["conformance/suite.v034.json", "conformance/suite.v035.json", "conformance/suite.v036.json"]
+  evidence_bundle required
+  security_report required
+  conformance required
+  backward_compatibility required
+  runtime_status disabled
+  network denied
+  external_execution disabled
+  provider_execution disabled
+  secret_material denied
+  key_material allowed
+  env_access denied
+  filesystem_access denied
+  tool_execution disabled
+  agent_execution disabled
+  security_claims none
+  legal_claims none
+  certification none
+  purpose ["spec-freeze", "v1-rc", "compatibility", "audit"]
+  notes "metadata only; spec freeze does not enable runtime"
+}
+
+release_candidate ArgorixV1RC {
+  version "1.0.0-rc.1"
+  base_version "0.36"
+  spec_freeze ArgorixSpecFreezeV036
+  readiness rc
+  required_artifacts ["README.md", "conformance/suite.v036.json", "examples/spec_freeze_v036.argx", "examples/spec_freeze_v036.argbc.json"]
+  required_checks ["cargo fmt --all --check", "cargo clippy --workspace --all-targets --all-features", "cargo test --workspace", "cargo test --workspace --no-run", "argorix-conformance suite.v036"]
+  compatibility_matrix [
+    { version "0.34" bytecode compatible evidence compatible conformance compatible },
+    { version "0.35" bytecode compatible evidence compatible conformance compatible },
+    { version "0.36" bytecode native evidence native conformance native }
+  ]
+  known_limitations ["runtime remains disabled", "network remains denied", "OpenAI API support is external sandbox only, not core", "MCP/A2A are contracts only", "DID/VC/credential/handshake verification remains declared-only"]
+  runtime_status disabled
+  network denied
+  external_execution disabled
+  provider_execution disabled
+  secret_material denied
+  key_material denied
+  env_access denied
+  filesystem_access denied
+  tool_execution disabled
+  agent_execution disabled
+  security_claims none
+  legal_claims none
+  certification none
+  purpose ["v1-release-candidate", "spec-freeze", "audit", "public-conformance"]
+  notes "release candidate metadata only; not production certification"
+}
+
+policy ReleaseCandidatePolicy {
+  require spec_freezes_declared
+  require spec_freeze_versions_pinned
+  require spec_freeze_features_declared
+  require spec_freeze_compatibility_declared
+  require spec_freeze_required_suites_declared
+  require spec_freeze_runtime_disabled
+  require spec_freeze_network_denied
+  require spec_freeze_external_execution_disabled
+  require spec_freeze_provider_execution_disabled
+  require spec_freeze_secret_material_denied
+  require spec_freeze_key_material_denied
+  require spec_freeze_env_denied
+  require spec_freeze_filesystem_denied
+  require spec_freeze_security_claims_absent
+  require spec_freeze_legal_claims_absent
+  require spec_freeze_certification_absent
+  require release_candidates_declared
+  require release_candidates_spec_freeze_bound
+  require release_candidates_artifacts_declared
+  require release_candidates_checks_declared
+  require release_candidates_compatibility_matrix_declared
+  require release_candidates_limitations_declared
+  require release_candidates_runtime_disabled
+  require release_candidates_network_denied
+  require release_candidates_external_execution_disabled
+  require release_candidates_provider_execution_disabled
+  require release_candidates_secret_material_denied
+  require release_candidates_key_material_denied
+  require release_candidates_env_denied
+  require release_candidates_filesystem_denied
+  require release_candidates_security_claims_absent
+  require release_candidates_legal_claims_absent
+  require release_candidates_certification_absent
+  on violation {
+    action review
+    trace required
+  }
+}

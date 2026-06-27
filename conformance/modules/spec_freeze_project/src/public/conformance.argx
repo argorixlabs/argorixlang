@@ -1,0 +1,45 @@
+module public.conformance
+
+public_conformance_report PublicConformanceV034 {
+  verifier CommunityVerifier
+  suite "conformance/suite.v034.json"
+  suite_version "0.34"
+  source_artifact "conformance/sources/public_conformance_v034.argx"
+  bytecode_artifact "examples/public_conformance_v034.argbc.json"
+  evidence_map ChatbotEvidenceMap
+  governance_profile ChatbotGovernance
+  regulatory_mapping ChatbotRegulatoryMap
+  trust_ledger ATrustLedger
+  security_report required
+  evidence_bundle required
+  trace required
+  result passed
+  reproducibility replayable_locally
+  review_status draft
+  claims [
+    {
+      id "claim-conformance-replayable"
+      category conformance
+      statement "conformance suite can be replayed locally"
+      evidence_ref "conformance:suite.v034"
+      status mapped
+    },
+    {
+      id "claim-security-report-present"
+      category security_report
+      statement "security report is produced as an artifact"
+      evidence_ref "security-report:required"
+      status mapped
+    }
+  ]
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  legal_claims none
+  certification none
+  security_claims none
+  purpose ["public-conformance", "third-party-review", "audit", "dry-run"]
+  notes "public conformance metadata only; not certification"
+}

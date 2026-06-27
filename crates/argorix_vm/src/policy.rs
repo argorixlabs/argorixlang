@@ -122,6 +122,39 @@ pub struct PolicyEvidenceContext {
     pub threat_models_key_material_denied: bool,
     pub threat_models_execution_disabled: bool,
     pub threat_models_security_claims_absent: bool,
+    pub spec_freezes_declared: bool,
+    pub spec_freeze_versions_pinned: bool,
+    pub spec_freeze_features_declared: bool,
+    pub spec_freeze_compatibility_declared: bool,
+    pub spec_freeze_required_suites_declared: bool,
+    pub spec_freeze_runtime_disabled: bool,
+    pub spec_freeze_network_denied: bool,
+    pub spec_freeze_external_execution_disabled: bool,
+    pub spec_freeze_provider_execution_disabled: bool,
+    pub spec_freeze_secret_material_denied: bool,
+    pub spec_freeze_key_material_denied: bool,
+    pub spec_freeze_env_denied: bool,
+    pub spec_freeze_filesystem_denied: bool,
+    pub spec_freeze_security_claims_absent: bool,
+    pub spec_freeze_legal_claims_absent: bool,
+    pub spec_freeze_certification_absent: bool,
+    pub release_candidates_declared: bool,
+    pub release_candidates_spec_freeze_bound: bool,
+    pub release_candidates_artifacts_declared: bool,
+    pub release_candidates_checks_declared: bool,
+    pub release_candidates_compatibility_matrix_declared: bool,
+    pub release_candidates_limitations_declared: bool,
+    pub release_candidates_runtime_disabled: bool,
+    pub release_candidates_network_denied: bool,
+    pub release_candidates_external_execution_disabled: bool,
+    pub release_candidates_provider_execution_disabled: bool,
+    pub release_candidates_secret_material_denied: bool,
+    pub release_candidates_key_material_denied: bool,
+    pub release_candidates_env_denied: bool,
+    pub release_candidates_filesystem_denied: bool,
+    pub release_candidates_security_claims_absent: bool,
+    pub release_candidates_legal_claims_absent: bool,
+    pub release_candidates_certification_absent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -675,6 +708,135 @@ pub fn evaluate_rule(
         "threat_models_security_claims_absent" => (
             context.threat_models_security_claims_absent,
             "one or more threat models declare security claims",
+        ),
+        "spec_freezes_declared" => (context.spec_freezes_declared, "no spec freeze is declared"),
+        "spec_freeze_versions_pinned" => (
+            context.spec_freeze_versions_pinned,
+            "spec freeze versions are not pinned",
+        ),
+        "spec_freeze_features_declared" => (
+            context.spec_freeze_features_declared,
+            "spec freeze features are not declared",
+        ),
+        "spec_freeze_compatibility_declared" => (
+            context.spec_freeze_compatibility_declared,
+            "spec freeze compatibility is incomplete",
+        ),
+        "spec_freeze_required_suites_declared" => (
+            context.spec_freeze_required_suites_declared,
+            "spec freeze required suites are incomplete",
+        ),
+        "spec_freeze_runtime_disabled" => (
+            context.spec_freeze_runtime_disabled,
+            "spec freeze enables runtime",
+        ),
+        "spec_freeze_network_denied" => (
+            context.spec_freeze_network_denied,
+            "spec freeze allows network",
+        ),
+        "spec_freeze_external_execution_disabled" => (
+            context.spec_freeze_external_execution_disabled,
+            "spec freeze enables external execution",
+        ),
+        "spec_freeze_provider_execution_disabled" => (
+            context.spec_freeze_provider_execution_disabled,
+            "spec freeze enables provider execution",
+        ),
+        "spec_freeze_secret_material_denied" => (
+            context.spec_freeze_secret_material_denied,
+            "spec freeze allows secret material",
+        ),
+        "spec_freeze_key_material_denied" => (
+            context.spec_freeze_key_material_denied,
+            "spec freeze allows key material",
+        ),
+        "spec_freeze_env_denied" => (
+            context.spec_freeze_env_denied,
+            "spec freeze allows environment access",
+        ),
+        "spec_freeze_filesystem_denied" => (
+            context.spec_freeze_filesystem_denied,
+            "spec freeze allows filesystem access",
+        ),
+        "spec_freeze_security_claims_absent" => (
+            context.spec_freeze_security_claims_absent,
+            "spec freeze declares security claims",
+        ),
+        "spec_freeze_legal_claims_absent" => (
+            context.spec_freeze_legal_claims_absent,
+            "spec freeze declares legal claims",
+        ),
+        "spec_freeze_certification_absent" => (
+            context.spec_freeze_certification_absent,
+            "spec freeze declares certification",
+        ),
+        "release_candidates_declared" => (
+            context.release_candidates_declared,
+            "no release candidate is declared",
+        ),
+        "release_candidates_spec_freeze_bound" => (
+            context.release_candidates_spec_freeze_bound,
+            "release candidate lacks spec freeze binding",
+        ),
+        "release_candidates_artifacts_declared" => (
+            context.release_candidates_artifacts_declared,
+            "release candidate artifacts are missing",
+        ),
+        "release_candidates_checks_declared" => (
+            context.release_candidates_checks_declared,
+            "release candidate checks are missing",
+        ),
+        "release_candidates_compatibility_matrix_declared" => (
+            context.release_candidates_compatibility_matrix_declared,
+            "release candidate compatibility matrix is incomplete",
+        ),
+        "release_candidates_limitations_declared" => (
+            context.release_candidates_limitations_declared,
+            "release candidate limitations are missing",
+        ),
+        "release_candidates_runtime_disabled" => (
+            context.release_candidates_runtime_disabled,
+            "release candidate enables runtime",
+        ),
+        "release_candidates_network_denied" => (
+            context.release_candidates_network_denied,
+            "release candidate allows network",
+        ),
+        "release_candidates_external_execution_disabled" => (
+            context.release_candidates_external_execution_disabled,
+            "release candidate enables external execution",
+        ),
+        "release_candidates_provider_execution_disabled" => (
+            context.release_candidates_provider_execution_disabled,
+            "release candidate enables provider execution",
+        ),
+        "release_candidates_secret_material_denied" => (
+            context.release_candidates_secret_material_denied,
+            "release candidate allows secret material",
+        ),
+        "release_candidates_key_material_denied" => (
+            context.release_candidates_key_material_denied,
+            "release candidate allows key material",
+        ),
+        "release_candidates_env_denied" => (
+            context.release_candidates_env_denied,
+            "release candidate allows environment access",
+        ),
+        "release_candidates_filesystem_denied" => (
+            context.release_candidates_filesystem_denied,
+            "release candidate allows filesystem access",
+        ),
+        "release_candidates_security_claims_absent" => (
+            context.release_candidates_security_claims_absent,
+            "release candidate declares security claims",
+        ),
+        "release_candidates_legal_claims_absent" => (
+            context.release_candidates_legal_claims_absent,
+            "release candidate declares legal claims",
+        ),
+        "release_candidates_certification_absent" => (
+            context.release_candidates_certification_absent,
+            "release candidate declares certification",
         ),
         _ => (false, "unknown policy rule"),
     };

@@ -27,6 +27,8 @@ pub struct Program {
     pub public_conformance_reports: Vec<PublicConformanceReportDecl>,
     pub runtime_hardening_profiles: Vec<RuntimeHardeningProfileDecl>,
     pub threat_models: Vec<ThreatModelDecl>,
+    pub spec_freezes: Vec<SpecFreezeDecl>,
+    pub release_candidates: Vec<ReleaseCandidateDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -952,6 +954,39 @@ pub enum PolicyRule {
     ThreatModelsKeyMaterialDenied,
     ThreatModelsExecutionDisabled,
     ThreatModelsSecurityClaimsAbsent,
+    SpecFreezesDeclared,
+    SpecFreezeVersionsPinned,
+    SpecFreezeFeaturesDeclared,
+    SpecFreezeCompatibilityDeclared,
+    SpecFreezeRequiredSuitesDeclared,
+    SpecFreezeRuntimeDisabled,
+    SpecFreezeNetworkDenied,
+    SpecFreezeExternalExecutionDisabled,
+    SpecFreezeProviderExecutionDisabled,
+    SpecFreezeSecretMaterialDenied,
+    SpecFreezeKeyMaterialDenied,
+    SpecFreezeEnvDenied,
+    SpecFreezeFilesystemDenied,
+    SpecFreezeSecurityClaimsAbsent,
+    SpecFreezeLegalClaimsAbsent,
+    SpecFreezeCertificationAbsent,
+    ReleaseCandidatesDeclared,
+    ReleaseCandidatesSpecFreezeBound,
+    ReleaseCandidatesArtifactsDeclared,
+    ReleaseCandidatesChecksDeclared,
+    ReleaseCandidatesCompatibilityMatrixDeclared,
+    ReleaseCandidatesLimitationsDeclared,
+    ReleaseCandidatesRuntimeDisabled,
+    ReleaseCandidatesNetworkDenied,
+    ReleaseCandidatesExternalExecutionDisabled,
+    ReleaseCandidatesProviderExecutionDisabled,
+    ReleaseCandidatesSecretMaterialDenied,
+    ReleaseCandidatesKeyMaterialDenied,
+    ReleaseCandidatesEnvDenied,
+    ReleaseCandidatesFilesystemDenied,
+    ReleaseCandidatesSecurityClaimsAbsent,
+    ReleaseCandidatesLegalClaimsAbsent,
+    ReleaseCandidatesCertificationAbsent,
     Unknown(String),
 }
 
@@ -1252,6 +1287,49 @@ impl PolicyRule {
             Self::ThreatModelsKeyMaterialDenied => "threat_models_key_material_denied",
             Self::ThreatModelsExecutionDisabled => "threat_models_execution_disabled",
             Self::ThreatModelsSecurityClaimsAbsent => "threat_models_security_claims_absent",
+            Self::SpecFreezesDeclared => "spec_freezes_declared",
+            Self::SpecFreezeVersionsPinned => "spec_freeze_versions_pinned",
+            Self::SpecFreezeFeaturesDeclared => "spec_freeze_features_declared",
+            Self::SpecFreezeCompatibilityDeclared => "spec_freeze_compatibility_declared",
+            Self::SpecFreezeRequiredSuitesDeclared => "spec_freeze_required_suites_declared",
+            Self::SpecFreezeRuntimeDisabled => "spec_freeze_runtime_disabled",
+            Self::SpecFreezeNetworkDenied => "spec_freeze_network_denied",
+            Self::SpecFreezeExternalExecutionDisabled => "spec_freeze_external_execution_disabled",
+            Self::SpecFreezeProviderExecutionDisabled => "spec_freeze_provider_execution_disabled",
+            Self::SpecFreezeSecretMaterialDenied => "spec_freeze_secret_material_denied",
+            Self::SpecFreezeKeyMaterialDenied => "spec_freeze_key_material_denied",
+            Self::SpecFreezeEnvDenied => "spec_freeze_env_denied",
+            Self::SpecFreezeFilesystemDenied => "spec_freeze_filesystem_denied",
+            Self::SpecFreezeSecurityClaimsAbsent => "spec_freeze_security_claims_absent",
+            Self::SpecFreezeLegalClaimsAbsent => "spec_freeze_legal_claims_absent",
+            Self::SpecFreezeCertificationAbsent => "spec_freeze_certification_absent",
+            Self::ReleaseCandidatesDeclared => "release_candidates_declared",
+            Self::ReleaseCandidatesSpecFreezeBound => "release_candidates_spec_freeze_bound",
+            Self::ReleaseCandidatesArtifactsDeclared => "release_candidates_artifacts_declared",
+            Self::ReleaseCandidatesChecksDeclared => "release_candidates_checks_declared",
+            Self::ReleaseCandidatesCompatibilityMatrixDeclared => {
+                "release_candidates_compatibility_matrix_declared"
+            }
+            Self::ReleaseCandidatesLimitationsDeclared => "release_candidates_limitations_declared",
+            Self::ReleaseCandidatesRuntimeDisabled => "release_candidates_runtime_disabled",
+            Self::ReleaseCandidatesNetworkDenied => "release_candidates_network_denied",
+            Self::ReleaseCandidatesExternalExecutionDisabled => {
+                "release_candidates_external_execution_disabled"
+            }
+            Self::ReleaseCandidatesProviderExecutionDisabled => {
+                "release_candidates_provider_execution_disabled"
+            }
+            Self::ReleaseCandidatesSecretMaterialDenied => {
+                "release_candidates_secret_material_denied"
+            }
+            Self::ReleaseCandidatesKeyMaterialDenied => "release_candidates_key_material_denied",
+            Self::ReleaseCandidatesEnvDenied => "release_candidates_env_denied",
+            Self::ReleaseCandidatesFilesystemDenied => "release_candidates_filesystem_denied",
+            Self::ReleaseCandidatesSecurityClaimsAbsent => {
+                "release_candidates_security_claims_absent"
+            }
+            Self::ReleaseCandidatesLegalClaimsAbsent => "release_candidates_legal_claims_absent",
+            Self::ReleaseCandidatesCertificationAbsent => "release_candidates_certification_absent",
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -2661,6 +2739,76 @@ pub struct ThreatMitigationDecl {
     pub control_ref: Spanned<String>,
     pub evidence_ref: Spanned<String>,
     pub status: Spanned<String>,
+}
+
+/// Declarative specification-freeze metadata for the v1.0 release-candidate
+/// boundary. It does not enable runtime behavior.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecFreezeDecl {
+    pub name: Spanned<String>,
+    pub version: Spanned<String>,
+    pub target: Spanned<String>,
+    pub freeze_scope: Spanned<String>,
+    pub compatibility: Spanned<String>,
+    pub stability: Spanned<String>,
+    pub frozen_features: Vec<Spanned<String>>,
+    pub compatible_versions: Vec<Spanned<String>>,
+    pub required_suites: Vec<Spanned<String>>,
+    pub evidence_bundle: Spanned<String>,
+    pub security_report: Spanned<String>,
+    pub conformance: Spanned<String>,
+    pub backward_compatibility: Spanned<String>,
+    pub runtime_status: Spanned<String>,
+    pub network: Spanned<String>,
+    pub external_execution: Spanned<String>,
+    pub provider_execution: Spanned<String>,
+    pub secret_material: Spanned<String>,
+    pub key_material: Spanned<String>,
+    pub env_access: Spanned<String>,
+    pub filesystem_access: Spanned<String>,
+    pub tool_execution: Spanned<String>,
+    pub agent_execution: Spanned<String>,
+    pub security_claims: Spanned<String>,
+    pub legal_claims: Spanned<String>,
+    pub certification: Spanned<String>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseCandidateDecl {
+    pub name: Spanned<String>,
+    pub version: Spanned<String>,
+    pub base_version: Spanned<String>,
+    pub spec_freeze: Spanned<String>,
+    pub readiness: Spanned<String>,
+    pub required_artifacts: Vec<Spanned<String>>,
+    pub required_checks: Vec<Spanned<String>>,
+    pub compatibility_matrix: Vec<CompatibilityMatrixEntryDecl>,
+    pub known_limitations: Vec<Spanned<String>>,
+    pub runtime_status: Spanned<String>,
+    pub network: Spanned<String>,
+    pub external_execution: Spanned<String>,
+    pub provider_execution: Spanned<String>,
+    pub secret_material: Spanned<String>,
+    pub key_material: Spanned<String>,
+    pub env_access: Spanned<String>,
+    pub filesystem_access: Spanned<String>,
+    pub tool_execution: Spanned<String>,
+    pub agent_execution: Spanned<String>,
+    pub security_claims: Spanned<String>,
+    pub legal_claims: Spanned<String>,
+    pub certification: Spanned<String>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompatibilityMatrixEntryDecl {
+    pub version: Spanned<String>,
+    pub bytecode: Spanned<String>,
+    pub evidence: Spanned<String>,
+    pub conformance: Spanned<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

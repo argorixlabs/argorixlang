@@ -59,6 +59,10 @@ pub struct BytecodeProgram {
     pub runtime_hardening_profiles: Vec<BytecodeRuntimeHardeningProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub threat_models: Vec<BytecodeThreatModel>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spec_freezes: Vec<BytecodeSpecFreeze>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub release_candidates: Vec<BytecodeReleaseCandidate>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -679,6 +683,76 @@ pub struct BytecodeThreatMitigation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeSpecFreeze {
+    pub name: String,
+    pub version: String,
+    pub target: String,
+    pub freeze_scope: String,
+    pub compatibility: String,
+    pub stability: String,
+    pub frozen_features: Vec<String>,
+    pub compatible_versions: Vec<String>,
+    pub required_suites: Vec<String>,
+    pub evidence_bundle: String,
+    pub security_report: String,
+    pub conformance: String,
+    pub backward_compatibility: String,
+    pub runtime_status: String,
+    pub network: String,
+    pub external_execution: String,
+    pub provider_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub env_access: String,
+    pub filesystem_access: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub security_claims: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeReleaseCandidate {
+    pub name: String,
+    pub version: String,
+    pub base_version: String,
+    pub spec_freeze: String,
+    pub readiness: String,
+    pub required_artifacts: Vec<String>,
+    pub required_checks: Vec<String>,
+    pub compatibility_matrix: Vec<BytecodeCompatibilityMatrixEntry>,
+    pub known_limitations: Vec<String>,
+    pub runtime_status: String,
+    pub network: String,
+    pub external_execution: String,
+    pub provider_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub env_access: String,
+    pub filesystem_access: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub security_claims: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeCompatibilityMatrixEntry {
+    pub version: String,
+    pub bytecode: String,
+    pub evidence: String,
+    pub conformance: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BytecodeProviderHarness {
     pub name: String,
     pub provider: String,
@@ -1092,6 +1166,16 @@ pub enum BytecodeError {
     DuplicateThreatModel(String),
     #[error("invalid threat_model `{name}`: {reason}")]
     InvalidThreatModel { name: String, reason: String },
+    #[error("spec_freezes and release_candidates require bytecode_version 0.36")]
+    SpecFreezeRequiresV036,
+    #[error("duplicate spec_freeze `{0}`")]
+    DuplicateSpecFreeze(String),
+    #[error("invalid spec_freeze `{name}`: {reason}")]
+    InvalidSpecFreeze { name: String, reason: String },
+    #[error("duplicate release_candidate `{0}`")]
+    DuplicateReleaseCandidate(String),
+    #[error("invalid release_candidate `{name}`: {reason}")]
+    InvalidReleaseCandidate { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -1132,6 +1216,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.33"
             | "0.34"
             | "0.35"
+            | "0.36"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -1167,6 +1252,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.33"
             | "0.34"
             | "0.35"
+            | "0.36"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -1194,6 +1280,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -1232,6 +1319,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -1259,6 +1347,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -1279,6 +1368,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -1298,6 +1388,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -1316,6 +1407,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
@@ -1323,7 +1415,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_credential_contracts.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35"
+            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1333,7 +1425,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_handshakes.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35"
+            "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1344,7 +1436,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.trust_ledgers.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35"
+            "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1355,7 +1447,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.mcp_bridge_contracts.is_empty() || !program.a2a_bridge_contracts.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.31" | "0.32" | "0.33" | "0.34" | "0.35"
+            "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1367,33 +1459,43 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_evidence_maps.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.32" | "0.33" | "0.34" | "0.35"
+            "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
         )
     {
         errors.push(BytecodeError::ATrustEvidenceMapsRequireV032);
     }
     validate_atrust_evidence_maps(program, &mut errors);
     if (!program.governance_profiles.is_empty() || !program.regulatory_mappings.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.33" | "0.34" | "0.35")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.33" | "0.34" | "0.35" | "0.36"
+        )
     {
         errors.push(BytecodeError::GovernanceMappingsRequireV033);
     }
     validate_governance_profiles(program, &mut errors);
     validate_regulatory_mappings(program, &mut errors);
     if (!program.third_party_verifiers.is_empty() || !program.public_conformance_reports.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.34" | "0.35")
+        && !matches!(program.bytecode_version.as_str(), "0.34" | "0.35" | "0.36")
     {
         errors.push(BytecodeError::PublicConformanceRequiresV034);
     }
     validate_third_party_verifiers(program, &mut errors);
     validate_public_conformance_reports(program, &mut errors);
     if (!program.runtime_hardening_profiles.is_empty() || !program.threat_models.is_empty())
-        && program.bytecode_version != "0.35"
+        && !matches!(program.bytecode_version.as_str(), "0.35" | "0.36")
     {
         errors.push(BytecodeError::RuntimeHardeningRequiresV035);
     }
     validate_runtime_hardening_profiles(program, &mut errors);
     validate_threat_models(program, &mut errors);
+    if (!program.spec_freezes.is_empty() || !program.release_candidates.is_empty())
+        && program.bytecode_version != "0.36"
+    {
+        errors.push(BytecodeError::SpecFreezeRequiresV036);
+    }
+    validate_spec_freezes(program, &mut errors);
+    validate_release_candidates(program, &mut errors);
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
@@ -1683,6 +1785,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -1747,6 +1850,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1842,6 +1946,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1957,6 +2062,7 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -2031,6 +2137,7 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
                 | "0.33"
                 | "0.34"
                 | "0.35"
+                | "0.36"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);
@@ -3680,6 +3787,144 @@ fn validate_bytecode_threat_collections(
     }
 }
 
+fn validate_spec_freezes(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let mut names = HashSet::new();
+    for freeze in &program.spec_freezes {
+        if !names.insert(freeze.name.as_str()) {
+            errors.push(BytecodeError::DuplicateSpecFreeze(freeze.name.clone()));
+        }
+        let lists_valid = [
+            &freeze.frozen_features,
+            &freeze.compatible_versions,
+            &freeze.required_suites,
+            &freeze.purpose,
+        ]
+        .iter()
+        .all(|values| !values.is_empty() && values.iter().all(|value| !value.is_empty()));
+        let versions_valid = ["0.34", "0.35", "0.36"].iter().all(|required| {
+            freeze
+                .compatible_versions
+                .iter()
+                .any(|value| value == required)
+        });
+        let valid = !freeze.name.is_empty()
+            && freeze.version == "0.36"
+            && !freeze.target.is_empty()
+            && matches!(
+                freeze.freeze_scope.as_str(),
+                "language" | "bytecode" | "conformance" | "evidence" | "full"
+            )
+            && matches!(
+                freeze.compatibility.as_str(),
+                "cumulative" | "declared_only"
+            )
+            && matches!(freeze.stability.as_str(), "rc_candidate" | "frozen_draft")
+            && lists_valid
+            && versions_valid
+            && freeze
+                .required_suites
+                .iter()
+                .any(|value| value == "conformance/suite.v036.json")
+            && freeze.evidence_bundle == "required"
+            && freeze.security_report == "required"
+            && freeze.conformance == "required"
+            && freeze.backward_compatibility == "required"
+            && freeze.runtime_status == "disabled"
+            && freeze.network == "denied"
+            && freeze.external_execution == "disabled"
+            && freeze.provider_execution == "disabled"
+            && freeze.secret_material == "denied"
+            && freeze.key_material == "denied"
+            && freeze.env_access == "denied"
+            && freeze.filesystem_access == "denied"
+            && freeze.tool_execution == "disabled"
+            && freeze.agent_execution == "disabled"
+            && freeze.security_claims == "none"
+            && freeze.legal_claims == "none"
+            && freeze.certification == "none"
+            && freeze.notes.as_ref().is_none_or(|value| !value.is_empty());
+        if !valid {
+            errors.push(BytecodeError::InvalidSpecFreeze {
+                name: freeze.name.clone(),
+                reason: "invalid freeze metadata or an enabled runtime/claim boundary".into(),
+            });
+        }
+    }
+}
+
+fn validate_release_candidates(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let freezes: HashSet<&str> = program
+        .spec_freezes
+        .iter()
+        .map(|freeze| freeze.name.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for candidate in &program.release_candidates {
+        if !names.insert(candidate.name.as_str()) {
+            errors.push(BytecodeError::DuplicateReleaseCandidate(
+                candidate.name.clone(),
+            ));
+        }
+        let lists_valid = [
+            &candidate.required_artifacts,
+            &candidate.required_checks,
+            &candidate.known_limitations,
+            &candidate.purpose,
+        ]
+        .iter()
+        .all(|values| !values.is_empty() && values.iter().all(|value| !value.is_empty()));
+        let matrix_versions_valid = ["0.34", "0.35", "0.36"].iter().all(|required| {
+            candidate
+                .compatibility_matrix
+                .iter()
+                .any(|entry| entry.version == *required)
+        });
+        let matrix_values_valid = !candidate.compatibility_matrix.is_empty()
+            && candidate.compatibility_matrix.iter().all(|entry| {
+                !entry.version.is_empty()
+                    && [&entry.bytecode, &entry.evidence, &entry.conformance]
+                        .iter()
+                        .all(|value| {
+                            matches!(value.as_str(), "compatible" | "native" | "unsupported")
+                        })
+            });
+        let valid = !candidate.name.is_empty()
+            && candidate.version.starts_with("1.0.0-rc")
+            && candidate.base_version == "0.36"
+            && freezes.contains(candidate.spec_freeze.as_str())
+            && matches!(
+                candidate.readiness.as_str(),
+                "draft" | "rc" | "pending_review"
+            )
+            && lists_valid
+            && matrix_versions_valid
+            && matrix_values_valid
+            && candidate.runtime_status == "disabled"
+            && candidate.network == "denied"
+            && candidate.external_execution == "disabled"
+            && candidate.provider_execution == "disabled"
+            && candidate.secret_material == "denied"
+            && candidate.key_material == "denied"
+            && candidate.env_access == "denied"
+            && candidate.filesystem_access == "denied"
+            && candidate.tool_execution == "disabled"
+            && candidate.agent_execution == "disabled"
+            && candidate.security_claims == "none"
+            && candidate.legal_claims == "none"
+            && candidate.certification == "none"
+            && candidate
+                .notes
+                .as_ref()
+                .is_none_or(|value| !value.is_empty());
+        if !valid {
+            errors.push(BytecodeError::InvalidReleaseCandidate {
+                name: candidate.name.clone(),
+                reason: "invalid RC metadata or an enabled runtime/claim boundary".into(),
+            });
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -3908,6 +4153,39 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "threat_models_key_material_denied",
         "threat_models_execution_disabled",
         "threat_models_security_claims_absent",
+        "spec_freezes_declared",
+        "spec_freeze_versions_pinned",
+        "spec_freeze_features_declared",
+        "spec_freeze_compatibility_declared",
+        "spec_freeze_required_suites_declared",
+        "spec_freeze_runtime_disabled",
+        "spec_freeze_network_denied",
+        "spec_freeze_external_execution_disabled",
+        "spec_freeze_provider_execution_disabled",
+        "spec_freeze_secret_material_denied",
+        "spec_freeze_key_material_denied",
+        "spec_freeze_env_denied",
+        "spec_freeze_filesystem_denied",
+        "spec_freeze_security_claims_absent",
+        "spec_freeze_legal_claims_absent",
+        "spec_freeze_certification_absent",
+        "release_candidates_declared",
+        "release_candidates_spec_freeze_bound",
+        "release_candidates_artifacts_declared",
+        "release_candidates_checks_declared",
+        "release_candidates_compatibility_matrix_declared",
+        "release_candidates_limitations_declared",
+        "release_candidates_runtime_disabled",
+        "release_candidates_network_denied",
+        "release_candidates_external_execution_disabled",
+        "release_candidates_provider_execution_disabled",
+        "release_candidates_secret_material_denied",
+        "release_candidates_key_material_denied",
+        "release_candidates_env_denied",
+        "release_candidates_filesystem_denied",
+        "release_candidates_security_claims_absent",
+        "release_candidates_legal_claims_absent",
+        "release_candidates_certification_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -4026,6 +4304,8 @@ mod tests {
             public_conformance_reports: vec![],
             runtime_hardening_profiles: vec![],
             threat_models: vec![],
+            spec_freezes: vec![],
+            release_candidates: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

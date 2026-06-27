@@ -251,3 +251,23 @@ fn official_v035_suite_passes_with_runtime_hardening_cases() {
         .any(|case| case.category == "runtime_hardening"));
     fs::remove_dir_all(workdir).unwrap();
 }
+
+#[test]
+fn official_v036_suite_passes_with_spec_freeze_cases() {
+    let suite_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../conformance/suite.v036.json");
+    let suite: ConformanceSuite = serde_json::from_slice(&fs::read(&suite_path).unwrap()).unwrap();
+    let workdir = temp_workdir().join("v036");
+    let result = run_suite(&suite, &suite_path, &workdir).unwrap();
+    assert!(result.passed, "{:?}", result.failures);
+    assert!(result
+        .case_results
+        .iter()
+        .filter(|case| case.category == "spec_freeze")
+        .all(|case| case.passed));
+    assert!(result
+        .case_results
+        .iter()
+        .any(|case| case.category == "spec_freeze"));
+    fs::remove_dir_all(workdir).unwrap();
+}

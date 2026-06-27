@@ -14,25 +14,27 @@ use crate::{
         AdapterProfileAuth, AdapterProfileDecl, AdapterProfileExecution, AdapterProfileFamily,
         AdapterProfileNetwork, AdapterProfileSecrets, AdapterSecrets, AgentDecl, Approval,
         AssertionDecl, BridgeAuthentication, BridgeAuthorization, BridgeDirection, BridgeTransport,
-        CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind, CryptoStatus,
-        CryptoStrength, DidLedgerMode, DidMethodDecl, DidMethodStatus, DidResolutionMode, EnumDecl,
-        FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, GovernanceAssurance,
-        GovernanceControlCategory, GovernanceControlDecl, GovernanceControlStatus,
-        GovernanceDomain, GovernanceLevel, GovernanceProfileDecl, GovernanceReviewStatus,
-        GovernanceRiskLevel, GovernanceScope, HandlerDecl, HandlerInstruction, HarnessFilesystem,
-        HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl, McpBridgeContractDecl,
-        McpProtocol, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl,
-        PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program,
-        ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
-        PublicConformanceClaimCategory, PublicConformanceClaimDecl, PublicConformanceClaimStatus,
-        PublicConformanceReportDecl, PublicConformanceReproducibility, PublicConformanceResult,
-        PublicConformanceReviewStatus, ReceiveDecl, RegulatoryAssessment, RegulatoryCoverage,
-        RegulatoryMappingDecl, RegulatoryObligationDecl, RegulatoryObligationStatus,
+        CapabilityDecl, CapabilityLevel, CompatibilityMatrixEntryDecl, CryptoBoundaryDecl,
+        CryptoDecl, CryptoKind, CryptoStatus, CryptoStrength, DidLedgerMode, DidMethodDecl,
+        DidMethodStatus, DidResolutionMode, EnumDecl, FailureDecl, FeatureDecl, FeatureDefault,
+        FeatureStatus, FieldDecl, GovernanceAssurance, GovernanceControlCategory,
+        GovernanceControlDecl, GovernanceControlStatus, GovernanceDomain, GovernanceLevel,
+        GovernanceProfileDecl, GovernanceReviewStatus, GovernanceRiskLevel, GovernanceScope,
+        HandlerDecl, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
+        HarnessSecrets, ImportDecl, McpBridgeContractDecl, McpProtocol, MessageFieldType,
+        ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule, PolicyRuleDecl,
+        PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl, ProtocolStep,
+        ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, PublicConformanceClaimCategory,
+        PublicConformanceClaimDecl, PublicConformanceClaimStatus, PublicConformanceReportDecl,
+        PublicConformanceReproducibility, PublicConformanceResult, PublicConformanceReviewStatus,
+        ReceiveDecl, RegulatoryAssessment, RegulatoryCoverage, RegulatoryMappingDecl,
+        RegulatoryObligationDecl, RegulatoryObligationStatus, ReleaseCandidateDecl,
         RuntimeHardeningProfileDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl,
-        ThirdPartyVerifierDecl, ThirdPartyVerifierType, ThreatAssetDecl, ThreatDecl,
-        ThreatMitigationDecl, ThreatModelDecl, ToolDecl, TrustLedgerChainPolicy, TrustLedgerDecl,
-        TrustLedgerEntryDecl, TrustLedgerEntryKind, TrustLedgerMode, TrustLedgerScope, TypeDecl,
-        VerifierIdentityMode, VerifierIndependence, VerifierVerificationMode,
+        SpecFreezeDecl, ThirdPartyVerifierDecl, ThirdPartyVerifierType, ThreatAssetDecl,
+        ThreatDecl, ThreatMitigationDecl, ThreatModelDecl, ToolDecl, TrustLedgerChainPolicy,
+        TrustLedgerDecl, TrustLedgerEntryDecl, TrustLedgerEntryKind, TrustLedgerMode,
+        TrustLedgerScope, TypeDecl, VerifierIdentityMode, VerifierIndependence,
+        VerifierVerificationMode,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -376,6 +378,8 @@ impl Parser {
             public_conformance_reports: Vec::new(),
             runtime_hardening_profiles: Vec::new(),
             threat_models: Vec::new(),
+            spec_freezes: Vec::new(),
+            release_candidates: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -433,6 +437,10 @@ impl Parser {
                     .runtime_hardening_profiles
                     .push(self.parse_runtime_hardening_profile()?),
                 Some("threat_model") => program.threat_models.push(self.parse_threat_model()?),
+                Some("spec_freeze") => program.spec_freezes.push(self.parse_spec_freeze()?),
+                Some("release_candidate") => program
+                    .release_candidates
+                    .push(self.parse_release_candidate()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -452,7 +460,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier`, `public_conformance_report`, `runtime_hardening_profile`, `threat_model`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier`, `public_conformance_report`, `runtime_hardening_profile`, `threat_model`, `spec_freeze`, `release_candidate`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -5554,6 +5562,270 @@ impl Parser {
         Ok(values)
     }
 
+    fn parse_spec_freeze(&mut self) -> Result<SpecFreezeDecl, Diagnostic> {
+        self.expect_keyword("spec_freeze")?;
+        let name = self.expect_identifier("spec_freeze name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let quoted = ["version", "target"];
+        let scalar = [
+            "freeze_scope",
+            "compatibility",
+            "stability",
+            "evidence_bundle",
+            "security_report",
+            "conformance",
+            "backward_compatibility",
+            "runtime_status",
+            "network",
+            "external_execution",
+            "provider_execution",
+            "secret_material",
+            "key_material",
+            "env_access",
+            "filesystem_access",
+            "tool_execution",
+            "agent_execution",
+            "security_claims",
+            "legal_claims",
+            "certification",
+        ];
+        let arrays = [
+            "frozen_features",
+            "compatible_versions",
+            "required_suites",
+            "purpose",
+        ];
+        let mut fields = HashMap::new();
+        let mut array_fields: HashMap<String, Vec<Spanned<String>>> = HashMap::new();
+        let mut notes = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated spec_freeze declaration")?;
+            let Some(field) = self.peek_identifier().map(str::to_owned) else {
+                return Err(Diagnostic::new(
+                    "expected spec_freeze field",
+                    self.peek().span,
+                ));
+            };
+            if field == "notes" {
+                self.set_block_field(&mut notes, "spec_freeze", "notes", |p| {
+                    p.expect_string("spec_freeze notes")
+                })?;
+            } else if arrays.contains(&field.as_str()) {
+                self.advance();
+                let value = self.parse_string_array("spec_freeze array value")?;
+                if array_fields.insert(field.clone(), value).is_some() {
+                    return Err(Diagnostic::new(
+                        format!("duplicate spec_freeze field `{field}`"),
+                        self.peek().span,
+                    ));
+                }
+            } else if quoted.contains(&field.as_str()) || scalar.contains(&field.as_str()) {
+                self.advance();
+                let value = if quoted.contains(&field.as_str()) {
+                    self.expect_string("spec_freeze string value")?
+                } else {
+                    self.expect_identifier("spec_freeze field value")?
+                };
+                if fields.insert(field.clone(), value).is_some() {
+                    return Err(Diagnostic::new(
+                        format!("duplicate spec_freeze field `{field}`"),
+                        self.peek().span,
+                    ));
+                }
+            } else {
+                return Err(Diagnostic::new(
+                    format!("unexpected spec_freeze item `{field}`"),
+                    self.peek().span,
+                ));
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let mut take = |field: &str| {
+            fields
+                .remove(field)
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback))
+        };
+        Ok(SpecFreezeDecl {
+            name,
+            version: take("version"),
+            target: take("target"),
+            freeze_scope: take("freeze_scope"),
+            compatibility: take("compatibility"),
+            stability: take("stability"),
+            frozen_features: array_fields.remove("frozen_features").unwrap_or_default(),
+            compatible_versions: array_fields
+                .remove("compatible_versions")
+                .unwrap_or_default(),
+            required_suites: array_fields.remove("required_suites").unwrap_or_default(),
+            evidence_bundle: take("evidence_bundle"),
+            security_report: take("security_report"),
+            conformance: take("conformance"),
+            backward_compatibility: take("backward_compatibility"),
+            runtime_status: take("runtime_status"),
+            network: take("network"),
+            external_execution: take("external_execution"),
+            provider_execution: take("provider_execution"),
+            secret_material: take("secret_material"),
+            key_material: take("key_material"),
+            env_access: take("env_access"),
+            filesystem_access: take("filesystem_access"),
+            tool_execution: take("tool_execution"),
+            agent_execution: take("agent_execution"),
+            security_claims: take("security_claims"),
+            legal_claims: take("legal_claims"),
+            certification: take("certification"),
+            purpose: array_fields.remove("purpose").unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_release_candidate(&mut self) -> Result<ReleaseCandidateDecl, Diagnostic> {
+        self.expect_keyword("release_candidate")?;
+        let name = self.expect_identifier("release_candidate name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let quoted = ["version", "base_version"];
+        let scalar = [
+            "spec_freeze",
+            "readiness",
+            "runtime_status",
+            "network",
+            "external_execution",
+            "provider_execution",
+            "secret_material",
+            "key_material",
+            "env_access",
+            "filesystem_access",
+            "tool_execution",
+            "agent_execution",
+            "security_claims",
+            "legal_claims",
+            "certification",
+        ];
+        let arrays = [
+            "required_artifacts",
+            "required_checks",
+            "known_limitations",
+            "purpose",
+        ];
+        let mut fields = HashMap::new();
+        let mut array_fields: HashMap<String, Vec<Spanned<String>>> = HashMap::new();
+        let mut compatibility_matrix = None;
+        let mut notes = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated release_candidate declaration")?;
+            let Some(field) = self.peek_identifier().map(str::to_owned) else {
+                return Err(Diagnostic::new(
+                    "expected release_candidate field",
+                    self.peek().span,
+                ));
+            };
+            if field == "compatibility_matrix" {
+                self.set_block_field(
+                    &mut compatibility_matrix,
+                    "release_candidate",
+                    "compatibility_matrix",
+                    |p| p.parse_compatibility_matrix(),
+                )?;
+            } else if field == "notes" {
+                self.set_block_field(&mut notes, "release_candidate", "notes", |p| {
+                    p.expect_string("release_candidate notes")
+                })?;
+            } else if arrays.contains(&field.as_str()) {
+                self.advance();
+                let value = self.parse_string_array("release_candidate array value")?;
+                if array_fields.insert(field.clone(), value).is_some() {
+                    return Err(Diagnostic::new(
+                        format!("duplicate release_candidate field `{field}`"),
+                        self.peek().span,
+                    ));
+                }
+            } else if quoted.contains(&field.as_str()) || scalar.contains(&field.as_str()) {
+                self.advance();
+                let value = if quoted.contains(&field.as_str()) {
+                    self.expect_string("release_candidate string value")?
+                } else {
+                    self.expect_identifier("release_candidate field value")?
+                };
+                if fields.insert(field.clone(), value).is_some() {
+                    return Err(Diagnostic::new(
+                        format!("duplicate release_candidate field `{field}`"),
+                        self.peek().span,
+                    ));
+                }
+            } else {
+                return Err(Diagnostic::new(
+                    format!("unexpected release_candidate item `{field}`"),
+                    self.peek().span,
+                ));
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let mut take = |field: &str| {
+            fields
+                .remove(field)
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback))
+        };
+        Ok(ReleaseCandidateDecl {
+            name,
+            version: take("version"),
+            base_version: take("base_version"),
+            spec_freeze: take("spec_freeze"),
+            readiness: take("readiness"),
+            required_artifacts: array_fields
+                .remove("required_artifacts")
+                .unwrap_or_default(),
+            required_checks: array_fields.remove("required_checks").unwrap_or_default(),
+            compatibility_matrix: compatibility_matrix.unwrap_or_default(),
+            known_limitations: array_fields.remove("known_limitations").unwrap_or_default(),
+            runtime_status: take("runtime_status"),
+            network: take("network"),
+            external_execution: take("external_execution"),
+            provider_execution: take("provider_execution"),
+            secret_material: take("secret_material"),
+            key_material: take("key_material"),
+            env_access: take("env_access"),
+            filesystem_access: take("filesystem_access"),
+            tool_execution: take("tool_execution"),
+            agent_execution: take("agent_execution"),
+            security_claims: take("security_claims"),
+            legal_claims: take("legal_claims"),
+            certification: take("certification"),
+            purpose: array_fields.remove("purpose").unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_compatibility_matrix(
+        &mut self,
+    ) -> Result<Vec<CompatibilityMatrixEntryDecl>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut values = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            let fields = self.parse_string_object(
+                "compatibility matrix entry",
+                &[
+                    ("version", true),
+                    ("bytecode", false),
+                    ("evidence", false),
+                    ("conformance", false),
+                ],
+            )?;
+            values.push(CompatibilityMatrixEntryDecl {
+                version: fields[0].clone(),
+                bytecode: fields[1].clone(),
+                evidence: fields[2].clone(),
+                conformance: fields[3].clone(),
+            });
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.advance();
+        Ok(values)
+    }
+
     fn parse_string_object(
         &mut self,
         kind: &str,
@@ -6149,6 +6421,63 @@ impl Parser {
             "threat_models_key_material_denied" => PolicyRule::ThreatModelsKeyMaterialDenied,
             "threat_models_execution_disabled" => PolicyRule::ThreatModelsExecutionDisabled,
             "threat_models_security_claims_absent" => PolicyRule::ThreatModelsSecurityClaimsAbsent,
+            "spec_freezes_declared" => PolicyRule::SpecFreezesDeclared,
+            "spec_freeze_versions_pinned" => PolicyRule::SpecFreezeVersionsPinned,
+            "spec_freeze_features_declared" => PolicyRule::SpecFreezeFeaturesDeclared,
+            "spec_freeze_compatibility_declared" => PolicyRule::SpecFreezeCompatibilityDeclared,
+            "spec_freeze_required_suites_declared" => PolicyRule::SpecFreezeRequiredSuitesDeclared,
+            "spec_freeze_runtime_disabled" => PolicyRule::SpecFreezeRuntimeDisabled,
+            "spec_freeze_network_denied" => PolicyRule::SpecFreezeNetworkDenied,
+            "spec_freeze_external_execution_disabled" => {
+                PolicyRule::SpecFreezeExternalExecutionDisabled
+            }
+            "spec_freeze_provider_execution_disabled" => {
+                PolicyRule::SpecFreezeProviderExecutionDisabled
+            }
+            "spec_freeze_secret_material_denied" => PolicyRule::SpecFreezeSecretMaterialDenied,
+            "spec_freeze_key_material_denied" => PolicyRule::SpecFreezeKeyMaterialDenied,
+            "spec_freeze_env_denied" => PolicyRule::SpecFreezeEnvDenied,
+            "spec_freeze_filesystem_denied" => PolicyRule::SpecFreezeFilesystemDenied,
+            "spec_freeze_security_claims_absent" => PolicyRule::SpecFreezeSecurityClaimsAbsent,
+            "spec_freeze_legal_claims_absent" => PolicyRule::SpecFreezeLegalClaimsAbsent,
+            "spec_freeze_certification_absent" => PolicyRule::SpecFreezeCertificationAbsent,
+            "release_candidates_declared" => PolicyRule::ReleaseCandidatesDeclared,
+            "release_candidates_spec_freeze_bound" => PolicyRule::ReleaseCandidatesSpecFreezeBound,
+            "release_candidates_artifacts_declared" => {
+                PolicyRule::ReleaseCandidatesArtifactsDeclared
+            }
+            "release_candidates_checks_declared" => PolicyRule::ReleaseCandidatesChecksDeclared,
+            "release_candidates_compatibility_matrix_declared" => {
+                PolicyRule::ReleaseCandidatesCompatibilityMatrixDeclared
+            }
+            "release_candidates_limitations_declared" => {
+                PolicyRule::ReleaseCandidatesLimitationsDeclared
+            }
+            "release_candidates_runtime_disabled" => PolicyRule::ReleaseCandidatesRuntimeDisabled,
+            "release_candidates_network_denied" => PolicyRule::ReleaseCandidatesNetworkDenied,
+            "release_candidates_external_execution_disabled" => {
+                PolicyRule::ReleaseCandidatesExternalExecutionDisabled
+            }
+            "release_candidates_provider_execution_disabled" => {
+                PolicyRule::ReleaseCandidatesProviderExecutionDisabled
+            }
+            "release_candidates_secret_material_denied" => {
+                PolicyRule::ReleaseCandidatesSecretMaterialDenied
+            }
+            "release_candidates_key_material_denied" => {
+                PolicyRule::ReleaseCandidatesKeyMaterialDenied
+            }
+            "release_candidates_env_denied" => PolicyRule::ReleaseCandidatesEnvDenied,
+            "release_candidates_filesystem_denied" => PolicyRule::ReleaseCandidatesFilesystemDenied,
+            "release_candidates_security_claims_absent" => {
+                PolicyRule::ReleaseCandidatesSecurityClaimsAbsent
+            }
+            "release_candidates_legal_claims_absent" => {
+                PolicyRule::ReleaseCandidatesLegalClaimsAbsent
+            }
+            "release_candidates_certification_absent" => {
+                PolicyRule::ReleaseCandidatesCertificationAbsent
+            }
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;
                 if argument.value == "completed" {

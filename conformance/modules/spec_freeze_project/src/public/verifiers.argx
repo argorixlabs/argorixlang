@@ -1,0 +1,23 @@
+module public.verifiers
+
+third_party_verifier CommunityVerifier {
+  verifier_type community
+  independence declared
+  identity_mode declared_only
+  verification_mode reproducible_artifacts
+  name "Community Reviewer"
+  organization "Argorix Community"
+  jurisdiction "CL"
+  allowed_scopes ["conformance", "evidence", "security-report", "governance"]
+  disallowed_claims ["legal-certification", "regulator-approval", "cryptographic-endorsement"]
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  legal_claims none
+  certification none
+  security_claims none
+  purpose ["third-party-verifier", "public-conformance", "audit"]
+  notes "metadata only; no external verification runtime"
+}

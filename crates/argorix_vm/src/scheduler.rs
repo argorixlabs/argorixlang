@@ -234,6 +234,8 @@ mod tests {
             public_conformance_reports: vec![],
             runtime_hardening_profiles: vec![],
             threat_models: vec![],
+            spec_freezes: vec![],
+            release_candidates: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

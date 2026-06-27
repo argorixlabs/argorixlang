@@ -1,0 +1,34 @@
+module runtime.hardening
+
+runtime_hardening_profile HardenedRuntime {
+  scope system
+  mode declared_only
+  enforcement evidence_only
+  sandbox required
+  provider_execution disabled
+  external_providers disabled
+  network denied
+  tool_execution disabled
+  agent_execution disabled
+  filesystem_access denied
+  env_access denied
+  secret_material denied
+  key_material denied
+  allowlist required
+  deny_by_default true
+  approval required
+  audit_log required
+  evidence required
+  incident_response declared
+  evidence_map ChatbotEvidenceMap
+  governance_profile ChatbotGovernance
+  public_conformance_report PublicConformanceV034
+  protected_assets ["api-keys", "user-data", "agent-identity", "evidence-bundle"]
+  runtime_boundaries ["network", "secrets", "tools", "providers", "agents"]
+  residual_risk moderate
+  review_status draft
+  assurance declared_only
+  security_claims none
+  purpose ["runtime-hardening", "threat-model", "pre-runtime", "dry-run"]
+  notes "metadata only; no real runtime execution"
+}

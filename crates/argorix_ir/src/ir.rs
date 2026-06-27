@@ -54,6 +54,10 @@ pub struct IrProgram {
     pub runtime_hardening_profiles: Vec<IrRuntimeHardeningProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub threat_models: Vec<IrThreatModel>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spec_freezes: Vec<IrSpecFreeze>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub release_candidates: Vec<IrReleaseCandidate>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -696,6 +700,76 @@ pub struct IrThreatMitigation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrSpecFreeze {
+    pub name: String,
+    pub version: String,
+    pub target: String,
+    pub freeze_scope: String,
+    pub compatibility: String,
+    pub stability: String,
+    pub frozen_features: Vec<String>,
+    pub compatible_versions: Vec<String>,
+    pub required_suites: Vec<String>,
+    pub evidence_bundle: String,
+    pub security_report: String,
+    pub conformance: String,
+    pub backward_compatibility: String,
+    pub runtime_status: String,
+    pub network: String,
+    pub external_execution: String,
+    pub provider_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub env_access: String,
+    pub filesystem_access: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub security_claims: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrReleaseCandidate {
+    pub name: String,
+    pub version: String,
+    pub base_version: String,
+    pub spec_freeze: String,
+    pub readiness: String,
+    pub required_artifacts: Vec<String>,
+    pub required_checks: Vec<String>,
+    pub compatibility_matrix: Vec<IrCompatibilityMatrixEntry>,
+    pub known_limitations: Vec<String>,
+    pub runtime_status: String,
+    pub network: String,
+    pub external_execution: String,
+    pub provider_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub env_access: String,
+    pub filesystem_access: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub security_claims: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrCompatibilityMatrixEntry {
+    pub version: String,
+    pub bytecode: String,
+    pub evidence: String,
+    pub conformance: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
@@ -849,7 +923,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.35".to_owned(),
+            ir_version: "0.36".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -1501,6 +1575,79 @@ impl From<&Program> for IrProgram {
                     notes: m.notes.as_ref().map(|value| value.value.clone()),
                 })
                 .collect(),
+            spec_freezes: program
+                .spec_freezes
+                .iter()
+                .map(|s| IrSpecFreeze {
+                    name: s.name.value.clone(),
+                    version: s.version.value.clone(),
+                    target: s.target.value.clone(),
+                    freeze_scope: s.freeze_scope.value.clone(),
+                    compatibility: s.compatibility.value.clone(),
+                    stability: s.stability.value.clone(),
+                    frozen_features: spanned_values(&s.frozen_features),
+                    compatible_versions: spanned_values(&s.compatible_versions),
+                    required_suites: spanned_values(&s.required_suites),
+                    evidence_bundle: s.evidence_bundle.value.clone(),
+                    security_report: s.security_report.value.clone(),
+                    conformance: s.conformance.value.clone(),
+                    backward_compatibility: s.backward_compatibility.value.clone(),
+                    runtime_status: s.runtime_status.value.clone(),
+                    network: s.network.value.clone(),
+                    external_execution: s.external_execution.value.clone(),
+                    provider_execution: s.provider_execution.value.clone(),
+                    secret_material: s.secret_material.value.clone(),
+                    key_material: s.key_material.value.clone(),
+                    env_access: s.env_access.value.clone(),
+                    filesystem_access: s.filesystem_access.value.clone(),
+                    tool_execution: s.tool_execution.value.clone(),
+                    agent_execution: s.agent_execution.value.clone(),
+                    security_claims: s.security_claims.value.clone(),
+                    legal_claims: s.legal_claims.value.clone(),
+                    certification: s.certification.value.clone(),
+                    purpose: spanned_values(&s.purpose),
+                    notes: s.notes.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
+            release_candidates: program
+                .release_candidates
+                .iter()
+                .map(|r| IrReleaseCandidate {
+                    name: r.name.value.clone(),
+                    version: r.version.value.clone(),
+                    base_version: r.base_version.value.clone(),
+                    spec_freeze: r.spec_freeze.value.clone(),
+                    readiness: r.readiness.value.clone(),
+                    required_artifacts: spanned_values(&r.required_artifacts),
+                    required_checks: spanned_values(&r.required_checks),
+                    compatibility_matrix: r
+                        .compatibility_matrix
+                        .iter()
+                        .map(|entry| IrCompatibilityMatrixEntry {
+                            version: entry.version.value.clone(),
+                            bytecode: entry.bytecode.value.clone(),
+                            evidence: entry.evidence.value.clone(),
+                            conformance: entry.conformance.value.clone(),
+                        })
+                        .collect(),
+                    known_limitations: spanned_values(&r.known_limitations),
+                    runtime_status: r.runtime_status.value.clone(),
+                    network: r.network.value.clone(),
+                    external_execution: r.external_execution.value.clone(),
+                    provider_execution: r.provider_execution.value.clone(),
+                    secret_material: r.secret_material.value.clone(),
+                    key_material: r.key_material.value.clone(),
+                    env_access: r.env_access.value.clone(),
+                    filesystem_access: r.filesystem_access.value.clone(),
+                    tool_execution: r.tool_execution.value.clone(),
+                    agent_execution: r.agent_execution.value.clone(),
+                    security_claims: r.security_claims.value.clone(),
+                    legal_claims: r.legal_claims.value.clone(),
+                    certification: r.certification.value.clone(),
+                    purpose: spanned_values(&r.purpose),
+                    notes: r.notes.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
             assertions: program
                 .assertions
                 .iter()
@@ -1760,7 +1907,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.35");
+        assert_eq!(ir.ir_version, "0.36");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -1798,7 +1945,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.35");
+        assert_eq!(ir.ir_version, "0.36");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -1833,7 +1980,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.35");
+        assert_eq!(ir.ir_version, "0.36");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");

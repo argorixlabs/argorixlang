@@ -1,0 +1,31 @@
+module release.candidate
+
+release_candidate ArgorixV1RC {
+  version "1.0.0-rc.1"
+  base_version "0.36"
+  spec_freeze ArgorixSpecFreezeV036
+  readiness rc
+  required_artifacts ["README.md", "conformance/suite.v036.json", "examples/spec_freeze_v036.argx", "examples/spec_freeze_v036.argbc.json"]
+  required_checks ["cargo fmt --all --check", "cargo clippy --workspace --all-targets --all-features", "cargo test --workspace", "cargo test --workspace --no-run", "argorix-conformance suite.v036"]
+  compatibility_matrix [
+    { version "0.34" bytecode compatible evidence compatible conformance compatible },
+    { version "0.35" bytecode compatible evidence compatible conformance compatible },
+    { version "0.36" bytecode native evidence native conformance native }
+  ]
+  known_limitations ["runtime remains disabled", "network remains denied", "OpenAI API support is external sandbox only, not core", "MCP/A2A are contracts only", "DID/VC/credential/handshake verification remains declared-only"]
+  runtime_status disabled
+  network denied
+  external_execution disabled
+  provider_execution disabled
+  secret_material denied
+  key_material denied
+  env_access denied
+  filesystem_access denied
+  tool_execution disabled
+  agent_execution disabled
+  security_claims none
+  legal_claims none
+  certification none
+  purpose ["v1-release-candidate", "spec-freeze", "audit", "public-conformance"]
+  notes "release candidate metadata only; not production certification"
+}

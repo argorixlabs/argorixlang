@@ -1,0 +1,26 @@
+module policies.public_conformance
+
+policy PublicConformancePolicy {
+  require third_party_verifiers_declared
+  require third_party_verifiers_identity_declared
+  require third_party_verifiers_scope_bounded
+  require third_party_verifiers_runtime_disabled
+  require third_party_verifiers_legal_claims_absent
+  require third_party_verifiers_certification_absent
+  require third_party_verifiers_security_claims_absent
+  require public_conformance_reports_declared
+  require public_conformance_reports_verifiers_bound
+  require public_conformance_reports_artifacts_declared
+  require public_conformance_reports_evidence_bound
+  require public_conformance_reports_governance_bound
+  require public_conformance_reports_regulatory_bound
+  require public_conformance_reports_replayable
+  require public_conformance_reports_runtime_disabled
+  require public_conformance_reports_legal_claims_absent
+  require public_conformance_reports_certification_absent
+  require public_conformance_reports_security_claims_absent
+  on violation {
+    action review
+    trace required
+  }
+}

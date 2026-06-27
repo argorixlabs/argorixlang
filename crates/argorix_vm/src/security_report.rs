@@ -58,6 +58,10 @@ pub struct SecurityReport {
     pub runtime_hardening_profiles: RuntimeHardeningProfilesSummary,
     #[serde(default)]
     pub threat_models: ThreatModelsSummary,
+    #[serde(default)]
+    pub spec_freezes: SpecFreezesSummary,
+    #[serde(default)]
+    pub release_candidates: ReleaseCandidatesSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -252,6 +256,51 @@ pub struct ThreatModelsSummary {
     pub key_material: BTreeMap<String, usize>,
     pub execution: BTreeMap<String, usize>,
     pub security_claims: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpecFreezesSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub versions: BTreeMap<String, usize>,
+    pub targets: BTreeMap<String, usize>,
+    pub freeze_scopes: BTreeMap<String, usize>,
+    pub compatibility: BTreeMap<String, usize>,
+    pub stability: BTreeMap<String, usize>,
+    pub frozen_features_total: usize,
+    pub compatible_versions: BTreeMap<String, usize>,
+    pub required_suites: BTreeMap<String, usize>,
+    pub runtime_status: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub provider_execution: BTreeMap<String, usize>,
+    pub env_access: BTreeMap<String, usize>,
+    pub filesystem_access: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
+    pub legal_claims: BTreeMap<String, usize>,
+    pub certification: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReleaseCandidatesSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub versions: BTreeMap<String, usize>,
+    pub base_versions: BTreeMap<String, usize>,
+    pub readiness: BTreeMap<String, usize>,
+    pub required_artifacts_total: usize,
+    pub required_checks_total: usize,
+    pub compatibility_matrix_versions: BTreeMap<String, usize>,
+    pub known_limitations_total: usize,
+    pub runtime_status: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub provider_execution: BTreeMap<String, usize>,
+    pub env_access: BTreeMap<String, usize>,
+    pub filesystem_access: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
+    pub legal_claims: BTreeMap<String, usize>,
+    pub certification: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -733,7 +782,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.35".into(),
+            report_version: "0.36".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -741,7 +790,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.35".into()),
+                .unwrap_or_else(|| "0.36".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -768,6 +817,8 @@ impl SecurityReport {
                 &bytecode.runtime_hardening_profiles,
             ),
             threat_models: threat_models_summary(&bytecode.threat_models),
+            spec_freezes: spec_freezes_summary(&bytecode.spec_freezes),
+            release_candidates: release_candidates_summary(&bytecode.release_candidates),
             policy,
             provider_boundary,
             calls,
@@ -776,6 +827,89 @@ impl SecurityReport {
             verdict,
         }
     }
+}
+
+fn spec_freezes_summary(freezes: &[argorix_bytecode::BytecodeSpecFreeze]) -> SpecFreezesSummary {
+    let mut summary = SpecFreezesSummary {
+        total: freezes.len(),
+        ..Default::default()
+    };
+    for freeze in freezes {
+        summary.names.push(freeze.name.clone());
+        for (map, value) in [
+            (&mut summary.versions, &freeze.version),
+            (&mut summary.targets, &freeze.target),
+            (&mut summary.freeze_scopes, &freeze.freeze_scope),
+            (&mut summary.compatibility, &freeze.compatibility),
+            (&mut summary.stability, &freeze.stability),
+            (&mut summary.runtime_status, &freeze.runtime_status),
+            (&mut summary.network, &freeze.network),
+            (&mut summary.external_execution, &freeze.external_execution),
+            (&mut summary.provider_execution, &freeze.provider_execution),
+            (&mut summary.env_access, &freeze.env_access),
+            (&mut summary.filesystem_access, &freeze.filesystem_access),
+            (&mut summary.security_claims, &freeze.security_claims),
+            (&mut summary.legal_claims, &freeze.legal_claims),
+            (&mut summary.certification, &freeze.certification),
+        ] {
+            *map.entry(value.clone()).or_insert(0) += 1;
+        }
+        summary.frozen_features_total += freeze.frozen_features.len();
+        for version in &freeze.compatible_versions {
+            *summary
+                .compatible_versions
+                .entry(version.clone())
+                .or_insert(0) += 1;
+        }
+        for suite in &freeze.required_suites {
+            *summary.required_suites.entry(suite.clone()).or_insert(0) += 1;
+        }
+    }
+    summary
+}
+
+fn release_candidates_summary(
+    candidates: &[argorix_bytecode::BytecodeReleaseCandidate],
+) -> ReleaseCandidatesSummary {
+    let mut summary = ReleaseCandidatesSummary {
+        total: candidates.len(),
+        ..Default::default()
+    };
+    for candidate in candidates {
+        summary.names.push(candidate.name.clone());
+        for (map, value) in [
+            (&mut summary.versions, &candidate.version),
+            (&mut summary.base_versions, &candidate.base_version),
+            (&mut summary.readiness, &candidate.readiness),
+            (&mut summary.runtime_status, &candidate.runtime_status),
+            (&mut summary.network, &candidate.network),
+            (
+                &mut summary.external_execution,
+                &candidate.external_execution,
+            ),
+            (
+                &mut summary.provider_execution,
+                &candidate.provider_execution,
+            ),
+            (&mut summary.env_access, &candidate.env_access),
+            (&mut summary.filesystem_access, &candidate.filesystem_access),
+            (&mut summary.security_claims, &candidate.security_claims),
+            (&mut summary.legal_claims, &candidate.legal_claims),
+            (&mut summary.certification, &candidate.certification),
+        ] {
+            *map.entry(value.clone()).or_insert(0) += 1;
+        }
+        summary.required_artifacts_total += candidate.required_artifacts.len();
+        summary.required_checks_total += candidate.required_checks.len();
+        summary.known_limitations_total += candidate.known_limitations.len();
+        for entry in &candidate.compatibility_matrix {
+            *summary
+                .compatibility_matrix_versions
+                .entry(entry.version.clone())
+                .or_insert(0) += 1;
+        }
+    }
+    summary
 }
 
 fn runtime_hardening_profiles_summary(

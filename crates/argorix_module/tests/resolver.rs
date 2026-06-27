@@ -65,7 +65,7 @@ fn package_ir_carries_module_metadata() {
     let package = resolve_package(&manifest("module_project/argorix.toml")).unwrap();
     let merged = check_package(&package).unwrap();
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.35");
+    assert_eq!(ir.ir_version, "0.36");
     assert_eq!(ir.module, "app.main");
     assert_eq!(ir.modules.len(), 6);
     assert_eq!(ir.imports.len(), 5);
@@ -148,7 +148,7 @@ fn resolves_and_checks_atrust_handshake_package() {
 
     // The dry-run handshake metadata survives merge + IR construction at 0.29.
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.35");
+    assert_eq!(ir.ir_version, "0.36");
     assert_eq!(ir.atrust_handshakes.len(), 1);
     let hs = &ir.atrust_handshakes[0];
     assert_eq!(hs.initiator, "ResearchAgent");
@@ -168,7 +168,7 @@ fn resolves_and_checks_trust_ledger_package() {
     assert_eq!(merged.trust_ledgers[0].name.value, "ATrustLedger");
 
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.35");
+    assert_eq!(ir.ir_version, "0.36");
     assert_eq!(ir.trust_ledgers.len(), 1);
     let l = &ir.trust_ledgers[0];
     assert_eq!(l.hash_algorithm, "sha256");
@@ -188,7 +188,19 @@ fn resolves_runtime_hardening_package_and_preserves_import_order() {
     );
     assert_eq!(merged.threat_models[0].name.value, "AgentThreatModel");
     let ir = package_ir(&merged, &package.graph);
-    assert_eq!(ir.ir_version, "0.35");
+    assert_eq!(ir.ir_version, "0.36");
     assert_eq!(ir.runtime_hardening_profiles.len(), 1);
     assert_eq!(ir.threat_models.len(), 1);
+}
+
+#[test]
+fn resolves_spec_freeze_package_and_preserves_release_metadata() {
+    let package = resolve_package(&manifest("spec_freeze_project/argorix.toml")).unwrap();
+    let merged = check_package(&package).expect("spec freeze package checks");
+    assert_eq!(merged.spec_freezes.len(), 1);
+    assert_eq!(merged.release_candidates.len(), 1);
+    let ir = package_ir(&merged, &package.graph);
+    assert_eq!(ir.ir_version, "0.36");
+    assert_eq!(ir.spec_freezes[0].name, "ArgorixSpecFreezeV036");
+    assert_eq!(ir.release_candidates[0].name, "ArgorixV1RC");
 }

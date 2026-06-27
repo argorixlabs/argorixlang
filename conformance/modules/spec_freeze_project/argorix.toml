@@ -1,0 +1,6 @@
+[package]
+name = "argorix-spec-freeze-example"
+version = "0.36.0"
+
+[entry]
+main = "src/main.argx"

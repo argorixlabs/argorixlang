@@ -1,16 +1,17 @@
 use crate::{
     BytecodeA2ABridgeContract, BytecodeATrustBoundary, BytecodeATrustCredentialContract,
     BytecodeATrustEvidenceMap, BytecodeATrustHandshake, BytecodeATrustIdentity, BytecodeAdapter,
-    BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeCrypto,
-    BytecodeCryptoBoundary, BytecodeDidMethod, BytecodeFailure, BytecodeFeature,
-    BytecodeGovernanceControl, BytecodeGovernanceProfile, BytecodeMcpBridgeContract, BytecodeModel,
-    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
-    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
-    BytecodeProviderHarness, BytecodePublicConformanceClaim, BytecodePublicConformanceReport,
-    BytecodeRegulatoryMapping, BytecodeRegulatoryObligation, BytecodeRuntimeHardeningProfile,
-    BytecodeSecret, BytecodeThirdPartyVerifier, BytecodeThreat, BytecodeThreatAsset,
-    BytecodeThreatMitigation, BytecodeThreatModel, BytecodeTool, BytecodeTrustLedger,
-    BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability,
+    BytecodeCompatibilityMatrixEntry, BytecodeCrypto, BytecodeCryptoBoundary, BytecodeDidMethod,
+    BytecodeFailure, BytecodeFeature, BytecodeGovernanceControl, BytecodeGovernanceProfile,
+    BytecodeMcpBridgeContract, BytecodeModel, BytecodeModule, BytecodeModuleImport,
+    BytecodePassport, BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule,
+    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness,
+    BytecodePublicConformanceClaim, BytecodePublicConformanceReport, BytecodeRegulatoryMapping,
+    BytecodeRegulatoryObligation, BytecodeReleaseCandidate, BytecodeRuntimeHardeningProfile,
+    BytecodeSecret, BytecodeSpecFreeze, BytecodeThirdPartyVerifier, BytecodeThreat,
+    BytecodeThreatAsset, BytecodeThreatMitigation, BytecodeThreatModel, BytecodeTool,
+    BytecodeTrustLedger, BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -179,7 +180,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.35".to_owned(),
+        bytecode_version: "0.36".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -783,6 +784,79 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 notes: m.notes.clone(),
             })
             .collect(),
+        spec_freezes: ir
+            .spec_freezes
+            .iter()
+            .map(|s| BytecodeSpecFreeze {
+                name: s.name.clone(),
+                version: s.version.clone(),
+                target: s.target.clone(),
+                freeze_scope: s.freeze_scope.clone(),
+                compatibility: s.compatibility.clone(),
+                stability: s.stability.clone(),
+                frozen_features: s.frozen_features.clone(),
+                compatible_versions: s.compatible_versions.clone(),
+                required_suites: s.required_suites.clone(),
+                evidence_bundle: s.evidence_bundle.clone(),
+                security_report: s.security_report.clone(),
+                conformance: s.conformance.clone(),
+                backward_compatibility: s.backward_compatibility.clone(),
+                runtime_status: s.runtime_status.clone(),
+                network: s.network.clone(),
+                external_execution: s.external_execution.clone(),
+                provider_execution: s.provider_execution.clone(),
+                secret_material: s.secret_material.clone(),
+                key_material: s.key_material.clone(),
+                env_access: s.env_access.clone(),
+                filesystem_access: s.filesystem_access.clone(),
+                tool_execution: s.tool_execution.clone(),
+                agent_execution: s.agent_execution.clone(),
+                security_claims: s.security_claims.clone(),
+                legal_claims: s.legal_claims.clone(),
+                certification: s.certification.clone(),
+                purpose: s.purpose.clone(),
+                notes: s.notes.clone(),
+            })
+            .collect(),
+        release_candidates: ir
+            .release_candidates
+            .iter()
+            .map(|r| BytecodeReleaseCandidate {
+                name: r.name.clone(),
+                version: r.version.clone(),
+                base_version: r.base_version.clone(),
+                spec_freeze: r.spec_freeze.clone(),
+                readiness: r.readiness.clone(),
+                required_artifacts: r.required_artifacts.clone(),
+                required_checks: r.required_checks.clone(),
+                compatibility_matrix: r
+                    .compatibility_matrix
+                    .iter()
+                    .map(|entry| BytecodeCompatibilityMatrixEntry {
+                        version: entry.version.clone(),
+                        bytecode: entry.bytecode.clone(),
+                        evidence: entry.evidence.clone(),
+                        conformance: entry.conformance.clone(),
+                    })
+                    .collect(),
+                known_limitations: r.known_limitations.clone(),
+                runtime_status: r.runtime_status.clone(),
+                network: r.network.clone(),
+                external_execution: r.external_execution.clone(),
+                provider_execution: r.provider_execution.clone(),
+                secret_material: r.secret_material.clone(),
+                key_material: r.key_material.clone(),
+                env_access: r.env_access.clone(),
+                filesystem_access: r.filesystem_access.clone(),
+                tool_execution: r.tool_execution.clone(),
+                agent_execution: r.agent_execution.clone(),
+                security_claims: r.security_claims.clone(),
+                legal_claims: r.legal_claims.clone(),
+                certification: r.certification.clone(),
+                purpose: r.purpose.clone(),
+                notes: r.notes.clone(),
+            })
+            .collect(),
         imports: ir
             .imports
             .iter()
@@ -975,6 +1049,8 @@ mod tests {
             public_conformance_reports: vec![],
             runtime_hardening_profiles: vec![],
             threat_models: vec![],
+            spec_freezes: vec![],
+            release_candidates: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -1040,7 +1116,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.35");
+        assert_eq!(bytecode.bytecode_version, "0.36");
         assert!(bytecode
             .instructions
             .iter()
@@ -1145,6 +1221,8 @@ mod tests {
             public_conformance_reports: vec![],
             runtime_hardening_profiles: vec![],
             threat_models: vec![],
+            spec_freezes: vec![],
+            release_candidates: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -1158,7 +1236,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.35");
+        assert_eq!(bytecode.bytecode_version, "0.36");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

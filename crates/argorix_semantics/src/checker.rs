@@ -58,6 +58,8 @@ pub fn check_program_with_options(
     check_public_conformance_reports(program, &mut diagnostics);
     check_runtime_hardening_profiles(program, &mut diagnostics);
     check_threat_models(program, &mut diagnostics);
+    check_spec_freezes(program, &mut diagnostics);
+    check_release_candidates(program, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -5640,6 +5642,256 @@ pub fn check_threat_models(program: &Program, diagnostics: &mut Vec<Diagnostic>)
         );
         if let Some(notes) = &model.notes {
             require_public_conformance_text("threat_model", name, "notes", notes, diagnostics);
+        }
+    }
+}
+
+pub fn check_spec_freezes(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let mut names = HashSet::new();
+    for freeze in &program.spec_freezes {
+        let name = freeze.name.value.as_str();
+        report_duplicate(&mut names, &freeze.name, "spec_freeze", diagnostics);
+        require_exact_value(
+            "spec_freeze",
+            name,
+            "version",
+            &freeze.version,
+            "0.36",
+            diagnostics,
+        );
+        require_public_conformance_text("spec_freeze", name, "target", &freeze.target, diagnostics);
+        for (field, value, allowed) in [
+            (
+                "freeze_scope",
+                &freeze.freeze_scope,
+                &["language", "bytecode", "conformance", "evidence", "full"][..],
+            ),
+            (
+                "compatibility",
+                &freeze.compatibility,
+                &["cumulative", "declared_only"][..],
+            ),
+            (
+                "stability",
+                &freeze.stability,
+                &["rc_candidate", "frozen_draft"][..],
+            ),
+        ] {
+            require_allowed_value("spec_freeze", name, field, value, allowed, diagnostics);
+        }
+        for (field, value, required) in [
+            ("evidence_bundle", &freeze.evidence_bundle, "required"),
+            ("security_report", &freeze.security_report, "required"),
+            ("conformance", &freeze.conformance, "required"),
+            (
+                "backward_compatibility",
+                &freeze.backward_compatibility,
+                "required",
+            ),
+            ("runtime_status", &freeze.runtime_status, "disabled"),
+            ("network", &freeze.network, "denied"),
+            ("external_execution", &freeze.external_execution, "disabled"),
+            ("provider_execution", &freeze.provider_execution, "disabled"),
+            ("secret_material", &freeze.secret_material, "denied"),
+            ("key_material", &freeze.key_material, "denied"),
+            ("env_access", &freeze.env_access, "denied"),
+            ("filesystem_access", &freeze.filesystem_access, "denied"),
+            ("tool_execution", &freeze.tool_execution, "disabled"),
+            ("agent_execution", &freeze.agent_execution, "disabled"),
+            ("security_claims", &freeze.security_claims, "none"),
+            ("legal_claims", &freeze.legal_claims, "none"),
+            ("certification", &freeze.certification, "none"),
+        ] {
+            require_exact_value("spec_freeze", name, field, value, required, diagnostics);
+        }
+        for (field, values) in [
+            ("frozen_features", &freeze.frozen_features),
+            ("compatible_versions", &freeze.compatible_versions),
+            ("required_suites", &freeze.required_suites),
+            ("purpose", &freeze.purpose),
+        ] {
+            require_non_empty_string_list(
+                "spec_freeze",
+                name,
+                field,
+                values,
+                freeze.name.span,
+                diagnostics,
+            );
+        }
+        for required in ["0.34", "0.35", "0.36"] {
+            if !freeze
+                .compatible_versions
+                .iter()
+                .any(|value| value.value == required)
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!("spec_freeze `{name}` compatible_versions requires `{required}`"),
+                    freeze.name.span,
+                ));
+            }
+        }
+        if !freeze
+            .required_suites
+            .iter()
+            .any(|value| value.value == "conformance/suite.v036.json")
+        {
+            diagnostics.push(Diagnostic::new(
+                format!("spec_freeze `{name}` requires conformance/suite.v036.json"),
+                freeze.name.span,
+            ));
+        }
+        if let Some(notes) = &freeze.notes {
+            require_public_conformance_text("spec_freeze", name, "notes", notes, diagnostics);
+        }
+    }
+}
+
+pub fn check_release_candidates(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let freeze_names: HashSet<&str> = program
+        .spec_freezes
+        .iter()
+        .map(|freeze| freeze.name.value.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for candidate in &program.release_candidates {
+        let name = candidate.name.value.as_str();
+        report_duplicate(
+            &mut names,
+            &candidate.name,
+            "release_candidate",
+            diagnostics,
+        );
+        if !candidate.version.value.starts_with("1.0.0-rc") {
+            diagnostics.push(Diagnostic::new(
+                format!("release_candidate `{name}` version must start with `1.0.0-rc`"),
+                candidate.version.span,
+            ));
+        }
+        require_exact_value(
+            "release_candidate",
+            name,
+            "base_version",
+            &candidate.base_version,
+            "0.36",
+            diagnostics,
+        );
+        if !freeze_names.contains(candidate.spec_freeze.value.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "release_candidate `{name}` references unknown spec_freeze `{}`",
+                    candidate.spec_freeze.value
+                ),
+                candidate.spec_freeze.span,
+            ));
+        }
+        require_allowed_value(
+            "release_candidate",
+            name,
+            "readiness",
+            &candidate.readiness,
+            &["draft", "rc", "pending_review"],
+            diagnostics,
+        );
+        for (field, value, required) in [
+            ("runtime_status", &candidate.runtime_status, "disabled"),
+            ("network", &candidate.network, "denied"),
+            (
+                "external_execution",
+                &candidate.external_execution,
+                "disabled",
+            ),
+            (
+                "provider_execution",
+                &candidate.provider_execution,
+                "disabled",
+            ),
+            ("secret_material", &candidate.secret_material, "denied"),
+            ("key_material", &candidate.key_material, "denied"),
+            ("env_access", &candidate.env_access, "denied"),
+            ("filesystem_access", &candidate.filesystem_access, "denied"),
+            ("tool_execution", &candidate.tool_execution, "disabled"),
+            ("agent_execution", &candidate.agent_execution, "disabled"),
+            ("security_claims", &candidate.security_claims, "none"),
+            ("legal_claims", &candidate.legal_claims, "none"),
+            ("certification", &candidate.certification, "none"),
+        ] {
+            require_exact_value(
+                "release_candidate",
+                name,
+                field,
+                value,
+                required,
+                diagnostics,
+            );
+        }
+        for (field, values) in [
+            ("required_artifacts", &candidate.required_artifacts),
+            ("required_checks", &candidate.required_checks),
+            ("known_limitations", &candidate.known_limitations),
+            ("purpose", &candidate.purpose),
+        ] {
+            require_non_empty_string_list(
+                "release_candidate",
+                name,
+                field,
+                values,
+                candidate.name.span,
+                diagnostics,
+            );
+        }
+        if candidate.compatibility_matrix.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("release_candidate `{name}` requires non-empty compatibility_matrix"),
+                candidate.name.span,
+            ));
+        }
+        let mut matrix_versions = HashSet::new();
+        for entry in &candidate.compatibility_matrix {
+            report_duplicate(
+                &mut matrix_versions,
+                &entry.version,
+                "compatibility matrix version",
+                diagnostics,
+            );
+            require_public_conformance_text(
+                "release_candidate",
+                name,
+                "compatibility matrix version",
+                &entry.version,
+                diagnostics,
+            );
+            for (field, value) in [
+                ("bytecode compatibility", &entry.bytecode),
+                ("evidence compatibility", &entry.evidence),
+                ("conformance compatibility", &entry.conformance),
+            ] {
+                require_allowed_value(
+                    "release_candidate",
+                    name,
+                    field,
+                    value,
+                    &["compatible", "native", "unsupported"],
+                    diagnostics,
+                );
+            }
+        }
+        for required in ["0.34", "0.35", "0.36"] {
+            if !candidate
+                .compatibility_matrix
+                .iter()
+                .any(|entry| entry.version.value == required)
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "release_candidate `{name}` compatibility_matrix requires `{required}`"
+                    ),
+                    candidate.name.span,
+                ));
+            }
+        }
+        if let Some(notes) = &candidate.notes {
+            require_public_conformance_text("release_candidate", name, "notes", notes, diagnostics);
         }
     }
 }
