@@ -7,6 +7,7 @@ use crate::{
 };
 use argorix_bytecode::{verify_bytecode, BytecodeError, BytecodeProgram};
 use argorix_provider::{AdapterContract, ProviderKind, ProviderRegistry};
+use serde::{Deserialize, Serialize};
 
 pub struct Vm {
     providers: ProviderRegistry,
@@ -16,6 +17,27 @@ pub struct Vm {
 pub struct ExecutionOutcome {
     pub state: RuntimeState,
     pub result: Result<ReactiveExecutionTrace, VmError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeExecutionRequest {
+    pub runtime: String,
+    pub adapter: Option<String>,
+    pub operation: Option<String>,
+    pub sandboxed_external: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeExecutionResult {
+    pub vm_version: String,
+    pub runtime: String,
+    pub mode: String,
+    pub status: String,
+    pub provider: String,
+    pub adapter: Option<String>,
+    pub operation: Option<String>,
+    pub external_execution_enabled: bool,
+    pub events: Vec<crate::ExecutionEvent>,
 }
 
 impl Default for Vm {
@@ -29,6 +51,214 @@ impl Vm {
         Self {
             providers: ProviderRegistry::default(),
         }
+    }
+
+    /// Execute the v1.0 governed runtime entrypoint.
+    ///
+    /// The default implementation never performs network I/O and never
+    /// resolves endpoint or secret references. `sandboxed_external` validates
+    /// and records a call plan only; an external executor is intentionally not
+    /// part of the v1.0 core runtime.
+    pub fn run_runtime_profile(
+        &self,
+        bytecode: &BytecodeProgram,
+        request: RuntimeExecutionRequest,
+    ) -> Result<RuntimeExecutionResult, VmError> {
+        verify_bytecode(bytecode).map_err(VmError::from_verification)?;
+        let profile = bytecode
+            .runtime_execution_profiles
+            .iter()
+            .find(|profile| profile.name == request.runtime)
+            .ok_or_else(|| VmError::RuntimeProfile {
+                runtime: request.runtime.clone(),
+                reason: "unknown runtime_execution_profile".into(),
+            })?;
+        let mut ledger = crate::TraceLedger::default();
+        ledger.record(
+            EventType::RuntimeExecutionProfileDeclared,
+            "declared",
+            format!(
+                "runtime_execution_profile {} selected in {} mode",
+                profile.name, profile.mode
+            ),
+            EventFields::default(),
+        );
+        ledger.record(
+            EventType::RuntimeProfileGuardsValidated,
+            "validated",
+            format!(
+                "runtime_execution_profile {} is policy, hardening, evidence, governance and fail-closed bound",
+                profile.name
+            ),
+            EventFields::default(),
+        );
+
+        let mut result = RuntimeExecutionResult {
+            vm_version: "1.0".into(),
+            runtime: profile.name.clone(),
+            mode: profile.mode.clone(),
+            status: "completed".into(),
+            provider: profile.provider.clone(),
+            adapter: request.adapter.clone(),
+            operation: request.operation.clone(),
+            external_execution_enabled: false,
+            events: Vec::new(),
+        };
+        match profile.mode.as_str() {
+            "dry_run" => ledger.record(
+                EventType::RuntimeDryRunCompleted,
+                "completed",
+                format!(
+                    "runtime_execution_profile {} completed without provider execution",
+                    profile.name
+                ),
+                EventFields::default(),
+            ),
+            "simulated" => {
+                if profile.provider != "simulated" {
+                    return Err(VmError::RuntimeProfile {
+                        runtime: profile.name.clone(),
+                        reason: "simulated mode requires the built-in `simulated` provider".into(),
+                    });
+                }
+                ledger.record(
+                    EventType::RuntimeSimulatedProviderExecuted,
+                    "completed",
+                    format!(
+                        "runtime_execution_profile {} executed deterministic simulated provider",
+                        profile.name
+                    ),
+                    EventFields::default(),
+                );
+            }
+            "sandboxed_external" => {
+                const REQUIRED_POLICY_RULES: &[&str] = &[
+                    "runtime_execution_profiles_declared",
+                    "runtime_profiles_provider_bound",
+                    "runtime_profiles_hardening_bound",
+                    "runtime_profiles_evidence_bound",
+                    "runtime_profiles_governance_bound",
+                    "runtime_profiles_fail_closed",
+                    "runtime_profiles_external_execution_sandboxed",
+                    "sandboxed_provider_adapters_declared",
+                    "sandboxed_provider_adapters_provider_bound",
+                    "sandboxed_provider_adapters_runtime_bound",
+                    "sandboxed_provider_adapters_operations_bounded",
+                    "sandboxed_provider_adapters_network_declared",
+                    "sandboxed_provider_adapters_external_execution_sandboxed",
+                    "sandboxed_provider_adapters_secret_refs_redacted",
+                    "sandboxed_provider_adapters_fail_closed",
+                ];
+                let policy_rules: std::collections::HashSet<&str> = bytecode
+                    .policies
+                    .iter()
+                    .flat_map(|policy| policy.rules.iter().map(|rule| rule.rule.as_str()))
+                    .collect();
+                if !REQUIRED_POLICY_RULES
+                    .iter()
+                    .all(|rule| policy_rules.contains(rule))
+                {
+                    return Err(VmError::RuntimeProfile {
+                        runtime: profile.name.clone(),
+                        reason: "sandboxed_external requires complete policy v2 authorization"
+                            .into(),
+                    });
+                }
+                let adapter_name =
+                    request
+                        .adapter
+                        .as_deref()
+                        .ok_or_else(|| VmError::RuntimeProfile {
+                            runtime: profile.name.clone(),
+                            reason: "sandboxed_external requires an explicit adapter".into(),
+                        })?;
+                let adapter = bytecode
+                    .sandboxed_provider_adapters
+                    .iter()
+                    .find(|adapter| adapter.name == adapter_name)
+                    .ok_or_else(|| VmError::RuntimeProfile {
+                        runtime: profile.name.clone(),
+                        reason: format!("unknown sandboxed_provider_adapter `{adapter_name}`"),
+                    })?;
+                let operation =
+                    request
+                        .operation
+                        .as_deref()
+                        .ok_or_else(|| VmError::RuntimeProfile {
+                            runtime: profile.name.clone(),
+                            reason: "sandboxed_external requires an explicit operation".into(),
+                        })?;
+                if adapter.runtime != profile.name
+                    || adapter.provider != profile.provider
+                    || !profile
+                        .allowed_actions
+                        .iter()
+                        .any(|value| value == "model.generate")
+                    || !adapter
+                        .allowed_operations
+                        .iter()
+                        .any(|value| value == operation)
+                    || adapter
+                        .denied_operations
+                        .iter()
+                        .any(|value| value == operation)
+                {
+                    return Err(VmError::RuntimeProfile {
+                        runtime: profile.name.clone(),
+                        reason: "adapter/provider/operation boundary rejected".into(),
+                    });
+                }
+                ledger.record(
+                    EventType::SandboxedProviderAdapterDeclared,
+                    "declared",
+                    format!(
+                        "sandboxed_provider_adapter {} selected for provider {}",
+                        adapter.name, adapter.provider
+                    ),
+                    EventFields::default(),
+                );
+                ledger.record(
+                    EventType::ProviderReferencesRedacted,
+                    "redacted",
+                    format!(
+                        "sandboxed_provider_adapter {} retains reference names only; values are absent",
+                        adapter.name
+                    ),
+                    EventFields::default(),
+                );
+                if !request.sandboxed_external {
+                    result.status = "blocked".into();
+                    ledger.record(
+                        EventType::ExternalProviderExecutionBlocked,
+                        "blocked",
+                        format!(
+                            "sandboxed external operation {} blocked without explicit flag",
+                            operation
+                        ),
+                        EventFields::default(),
+                    );
+                } else {
+                    result.status = "planned".into();
+                    ledger.record(
+                        EventType::SandboxedExternalCallPlanned,
+                        "planned",
+                        format!(
+                            "sandboxed external operation {} planned; v1.0 core performs no network call",
+                            operation
+                        ),
+                        EventFields::default(),
+                    );
+                }
+            }
+            other => {
+                return Err(VmError::RuntimeProfile {
+                    runtime: profile.name.clone(),
+                    reason: format!("unsupported runtime mode `{other}`"),
+                })
+            }
+        }
+        result.events = ledger.events;
+        Ok(result)
     }
 
     pub fn run_dry(&self, bytecode: &BytecodeProgram) -> Result<ExecutionTrace, VmError> {
@@ -750,6 +980,57 @@ impl Vm {
                 EventFields::default(),
             );
         }
+        for profile in &bytecode.runtime_execution_profiles {
+            state.trace_ledger.record(
+                EventType::RuntimeExecutionProfileDeclared,
+                "declared",
+                format!(
+                    "runtime_execution_profile {} declares governed mode {}",
+                    profile.name, profile.mode
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::RuntimeProfileGuardsValidated,
+                "validated",
+                format!(
+                    "runtime_execution_profile {} is hardening, evidence, governance, policy and fail-closed bound",
+                    profile.name
+                ),
+                EventFields::default(),
+            );
+            if profile.mode == "sandboxed_external" {
+                state.trace_ledger.record(
+                    EventType::ExternalProviderExecutionBlocked,
+                    "blocked",
+                    format!(
+                        "runtime_execution_profile {} external execution blocked without explicit sandboxed flag",
+                        profile.name
+                    ),
+                    EventFields::default(),
+                );
+            }
+        }
+        for adapter in &bytecode.sandboxed_provider_adapters {
+            state.trace_ledger.record(
+                EventType::SandboxedProviderAdapterDeclared,
+                "declared",
+                format!(
+                    "sandboxed_provider_adapter {} declared for provider {}",
+                    adapter.name, adapter.provider
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::ProviderReferencesRedacted,
+                "redacted",
+                format!(
+                    "sandboxed_provider_adapter {} retains reference names only; endpoint and secret values are absent",
+                    adapter.name
+                ),
+                EventFields::default(),
+            );
+        }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
             Err(error) => {
@@ -873,7 +1154,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.36".into(),
+            vm_version: "1.0".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -902,6 +1183,8 @@ impl Vm {
             threat_models: bytecode.threat_models.clone(),
             spec_freezes: bytecode.spec_freezes.clone(),
             release_candidates: bytecode.release_candidates.clone(),
+            runtime_execution_profiles: bytecode.runtime_execution_profiles.clone(),
+            sandboxed_provider_adapters: bytecode.sandboxed_provider_adapters.clone(),
             injected,
             steps,
             mailboxes,
@@ -1207,6 +1490,8 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
     let threat_models = &bytecode.threat_models;
     let spec_freezes = &bytecode.spec_freezes;
     let release_candidates = &bytecode.release_candidates;
+    let runtime_profiles = &bytecode.runtime_execution_profiles;
+    let sandboxed_adapters = &bytecode.sandboxed_provider_adapters;
     PolicyEvidenceContext {
         agent_passport_declared,
         agent_passport_attested: !passports.is_empty()
@@ -1902,6 +2187,122 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
             && release_candidates
                 .iter()
                 .all(|candidate| candidate.certification == "none"),
+        runtime_execution_profiles_declared: !runtime_profiles.is_empty(),
+        runtime_profiles_agents_bound: !runtime_profiles.is_empty()
+            && runtime_profiles.iter().all(|profile| {
+                !profile.agents.is_empty()
+                    && profile
+                        .agents
+                        .iter()
+                        .all(|name| bytecode.agents.iter().any(|agent| agent.name == *name))
+            }),
+        runtime_profiles_provider_bound: !runtime_profiles.is_empty()
+            && runtime_profiles.iter().all(|profile| {
+                profile.provider == "simulated"
+                    || bytecode
+                        .providers
+                        .iter()
+                        .any(|provider| provider.name == profile.provider)
+            }),
+        runtime_profiles_hardening_bound: !runtime_profiles.is_empty()
+            && runtime_profiles.iter().all(|profile| {
+                runtime_hardening_profiles
+                    .iter()
+                    .any(|hardening| hardening.name == profile.hardening)
+            }),
+        runtime_profiles_evidence_bound: !runtime_profiles.is_empty()
+            && runtime_profiles.iter().all(|profile| {
+                evidence_maps
+                    .iter()
+                    .any(|evidence| evidence.name == profile.evidence_map)
+                    && profile.evidence == "required"
+            }),
+        runtime_profiles_governance_bound: !runtime_profiles.is_empty()
+            && runtime_profiles.iter().all(|profile| {
+                governance_profiles.iter().any(|governance| {
+                    governance.name == profile.governance_profile
+                        && governance.evidence_map == profile.evidence_map
+                })
+            }),
+        runtime_profiles_fail_closed: !runtime_profiles.is_empty()
+            && runtime_profiles.iter().all(|profile| profile.fail_closed),
+        runtime_profiles_external_execution_sandboxed: !runtime_profiles.is_empty()
+            && runtime_profiles.iter().all(|profile| {
+                matches!(
+                    profile.external_execution.as_str(),
+                    "disabled" | "sandboxed"
+                )
+            }),
+        runtime_profiles_tool_execution_disabled: !runtime_profiles.is_empty()
+            && runtime_profiles
+                .iter()
+                .all(|profile| profile.tool_execution == "disabled"),
+        runtime_profiles_agent_execution_disabled: !runtime_profiles.is_empty()
+            && runtime_profiles
+                .iter()
+                .all(|profile| profile.agent_execution == "disabled"),
+        runtime_profiles_secret_refs_only: !runtime_profiles.is_empty()
+            && runtime_profiles
+                .iter()
+                .all(|profile| matches!(profile.secrets.as_str(), "denied" | "env_reference_only")),
+        runtime_profiles_security_claims_absent: !runtime_profiles.is_empty()
+            && runtime_profiles
+                .iter()
+                .all(|profile| profile.security_claims == "none"),
+        sandboxed_provider_adapters_declared: !sandboxed_adapters.is_empty(),
+        sandboxed_provider_adapters_provider_bound: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters.iter().all(|adapter| {
+                bytecode
+                    .providers
+                    .iter()
+                    .any(|provider| provider.name == adapter.provider)
+            }),
+        sandboxed_provider_adapters_runtime_bound: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters.iter().all(|adapter| {
+                runtime_profiles.iter().any(|profile| {
+                    profile.name == adapter.runtime && profile.provider == adapter.provider
+                })
+            }),
+        sandboxed_provider_adapters_operations_bounded: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters.iter().all(|adapter| {
+                !adapter.allowed_operations.is_empty()
+                    && !adapter.denied_operations.is_empty()
+                    && adapter
+                        .allowed_operations
+                        .iter()
+                        .all(|operation| !adapter.denied_operations.contains(operation))
+            }),
+        sandboxed_provider_adapters_network_declared: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters
+                .iter()
+                .all(|adapter| matches!(adapter.network.as_str(), "denied" | "declared_only")),
+        sandboxed_provider_adapters_external_execution_sandboxed: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters.iter().all(|adapter| {
+                matches!(
+                    adapter.external_execution.as_str(),
+                    "disabled" | "sandboxed"
+                )
+            }),
+        sandboxed_provider_adapters_tool_execution_disabled: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters
+                .iter()
+                .all(|adapter| adapter.tool_execution == "disabled"),
+        sandboxed_provider_adapters_secret_refs_redacted: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters.iter().all(|adapter| {
+                adapter.redacted
+                    && adapter.endpoint_value.is_none()
+                    && adapter.secret_value.is_none()
+                    && (adapter.endpoint_ref.starts_with("env:")
+                        || adapter.endpoint_ref.starts_with("config:"))
+                    && (adapter.secret_ref.starts_with("env:")
+                        || adapter.secret_ref.starts_with("secret_boundary:"))
+            }),
+        sandboxed_provider_adapters_fail_closed: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters.iter().all(|adapter| adapter.fail_closed),
+        sandboxed_provider_adapters_security_claims_absent: !sandboxed_adapters.is_empty()
+            && sandboxed_adapters
+                .iter()
+                .all(|adapter| adapter.security_claims == "none"),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -1976,6 +2377,8 @@ mod tests {
             threat_models: vec![],
             spec_freezes: vec![],
             release_candidates: vec![],
+            runtime_execution_profiles: vec![],
+            sandboxed_provider_adapters: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -2129,7 +2532,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.36");
+        assert_eq!(json["vm_version"], "1.0");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -2151,7 +2554,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.36");
+        assert_eq!(json["vm_version"], "1.0");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -2173,7 +2576,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.36");
+        assert_eq!(json["vm_version"], "1.0");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -2228,7 +2631,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.36");
+        assert_eq!(trace.vm_version, "1.0");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -2302,7 +2705,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.36");
+        assert_eq!(trace.vm_version, "1.0");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -2354,7 +2757,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.36");
+        assert_eq!(json["vm_version"], "1.0");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -2604,7 +3007,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.36");
+        assert_eq!(trace.vm_version, "1.0");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [

@@ -2,9 +2,9 @@ use anyhow::{bail, Context, Result};
 use argorix_bytecode::BytecodeProgram;
 use argorix_vm::{
     evidence::{verify_evidence, EvidenceBundle},
-    parse_injection, ReactiveExecutionTrace, SecurityReport, Vm,
+    parse_injection, ReactiveExecutionTrace, RuntimeExecutionRequest, SecurityReport, Vm,
 };
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::{fs, path::PathBuf};
 
 #[derive(Debug, Parser)]
@@ -16,42 +16,53 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    Run {
-        file: PathBuf,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        mailboxes: bool,
-        #[arg(long)]
-        reactive: bool,
-        #[arg(long)]
-        inject: Option<String>,
-        #[arg(long)]
-        state: bool,
-        #[arg(long)]
-        tools: bool,
-        #[arg(long)]
-        models: bool,
-        #[arg(long)]
-        policy: bool,
-        #[arg(long)]
-        providers: bool,
-        #[arg(long)]
-        provider_contracts: bool,
-        #[arg(long, value_name = "PATH")]
-        security_report: Option<PathBuf>,
-        #[arg(long, value_name = "PATH")]
-        trace_out: Option<PathBuf>,
-        #[arg(long, value_name = "PATH")]
-        evidence_bundle: Option<PathBuf>,
-    },
+    Run(Box<RunArgs>),
     VerifyEvidence {
         bundle: PathBuf,
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Debug, Args)]
+struct RunArgs {
+    file: PathBuf,
+    #[arg(long)]
+    dry_run: bool,
+    #[arg(long)]
+    json: bool,
+    #[arg(long)]
+    mailboxes: bool,
+    #[arg(long)]
+    reactive: bool,
+    #[arg(long)]
+    inject: Option<String>,
+    #[arg(long)]
+    state: bool,
+    #[arg(long)]
+    tools: bool,
+    #[arg(long)]
+    models: bool,
+    #[arg(long)]
+    policy: bool,
+    #[arg(long)]
+    providers: bool,
+    #[arg(long)]
+    provider_contracts: bool,
+    #[arg(long, value_name = "PATH")]
+    security_report: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    trace_out: Option<PathBuf>,
+    #[arg(long, value_name = "PATH")]
+    evidence_bundle: Option<PathBuf>,
+    #[arg(long)]
+    runtime: Option<String>,
+    #[arg(long)]
+    adapter: Option<String>,
+    #[arg(long)]
+    operation: Option<String>,
+    #[arg(long)]
+    sandboxed_external: bool,
 }
 
 fn main() {
@@ -63,30 +74,63 @@ fn main() {
 
 fn run() -> Result<()> {
     match Cli::parse().command {
-        Command::Run {
-            file,
-            dry_run,
-            json,
-            mailboxes,
-            reactive,
-            inject,
-            state,
-            tools,
-            models,
-            policy,
-            providers,
-            provider_contracts,
-            security_report,
-            trace_out,
-            evidence_bundle,
-        } => {
-            if !dry_run {
-                bail!("v0.21 only supports execution with `--dry-run`");
+        Command::Run(args) => {
+            let RunArgs {
+                file,
+                dry_run,
+                json,
+                mailboxes,
+                reactive,
+                inject,
+                state,
+                tools,
+                models,
+                policy,
+                providers,
+                provider_contracts,
+                security_report,
+                trace_out,
+                evidence_bundle,
+                runtime,
+                adapter,
+                operation,
+                sandboxed_external,
+            } = *args;
+            if !dry_run && runtime.is_none() {
+                bail!("reactive execution requires `--dry-run`");
             }
             let source = fs::read_to_string(&file)
                 .with_context(|| format!("failed to read `{}`", file.display()))?;
             let bytecode: BytecodeProgram = serde_json::from_str(&source)
                 .with_context(|| format!("invalid bytecode JSON in `{}`", file.display()))?;
+            if let Some(runtime) = runtime {
+                let result = Vm::new().run_runtime_profile(
+                    &bytecode,
+                    RuntimeExecutionRequest {
+                        runtime,
+                        adapter,
+                        operation,
+                        sandboxed_external,
+                    },
+                )?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                } else {
+                    println!("Argorix VM v1.0");
+                    println!("Runtime: {}", result.runtime);
+                    println!("Mode: {}", result.mode);
+                    println!("Status: {}", result.status);
+                    println!(
+                        "External provider execution: {}",
+                        if result.external_execution_enabled {
+                            "enabled"
+                        } else {
+                            "not executed"
+                        }
+                    );
+                }
+                return Ok(());
+            }
             if reactive {
                 let injection = inject
                     .as_deref()
@@ -122,7 +166,7 @@ fn run() -> Result<()> {
                 if json {
                     println!("{}", serde_json::to_string_pretty(&trace)?);
                 } else {
-                    println!("Argorix VM v0.21\n");
+                    println!("Argorix VM v1.0\n");
                     println!("Execution mode: reactive dry-run");
                     println!("Scheduler: {}", trace.scheduler);
                     if providers {
@@ -356,7 +400,7 @@ fn run() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&trace)?);
             } else if mailboxes {
-                println!("Argorix VM v0.21\n");
+                println!("Argorix VM v1.0\n");
                 println!("Execution mode: dry-run");
                 println!("Scheduler: {}", trace.scheduler);
                 println!("Agents: {}\n", trace.mailboxes.len());
@@ -376,7 +420,7 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
                 println!("Trace ledger: generated");
             } else {
-                println!("Argorix VM v0.21\n");
+                println!("Argorix VM v1.0\n");
                 println!("Loaded bytecode: {}", file.display());
                 println!("Execution mode: dry-run\n");
                 for step in &trace.steps {
@@ -448,8 +492,15 @@ fn format_allowlist(values: &[String]) -> String {
 }
 #[cfg(test)]
 mod tests {
-    use super::{format_allowlist, parse_injection, Cli, Command};
+    use super::{format_allowlist, parse_injection, Cli, Command, RunArgs};
     use clap::Parser;
+
+    fn run_args(cli: &Cli) -> &RunArgs {
+        match &cli.command {
+            Command::Run(args) => args,
+            Command::VerifyEvidence { .. } => panic!("expected run command"),
+        }
+    }
 
     #[test]
     fn formats_populated_and_empty_allowlists() {
@@ -471,14 +522,8 @@ mod tests {
             "User:Worker:tell:Ping",
         ])
         .unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Run {
-                reactive: true,
-                inject: Some(_),
-                ..
-            }
-        ));
+        assert!(run_args(&cli).reactive);
+        assert!(run_args(&cli).inject.is_some());
         assert_eq!(
             parse_injection("User:Worker:tell:Ping").unwrap().to,
             "Worker"
@@ -498,7 +543,7 @@ mod tests {
             "--state",
         ])
         .unwrap();
-        assert!(matches!(cli.command, Command::Run { state: true, .. }));
+        assert!(run_args(&cli).state);
     }
 
     #[test]
@@ -514,7 +559,7 @@ mod tests {
             "--tools",
         ])
         .unwrap();
-        assert!(matches!(cli.command, Command::Run { tools: true, .. }));
+        assert!(run_args(&cli).tools);
     }
 
     #[test]
@@ -530,7 +575,7 @@ mod tests {
             "--models",
         ])
         .unwrap();
-        assert!(matches!(cli.command, Command::Run { models: true, .. }));
+        assert!(run_args(&cli).models);
     }
 
     #[test]
@@ -546,7 +591,7 @@ mod tests {
             "--policy",
         ])
         .unwrap();
-        assert!(matches!(cli.command, Command::Run { policy: true, .. }));
+        assert!(run_args(&cli).policy);
     }
 
     #[test]
@@ -562,13 +607,7 @@ mod tests {
             "--providers",
         ])
         .unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Run {
-                providers: true,
-                ..
-            }
-        ));
+        assert!(run_args(&cli).providers);
     }
 
     #[test]
@@ -585,13 +624,7 @@ mod tests {
             "reports/run.security.json",
         ])
         .unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Run {
-                security_report: Some(_),
-                ..
-            }
-        ));
+        assert!(run_args(&cli).security_report.is_some());
     }
 
     #[test]
@@ -610,14 +643,8 @@ mod tests {
             "reports/run.bundle.json",
         ])
         .unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Run {
-                trace_out: Some(_),
-                evidence_bundle: Some(_),
-                ..
-            }
-        ));
+        assert!(run_args(&cli).trace_out.is_some());
+        assert!(run_args(&cli).evidence_bundle.is_some());
     }
 
     #[test]
@@ -648,12 +675,28 @@ mod tests {
             "--provider-contracts",
         ])
         .unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Run {
-                provider_contracts: true,
-                ..
-            }
-        ));
+        assert!(run_args(&cli).provider_contracts);
+    }
+
+    #[test]
+    fn cli_accepts_explicit_sandboxed_runtime_plan() {
+        let cli = Cli::try_parse_from([
+            "argorix-vm",
+            "run",
+            "program.json",
+            "--runtime",
+            "ChatbotRuntime",
+            "--adapter",
+            "OpenAISandbox",
+            "--operation",
+            "responses.create",
+            "--sandboxed-external",
+            "--json",
+        ])
+        .unwrap();
+        assert!(run_args(&cli).runtime.is_some());
+        assert!(run_args(&cli).adapter.is_some());
+        assert!(run_args(&cli).operation.is_some());
+        assert!(run_args(&cli).sandboxed_external);
     }
 }

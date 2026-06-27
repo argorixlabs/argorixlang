@@ -8,10 +8,11 @@ use crate::{
     BytecodePassport, BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule,
     BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness,
     BytecodePublicConformanceClaim, BytecodePublicConformanceReport, BytecodeRegulatoryMapping,
-    BytecodeRegulatoryObligation, BytecodeReleaseCandidate, BytecodeRuntimeHardeningProfile,
-    BytecodeSecret, BytecodeSpecFreeze, BytecodeThirdPartyVerifier, BytecodeThreat,
-    BytecodeThreatAsset, BytecodeThreatMitigation, BytecodeThreatModel, BytecodeTool,
-    BytecodeTrustLedger, BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeRegulatoryObligation, BytecodeReleaseCandidate, BytecodeRuntimeExecutionProfile,
+    BytecodeRuntimeHardeningProfile, BytecodeSandboxedProviderAdapter, BytecodeSecret,
+    BytecodeSpecFreeze, BytecodeThirdPartyVerifier, BytecodeThreat, BytecodeThreatAsset,
+    BytecodeThreatMitigation, BytecodeThreatModel, BytecodeTool, BytecodeTrustLedger,
+    BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
 };
 use argorix_ir::{ir::IrHandlerInstruction, IrProgram};
 use std::collections::HashMap;
@@ -180,7 +181,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.36".to_owned(),
+        bytecode_version: "1.0".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -857,6 +858,67 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 notes: r.notes.clone(),
             })
             .collect(),
+        runtime_execution_profiles: ir
+            .runtime_execution_profiles
+            .iter()
+            .map(|profile| BytecodeRuntimeExecutionProfile {
+                name: profile.name.clone(),
+                mode: profile.mode.clone(),
+                agents: profile.agents.clone(),
+                provider: profile.provider.clone(),
+                hardening: profile.hardening.clone(),
+                threat_model: profile.threat_model.clone(),
+                evidence_map: profile.evidence_map.clone(),
+                governance_profile: profile.governance_profile.clone(),
+                allowed_actions: profile.allowed_actions.clone(),
+                denied_actions: profile.denied_actions.clone(),
+                network: profile.network.clone(),
+                external_execution: profile.external_execution.clone(),
+                tool_execution: profile.tool_execution.clone(),
+                agent_execution: profile.agent_execution.clone(),
+                secrets: profile.secrets.clone(),
+                key_material: profile.key_material.clone(),
+                audit: profile.audit.clone(),
+                evidence: profile.evidence.clone(),
+                security_report: profile.security_report.clone(),
+                fail_closed: profile.fail_closed,
+                security_claims: profile.security_claims.clone(),
+                purpose: profile.purpose.clone(),
+                notes: profile.notes.clone(),
+            })
+            .collect(),
+        sandboxed_provider_adapters: ir
+            .sandboxed_provider_adapters
+            .iter()
+            .map(|adapter| BytecodeSandboxedProviderAdapter {
+                name: adapter.name.clone(),
+                provider: adapter.provider.clone(),
+                runtime: adapter.runtime.clone(),
+                adapter_kind: adapter.adapter_kind.clone(),
+                protocol: adapter.protocol.clone(),
+                endpoint_ref: adapter.endpoint_ref.clone(),
+                endpoint_value: None,
+                secret_ref: adapter.secret_ref.clone(),
+                secret_value: None,
+                redacted: true,
+                allowed_operations: adapter.allowed_operations.clone(),
+                denied_operations: adapter.denied_operations.clone(),
+                request_policy: adapter.request_policy.clone(),
+                response_policy: adapter.response_policy.clone(),
+                network: adapter.network.clone(),
+                external_execution: adapter.external_execution.clone(),
+                tool_execution: adapter.tool_execution.clone(),
+                secret_material: adapter.secret_material.clone(),
+                key_material: adapter.key_material.clone(),
+                audit: adapter.audit.clone(),
+                evidence: adapter.evidence.clone(),
+                security_report: adapter.security_report.clone(),
+                fail_closed: adapter.fail_closed,
+                security_claims: adapter.security_claims.clone(),
+                purpose: adapter.purpose.clone(),
+                notes: adapter.notes.clone(),
+            })
+            .collect(),
         imports: ir
             .imports
             .iter()
@@ -1051,6 +1113,8 @@ mod tests {
             threat_models: vec![],
             spec_freezes: vec![],
             release_candidates: vec![],
+            runtime_execution_profiles: vec![],
+            sandboxed_provider_adapters: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -1116,7 +1180,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.36");
+        assert_eq!(bytecode.bytecode_version, "1.0");
         assert!(bytecode
             .instructions
             .iter()
@@ -1223,6 +1287,8 @@ mod tests {
             threat_models: vec![],
             spec_freezes: vec![],
             release_candidates: vec![],
+            runtime_execution_profiles: vec![],
+            sandboxed_provider_adapters: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -1236,7 +1302,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.36");
+        assert_eq!(bytecode.bytecode_version, "1.0");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(

@@ -1,0 +1,26 @@
+module runtime.execution
+
+runtime_execution_profile ChatbotRuntime {
+  mode sandboxed_external
+  agents ["ResearchAgent"]
+  provider OpenAIProvider
+  hardening HardenedRuntime
+  threat_model AgentThreatModel
+  evidence_map ChatbotEvidenceMap
+  governance_profile ChatbotGovernance
+  allowed_actions ["model.generate"]
+  denied_actions ["tool.execute", "shell.run", "filesystem.write"]
+  network declared_only
+  external_execution sandboxed
+  tool_execution disabled
+  agent_execution disabled
+  secrets env_reference_only
+  key_material denied
+  audit required
+  evidence required
+  security_report required
+  fail_closed true
+  security_claims none
+  purpose ["runtime", "sandboxed-provider", "mvp"]
+  notes "v1.0 runtime MVP; external execution only through declared sandbox"
+}

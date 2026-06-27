@@ -60,6 +60,8 @@ pub fn check_program_with_options(
     check_threat_models(program, &mut diagnostics);
     check_spec_freezes(program, &mut diagnostics);
     check_release_candidates(program, &mut diagnostics);
+    check_runtime_execution_profiles(program, &mut diagnostics);
+    check_sandboxed_provider_adapters(program, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -5894,6 +5896,438 @@ pub fn check_release_candidates(program: &Program, diagnostics: &mut Vec<Diagnos
             require_public_conformance_text("release_candidate", name, "notes", notes, diagnostics);
         }
     }
+}
+
+pub fn check_runtime_execution_profiles(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let providers: HashSet<&str> = program
+        .providers
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .chain(std::iter::once("simulated"))
+        .collect();
+    let agents: HashSet<&str> = program
+        .agents
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let hardening: HashSet<&str> = program
+        .runtime_hardening_profiles
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let threat_models: HashSet<&str> = program
+        .threat_models
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let governance_profiles: std::collections::HashMap<&str, _> = program
+        .governance_profiles
+        .iter()
+        .map(|value| (value.name.value.as_str(), value))
+        .collect();
+    let mut names = HashSet::new();
+    for profile in &program.runtime_execution_profiles {
+        let name = profile.name.value.as_str();
+        report_duplicate(
+            &mut names,
+            &profile.name,
+            "runtime_execution_profile",
+            diagnostics,
+        );
+        require_allowed_value(
+            "runtime_execution_profile",
+            name,
+            "mode",
+            &profile.mode,
+            &["dry_run", "simulated", "sandboxed_external"],
+            diagnostics,
+        );
+        for (field, value, allowed) in [
+            (
+                "network",
+                &profile.network,
+                &["denied", "declared_only"][..],
+            ),
+            (
+                "external_execution",
+                &profile.external_execution,
+                &["disabled", "sandboxed"][..],
+            ),
+            (
+                "secrets",
+                &profile.secrets,
+                &["denied", "env_reference_only"][..],
+            ),
+        ] {
+            require_allowed_value(
+                "runtime_execution_profile",
+                name,
+                field,
+                value,
+                allowed,
+                diagnostics,
+            );
+        }
+        for (field, value, required) in [
+            ("tool_execution", &profile.tool_execution, "disabled"),
+            ("agent_execution", &profile.agent_execution, "disabled"),
+            ("key_material", &profile.key_material, "denied"),
+            ("audit", &profile.audit, "required"),
+            ("evidence", &profile.evidence, "required"),
+            ("security_report", &profile.security_report, "required"),
+            ("security_claims", &profile.security_claims, "none"),
+        ] {
+            require_exact_value(
+                "runtime_execution_profile",
+                name,
+                field,
+                value,
+                required,
+                diagnostics,
+            );
+        }
+        if !profile.fail_closed.value {
+            diagnostics.push(Diagnostic::new(
+                format!("runtime_execution_profile `{name}` requires fail_closed `true`"),
+                profile.fail_closed.span,
+            ));
+        }
+        require_non_empty_string_list(
+            "runtime_execution_profile",
+            name,
+            "agents",
+            &profile.agents,
+            profile.name.span,
+            diagnostics,
+        );
+        for agent in &profile.agents {
+            if !agents.contains(agent.value.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "runtime_execution_profile `{name}` references unknown agent `{}`",
+                        agent.value
+                    ),
+                    agent.span,
+                ));
+            }
+        }
+        for (kind, value, known) in [
+            (
+                "provider",
+                &profile.provider,
+                providers.contains(profile.provider.value.as_str()),
+            ),
+            (
+                "runtime_hardening_profile",
+                &profile.hardening,
+                hardening.contains(profile.hardening.value.as_str()),
+            ),
+            (
+                "threat_model",
+                &profile.threat_model,
+                threat_models.contains(profile.threat_model.value.as_str()),
+            ),
+            (
+                "evidence_map",
+                &profile.evidence_map,
+                evidence_maps.contains(profile.evidence_map.value.as_str()),
+            ),
+            (
+                "governance_profile",
+                &profile.governance_profile,
+                governance_profiles.contains_key(profile.governance_profile.value.as_str()),
+            ),
+        ] {
+            if !known {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "runtime_execution_profile `{name}` references unknown {kind} `{}`",
+                        value.value
+                    ),
+                    value.span,
+                ));
+            }
+        }
+        if let Some(governance) = governance_profiles.get(profile.governance_profile.value.as_str())
+        {
+            if governance.evidence_map.value != profile.evidence_map.value {
+                diagnostics.push(Diagnostic::new(
+                    format!("runtime_execution_profile `{name}` governance/evidence_map mismatch"),
+                    profile.governance_profile.span,
+                ));
+            }
+        }
+        require_non_empty_string_list(
+            "runtime_execution_profile",
+            name,
+            "allowed_actions",
+            &profile.allowed_actions,
+            profile.name.span,
+            diagnostics,
+        );
+        require_non_empty_string_list(
+            "runtime_execution_profile",
+            name,
+            "denied_actions",
+            &profile.denied_actions,
+            profile.name.span,
+            diagnostics,
+        );
+        require_disjoint_string_lists(
+            "runtime_execution_profile",
+            name,
+            "allowed_actions",
+            &profile.allowed_actions,
+            "denied_actions",
+            &profile.denied_actions,
+            diagnostics,
+        );
+        require_non_empty_string_list(
+            "runtime_execution_profile",
+            name,
+            "purpose",
+            &profile.purpose,
+            profile.name.span,
+            diagnostics,
+        );
+        if let Some(notes) = &profile.notes {
+            require_public_conformance_text(
+                "runtime_execution_profile",
+                name,
+                "notes",
+                notes,
+                diagnostics,
+            );
+        }
+    }
+}
+
+pub fn check_sandboxed_provider_adapters(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let providers: HashSet<&str> = program
+        .providers
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .chain(std::iter::once("simulated"))
+        .collect();
+    let runtimes: std::collections::HashMap<&str, _> = program
+        .runtime_execution_profiles
+        .iter()
+        .map(|value| (value.name.value.as_str(), value))
+        .collect();
+    let secret_boundaries: HashSet<&str> = program
+        .secrets
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for adapter in &program.sandboxed_provider_adapters {
+        let name = adapter.name.value.as_str();
+        report_duplicate(
+            &mut names,
+            &adapter.name,
+            "sandboxed_provider_adapter",
+            diagnostics,
+        );
+        if !providers.contains(adapter.provider.value.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "sandboxed_provider_adapter `{name}` references unknown provider `{}`",
+                    adapter.provider.value
+                ),
+                adapter.provider.span,
+            ));
+        }
+        let runtime = runtimes.get(adapter.runtime.value.as_str()).copied();
+        if runtime.is_none() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "sandboxed_provider_adapter `{name}` references unknown runtime_execution_profile `{}`",
+                    adapter.runtime.value
+                ),
+                adapter.runtime.span,
+            ));
+        } else if runtime.is_some_and(|value| value.provider.value != adapter.provider.value) {
+            diagnostics.push(Diagnostic::new(
+                format!("sandboxed_provider_adapter `{name}` provider/runtime mismatch"),
+                adapter.provider.span,
+            ));
+        }
+        for (field, value, allowed) in [
+            (
+                "adapter_kind",
+                &adapter.adapter_kind,
+                &["llm", "embedding", "moderation", "custom"][..],
+            ),
+            (
+                "protocol",
+                &adapter.protocol,
+                &["https_declared", "local_declared"][..],
+            ),
+            (
+                "request_policy",
+                &adapter.request_policy,
+                &["declared_only", "redacted_logged"][..],
+            ),
+            (
+                "response_policy",
+                &adapter.response_policy,
+                &["evidence_logged", "redacted_logged"][..],
+            ),
+            (
+                "network",
+                &adapter.network,
+                &["declared_only", "denied"][..],
+            ),
+            (
+                "external_execution",
+                &adapter.external_execution,
+                &["sandboxed", "disabled"][..],
+            ),
+            (
+                "secret_material",
+                &adapter.secret_material,
+                &["env_reference_only", "denied"][..],
+            ),
+        ] {
+            require_allowed_value(
+                "sandboxed_provider_adapter",
+                name,
+                field,
+                value,
+                allowed,
+                diagnostics,
+            );
+        }
+        for (field, value, required) in [
+            ("tool_execution", &adapter.tool_execution, "disabled"),
+            ("key_material", &adapter.key_material, "denied"),
+            ("audit", &adapter.audit, "required"),
+            ("evidence", &adapter.evidence, "required"),
+            ("security_report", &adapter.security_report, "required"),
+            ("security_claims", &adapter.security_claims, "none"),
+        ] {
+            require_exact_value(
+                "sandboxed_provider_adapter",
+                name,
+                field,
+                value,
+                required,
+                diagnostics,
+            );
+        }
+        if !adapter.fail_closed.value {
+            diagnostics.push(Diagnostic::new(
+                format!("sandboxed_provider_adapter `{name}` requires fail_closed `true`"),
+                adapter.fail_closed.span,
+            ));
+        }
+        if !is_declared_reference(&adapter.endpoint_ref.value, &["env", "config"]) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "sandboxed_provider_adapter `{name}` endpoint_ref must use `env:<NAME>` or `config:<NAME>`"
+                ),
+                adapter.endpoint_ref.span,
+            ));
+        }
+        if !is_declared_reference(&adapter.secret_ref.value, &["env", "secret_boundary"]) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "sandboxed_provider_adapter `{name}` secret_ref must use `env:<NAME>` or `secret_boundary:<NAME>`"
+                ),
+                adapter.secret_ref.span,
+            ));
+        } else if let Some(boundary) = adapter.secret_ref.value.strip_prefix("secret_boundary:") {
+            if !secret_boundaries.contains(boundary) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "sandboxed_provider_adapter `{name}` references unknown secret boundary `{boundary}`"
+                    ),
+                    adapter.secret_ref.span,
+                ));
+            }
+        }
+        require_non_empty_string_list(
+            "sandboxed_provider_adapter",
+            name,
+            "allowed_operations",
+            &adapter.allowed_operations,
+            adapter.name.span,
+            diagnostics,
+        );
+        require_non_empty_string_list(
+            "sandboxed_provider_adapter",
+            name,
+            "denied_operations",
+            &adapter.denied_operations,
+            adapter.name.span,
+            diagnostics,
+        );
+        require_disjoint_string_lists(
+            "sandboxed_provider_adapter",
+            name,
+            "allowed_operations",
+            &adapter.allowed_operations,
+            "denied_operations",
+            &adapter.denied_operations,
+            diagnostics,
+        );
+        require_non_empty_string_list(
+            "sandboxed_provider_adapter",
+            name,
+            "purpose",
+            &adapter.purpose,
+            adapter.name.span,
+            diagnostics,
+        );
+        if let Some(notes) = &adapter.notes {
+            require_public_conformance_text(
+                "sandboxed_provider_adapter",
+                name,
+                "notes",
+                notes,
+                diagnostics,
+            );
+        }
+    }
+}
+
+fn require_disjoint_string_lists(
+    kind: &str,
+    name: &str,
+    left_name: &str,
+    left: &[Spanned<String>],
+    right_name: &str,
+    right: &[Spanned<String>],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let right_values: HashSet<&str> = right.iter().map(|value| value.value.as_str()).collect();
+    for value in left {
+        if right_values.contains(value.value.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "{kind} `{name}` has overlapping {left_name}/{right_name} value `{}`",
+                    value.value
+                ),
+                value.span,
+            ));
+        }
+    }
+}
+
+fn is_declared_reference(value: &str, allowed_prefixes: &[&str]) -> bool {
+    let Some((prefix, name)) = value.split_once(':') else {
+        return false;
+    };
+    allowed_prefixes.contains(&prefix)
+        && !name.is_empty()
+        && name
+            .chars()
+            .all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
 
 fn validate_threat_assets(

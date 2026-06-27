@@ -38,6 +38,8 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         threat_models: Vec::new(),
         spec_freezes: Vec::new(),
         release_candidates: Vec::new(),
+        runtime_execution_profiles: Vec::new(),
+        sandboxed_provider_adapters: Vec::new(),
         assertions: Vec::new(),
         policies: Vec::new(),
         failures: Vec::new(),
@@ -126,6 +128,12 @@ pub fn merge_package(package: &ResolvedPackage) -> Program {
         merged
             .release_candidates
             .extend(program.release_candidates.iter().cloned());
+        merged
+            .runtime_execution_profiles
+            .extend(program.runtime_execution_profiles.iter().cloned());
+        merged
+            .sandboxed_provider_adapters
+            .extend(program.sandboxed_provider_adapters.iter().cloned());
         merged.assertions.extend(program.assertions.iter().cloned());
         merged.policies.extend(program.policies.iter().cloned());
         merged.failures.extend(program.failures.iter().cloned());

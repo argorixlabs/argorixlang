@@ -62,6 +62,10 @@ pub struct SecurityReport {
     pub spec_freezes: SpecFreezesSummary,
     #[serde(default)]
     pub release_candidates: ReleaseCandidatesSummary,
+    #[serde(default)]
+    pub runtime_execution_profiles: RuntimeExecutionProfilesSummary,
+    #[serde(default)]
+    pub sandboxed_provider_adapters: SandboxedProviderAdaptersSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -301,6 +305,35 @@ pub struct ReleaseCandidatesSummary {
     pub security_claims: BTreeMap<String, usize>,
     pub legal_claims: BTreeMap<String, usize>,
     pub certification: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeExecutionProfilesSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub modes: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub tool_execution: BTreeMap<String, usize>,
+    pub agent_execution: BTreeMap<String, usize>,
+    pub secrets: BTreeMap<String, usize>,
+    pub fail_closed: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SandboxedProviderAdaptersSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub adapter_kinds: BTreeMap<String, usize>,
+    pub protocols: BTreeMap<String, usize>,
+    pub allowed_operations_total: usize,
+    pub denied_operations_total: usize,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub tool_execution: BTreeMap<String, usize>,
+    pub secret_refs_redacted: BTreeMap<String, usize>,
+    pub fail_closed: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -782,7 +815,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.36".into(),
+            report_version: "1.0".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -790,7 +823,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.36".into()),
+                .unwrap_or_else(|| "1.0".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -819,6 +852,12 @@ impl SecurityReport {
             threat_models: threat_models_summary(&bytecode.threat_models),
             spec_freezes: spec_freezes_summary(&bytecode.spec_freezes),
             release_candidates: release_candidates_summary(&bytecode.release_candidates),
+            runtime_execution_profiles: runtime_execution_profiles_summary(
+                &bytecode.runtime_execution_profiles,
+            ),
+            sandboxed_provider_adapters: sandboxed_provider_adapters_summary(
+                &bytecode.sandboxed_provider_adapters,
+            ),
             policy,
             provider_boundary,
             calls,
@@ -908,6 +947,71 @@ fn release_candidates_summary(
                 .entry(entry.version.clone())
                 .or_insert(0) += 1;
         }
+    }
+    summary
+}
+
+fn runtime_execution_profiles_summary(
+    profiles: &[argorix_bytecode::BytecodeRuntimeExecutionProfile],
+) -> RuntimeExecutionProfilesSummary {
+    let mut summary = RuntimeExecutionProfilesSummary {
+        total: profiles.len(),
+        ..Default::default()
+    };
+    for profile in profiles {
+        summary.names.push(profile.name.clone());
+        for (map, value) in [
+            (&mut summary.modes, &profile.mode),
+            (&mut summary.external_execution, &profile.external_execution),
+            (&mut summary.tool_execution, &profile.tool_execution),
+            (&mut summary.agent_execution, &profile.agent_execution),
+            (&mut summary.secrets, &profile.secrets),
+            (&mut summary.security_claims, &profile.security_claims),
+        ] {
+            *map.entry(value.clone()).or_insert(0) += 1;
+        }
+        *summary
+            .fail_closed
+            .entry(profile.fail_closed.to_string())
+            .or_insert(0) += 1;
+    }
+    summary
+}
+
+fn sandboxed_provider_adapters_summary(
+    adapters: &[argorix_bytecode::BytecodeSandboxedProviderAdapter],
+) -> SandboxedProviderAdaptersSummary {
+    let mut summary = SandboxedProviderAdaptersSummary {
+        total: adapters.len(),
+        ..Default::default()
+    };
+    for adapter in adapters {
+        summary.names.push(adapter.name.clone());
+        for (map, value) in [
+            (&mut summary.adapter_kinds, &adapter.adapter_kind),
+            (&mut summary.protocols, &adapter.protocol),
+            (&mut summary.network, &adapter.network),
+            (&mut summary.external_execution, &adapter.external_execution),
+            (&mut summary.tool_execution, &adapter.tool_execution),
+            (&mut summary.security_claims, &adapter.security_claims),
+        ] {
+            *map.entry(value.clone()).or_insert(0) += 1;
+        }
+        summary.allowed_operations_total += adapter.allowed_operations.len();
+        summary.denied_operations_total += adapter.denied_operations.len();
+        *summary
+            .secret_refs_redacted
+            .entry(
+                (adapter.redacted
+                    && adapter.secret_value.is_none()
+                    && adapter.endpoint_value.is_none())
+                .to_string(),
+            )
+            .or_insert(0) += 1;
+        *summary
+            .fail_closed
+            .entry(adapter.fail_closed.to_string())
+            .or_insert(0) += 1;
     }
     summary
 }

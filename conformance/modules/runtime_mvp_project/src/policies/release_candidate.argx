@@ -1,0 +1,41 @@
+module policies.release_candidate
+
+policy ReleaseCandidatePolicy {
+  require spec_freezes_declared
+  require spec_freeze_versions_pinned
+  require spec_freeze_features_declared
+  require spec_freeze_compatibility_declared
+  require spec_freeze_required_suites_declared
+  require spec_freeze_runtime_disabled
+  require spec_freeze_network_denied
+  require spec_freeze_external_execution_disabled
+  require spec_freeze_provider_execution_disabled
+  require spec_freeze_secret_material_denied
+  require spec_freeze_key_material_denied
+  require spec_freeze_env_denied
+  require spec_freeze_filesystem_denied
+  require spec_freeze_security_claims_absent
+  require spec_freeze_legal_claims_absent
+  require spec_freeze_certification_absent
+  require release_candidates_declared
+  require release_candidates_spec_freeze_bound
+  require release_candidates_artifacts_declared
+  require release_candidates_checks_declared
+  require release_candidates_compatibility_matrix_declared
+  require release_candidates_limitations_declared
+  require release_candidates_runtime_disabled
+  require release_candidates_network_denied
+  require release_candidates_external_execution_disabled
+  require release_candidates_provider_execution_disabled
+  require release_candidates_secret_material_denied
+  require release_candidates_key_material_denied
+  require release_candidates_env_denied
+  require release_candidates_filesystem_denied
+  require release_candidates_security_claims_absent
+  require release_candidates_legal_claims_absent
+  require release_candidates_certification_absent
+  on violation {
+    action review
+    trace required
+  }
+}

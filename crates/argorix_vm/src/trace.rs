@@ -132,6 +132,13 @@ pub enum EventType {
     ReleaseCandidateCompatibilityMapped,
     ReleaseCandidateRuntimeDisabled,
     ReleaseCandidateSecurityClaimsDenied,
+    RuntimeExecutionProfileDeclared,
+    RuntimeProfileGuardsValidated,
+    SandboxedProviderAdapterDeclared,
+    ProviderReferencesRedacted,
+    SandboxedExternalCallPlanned,
+    RuntimeDryRunCompleted,
+    RuntimeSimulatedProviderExecuted,
     VmCompleted,
     VmFailed,
 }
@@ -248,6 +255,10 @@ pub struct ReactiveExecutionTrace {
     pub spec_freezes: Vec<argorix_bytecode::BytecodeSpecFreeze>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub release_candidates: Vec<argorix_bytecode::BytecodeReleaseCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runtime_execution_profiles: Vec<argorix_bytecode::BytecodeRuntimeExecutionProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sandboxed_provider_adapters: Vec<argorix_bytecode::BytecodeSandboxedProviderAdapter>,
     pub injected: InjectedMessage,
     pub steps: Vec<ReactiveStep>,
     pub mailboxes: Vec<MailboxSummary>,

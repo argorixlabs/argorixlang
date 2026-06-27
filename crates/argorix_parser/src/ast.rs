@@ -29,6 +29,8 @@ pub struct Program {
     pub threat_models: Vec<ThreatModelDecl>,
     pub spec_freezes: Vec<SpecFreezeDecl>,
     pub release_candidates: Vec<ReleaseCandidateDecl>,
+    pub runtime_execution_profiles: Vec<RuntimeExecutionProfileDecl>,
+    pub sandboxed_provider_adapters: Vec<SandboxedProviderAdapterDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -987,6 +989,28 @@ pub enum PolicyRule {
     ReleaseCandidatesSecurityClaimsAbsent,
     ReleaseCandidatesLegalClaimsAbsent,
     ReleaseCandidatesCertificationAbsent,
+    RuntimeExecutionProfilesDeclared,
+    RuntimeProfilesAgentsBound,
+    RuntimeProfilesProviderBound,
+    RuntimeProfilesHardeningBound,
+    RuntimeProfilesEvidenceBound,
+    RuntimeProfilesGovernanceBound,
+    RuntimeProfilesFailClosed,
+    RuntimeProfilesExternalExecutionSandboxed,
+    RuntimeProfilesToolExecutionDisabled,
+    RuntimeProfilesAgentExecutionDisabled,
+    RuntimeProfilesSecretRefsOnly,
+    RuntimeProfilesSecurityClaimsAbsent,
+    SandboxedProviderAdaptersDeclared,
+    SandboxedProviderAdaptersProviderBound,
+    SandboxedProviderAdaptersRuntimeBound,
+    SandboxedProviderAdaptersOperationsBounded,
+    SandboxedProviderAdaptersNetworkDeclared,
+    SandboxedProviderAdaptersExternalExecutionSandboxed,
+    SandboxedProviderAdaptersToolExecutionDisabled,
+    SandboxedProviderAdaptersSecretRefsRedacted,
+    SandboxedProviderAdaptersFailClosed,
+    SandboxedProviderAdaptersSecurityClaimsAbsent,
     Unknown(String),
 }
 
@@ -1330,6 +1354,50 @@ impl PolicyRule {
             }
             Self::ReleaseCandidatesLegalClaimsAbsent => "release_candidates_legal_claims_absent",
             Self::ReleaseCandidatesCertificationAbsent => "release_candidates_certification_absent",
+            Self::RuntimeExecutionProfilesDeclared => "runtime_execution_profiles_declared",
+            Self::RuntimeProfilesAgentsBound => "runtime_profiles_agents_bound",
+            Self::RuntimeProfilesProviderBound => "runtime_profiles_provider_bound",
+            Self::RuntimeProfilesHardeningBound => "runtime_profiles_hardening_bound",
+            Self::RuntimeProfilesEvidenceBound => "runtime_profiles_evidence_bound",
+            Self::RuntimeProfilesGovernanceBound => "runtime_profiles_governance_bound",
+            Self::RuntimeProfilesFailClosed => "runtime_profiles_fail_closed",
+            Self::RuntimeProfilesExternalExecutionSandboxed => {
+                "runtime_profiles_external_execution_sandboxed"
+            }
+            Self::RuntimeProfilesToolExecutionDisabled => {
+                "runtime_profiles_tool_execution_disabled"
+            }
+            Self::RuntimeProfilesAgentExecutionDisabled => {
+                "runtime_profiles_agent_execution_disabled"
+            }
+            Self::RuntimeProfilesSecretRefsOnly => "runtime_profiles_secret_refs_only",
+            Self::RuntimeProfilesSecurityClaimsAbsent => "runtime_profiles_security_claims_absent",
+            Self::SandboxedProviderAdaptersDeclared => "sandboxed_provider_adapters_declared",
+            Self::SandboxedProviderAdaptersProviderBound => {
+                "sandboxed_provider_adapters_provider_bound"
+            }
+            Self::SandboxedProviderAdaptersRuntimeBound => {
+                "sandboxed_provider_adapters_runtime_bound"
+            }
+            Self::SandboxedProviderAdaptersOperationsBounded => {
+                "sandboxed_provider_adapters_operations_bounded"
+            }
+            Self::SandboxedProviderAdaptersNetworkDeclared => {
+                "sandboxed_provider_adapters_network_declared"
+            }
+            Self::SandboxedProviderAdaptersExternalExecutionSandboxed => {
+                "sandboxed_provider_adapters_external_execution_sandboxed"
+            }
+            Self::SandboxedProviderAdaptersToolExecutionDisabled => {
+                "sandboxed_provider_adapters_tool_execution_disabled"
+            }
+            Self::SandboxedProviderAdaptersSecretRefsRedacted => {
+                "sandboxed_provider_adapters_secret_refs_redacted"
+            }
+            Self::SandboxedProviderAdaptersFailClosed => "sandboxed_provider_adapters_fail_closed",
+            Self::SandboxedProviderAdaptersSecurityClaimsAbsent => {
+                "sandboxed_provider_adapters_security_claims_absent"
+            }
             Self::Unknown(value) => value,
         }
         .to_owned()
@@ -2809,6 +2877,65 @@ pub struct CompatibilityMatrixEntryDecl {
     pub bytecode: Spanned<String>,
     pub evidence: Spanned<String>,
     pub conformance: Spanned<String>,
+}
+
+/// A governed v1.0 runtime entrypoint. This declaration authorizes no action
+/// by itself; the VM still evaluates every bound guard and fails closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeExecutionProfileDecl {
+    pub name: Spanned<String>,
+    pub mode: Spanned<String>,
+    pub agents: Vec<Spanned<String>>,
+    pub provider: Spanned<String>,
+    pub hardening: Spanned<String>,
+    pub threat_model: Spanned<String>,
+    pub evidence_map: Spanned<String>,
+    pub governance_profile: Spanned<String>,
+    pub allowed_actions: Vec<Spanned<String>>,
+    pub denied_actions: Vec<Spanned<String>>,
+    pub network: Spanned<String>,
+    pub external_execution: Spanned<String>,
+    pub tool_execution: Spanned<String>,
+    pub agent_execution: Spanned<String>,
+    pub secrets: Spanned<String>,
+    pub key_material: Spanned<String>,
+    pub audit: Spanned<String>,
+    pub evidence: Spanned<String>,
+    pub security_report: Spanned<String>,
+    pub fail_closed: Spanned<bool>,
+    pub security_claims: Spanned<String>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+/// A redacted adapter contract for a governed external-call plan. References
+/// are identifiers only; this structure never contains resolved environment or
+/// secret values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxedProviderAdapterDecl {
+    pub name: Spanned<String>,
+    pub provider: Spanned<String>,
+    pub runtime: Spanned<String>,
+    pub adapter_kind: Spanned<String>,
+    pub protocol: Spanned<String>,
+    pub endpoint_ref: Spanned<String>,
+    pub secret_ref: Spanned<String>,
+    pub allowed_operations: Vec<Spanned<String>>,
+    pub denied_operations: Vec<Spanned<String>>,
+    pub request_policy: Spanned<String>,
+    pub response_policy: Spanned<String>,
+    pub network: Spanned<String>,
+    pub external_execution: Spanned<String>,
+    pub tool_execution: Spanned<String>,
+    pub secret_material: Spanned<String>,
+    pub key_material: Spanned<String>,
+    pub audit: Spanned<String>,
+    pub evidence: Spanned<String>,
+    pub security_report: Spanned<String>,
+    pub fail_closed: Spanned<bool>,
+    pub security_claims: Spanned<String>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

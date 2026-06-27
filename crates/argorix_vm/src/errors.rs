@@ -53,6 +53,8 @@ pub enum VmError {
     ProviderBoundary { provider: String, reason: String },
     #[error("policy `{policy}` activated block action")]
     PolicyViolation { policy: String },
+    #[error("runtime profile `{runtime}` rejected request: {reason}")]
+    RuntimeProfile { runtime: String, reason: String },
 }
 
 impl VmError {

@@ -50,11 +50,65 @@ source language
 
 ## Current status
 
-**Version:** `0.36`
-**Status:** early alpha  
+**Version:** `1.0`
+**Status:** Secure Multi-Agent Runtime MVP
 **License:** Apache-2.0  
 **Implementation:** Rust  
-**Execution mode:** dry-run / simulated runtime only
+**Execution modes:** `dry_run`, `simulated`, and governed `sandboxed_external`
+
+Version 1.0 adds the Secure Multi-Agent Runtime MVP. Its governing rule is:
+
+```text
+Runtime may execute only what governance explicitly permits.
+```
+
+The top-level `runtime_execution_profile` binds named agents and a provider to
+Runtime Hardening, a Threat Model, an ATrust Evidence Map, Governance Profile,
+explicit allowed/denied actions, audit evidence, SecurityReport generation,
+and `fail_closed true`. The top-level `sandboxed_provider_adapter` binds that
+runtime to a bounded operation set and redacted endpoint/secret references.
+
+The three modes have deliberately different behavior:
+
+- `dry_run` produces trace and evidence without provider execution.
+- `simulated` uses only the existing deterministic in-process `simulated`
+  provider.
+- `sandboxed_external` is blocked unless the adapter, operation, policy,
+  hardening, evidence, governance, audit, and fail-closed guards all validate
+  and the caller supplies `--sandboxed-external`.
+
+In v1.0, the explicit flag creates an auditable external-call plan; core
+Argorix performs no HTTP request and ships no mandatory OpenAI SDK. An
+OpenAI-compatible adapter may declare references such as
+`env:OPENAI_BASE_URL` and `env:ARGORIX_PROVIDER_TOKEN`, but Argorix never reads or
+prints their values. Bytecode stores the reference names with
+`endpoint_value: null`, `secret_value: null`, and `redacted: true`.
+
+```powershell
+argorix-vm run examples/runtime_mvp_v100.argbc.json `
+  --runtime ChatbotRuntime `
+  --adapter OpenAISandbox `
+  --operation responses.create `
+  --sandboxed-external `
+  --json
+```
+
+This is not a free runtime. External providers remain non-executable by
+default, network is never opened by default, tools and agents cannot execute
+freely, and secret/key material is never embedded. MCP and A2A remain
+declarative bridge contracts. DID, VC, credential, handshake, signature, and
+blockchain verification remain outside the runtime. SecurityReport v1.0 and
+EvidenceBundle v1.0 record the profile, adapter, redaction, policy result, and
+blocked/planned execution events while offline verification retains v0.36 and
+older compatibility.
+
+See
+[`examples/runtime_mvp_v100.argx`](examples/runtime_mvp_v100.argx),
+[`examples/runtime_mvp_v100.argbc.json`](examples/runtime_mvp_v100.argbc.json),
+[`examples/runtime_mvp_project`](examples/runtime_mvp_project), and
+[`conformance/suite.v100.json`](conformance/suite.v100.json).
+
+## v0.36 specification freeze
 
 Version 0.36 adds Spec Freeze + v1.0 Release Candidate metadata. A top-level
 `spec_freeze` pins the frozen feature surface, accumulated compatible versions,
@@ -650,7 +704,7 @@ scope, and denied access — never the secret value:
 
 ```argx
 secret OpenAISecret {
-  handle "OPENAI_API_KEY"     // expected future handle — metadata, not a value
+  handle "ARGORIX_PROVIDER_TOKEN"     // expected future handle — metadata, not a value
   provider OpenAI             // optional link to a declared provider
   required_by OpenAIAdapter   // optional link to a declared feature
   scope adapter               // provider | adapter | model | tool | runtime
@@ -663,7 +717,7 @@ Required fields: `handle`, `scope`, `access`, `source`. Optional: `provider`,
 `required_by`.
 
 **Secret handle vs secret value.** The `handle` is the *name* of a secret that
-*would* be needed in the future (e.g. `OPENAI_API_KEY`). It is metadata. Argorix
+*would* be needed in the future (e.g. `ARGORIX_PROVIDER_TOKEN`). It is metadata. Argorix
 stores no secret material: the fields `value`, `secret_value`, `token`,
 `api_key_value`, `raw`, and `plaintext` are forbidden inside a `secret` and cause
 a compile error. `access` may only be `denied` and `source` may only be `none` in

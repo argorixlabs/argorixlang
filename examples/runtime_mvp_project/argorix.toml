@@ -1,0 +1,6 @@
+[package]
+name = "argorix-runtime-mvp-example"
+version = "1.0.0"
+
+[entry]
+main = "src/main.argx"

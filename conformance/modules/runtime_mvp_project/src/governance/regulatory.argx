@@ -1,0 +1,29 @@
+module governance.regulatory
+
+regulatory_mapping ChatbotRegulatoryMap {
+  governance_profile ChatbotGovernance
+  evidence_map ChatbotEvidenceMap
+  jurisdiction "CL"
+  framework "Declarative Audit Mapping"
+  obligations [
+    {
+      id "obligation-public-evidence"
+      source "Argorix v0.34"
+      requirement "public evidence remains reproducible"
+      control "control-evidence-mapped"
+      evidence_ref "conformance:suite.v034"
+      status mapped
+    }
+  ]
+  coverage mapped
+  assessment declared_only
+  legal_claims none
+  certification none
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+  security_claims none
+  purpose ["regulatory-mapping", "public-conformance", "audit"]
+}

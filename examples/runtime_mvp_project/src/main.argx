@@ -1,0 +1,42 @@
+module app.main
+
+import crypto.primitives
+import boundaries.crypto
+import did.methods
+import trust.atrust
+import agents.research
+import agents.verifier
+import identity.research
+import identity.verifier
+import credentials.research
+import passports.research
+import passports.verifier
+import handshakes.research
+import ledger.atrust
+import messages.contracts
+import bridges.mcp
+import bridges.a2a
+import policies.trust_ledger
+import policies.bridges
+import evidence.maps
+import governance.profiles
+import governance.regulatory
+import public.verifiers
+import public.conformance
+import policies.public_conformance
+import runtime.hardening
+import runtime.threat_model
+import policies.runtime_hardening
+import release.spec_freeze
+import release.candidate
+import policies.release_candidate
+import providers.openai
+import runtime.execution
+import adapters.openai
+import policies.runtime_mvp
+
+type UserPrompt { content: string }
+
+protocol Demo {
+    User -> ResearchAgent: tell UserPrompt
+}

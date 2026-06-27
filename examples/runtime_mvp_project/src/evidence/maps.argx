@@ -1,0 +1,33 @@
+module evidence.maps
+
+atrust_evidence_map ChatbotEvidenceMap {
+  agent ResearchAgent
+  passport ResearchPassport
+  identity ResearchIdentity
+  credential_contract ResearchCredential
+  handshake ResearchHandshake
+  trust_ledger ATrustLedger
+
+  mcp_bridges ["ResearchMcpBridge"]
+  a2a_bridges ["ResearchA2ABridge"]
+  policies ["BridgePolicy", "TrustLedgerPolicy"]
+
+  coverage required
+  mapping_mode declared_only
+  verification declared_only
+  resolution disabled
+
+  evidence_bundle required
+  security_report required
+  trace required
+
+  network denied
+  external_execution disabled
+  secret_material denied
+  key_material denied
+  execution disabled
+
+  security_claims none
+  purpose ["evidence-map", "atrust", "audit", "dry-run"]
+  notes "metadata only; no real verification"
+}

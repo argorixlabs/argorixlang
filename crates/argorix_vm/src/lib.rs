@@ -22,8 +22,8 @@ pub use scheduler::Scheduler;
 pub use security_report::{
     AgentPassportSummary, CallSummary, ExecutionSummary, FeatureFlagsSummary,
     InjectedMessageSummary, IntrinsicSummary, LedgerSummary, MessageContractSummary, PolicySummary,
-    ProviderBoundarySummary, ProviderHarnessSummary, SecretBoundariesSummary, SecurityReport,
-    SecurityVerdict,
+    ProviderBoundarySummary, ProviderHarnessSummary, RuntimeExecutionProfilesSummary,
+    SandboxedProviderAdaptersSummary, SecretBoundariesSummary, SecurityReport, SecurityVerdict,
 };
 pub use trace::{
     AgentStateSummary, AssertionResult, EmittedMessage, EventFields, EventType, ExecutionEvent,
@@ -32,4 +32,4 @@ pub use trace::{
     PolicyRuleResult, PolicyViolation, ProviderCallSummary, ProviderContractSummary,
     ProviderSummary, ReactiveExecutionTrace, ReactiveStep, ToolCallSummary, TraceLedger, TraceStep,
 };
-pub use vm::{ExecutionOutcome, Vm};
+pub use vm::{ExecutionOutcome, RuntimeExecutionRequest, RuntimeExecutionResult, Vm};

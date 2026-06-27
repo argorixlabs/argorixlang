@@ -1,0 +1,31 @@
+module release.spec_freeze
+
+spec_freeze ArgorixSpecFreezeV036 {
+  version "0.36"
+  target "v1.0-rc"
+  freeze_scope language
+  compatibility cumulative
+  stability rc_candidate
+  frozen_features ["agent", "provider_contract", "module_system", "policy_v2", "message_contracts", "agent_passport", "sandboxed_provider_harness", "feature_flags", "secret_boundary", "adapter_framework", "adapter_profiles", "crypto_registry", "crypto_boundary", "did_methods", "atrust_boundary", "atrust_identity", "atrust_credential_contract", "atrust_handshake", "trust_ledger", "mcp_bridge_contract", "a2a_bridge_contract", "atrust_evidence_map", "governance_profile", "regulatory_mapping", "third_party_verifier", "public_conformance_report", "runtime_hardening_profile", "threat_model"]
+  compatible_versions ["0.29", "0.30", "0.31", "0.32", "0.33", "0.34", "0.35", "0.36"]
+  required_suites ["conformance/suite.v034.json", "conformance/suite.v035.json", "conformance/suite.v036.json"]
+  evidence_bundle required
+  security_report required
+  conformance required
+  backward_compatibility required
+  runtime_status disabled
+  network denied
+  external_execution disabled
+  provider_execution disabled
+  secret_material denied
+  key_material denied
+  env_access denied
+  filesystem_access denied
+  tool_execution disabled
+  agent_execution disabled
+  security_claims none
+  legal_claims none
+  certification none
+  purpose ["spec-freeze", "v1-rc", "compatibility", "audit"]
+  notes "metadata only; spec freeze does not enable runtime"
+}

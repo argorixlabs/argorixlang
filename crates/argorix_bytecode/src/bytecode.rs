@@ -63,6 +63,10 @@ pub struct BytecodeProgram {
     pub spec_freezes: Vec<BytecodeSpecFreeze>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub release_candidates: Vec<BytecodeReleaseCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runtime_execution_profiles: Vec<BytecodeRuntimeExecutionProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sandboxed_provider_adapters: Vec<BytecodeSandboxedProviderAdapter>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -753,6 +757,63 @@ pub struct BytecodeCompatibilityMatrixEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeRuntimeExecutionProfile {
+    pub name: String,
+    pub mode: String,
+    pub agents: Vec<String>,
+    pub provider: String,
+    pub hardening: String,
+    pub threat_model: String,
+    pub evidence_map: String,
+    pub governance_profile: String,
+    pub allowed_actions: Vec<String>,
+    pub denied_actions: Vec<String>,
+    pub network: String,
+    pub external_execution: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub secrets: String,
+    pub key_material: String,
+    pub audit: String,
+    pub evidence: String,
+    pub security_report: String,
+    pub fail_closed: bool,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeSandboxedProviderAdapter {
+    pub name: String,
+    pub provider: String,
+    pub runtime: String,
+    pub adapter_kind: String,
+    pub protocol: String,
+    pub endpoint_ref: String,
+    pub endpoint_value: Option<String>,
+    pub secret_ref: String,
+    pub secret_value: Option<String>,
+    pub redacted: bool,
+    pub allowed_operations: Vec<String>,
+    pub denied_operations: Vec<String>,
+    pub request_policy: String,
+    pub response_policy: String,
+    pub network: String,
+    pub external_execution: String,
+    pub tool_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub audit: String,
+    pub evidence: String,
+    pub security_report: String,
+    pub fail_closed: bool,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BytecodeProviderHarness {
     pub name: String,
     pub provider: String,
@@ -1176,6 +1237,16 @@ pub enum BytecodeError {
     DuplicateReleaseCandidate(String),
     #[error("invalid release_candidate `{name}`: {reason}")]
     InvalidReleaseCandidate { name: String, reason: String },
+    #[error("runtime MVP metadata requires bytecode version 1.0")]
+    RuntimeMvpRequiresV100,
+    #[error("duplicate runtime_execution_profile `{0}`")]
+    DuplicateRuntimeExecutionProfile(String),
+    #[error("invalid runtime_execution_profile `{name}`: {reason}")]
+    InvalidRuntimeExecutionProfile { name: String, reason: String },
+    #[error("duplicate sandboxed_provider_adapter `{0}`")]
+    DuplicateSandboxedProviderAdapter(String),
+    #[error("invalid sandboxed_provider_adapter `{name}`: {reason}")]
+    InvalidSandboxedProviderAdapter { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -1217,6 +1288,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.34"
             | "0.35"
             | "0.36"
+            | "1.0"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -1253,6 +1325,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.34"
             | "0.35"
             | "0.36"
+            | "1.0"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -1281,6 +1354,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -1320,6 +1394,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -1348,6 +1423,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -1369,6 +1445,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -1389,6 +1466,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -1408,6 +1486,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
@@ -1415,7 +1494,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_credential_contracts.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
+            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36" | "1.0"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1425,7 +1504,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_handshakes.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
+            "0.29" | "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36" | "1.0"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1436,7 +1515,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.trust_ledgers.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
+            "0.30" | "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36" | "1.0"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1447,7 +1526,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.mcp_bridge_contracts.is_empty() || !program.a2a_bridge_contracts.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
+            "0.31" | "0.32" | "0.33" | "0.34" | "0.35" | "0.36" | "1.0"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1459,7 +1538,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_evidence_maps.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.32" | "0.33" | "0.34" | "0.35" | "0.36"
+            "0.32" | "0.33" | "0.34" | "0.35" | "0.36" | "1.0"
         )
     {
         errors.push(BytecodeError::ATrustEvidenceMapsRequireV032);
@@ -1468,7 +1547,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if (!program.governance_profiles.is_empty() || !program.regulatory_mappings.is_empty())
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.33" | "0.34" | "0.35" | "0.36"
+            "0.33" | "0.34" | "0.35" | "0.36" | "1.0"
         )
     {
         errors.push(BytecodeError::GovernanceMappingsRequireV033);
@@ -1476,26 +1555,37 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     validate_governance_profiles(program, &mut errors);
     validate_regulatory_mappings(program, &mut errors);
     if (!program.third_party_verifiers.is_empty() || !program.public_conformance_reports.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.34" | "0.35" | "0.36")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.34" | "0.35" | "0.36" | "1.0"
+        )
     {
         errors.push(BytecodeError::PublicConformanceRequiresV034);
     }
     validate_third_party_verifiers(program, &mut errors);
     validate_public_conformance_reports(program, &mut errors);
     if (!program.runtime_hardening_profiles.is_empty() || !program.threat_models.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.35" | "0.36")
+        && !matches!(program.bytecode_version.as_str(), "0.35" | "0.36" | "1.0")
     {
         errors.push(BytecodeError::RuntimeHardeningRequiresV035);
     }
     validate_runtime_hardening_profiles(program, &mut errors);
     validate_threat_models(program, &mut errors);
     if (!program.spec_freezes.is_empty() || !program.release_candidates.is_empty())
-        && program.bytecode_version != "0.36"
+        && !matches!(program.bytecode_version.as_str(), "0.36" | "1.0")
     {
         errors.push(BytecodeError::SpecFreezeRequiresV036);
     }
     validate_spec_freezes(program, &mut errors);
     validate_release_candidates(program, &mut errors);
+    if (!program.runtime_execution_profiles.is_empty()
+        || !program.sandboxed_provider_adapters.is_empty())
+        && program.bytecode_version != "1.0"
+    {
+        errors.push(BytecodeError::RuntimeMvpRequiresV100);
+    }
+    validate_runtime_execution_profiles(program, &mut errors);
+    validate_sandboxed_provider_adapters(program, &mut errors);
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
@@ -1786,6 +1876,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -1851,6 +1942,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1947,6 +2039,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -2063,6 +2156,7 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -2138,6 +2232,7 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
                 | "0.34"
                 | "0.35"
                 | "0.36"
+                | "1.0"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);
@@ -3925,6 +4020,205 @@ fn validate_release_candidates(program: &BytecodeProgram, errors: &mut Vec<Bytec
     }
 }
 
+fn validate_runtime_execution_profiles(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let providers: HashSet<&str> = program
+        .providers
+        .iter()
+        .map(|value| value.name.as_str())
+        .chain(std::iter::once("simulated"))
+        .collect();
+    let agents: HashSet<&str> = program
+        .agents
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let hardening: HashSet<&str> = program
+        .runtime_hardening_profiles
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let threat_models: HashSet<&str> = program
+        .threat_models
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let governance: std::collections::HashMap<&str, &BytecodeGovernanceProfile> = program
+        .governance_profiles
+        .iter()
+        .map(|value| (value.name.as_str(), value))
+        .collect();
+    let mut names = HashSet::new();
+    for profile in &program.runtime_execution_profiles {
+        if !names.insert(profile.name.as_str()) {
+            errors.push(BytecodeError::DuplicateRuntimeExecutionProfile(
+                profile.name.clone(),
+            ));
+        }
+        let lists_valid = [
+            &profile.agents,
+            &profile.allowed_actions,
+            &profile.denied_actions,
+            &profile.purpose,
+        ]
+        .iter()
+        .all(|values| !values.is_empty() && values.iter().all(|value| !value.is_empty()));
+        let denied: HashSet<&str> = profile.denied_actions.iter().map(String::as_str).collect();
+        let disjoint = profile
+            .allowed_actions
+            .iter()
+            .all(|value| !denied.contains(value.as_str()));
+        let governance_matches = governance
+            .get(profile.governance_profile.as_str())
+            .is_some_and(|value| value.evidence_map == profile.evidence_map);
+        let valid = !profile.name.is_empty()
+            && matches!(
+                profile.mode.as_str(),
+                "dry_run" | "simulated" | "sandboxed_external"
+            )
+            && profile
+                .agents
+                .iter()
+                .all(|value| agents.contains(value.as_str()))
+            && providers.contains(profile.provider.as_str())
+            && hardening.contains(profile.hardening.as_str())
+            && threat_models.contains(profile.threat_model.as_str())
+            && evidence_maps.contains(profile.evidence_map.as_str())
+            && governance_matches
+            && lists_valid
+            && disjoint
+            && matches!(profile.network.as_str(), "denied" | "declared_only")
+            && matches!(
+                profile.external_execution.as_str(),
+                "disabled" | "sandboxed"
+            )
+            && profile.tool_execution == "disabled"
+            && profile.agent_execution == "disabled"
+            && matches!(profile.secrets.as_str(), "denied" | "env_reference_only")
+            && profile.key_material == "denied"
+            && profile.audit == "required"
+            && profile.evidence == "required"
+            && profile.security_report == "required"
+            && profile.fail_closed
+            && profile.security_claims == "none"
+            && profile.notes.as_ref().is_none_or(|value| !value.is_empty());
+        if !valid {
+            errors.push(BytecodeError::InvalidRuntimeExecutionProfile {
+                name: profile.name.clone(),
+                reason: "invalid binding, action boundary, or fail-closed requirement".into(),
+            });
+        }
+    }
+}
+
+fn validate_sandboxed_provider_adapters(
+    program: &BytecodeProgram,
+    errors: &mut Vec<BytecodeError>,
+) {
+    let providers: HashSet<&str> = program
+        .providers
+        .iter()
+        .map(|value| value.name.as_str())
+        .chain(std::iter::once("simulated"))
+        .collect();
+    let runtimes: std::collections::HashMap<&str, &BytecodeRuntimeExecutionProfile> = program
+        .runtime_execution_profiles
+        .iter()
+        .map(|value| (value.name.as_str(), value))
+        .collect();
+    let mut names = HashSet::new();
+    for adapter in &program.sandboxed_provider_adapters {
+        if !names.insert(adapter.name.as_str()) {
+            errors.push(BytecodeError::DuplicateSandboxedProviderAdapter(
+                adapter.name.clone(),
+            ));
+        }
+        let denied: HashSet<&str> = adapter
+            .denied_operations
+            .iter()
+            .map(String::as_str)
+            .collect();
+        let lists_valid = [
+            &adapter.allowed_operations,
+            &adapter.denied_operations,
+            &adapter.purpose,
+        ]
+        .iter()
+        .all(|values| !values.is_empty() && values.iter().all(|value| !value.is_empty()));
+        let runtime_matches = runtimes
+            .get(adapter.runtime.as_str())
+            .is_some_and(|runtime| runtime.provider == adapter.provider);
+        let valid = !adapter.name.is_empty()
+            && providers.contains(adapter.provider.as_str())
+            && runtime_matches
+            && matches!(
+                adapter.adapter_kind.as_str(),
+                "llm" | "embedding" | "moderation" | "custom"
+            )
+            && matches!(
+                adapter.protocol.as_str(),
+                "https_declared" | "local_declared"
+            )
+            && declared_reference(&adapter.endpoint_ref, &["env", "config"])
+            && declared_reference(&adapter.secret_ref, &["env", "secret_boundary"])
+            && adapter.endpoint_value.is_none()
+            && adapter.secret_value.is_none()
+            && adapter.redacted
+            && lists_valid
+            && adapter
+                .allowed_operations
+                .iter()
+                .all(|value| !denied.contains(value.as_str()))
+            && matches!(
+                adapter.request_policy.as_str(),
+                "declared_only" | "redacted_logged"
+            )
+            && matches!(
+                adapter.response_policy.as_str(),
+                "evidence_logged" | "redacted_logged"
+            )
+            && matches!(adapter.network.as_str(), "declared_only" | "denied")
+            && matches!(
+                adapter.external_execution.as_str(),
+                "sandboxed" | "disabled"
+            )
+            && adapter.tool_execution == "disabled"
+            && matches!(
+                adapter.secret_material.as_str(),
+                "env_reference_only" | "denied"
+            )
+            && adapter.key_material == "denied"
+            && adapter.audit == "required"
+            && adapter.evidence == "required"
+            && adapter.security_report == "required"
+            && adapter.fail_closed
+            && adapter.security_claims == "none"
+            && adapter.notes.as_ref().is_none_or(|value| !value.is_empty());
+        if !valid {
+            errors.push(BytecodeError::InvalidSandboxedProviderAdapter {
+                name: adapter.name.clone(),
+                reason:
+                    "invalid redacted reference, binding, operation, or fail-closed requirement"
+                        .into(),
+            });
+        }
+    }
+}
+
+fn declared_reference(value: &str, prefixes: &[&str]) -> bool {
+    value.split_once(':').is_some_and(|(prefix, name)| {
+        prefixes.contains(&prefix)
+            && !name.is_empty()
+            && name
+                .chars()
+                .all(|character| character == '_' || character.is_ascii_alphanumeric())
+    })
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -4186,6 +4480,28 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "release_candidates_security_claims_absent",
         "release_candidates_legal_claims_absent",
         "release_candidates_certification_absent",
+        "runtime_execution_profiles_declared",
+        "runtime_profiles_agents_bound",
+        "runtime_profiles_provider_bound",
+        "runtime_profiles_hardening_bound",
+        "runtime_profiles_evidence_bound",
+        "runtime_profiles_governance_bound",
+        "runtime_profiles_fail_closed",
+        "runtime_profiles_external_execution_sandboxed",
+        "runtime_profiles_tool_execution_disabled",
+        "runtime_profiles_agent_execution_disabled",
+        "runtime_profiles_secret_refs_only",
+        "runtime_profiles_security_claims_absent",
+        "sandboxed_provider_adapters_declared",
+        "sandboxed_provider_adapters_provider_bound",
+        "sandboxed_provider_adapters_runtime_bound",
+        "sandboxed_provider_adapters_operations_bounded",
+        "sandboxed_provider_adapters_network_declared",
+        "sandboxed_provider_adapters_external_execution_sandboxed",
+        "sandboxed_provider_adapters_tool_execution_disabled",
+        "sandboxed_provider_adapters_secret_refs_redacted",
+        "sandboxed_provider_adapters_fail_closed",
+        "sandboxed_provider_adapters_security_claims_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -4306,6 +4622,8 @@ mod tests {
             threat_models: vec![],
             spec_freezes: vec![],
             release_candidates: vec![],
+            runtime_execution_profiles: vec![],
+            sandboxed_provider_adapters: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

@@ -29,12 +29,12 @@ use crate::{
         PublicConformanceReproducibility, PublicConformanceResult, PublicConformanceReviewStatus,
         ReceiveDecl, RegulatoryAssessment, RegulatoryCoverage, RegulatoryMappingDecl,
         RegulatoryObligationDecl, RegulatoryObligationStatus, ReleaseCandidateDecl,
-        RuntimeHardeningProfileDecl, SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl,
-        SpecFreezeDecl, ThirdPartyVerifierDecl, ThirdPartyVerifierType, ThreatAssetDecl,
-        ThreatDecl, ThreatMitigationDecl, ThreatModelDecl, ToolDecl, TrustLedgerChainPolicy,
-        TrustLedgerDecl, TrustLedgerEntryDecl, TrustLedgerEntryKind, TrustLedgerMode,
-        TrustLedgerScope, TypeDecl, VerifierIdentityMode, VerifierIndependence,
-        VerifierVerificationMode,
+        RuntimeExecutionProfileDecl, RuntimeHardeningProfileDecl, SandboxedProviderAdapterDecl,
+        SecretAccess, SecretDecl, SecretScope, SecretSource, SendDecl, SpecFreezeDecl,
+        ThirdPartyVerifierDecl, ThirdPartyVerifierType, ThreatAssetDecl, ThreatDecl,
+        ThreatMitigationDecl, ThreatModelDecl, ToolDecl, TrustLedgerChainPolicy, TrustLedgerDecl,
+        TrustLedgerEntryDecl, TrustLedgerEntryKind, TrustLedgerMode, TrustLedgerScope, TypeDecl,
+        VerifierIdentityMode, VerifierIndependence, VerifierVerificationMode,
     },
     diagnostics::Diagnostic,
     lexer::{lex, Token, TokenKind},
@@ -380,6 +380,8 @@ impl Parser {
             threat_models: Vec::new(),
             spec_freezes: Vec::new(),
             release_candidates: Vec::new(),
+            runtime_execution_profiles: Vec::new(),
+            sandboxed_provider_adapters: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -441,6 +443,12 @@ impl Parser {
                 Some("release_candidate") => program
                     .release_candidates
                     .push(self.parse_release_candidate()?),
+                Some("runtime_execution_profile") => program
+                    .runtime_execution_profiles
+                    .push(self.parse_runtime_execution_profile()?),
+                Some("sandboxed_provider_adapter") => program
+                    .sandboxed_provider_adapters
+                    .push(self.parse_sandboxed_provider_adapter()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -460,7 +468,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier`, `public_conformance_report`, `runtime_hardening_profile`, `threat_model`, `spec_freeze`, `release_candidate`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier`, `public_conformance_report`, `runtime_hardening_profile`, `threat_model`, `spec_freeze`, `release_candidate`, `runtime_execution_profile`, `sandboxed_provider_adapter`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -5826,6 +5834,226 @@ impl Parser {
         Ok(values)
     }
 
+    fn parse_runtime_execution_profile(
+        &mut self,
+    ) -> Result<RuntimeExecutionProfileDecl, Diagnostic> {
+        self.expect_keyword("runtime_execution_profile")?;
+        let name = self.expect_identifier("runtime_execution_profile name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let scalar = [
+            "mode",
+            "provider",
+            "hardening",
+            "threat_model",
+            "evidence_map",
+            "governance_profile",
+            "network",
+            "external_execution",
+            "tool_execution",
+            "agent_execution",
+            "secrets",
+            "key_material",
+            "audit",
+            "evidence",
+            "security_report",
+            "security_claims",
+        ];
+        let arrays = ["agents", "allowed_actions", "denied_actions", "purpose"];
+        let mut fields = HashMap::new();
+        let mut array_fields: HashMap<String, Vec<Spanned<String>>> = HashMap::new();
+        let mut fail_closed = None;
+        let mut notes = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated runtime_execution_profile declaration")?;
+            let Some(field) = self.peek_identifier().map(str::to_owned) else {
+                return Err(Diagnostic::new(
+                    "expected runtime_execution_profile field",
+                    self.peek().span,
+                ));
+            };
+            if field == "fail_closed" {
+                self.set_block_field(
+                    &mut fail_closed,
+                    "runtime_execution_profile",
+                    "fail_closed",
+                    |p| p.expect_bool("runtime_execution_profile fail_closed value"),
+                )?;
+            } else if field == "notes" {
+                self.set_block_field(&mut notes, "runtime_execution_profile", "notes", |p| {
+                    p.expect_string("runtime_execution_profile notes")
+                })?;
+            } else if arrays.contains(&field.as_str()) {
+                self.advance();
+                let value = self.parse_string_array("runtime_execution_profile array value")?;
+                if array_fields.insert(field.clone(), value).is_some() {
+                    return Err(Diagnostic::new(
+                        format!("duplicate runtime_execution_profile field `{field}`"),
+                        self.peek().span,
+                    ));
+                }
+            } else if scalar.contains(&field.as_str()) {
+                self.advance();
+                let value = self.expect_identifier("runtime_execution_profile field value")?;
+                if fields.insert(field.clone(), value).is_some() {
+                    return Err(Diagnostic::new(
+                        format!("duplicate runtime_execution_profile field `{field}`"),
+                        self.peek().span,
+                    ));
+                }
+            } else {
+                return Err(Diagnostic::new(
+                    format!("unexpected runtime_execution_profile item `{field}`"),
+                    self.peek().span,
+                ));
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let mut take = |field: &str| {
+            fields
+                .remove(field)
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback))
+        };
+        Ok(RuntimeExecutionProfileDecl {
+            name,
+            mode: take("mode"),
+            agents: array_fields.remove("agents").unwrap_or_default(),
+            provider: take("provider"),
+            hardening: take("hardening"),
+            threat_model: take("threat_model"),
+            evidence_map: take("evidence_map"),
+            governance_profile: take("governance_profile"),
+            allowed_actions: array_fields.remove("allowed_actions").unwrap_or_default(),
+            denied_actions: array_fields.remove("denied_actions").unwrap_or_default(),
+            network: take("network"),
+            external_execution: take("external_execution"),
+            tool_execution: take("tool_execution"),
+            agent_execution: take("agent_execution"),
+            secrets: take("secrets"),
+            key_material: take("key_material"),
+            audit: take("audit"),
+            evidence: take("evidence"),
+            security_report: take("security_report"),
+            fail_closed: fail_closed.unwrap_or_else(|| Spanned::new(false, fallback)),
+            security_claims: take("security_claims"),
+            purpose: array_fields.remove("purpose").unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_sandboxed_provider_adapter(
+        &mut self,
+    ) -> Result<SandboxedProviderAdapterDecl, Diagnostic> {
+        self.expect_keyword("sandboxed_provider_adapter")?;
+        let name = self.expect_identifier("sandboxed_provider_adapter name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let scalar = [
+            "provider",
+            "runtime",
+            "adapter_kind",
+            "protocol",
+            "request_policy",
+            "response_policy",
+            "network",
+            "external_execution",
+            "tool_execution",
+            "secret_material",
+            "key_material",
+            "audit",
+            "evidence",
+            "security_report",
+            "security_claims",
+        ];
+        let quoted = ["endpoint_ref", "secret_ref"];
+        let arrays = ["allowed_operations", "denied_operations", "purpose"];
+        let mut fields = HashMap::new();
+        let mut array_fields: HashMap<String, Vec<Spanned<String>>> = HashMap::new();
+        let mut fail_closed = None;
+        let mut notes = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated sandboxed_provider_adapter declaration")?;
+            let Some(field) = self.peek_identifier().map(str::to_owned) else {
+                return Err(Diagnostic::new(
+                    "expected sandboxed_provider_adapter field",
+                    self.peek().span,
+                ));
+            };
+            if field == "fail_closed" {
+                self.set_block_field(
+                    &mut fail_closed,
+                    "sandboxed_provider_adapter",
+                    "fail_closed",
+                    |p| p.expect_bool("sandboxed_provider_adapter fail_closed value"),
+                )?;
+            } else if field == "notes" {
+                self.set_block_field(&mut notes, "sandboxed_provider_adapter", "notes", |p| {
+                    p.expect_string("sandboxed_provider_adapter notes")
+                })?;
+            } else if arrays.contains(&field.as_str()) {
+                self.advance();
+                let value = self.parse_string_array("sandboxed_provider_adapter array value")?;
+                if array_fields.insert(field.clone(), value).is_some() {
+                    return Err(Diagnostic::new(
+                        format!("duplicate sandboxed_provider_adapter field `{field}`"),
+                        self.peek().span,
+                    ));
+                }
+            } else if scalar.contains(&field.as_str()) || quoted.contains(&field.as_str()) {
+                self.advance();
+                let value = if quoted.contains(&field.as_str()) {
+                    self.expect_string("sandboxed_provider_adapter reference")?
+                } else {
+                    self.expect_identifier("sandboxed_provider_adapter field value")?
+                };
+                if fields.insert(field.clone(), value).is_some() {
+                    return Err(Diagnostic::new(
+                        format!("duplicate sandboxed_provider_adapter field `{field}`"),
+                        self.peek().span,
+                    ));
+                }
+            } else {
+                return Err(Diagnostic::new(
+                    format!("unexpected sandboxed_provider_adapter item `{field}`"),
+                    self.peek().span,
+                ));
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let mut take = |field: &str| {
+            fields
+                .remove(field)
+                .unwrap_or_else(|| Spanned::new(String::new(), fallback))
+        };
+        Ok(SandboxedProviderAdapterDecl {
+            name,
+            provider: take("provider"),
+            runtime: take("runtime"),
+            adapter_kind: take("adapter_kind"),
+            protocol: take("protocol"),
+            endpoint_ref: take("endpoint_ref"),
+            secret_ref: take("secret_ref"),
+            allowed_operations: array_fields
+                .remove("allowed_operations")
+                .unwrap_or_default(),
+            denied_operations: array_fields.remove("denied_operations").unwrap_or_default(),
+            request_policy: take("request_policy"),
+            response_policy: take("response_policy"),
+            network: take("network"),
+            external_execution: take("external_execution"),
+            tool_execution: take("tool_execution"),
+            secret_material: take("secret_material"),
+            key_material: take("key_material"),
+            audit: take("audit"),
+            evidence: take("evidence"),
+            security_report: take("security_report"),
+            fail_closed: fail_closed.unwrap_or_else(|| Spanned::new(false, fallback)),
+            security_claims: take("security_claims"),
+            purpose: array_fields.remove("purpose").unwrap_or_default(),
+            notes,
+        })
+    }
+
     fn parse_string_object(
         &mut self,
         kind: &str,
@@ -6477,6 +6705,54 @@ impl Parser {
             }
             "release_candidates_certification_absent" => {
                 PolicyRule::ReleaseCandidatesCertificationAbsent
+            }
+            "runtime_execution_profiles_declared" => PolicyRule::RuntimeExecutionProfilesDeclared,
+            "runtime_profiles_agents_bound" => PolicyRule::RuntimeProfilesAgentsBound,
+            "runtime_profiles_provider_bound" => PolicyRule::RuntimeProfilesProviderBound,
+            "runtime_profiles_hardening_bound" => PolicyRule::RuntimeProfilesHardeningBound,
+            "runtime_profiles_evidence_bound" => PolicyRule::RuntimeProfilesEvidenceBound,
+            "runtime_profiles_governance_bound" => PolicyRule::RuntimeProfilesGovernanceBound,
+            "runtime_profiles_fail_closed" => PolicyRule::RuntimeProfilesFailClosed,
+            "runtime_profiles_external_execution_sandboxed" => {
+                PolicyRule::RuntimeProfilesExternalExecutionSandboxed
+            }
+            "runtime_profiles_tool_execution_disabled" => {
+                PolicyRule::RuntimeProfilesToolExecutionDisabled
+            }
+            "runtime_profiles_agent_execution_disabled" => {
+                PolicyRule::RuntimeProfilesAgentExecutionDisabled
+            }
+            "runtime_profiles_secret_refs_only" => PolicyRule::RuntimeProfilesSecretRefsOnly,
+            "runtime_profiles_security_claims_absent" => {
+                PolicyRule::RuntimeProfilesSecurityClaimsAbsent
+            }
+            "sandboxed_provider_adapters_declared" => PolicyRule::SandboxedProviderAdaptersDeclared,
+            "sandboxed_provider_adapters_provider_bound" => {
+                PolicyRule::SandboxedProviderAdaptersProviderBound
+            }
+            "sandboxed_provider_adapters_runtime_bound" => {
+                PolicyRule::SandboxedProviderAdaptersRuntimeBound
+            }
+            "sandboxed_provider_adapters_operations_bounded" => {
+                PolicyRule::SandboxedProviderAdaptersOperationsBounded
+            }
+            "sandboxed_provider_adapters_network_declared" => {
+                PolicyRule::SandboxedProviderAdaptersNetworkDeclared
+            }
+            "sandboxed_provider_adapters_external_execution_sandboxed" => {
+                PolicyRule::SandboxedProviderAdaptersExternalExecutionSandboxed
+            }
+            "sandboxed_provider_adapters_tool_execution_disabled" => {
+                PolicyRule::SandboxedProviderAdaptersToolExecutionDisabled
+            }
+            "sandboxed_provider_adapters_secret_refs_redacted" => {
+                PolicyRule::SandboxedProviderAdaptersSecretRefsRedacted
+            }
+            "sandboxed_provider_adapters_fail_closed" => {
+                PolicyRule::SandboxedProviderAdaptersFailClosed
+            }
+            "sandboxed_provider_adapters_security_claims_absent" => {
+                PolicyRule::SandboxedProviderAdaptersSecurityClaimsAbsent
             }
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;

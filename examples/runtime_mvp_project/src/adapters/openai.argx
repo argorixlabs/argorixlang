@@ -1,0 +1,26 @@
+module adapters.openai
+
+sandboxed_provider_adapter OpenAISandbox {
+  provider OpenAIProvider
+  runtime ChatbotRuntime
+  adapter_kind llm
+  protocol https_declared
+  endpoint_ref "env:OPENAI_BASE_URL"
+  secret_ref "env:ARGORIX_PROVIDER_TOKEN"
+  allowed_operations ["responses.create"]
+  denied_operations ["files.write", "tools.execute", "shell.run"]
+  request_policy declared_only
+  response_policy evidence_logged
+  network declared_only
+  external_execution sandboxed
+  tool_execution disabled
+  secret_material env_reference_only
+  key_material denied
+  audit required
+  evidence required
+  security_report required
+  fail_closed true
+  security_claims none
+  purpose ["llm-provider", "sandbox", "openai-compatible"]
+  notes "adapter declaration only; implementation never resolves secret values"
+}

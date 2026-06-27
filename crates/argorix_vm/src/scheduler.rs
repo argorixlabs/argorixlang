@@ -236,6 +236,8 @@ mod tests {
             threat_models: vec![],
             spec_freezes: vec![],
             release_candidates: vec![],
+            runtime_execution_profiles: vec![],
+            sandboxed_provider_adapters: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

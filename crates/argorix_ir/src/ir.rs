@@ -58,6 +58,10 @@ pub struct IrProgram {
     pub spec_freezes: Vec<IrSpecFreeze>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub release_candidates: Vec<IrReleaseCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runtime_execution_profiles: Vec<IrRuntimeExecutionProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sandboxed_provider_adapters: Vec<IrSandboxedProviderAdapter>,
     pub assertions: Vec<IrAssertion>,
     pub policies: Vec<IrPolicy>,
     pub failures: Vec<IrFailure>,
@@ -770,6 +774,62 @@ pub struct IrCompatibilityMatrixEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrRuntimeExecutionProfile {
+    pub name: String,
+    pub mode: String,
+    pub agents: Vec<String>,
+    pub provider: String,
+    pub hardening: String,
+    pub threat_model: String,
+    pub evidence_map: String,
+    pub governance_profile: String,
+    pub allowed_actions: Vec<String>,
+    pub denied_actions: Vec<String>,
+    pub network: String,
+    pub external_execution: String,
+    pub tool_execution: String,
+    pub agent_execution: String,
+    pub secrets: String,
+    pub key_material: String,
+    pub audit: String,
+    pub evidence: String,
+    pub security_report: String,
+    pub fail_closed: bool,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IrSandboxedProviderAdapter {
+    pub name: String,
+    pub provider: String,
+    pub runtime: String,
+    pub adapter_kind: String,
+    pub protocol: String,
+    pub endpoint_ref: String,
+    pub secret_ref: String,
+    pub allowed_operations: Vec<String>,
+    pub denied_operations: Vec<String>,
+    pub request_policy: String,
+    pub response_policy: String,
+    pub network: String,
+    pub external_execution: String,
+    pub tool_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub audit: String,
+    pub evidence: String,
+    pub security_report: String,
+    pub fail_closed: bool,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IrProviderHarness {
     pub name: String,
     pub provider: String,
@@ -923,7 +983,7 @@ pub struct IrProtocolStep {
 impl From<&Program> for IrProgram {
     fn from(program: &Program) -> Self {
         Self {
-            ir_version: "0.36".to_owned(),
+            ir_version: "1.0".to_owned(),
             language: "Argorix Lang".to_owned(),
             module: program.module.value.clone(),
             modules: Vec::new(),
@@ -1648,6 +1708,64 @@ impl From<&Program> for IrProgram {
                     notes: r.notes.as_ref().map(|value| value.value.clone()),
                 })
                 .collect(),
+            runtime_execution_profiles: program
+                .runtime_execution_profiles
+                .iter()
+                .map(|profile| IrRuntimeExecutionProfile {
+                    name: profile.name.value.clone(),
+                    mode: profile.mode.value.clone(),
+                    agents: spanned_values(&profile.agents),
+                    provider: profile.provider.value.clone(),
+                    hardening: profile.hardening.value.clone(),
+                    threat_model: profile.threat_model.value.clone(),
+                    evidence_map: profile.evidence_map.value.clone(),
+                    governance_profile: profile.governance_profile.value.clone(),
+                    allowed_actions: spanned_values(&profile.allowed_actions),
+                    denied_actions: spanned_values(&profile.denied_actions),
+                    network: profile.network.value.clone(),
+                    external_execution: profile.external_execution.value.clone(),
+                    tool_execution: profile.tool_execution.value.clone(),
+                    agent_execution: profile.agent_execution.value.clone(),
+                    secrets: profile.secrets.value.clone(),
+                    key_material: profile.key_material.value.clone(),
+                    audit: profile.audit.value.clone(),
+                    evidence: profile.evidence.value.clone(),
+                    security_report: profile.security_report.value.clone(),
+                    fail_closed: profile.fail_closed.value,
+                    security_claims: profile.security_claims.value.clone(),
+                    purpose: spanned_values(&profile.purpose),
+                    notes: profile.notes.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
+            sandboxed_provider_adapters: program
+                .sandboxed_provider_adapters
+                .iter()
+                .map(|adapter| IrSandboxedProviderAdapter {
+                    name: adapter.name.value.clone(),
+                    provider: adapter.provider.value.clone(),
+                    runtime: adapter.runtime.value.clone(),
+                    adapter_kind: adapter.adapter_kind.value.clone(),
+                    protocol: adapter.protocol.value.clone(),
+                    endpoint_ref: adapter.endpoint_ref.value.clone(),
+                    secret_ref: adapter.secret_ref.value.clone(),
+                    allowed_operations: spanned_values(&adapter.allowed_operations),
+                    denied_operations: spanned_values(&adapter.denied_operations),
+                    request_policy: adapter.request_policy.value.clone(),
+                    response_policy: adapter.response_policy.value.clone(),
+                    network: adapter.network.value.clone(),
+                    external_execution: adapter.external_execution.value.clone(),
+                    tool_execution: adapter.tool_execution.value.clone(),
+                    secret_material: adapter.secret_material.value.clone(),
+                    key_material: adapter.key_material.value.clone(),
+                    audit: adapter.audit.value.clone(),
+                    evidence: adapter.evidence.value.clone(),
+                    security_report: adapter.security_report.value.clone(),
+                    fail_closed: adapter.fail_closed.value,
+                    security_claims: adapter.security_claims.value.clone(),
+                    purpose: spanned_values(&adapter.purpose),
+                    notes: adapter.notes.as_ref().map(|value| value.value.clone()),
+                })
+                .collect(),
             assertions: program
                 .assertions
                 .iter()
@@ -1907,7 +2025,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.36");
+        assert_eq!(ir.ir_version, "1.0");
         assert_eq!(ir.assertions.len(), 1);
         assert_eq!(ir.policies[0].name, "ProviderSafety");
         assert_eq!(ir.policies[0].rules[0].effect, "deny");
@@ -1945,7 +2063,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.36");
+        assert_eq!(ir.ir_version, "1.0");
         assert_eq!(ir.passports.len(), 1);
         assert_eq!(ir.passports[0].agent, "ResearchAgent");
         assert_eq!(ir.passports[0].data_residency, vec!["CL", "EU"]);
@@ -1980,7 +2098,7 @@ mod tests {
         )
         .unwrap();
         let ir = IrProgram::from(&program);
-        assert_eq!(ir.ir_version, "0.36");
+        assert_eq!(ir.ir_version, "1.0");
         assert_eq!(ir.provider_harnesses.len(), 1);
         let harness = &ir.provider_harnesses[0];
         assert_eq!(harness.name, "OpenAIHarness");

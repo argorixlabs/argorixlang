@@ -1,0 +1,30 @@
+module policies.runtime_mvp
+
+policy RuntimeMvpPolicy {
+  require runtime_execution_profiles_declared
+  require runtime_profiles_agents_bound
+  require runtime_profiles_provider_bound
+  require runtime_profiles_hardening_bound
+  require runtime_profiles_evidence_bound
+  require runtime_profiles_governance_bound
+  require runtime_profiles_fail_closed
+  require runtime_profiles_external_execution_sandboxed
+  require runtime_profiles_tool_execution_disabled
+  require runtime_profiles_agent_execution_disabled
+  require runtime_profiles_secret_refs_only
+  require runtime_profiles_security_claims_absent
+  require sandboxed_provider_adapters_declared
+  require sandboxed_provider_adapters_provider_bound
+  require sandboxed_provider_adapters_runtime_bound
+  require sandboxed_provider_adapters_operations_bounded
+  require sandboxed_provider_adapters_network_declared
+  require sandboxed_provider_adapters_external_execution_sandboxed
+  require sandboxed_provider_adapters_tool_execution_disabled
+  require sandboxed_provider_adapters_secret_refs_redacted
+  require sandboxed_provider_adapters_fail_closed
+  require sandboxed_provider_adapters_security_claims_absent
+  on violation {
+    action block
+    trace required
+  }
+}

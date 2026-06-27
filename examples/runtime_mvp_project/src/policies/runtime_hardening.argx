@@ -1,0 +1,33 @@
+module policies.runtime_hardening
+
+policy RuntimeHardeningPolicy {
+  require runtime_hardening_profiles_declared
+  require runtime_hardening_evidence_bound
+  require runtime_hardening_deny_by_default
+  require runtime_hardening_sandbox_required
+  require runtime_hardening_network_denied
+  require runtime_hardening_external_providers_disabled
+  require runtime_hardening_tool_execution_disabled
+  require runtime_hardening_agent_execution_disabled
+  require runtime_hardening_filesystem_denied
+  require runtime_hardening_env_denied
+  require runtime_hardening_secret_material_denied
+  require runtime_hardening_key_material_denied
+  require runtime_hardening_audit_log_required
+  require runtime_hardening_security_claims_absent
+  require threat_models_declared
+  require threat_models_hardening_bound
+  require threat_models_assets_mapped
+  require threat_models_threats_mapped
+  require threat_models_mitigations_mapped
+  require threat_models_runtime_disabled
+  require threat_models_network_denied
+  require threat_models_secret_material_denied
+  require threat_models_key_material_denied
+  require threat_models_execution_disabled
+  require threat_models_security_claims_absent
+  on violation {
+    action block
+    trace required
+  }
+}

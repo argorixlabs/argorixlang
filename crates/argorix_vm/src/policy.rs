@@ -155,6 +155,28 @@ pub struct PolicyEvidenceContext {
     pub release_candidates_security_claims_absent: bool,
     pub release_candidates_legal_claims_absent: bool,
     pub release_candidates_certification_absent: bool,
+    pub runtime_execution_profiles_declared: bool,
+    pub runtime_profiles_agents_bound: bool,
+    pub runtime_profiles_provider_bound: bool,
+    pub runtime_profiles_hardening_bound: bool,
+    pub runtime_profiles_evidence_bound: bool,
+    pub runtime_profiles_governance_bound: bool,
+    pub runtime_profiles_fail_closed: bool,
+    pub runtime_profiles_external_execution_sandboxed: bool,
+    pub runtime_profiles_tool_execution_disabled: bool,
+    pub runtime_profiles_agent_execution_disabled: bool,
+    pub runtime_profiles_secret_refs_only: bool,
+    pub runtime_profiles_security_claims_absent: bool,
+    pub sandboxed_provider_adapters_declared: bool,
+    pub sandboxed_provider_adapters_provider_bound: bool,
+    pub sandboxed_provider_adapters_runtime_bound: bool,
+    pub sandboxed_provider_adapters_operations_bounded: bool,
+    pub sandboxed_provider_adapters_network_declared: bool,
+    pub sandboxed_provider_adapters_external_execution_sandboxed: bool,
+    pub sandboxed_provider_adapters_tool_execution_disabled: bool,
+    pub sandboxed_provider_adapters_secret_refs_redacted: bool,
+    pub sandboxed_provider_adapters_fail_closed: bool,
+    pub sandboxed_provider_adapters_security_claims_absent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -837,6 +859,94 @@ pub fn evaluate_rule(
         "release_candidates_certification_absent" => (
             context.release_candidates_certification_absent,
             "release candidate declares certification",
+        ),
+        "runtime_execution_profiles_declared" => (
+            context.runtime_execution_profiles_declared,
+            "runtime execution profiles are not declared",
+        ),
+        "runtime_profiles_agents_bound" => (
+            context.runtime_profiles_agents_bound,
+            "runtime profile agents are not bound",
+        ),
+        "runtime_profiles_provider_bound" => (
+            context.runtime_profiles_provider_bound,
+            "runtime profile providers are not bound",
+        ),
+        "runtime_profiles_hardening_bound" => (
+            context.runtime_profiles_hardening_bound,
+            "runtime profiles are not hardening bound",
+        ),
+        "runtime_profiles_evidence_bound" => (
+            context.runtime_profiles_evidence_bound,
+            "runtime profiles are not evidence bound",
+        ),
+        "runtime_profiles_governance_bound" => (
+            context.runtime_profiles_governance_bound,
+            "runtime profiles are not governance bound",
+        ),
+        "runtime_profiles_fail_closed" => (
+            context.runtime_profiles_fail_closed,
+            "runtime profiles are not fail closed",
+        ),
+        "runtime_profiles_external_execution_sandboxed" => (
+            context.runtime_profiles_external_execution_sandboxed,
+            "runtime profile external execution is not sandboxed or disabled",
+        ),
+        "runtime_profiles_tool_execution_disabled" => (
+            context.runtime_profiles_tool_execution_disabled,
+            "runtime profile tool execution is not disabled",
+        ),
+        "runtime_profiles_agent_execution_disabled" => (
+            context.runtime_profiles_agent_execution_disabled,
+            "runtime profile agent execution is not disabled",
+        ),
+        "runtime_profiles_secret_refs_only" => (
+            context.runtime_profiles_secret_refs_only,
+            "runtime profiles do not restrict secrets to references",
+        ),
+        "runtime_profiles_security_claims_absent" => (
+            context.runtime_profiles_security_claims_absent,
+            "runtime profile security claims are present",
+        ),
+        "sandboxed_provider_adapters_declared" => (
+            context.sandboxed_provider_adapters_declared,
+            "sandboxed provider adapters are not declared",
+        ),
+        "sandboxed_provider_adapters_provider_bound" => (
+            context.sandboxed_provider_adapters_provider_bound,
+            "sandboxed adapters are not provider bound",
+        ),
+        "sandboxed_provider_adapters_runtime_bound" => (
+            context.sandboxed_provider_adapters_runtime_bound,
+            "sandboxed adapters are not runtime bound",
+        ),
+        "sandboxed_provider_adapters_operations_bounded" => (
+            context.sandboxed_provider_adapters_operations_bounded,
+            "sandboxed adapter operations are not bounded",
+        ),
+        "sandboxed_provider_adapters_network_declared" => (
+            context.sandboxed_provider_adapters_network_declared,
+            "sandboxed adapter network is not declared only or denied",
+        ),
+        "sandboxed_provider_adapters_external_execution_sandboxed" => (
+            context.sandboxed_provider_adapters_external_execution_sandboxed,
+            "sandboxed adapter external execution is not bounded",
+        ),
+        "sandboxed_provider_adapters_tool_execution_disabled" => (
+            context.sandboxed_provider_adapters_tool_execution_disabled,
+            "sandboxed adapter tool execution is not disabled",
+        ),
+        "sandboxed_provider_adapters_secret_refs_redacted" => (
+            context.sandboxed_provider_adapters_secret_refs_redacted,
+            "sandboxed adapter references are not redacted",
+        ),
+        "sandboxed_provider_adapters_fail_closed" => (
+            context.sandboxed_provider_adapters_fail_closed,
+            "sandboxed adapters are not fail closed",
+        ),
+        "sandboxed_provider_adapters_security_claims_absent" => (
+            context.sandboxed_provider_adapters_security_claims_absent,
+            "sandboxed adapter security claims are present",
         ),
         _ => (false, "unknown policy rule"),
     };
