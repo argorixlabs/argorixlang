@@ -21,6 +21,8 @@ pub struct Program {
     pub mcp_bridge_contracts: Vec<McpBridgeContractDecl>,
     pub a2a_bridge_contracts: Vec<A2ABridgeContractDecl>,
     pub atrust_evidence_maps: Vec<ATrustEvidenceMapDecl>,
+    pub governance_profiles: Vec<GovernanceProfileDecl>,
+    pub regulatory_mappings: Vec<RegulatoryMappingDecl>,
     pub assertions: Vec<AssertionDecl>,
     pub policies: Vec<PolicyDecl>,
     pub failures: Vec<FailureDecl>,
@@ -889,6 +891,20 @@ pub enum PolicyRule {
     ATrustEvidenceMapKeyMaterialDenied,
     ATrustEvidenceMapExecutionDisabled,
     ATrustEvidenceMapSecurityClaimsAbsent,
+    GovernanceProfilesDeclared,
+    GovernanceProfilesEvidenceBound,
+    GovernanceProfilesControlsMapped,
+    GovernanceProfilesRuntimeDisabled,
+    GovernanceProfilesSecurityClaimsAbsent,
+    GovernanceProfilesNoLegalCertification,
+    RegulatoryMappingsDeclared,
+    RegulatoryMappingsProfilesBound,
+    RegulatoryMappingsObligationsMapped,
+    RegulatoryMappingsControlsBound,
+    RegulatoryMappingsLegalClaimsAbsent,
+    RegulatoryMappingsCertificationAbsent,
+    RegulatoryMappingsRuntimeDisabled,
+    RegulatoryMappingsSecurityClaimsAbsent,
     Unknown(String),
 }
 
@@ -1089,6 +1105,28 @@ impl PolicyRule {
             Self::ATrustEvidenceMapExecutionDisabled => "atrust_evidence_map_execution_disabled",
             Self::ATrustEvidenceMapSecurityClaimsAbsent => {
                 "atrust_evidence_map_security_claims_absent"
+            }
+            Self::GovernanceProfilesDeclared => "governance_profiles_declared",
+            Self::GovernanceProfilesEvidenceBound => "governance_profiles_evidence_bound",
+            Self::GovernanceProfilesControlsMapped => "governance_profiles_controls_mapped",
+            Self::GovernanceProfilesRuntimeDisabled => "governance_profiles_runtime_disabled",
+            Self::GovernanceProfilesSecurityClaimsAbsent => {
+                "governance_profiles_security_claims_absent"
+            }
+            Self::GovernanceProfilesNoLegalCertification => {
+                "governance_profiles_no_legal_certification"
+            }
+            Self::RegulatoryMappingsDeclared => "regulatory_mappings_declared",
+            Self::RegulatoryMappingsProfilesBound => "regulatory_mappings_profiles_bound",
+            Self::RegulatoryMappingsObligationsMapped => "regulatory_mappings_obligations_mapped",
+            Self::RegulatoryMappingsControlsBound => "regulatory_mappings_controls_bound",
+            Self::RegulatoryMappingsLegalClaimsAbsent => "regulatory_mappings_legal_claims_absent",
+            Self::RegulatoryMappingsCertificationAbsent => {
+                "regulatory_mappings_certification_absent"
+            }
+            Self::RegulatoryMappingsRuntimeDisabled => "regulatory_mappings_runtime_disabled",
+            Self::RegulatoryMappingsSecurityClaimsAbsent => {
+                "regulatory_mappings_security_claims_absent"
             }
             Self::Unknown(value) => value,
         }
@@ -2115,6 +2153,171 @@ impl ATrustEvidenceMapMappingMode {
             Self::Unknown(value) => value,
         }
     }
+}
+
+macro_rules! source_enum {
+    ($name:ident { $($variant:ident => $source:literal),+ $(,)? }) => {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub enum $name {
+            $($variant,)+
+            Unknown(String),
+        }
+
+        impl $name {
+            pub fn source_name(&self) -> &str {
+                match self {
+                    $(Self::$variant => $source,)+
+                    Self::Unknown(value) => value,
+                }
+            }
+        }
+    };
+}
+
+source_enum!(GovernanceScope {
+    Agent => "agent",
+    System => "system",
+    Package => "package",
+    Organization => "organization",
+});
+source_enum!(GovernanceLevel {
+    Baseline => "baseline",
+    Audit => "audit",
+    Regulated => "regulated",
+    Experimental => "experimental",
+});
+source_enum!(GovernanceDomain {
+    AiAgent => "ai_agent",
+    Security => "security",
+    Compliance => "compliance",
+    Privacy => "privacy",
+    Safety => "safety",
+    Custom => "custom",
+});
+source_enum!(GovernanceRiskLevel {
+    Low => "low",
+    Moderate => "moderate",
+    High => "high",
+    Critical => "critical",
+    UnknownRisk => "unknown",
+});
+source_enum!(GovernanceReviewStatus {
+    Draft => "draft",
+    Reviewed => "reviewed",
+    ApprovedInternal => "approved_internal",
+    Deprecated => "deprecated",
+});
+source_enum!(GovernanceAssurance {
+    DeclaredOnly => "declared_only",
+    EvidenceMapped => "evidence_mapped",
+    ManuallyReviewed => "manually_reviewed",
+});
+source_enum!(GovernanceControlCategory {
+    Identity => "identity",
+    Credential => "credential",
+    Handshake => "handshake",
+    Ledger => "ledger",
+    Bridge => "bridge",
+    Evidence => "evidence",
+    RuntimeBoundary => "runtime_boundary",
+    Policy => "policy",
+    Security => "security",
+    Privacy => "privacy",
+    Safety => "safety",
+    Compliance => "compliance",
+    Custom => "custom",
+});
+source_enum!(GovernanceControlStatus {
+    Mapped => "mapped",
+    Declared => "declared",
+    PendingReview => "pending_review",
+    NotApplicable => "not_applicable",
+});
+source_enum!(RegulatoryCoverage {
+    Mapped => "mapped",
+    Partial => "partial",
+    PendingReview => "pending_review",
+});
+source_enum!(RegulatoryAssessment {
+    DeclaredOnly => "declared_only",
+    EvidenceMapped => "evidence_mapped",
+    ManualReviewRequired => "manual_review_required",
+});
+source_enum!(RegulatoryObligationStatus {
+    Mapped => "mapped",
+    PendingReview => "pending_review",
+    Gap => "gap",
+    NotApplicable => "not_applicable",
+});
+
+/// Declarative governance metadata. It is not a compliance certification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GovernanceProfileDecl {
+    pub name: Spanned<String>,
+    pub scope: Spanned<GovernanceScope>,
+    pub level: Spanned<GovernanceLevel>,
+    pub domain: Spanned<GovernanceDomain>,
+    pub owner: Spanned<String>,
+    pub jurisdiction: Spanned<String>,
+    pub framework: Spanned<String>,
+    pub evidence_map: Spanned<String>,
+    pub trust_ledger: Spanned<String>,
+    pub policies: Vec<Spanned<String>>,
+    pub controls: Vec<GovernanceControlDecl>,
+    pub risk_level: Spanned<GovernanceRiskLevel>,
+    pub review_status: Spanned<GovernanceReviewStatus>,
+    pub assurance: Spanned<GovernanceAssurance>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub external_execution: Spanned<ATrustExecution>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GovernanceControlDecl {
+    pub id: Spanned<String>,
+    pub category: Spanned<GovernanceControlCategory>,
+    pub requirement: Spanned<String>,
+    pub evidence_ref: Spanned<String>,
+    pub status: Spanned<GovernanceControlStatus>,
+}
+
+/// Audit-oriented regulatory mapping metadata. It is not legal advice,
+/// certification, regulatory approval, or proof that obligations are satisfied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegulatoryMappingDecl {
+    pub name: Spanned<String>,
+    pub governance_profile: Spanned<String>,
+    pub evidence_map: Spanned<String>,
+    pub jurisdiction: Spanned<String>,
+    pub framework: Spanned<String>,
+    pub obligations: Vec<RegulatoryObligationDecl>,
+    pub coverage: Spanned<RegulatoryCoverage>,
+    pub assessment: Spanned<RegulatoryAssessment>,
+    pub legal_claims: Spanned<String>,
+    pub certification: Spanned<String>,
+    pub network: Spanned<ATrustNetworkBoundary>,
+    pub external_execution: Spanned<ATrustExecution>,
+    pub secret_material: Spanned<ATrustMaterialBoundary>,
+    pub key_material: Spanned<ATrustMaterialBoundary>,
+    pub execution: Spanned<ATrustExecution>,
+    pub security_claims: Spanned<ATrustSecurityClaims>,
+    pub purpose: Vec<Spanned<String>>,
+    pub notes: Option<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegulatoryObligationDecl {
+    pub id: Spanned<String>,
+    pub source: Spanned<String>,
+    pub requirement: Spanned<String>,
+    pub control: Spanned<String>,
+    pub evidence_ref: Spanned<String>,
+    pub status: Spanned<RegulatoryObligationStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

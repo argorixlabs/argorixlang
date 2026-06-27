@@ -52,7 +52,7 @@ fn run_exports_portable_bundle_trace_and_report_without_json_noise() {
     assert!(report.exists());
     assert!(trace.exists());
     let bundle_json: Value = serde_json::from_slice(&fs::read(&bundle).unwrap()).unwrap();
-    assert_eq!(bundle_json["bundle_version"], "0.32");
+    assert_eq!(bundle_json["bundle_version"], "0.33");
     assert_eq!(
         bundle_json["artifacts"]["trace_path"],
         Value::String("run.trace.json".into())

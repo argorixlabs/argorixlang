@@ -65,6 +65,20 @@ pub struct PolicyEvidenceContext {
     pub atrust_evidence_map_key_material_denied: bool,
     pub atrust_evidence_map_execution_disabled: bool,
     pub atrust_evidence_map_security_claims_absent: bool,
+    pub governance_profiles_declared: bool,
+    pub governance_profiles_evidence_bound: bool,
+    pub governance_profiles_controls_mapped: bool,
+    pub governance_profiles_runtime_disabled: bool,
+    pub governance_profiles_security_claims_absent: bool,
+    pub governance_profiles_no_legal_certification: bool,
+    pub regulatory_mappings_declared: bool,
+    pub regulatory_mappings_profiles_bound: bool,
+    pub regulatory_mappings_obligations_mapped: bool,
+    pub regulatory_mappings_controls_bound: bool,
+    pub regulatory_mappings_legal_claims_absent: bool,
+    pub regulatory_mappings_certification_absent: bool,
+    pub regulatory_mappings_runtime_disabled: bool,
+    pub regulatory_mappings_security_claims_absent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -390,6 +404,62 @@ pub fn evaluate_rule(
         "atrust_evidence_map_security_claims_absent" => (
             context.atrust_evidence_map_security_claims_absent,
             "one or more evidence maps declare security claims",
+        ),
+        "governance_profiles_declared" => (
+            context.governance_profiles_declared,
+            "no governance_profile is declared",
+        ),
+        "governance_profiles_evidence_bound" => (
+            context.governance_profiles_evidence_bound,
+            "one or more governance profiles lack evidence or ledger bindings",
+        ),
+        "governance_profiles_controls_mapped" => (
+            context.governance_profiles_controls_mapped,
+            "one or more governance profiles lack mapped controls",
+        ),
+        "governance_profiles_runtime_disabled" => (
+            context.governance_profiles_runtime_disabled,
+            "one or more governance profiles enable runtime capabilities",
+        ),
+        "governance_profiles_security_claims_absent" => (
+            context.governance_profiles_security_claims_absent,
+            "one or more governance profiles declare security claims",
+        ),
+        "governance_profiles_no_legal_certification" => (
+            context.governance_profiles_no_legal_certification,
+            "one or more governance profiles claim legal certification",
+        ),
+        "regulatory_mappings_declared" => (
+            context.regulatory_mappings_declared,
+            "no regulatory_mapping is declared",
+        ),
+        "regulatory_mappings_profiles_bound" => (
+            context.regulatory_mappings_profiles_bound,
+            "one or more regulatory mappings lack profile/evidence bindings",
+        ),
+        "regulatory_mappings_obligations_mapped" => (
+            context.regulatory_mappings_obligations_mapped,
+            "one or more regulatory mappings lack obligations",
+        ),
+        "regulatory_mappings_controls_bound" => (
+            context.regulatory_mappings_controls_bound,
+            "one or more obligations reference an unknown control",
+        ),
+        "regulatory_mappings_legal_claims_absent" => (
+            context.regulatory_mappings_legal_claims_absent,
+            "one or more regulatory mappings declare legal claims",
+        ),
+        "regulatory_mappings_certification_absent" => (
+            context.regulatory_mappings_certification_absent,
+            "one or more regulatory mappings declare certification",
+        ),
+        "regulatory_mappings_runtime_disabled" => (
+            context.regulatory_mappings_runtime_disabled,
+            "one or more regulatory mappings enable runtime capabilities",
+        ),
+        "regulatory_mappings_security_claims_absent" => (
+            context.regulatory_mappings_security_claims_absent,
+            "one or more regulatory mappings declare security claims",
         ),
         _ => (false, "unknown policy rule"),
     };

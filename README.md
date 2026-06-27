@@ -50,11 +50,37 @@ source language
 
 ## Current status
 
-**Version:** `0.32`
+**Version:** `0.33`
 **Status:** early alpha  
 **License:** Apache-2.0  
 **Implementation:** Rust  
 **Execution mode:** dry-run / simulated runtime only  
+
+Version 0.33 adds Governance Profiles + Regulatory Mapping. A top-level
+`governance_profile` records scope, ownership, jurisdiction, framework,
+ATrust Evidence Map and Trust Ledger bindings, policies, controls, risk level,
+review status, and assurance. A top-level `regulatory_mapping` maps declared
+obligations to those controls and their evidence for audit review.
+
+Governance must be declared before compliance can be assessed. These blocks are
+metadata and audit aids: a governance profile is not a compliance
+certification; a regulatory mapping is not legal advice; an obligation mapped
+is not an obligation legally satisfied; a control mapped is not an externally
+audited control; and a declared risk level does not mean risk was eliminated.
+
+Both blocks remain fail-closed: `legal_claims none`, `certification none`,
+`network denied`, `external_execution disabled`, `secret_material denied`,
+`key_material denied`, `execution disabled`, and `security_claims none`.
+Argorix does not claim regulator approval or legal compliance. Policy v2
+evaluates structural governance bindings offline. SecurityReport v0.33
+summarizes profiles, controls, mappings, obligations, and denied runtime
+boundaries. EvidenceBundle v0.33 covers the bytecode, trace, report, and ledger
+digests without identity, credential, handshake, signature, blockchain,
+MCP/A2A, network, or legal verification.
+
+See
+[`examples/governance_mapping_v033.argx`](examples/governance_mapping_v033.argx)
+for the complete single-file example.
 
 Version 0.32 adds ATrust Evidence Mapping: a top-level
 `atrust_evidence_map` block that links an agent passport, ATrust identity,

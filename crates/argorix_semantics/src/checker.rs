@@ -9,8 +9,11 @@ use argorix_parser::{
         AdapterProfileAuth, AdapterProfileExecution, AdapterProfileFamily, AdapterProfileNetwork,
         AdapterProfileSecrets, AdapterSecrets, Approval, CapabilityLevel, CryptoKind, CryptoStatus,
         CryptoStrength, DidLedgerMode, DidMethodStatus, DidResolutionMode, FeatureDefault,
-        FeatureStatus, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
-        HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program, SecretAccess,
+        FeatureStatus, GovernanceAssurance, GovernanceControlCategory, GovernanceControlStatus,
+        GovernanceDomain, GovernanceLevel, GovernanceReviewStatus, GovernanceRiskLevel,
+        GovernanceScope, HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork,
+        HarnessSecrets, PolicyRule, PolicyRuleDecl, PolicyViolationAction, Program,
+        RegulatoryAssessment, RegulatoryCoverage, RegulatoryObligationStatus, SecretAccess,
         SecretScope, SecretSource,
     },
     diagnostics::Diagnostic,
@@ -49,6 +52,8 @@ pub fn check_program_with_options(
     check_mcp_bridge_contracts(program, &symbols, &mut diagnostics);
     check_a2a_bridge_contracts(program, &symbols, &mut diagnostics);
     check_atrust_evidence_maps(program, &symbols, &mut diagnostics);
+    check_governance_profiles(program, &mut diagnostics);
+    check_regulatory_mappings(program, &mut diagnostics);
     check_policies(program, &mut diagnostics);
     check_passports(program, &symbols, &mut diagnostics);
     check_tool_declarations(program, &symbols, &mut diagnostics);
@@ -4500,6 +4505,513 @@ fn check_atrust_evidence_maps(
             diagnostics.push(Diagnostic::new(
                 format!("atrust_evidence_map `{name}` requires security_claims `none`"),
                 map.security_claims.span,
+            ));
+        }
+    }
+}
+
+pub fn check_governance_profiles(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let trust_ledgers: HashSet<&str> = program
+        .trust_ledgers
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let policies: HashSet<&str> = program
+        .policies
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let mut names = HashSet::new();
+
+    for profile in &program.governance_profiles {
+        let name = profile.name.value.as_str();
+        report_duplicate(&mut names, &profile.name, "governance_profile", diagnostics);
+        if matches!(profile.scope.value, GovernanceScope::Unknown(_)) {
+            invalid_governance_value(
+                name,
+                "scope",
+                profile.scope.value.source_name(),
+                profile.scope.span,
+                diagnostics,
+            );
+        }
+        if matches!(profile.level.value, GovernanceLevel::Unknown(_)) {
+            invalid_governance_value(
+                name,
+                "level",
+                profile.level.value.source_name(),
+                profile.level.span,
+                diagnostics,
+            );
+        }
+        if matches!(profile.domain.value, GovernanceDomain::Unknown(_)) {
+            invalid_governance_value(
+                name,
+                "domain",
+                profile.domain.value.source_name(),
+                profile.domain.span,
+                diagnostics,
+            );
+        }
+        require_governance_text(name, "owner", &profile.owner, diagnostics);
+        require_governance_text(name, "jurisdiction", &profile.jurisdiction, diagnostics);
+        require_governance_text(name, "framework", &profile.framework, diagnostics);
+
+        if !evidence_maps.contains(profile.evidence_map.value.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "governance_profile `{name}` references unknown evidence_map `{}`",
+                    profile.evidence_map.value
+                ),
+                profile.evidence_map.span,
+            ));
+        }
+        if !trust_ledgers.contains(profile.trust_ledger.value.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "governance_profile `{name}` references unknown trust_ledger `{}`",
+                    profile.trust_ledger.value
+                ),
+                profile.trust_ledger.span,
+            ));
+        }
+        if profile.policies.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("governance_profile `{name}` requires non-empty policies"),
+                profile.name.span,
+            ));
+        }
+        for policy in &profile.policies {
+            if policy.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("governance_profile `{name}` policies must not contain empty strings"),
+                    policy.span,
+                ));
+            } else if !policies.contains(policy.value.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "governance_profile `{name}` references unknown policy `{}`",
+                        policy.value
+                    ),
+                    policy.span,
+                ));
+            }
+        }
+        if profile.controls.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("governance_profile `{name}` requires non-empty controls"),
+                profile.name.span,
+            ));
+        }
+        let mut control_ids = HashSet::new();
+        for control in &profile.controls {
+            if !control_ids.insert(control.id.value.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "governance_profile `{name}` has duplicate control id `{}`",
+                        control.id.value
+                    ),
+                    control.id.span,
+                ));
+            }
+            require_governance_text(name, "control id", &control.id, diagnostics);
+            require_governance_text(
+                name,
+                "control requirement",
+                &control.requirement,
+                diagnostics,
+            );
+            require_governance_text(
+                name,
+                "control evidence_ref",
+                &control.evidence_ref,
+                diagnostics,
+            );
+            if matches!(
+                control.category.value,
+                GovernanceControlCategory::Unknown(_)
+            ) {
+                invalid_governance_value(
+                    name,
+                    "control category",
+                    control.category.value.source_name(),
+                    control.category.span,
+                    diagnostics,
+                );
+            }
+            if matches!(control.status.value, GovernanceControlStatus::Unknown(_)) {
+                invalid_governance_value(
+                    name,
+                    "control status",
+                    control.status.value.source_name(),
+                    control.status.span,
+                    diagnostics,
+                );
+            }
+        }
+        if matches!(profile.risk_level.value, GovernanceRiskLevel::Unknown(_)) {
+            invalid_governance_value(
+                name,
+                "risk_level",
+                profile.risk_level.value.source_name(),
+                profile.risk_level.span,
+                diagnostics,
+            );
+        }
+        if matches!(
+            profile.review_status.value,
+            GovernanceReviewStatus::Unknown(_)
+        ) {
+            invalid_governance_value(
+                name,
+                "review_status",
+                profile.review_status.value.source_name(),
+                profile.review_status.span,
+                diagnostics,
+            );
+        }
+        if matches!(profile.assurance.value, GovernanceAssurance::Unknown(_)) {
+            invalid_governance_value(
+                name,
+                "assurance",
+                profile.assurance.value.source_name(),
+                profile.assurance.span,
+                diagnostics,
+            );
+        }
+        require_governance_denied_boundaries(
+            "governance_profile",
+            name,
+            profile.network.value.source_name(),
+            profile.network.span,
+            profile.external_execution.value.source_name(),
+            profile.external_execution.span,
+            profile.secret_material.value.source_name(),
+            profile.secret_material.span,
+            profile.key_material.value.source_name(),
+            profile.key_material.span,
+            profile.execution.value.source_name(),
+            profile.execution.span,
+            profile.security_claims.value.source_name(),
+            profile.security_claims.span,
+            diagnostics,
+        );
+        if profile.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("governance_profile `{name}` requires non-empty purpose"),
+                profile.name.span,
+            ));
+        }
+        for purpose in &profile.purpose {
+            if purpose.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("governance_profile `{name}` purpose must not contain empty strings"),
+                    purpose.span,
+                ));
+            }
+        }
+        if let Some(notes) = &profile.notes {
+            require_governance_text(name, "notes", notes, diagnostics);
+        }
+    }
+}
+
+pub fn check_regulatory_mappings(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    use std::collections::HashMap;
+
+    let profiles: HashMap<&str, &argorix_parser::ast::GovernanceProfileDecl> = program
+        .governance_profiles
+        .iter()
+        .map(|value| (value.name.value.as_str(), value))
+        .collect();
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.value.as_str())
+        .collect();
+    let mut names = HashSet::new();
+
+    for mapping in &program.regulatory_mappings {
+        let name = mapping.name.value.as_str();
+        report_duplicate(&mut names, &mapping.name, "regulatory_mapping", diagnostics);
+        let profile = profiles
+            .get(mapping.governance_profile.value.as_str())
+            .copied();
+        if profile.is_none() {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "regulatory_mapping `{name}` references unknown governance_profile `{}`",
+                    mapping.governance_profile.value
+                ),
+                mapping.governance_profile.span,
+            ));
+        }
+        if !evidence_maps.contains(mapping.evidence_map.value.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                format!(
+                    "regulatory_mapping `{name}` references unknown evidence_map `{}`",
+                    mapping.evidence_map.value
+                ),
+                mapping.evidence_map.span,
+            ));
+        }
+        if let Some(profile) = profile {
+            if mapping.evidence_map.value != profile.evidence_map.value {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "regulatory_mapping `{name}` evidence_map `{}` does not match governance_profile `{}` evidence_map `{}`",
+                        mapping.evidence_map.value,
+                        profile.name.value,
+                        profile.evidence_map.value
+                    ),
+                    mapping.evidence_map.span,
+                ));
+            }
+        }
+        require_regulatory_text(name, "jurisdiction", &mapping.jurisdiction, diagnostics);
+        require_regulatory_text(name, "framework", &mapping.framework, diagnostics);
+        if mapping.obligations.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("regulatory_mapping `{name}` requires non-empty obligations"),
+                mapping.name.span,
+            ));
+        }
+        let control_ids: HashSet<&str> = profile
+            .map(|profile| {
+                profile
+                    .controls
+                    .iter()
+                    .map(|control| control.id.value.as_str())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut obligation_ids = HashSet::new();
+        for obligation in &mapping.obligations {
+            if !obligation_ids.insert(obligation.id.value.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "regulatory_mapping `{name}` has duplicate obligation id `{}`",
+                        obligation.id.value
+                    ),
+                    obligation.id.span,
+                ));
+            }
+            require_regulatory_text(name, "obligation id", &obligation.id, diagnostics);
+            require_regulatory_text(name, "obligation source", &obligation.source, diagnostics);
+            require_regulatory_text(
+                name,
+                "obligation requirement",
+                &obligation.requirement,
+                diagnostics,
+            );
+            require_regulatory_text(name, "obligation control", &obligation.control, diagnostics);
+            require_regulatory_text(
+                name,
+                "obligation evidence_ref",
+                &obligation.evidence_ref,
+                diagnostics,
+            );
+            if !obligation.control.value.is_empty()
+                && !control_ids.contains(obligation.control.value.as_str())
+            {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "regulatory_mapping `{name}` obligation `{}` references unknown control `{}`",
+                        obligation.id.value, obligation.control.value
+                    ),
+                    obligation.control.span,
+                ));
+            }
+            if matches!(
+                obligation.status.value,
+                RegulatoryObligationStatus::Unknown(_)
+            ) {
+                diagnostics.push(Diagnostic::new(
+                    format!(
+                        "regulatory_mapping `{name}` has invalid obligation status `{}`",
+                        obligation.status.value.source_name()
+                    ),
+                    obligation.status.span,
+                ));
+            }
+        }
+        if matches!(mapping.coverage.value, RegulatoryCoverage::Unknown(_)) {
+            invalid_regulatory_value(
+                name,
+                "coverage",
+                mapping.coverage.value.source_name(),
+                mapping.coverage.span,
+                diagnostics,
+            );
+        }
+        if matches!(mapping.assessment.value, RegulatoryAssessment::Unknown(_)) {
+            invalid_regulatory_value(
+                name,
+                "assessment",
+                mapping.assessment.value.source_name(),
+                mapping.assessment.span,
+                diagnostics,
+            );
+        }
+        if mapping.legal_claims.value != "none" {
+            invalid_regulatory_value(
+                name,
+                "legal_claims",
+                &mapping.legal_claims.value,
+                mapping.legal_claims.span,
+                diagnostics,
+            );
+        }
+        if mapping.certification.value != "none" {
+            invalid_regulatory_value(
+                name,
+                "certification",
+                &mapping.certification.value,
+                mapping.certification.span,
+                diagnostics,
+            );
+        }
+        require_governance_denied_boundaries(
+            "regulatory_mapping",
+            name,
+            mapping.network.value.source_name(),
+            mapping.network.span,
+            mapping.external_execution.value.source_name(),
+            mapping.external_execution.span,
+            mapping.secret_material.value.source_name(),
+            mapping.secret_material.span,
+            mapping.key_material.value.source_name(),
+            mapping.key_material.span,
+            mapping.execution.value.source_name(),
+            mapping.execution.span,
+            mapping.security_claims.value.source_name(),
+            mapping.security_claims.span,
+            diagnostics,
+        );
+        if mapping.purpose.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                format!("regulatory_mapping `{name}` requires non-empty purpose"),
+                mapping.name.span,
+            ));
+        }
+        for purpose in &mapping.purpose {
+            if purpose.value.is_empty() {
+                diagnostics.push(Diagnostic::new(
+                    format!("regulatory_mapping `{name}` purpose must not contain empty strings"),
+                    purpose.span,
+                ));
+            }
+        }
+        if let Some(notes) = &mapping.notes {
+            require_regulatory_text(name, "notes", notes, diagnostics);
+        }
+    }
+}
+
+fn require_governance_text(
+    name: &str,
+    field: &str,
+    value: &Spanned<String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if value.value.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            format!("governance_profile `{name}` {field} must not be empty"),
+            value.span,
+        ));
+    }
+}
+
+fn require_regulatory_text(
+    name: &str,
+    field: &str,
+    value: &Spanned<String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if value.value.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            format!("regulatory_mapping `{name}` {field} must not be empty"),
+            value.span,
+        ));
+    }
+}
+
+fn invalid_governance_value(
+    name: &str,
+    field: &str,
+    value: &str,
+    span: argorix_parser::span::Span,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    diagnostics.push(Diagnostic::new(
+        format!("governance_profile `{name}` has invalid {field} `{value}`"),
+        span,
+    ));
+}
+
+fn invalid_regulatory_value(
+    name: &str,
+    field: &str,
+    value: &str,
+    span: argorix_parser::span::Span,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    diagnostics.push(Diagnostic::new(
+        format!("regulatory_mapping `{name}` has invalid {field} `{value}`"),
+        span,
+    ));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn require_governance_denied_boundaries(
+    kind: &str,
+    name: &str,
+    network: &str,
+    network_span: argorix_parser::span::Span,
+    external_execution: &str,
+    external_execution_span: argorix_parser::span::Span,
+    secret_material: &str,
+    secret_material_span: argorix_parser::span::Span,
+    key_material: &str,
+    key_material_span: argorix_parser::span::Span,
+    execution: &str,
+    execution_span: argorix_parser::span::Span,
+    security_claims: &str,
+    security_claims_span: argorix_parser::span::Span,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for (field, actual, required, span) in [
+        ("network", network, "denied", network_span),
+        (
+            "external_execution",
+            external_execution,
+            "disabled",
+            external_execution_span,
+        ),
+        (
+            "secret_material",
+            secret_material,
+            "denied",
+            secret_material_span,
+        ),
+        ("key_material", key_material, "denied", key_material_span),
+        ("execution", execution, "disabled", execution_span),
+        (
+            "security_claims",
+            security_claims,
+            "none",
+            security_claims_span,
+        ),
+    ] {
+        if actual != required {
+            diagnostics.push(Diagnostic::new(
+                format!("{kind} `{name}` requires {field} `{required}`"),
+                span,
             ));
         }
     }

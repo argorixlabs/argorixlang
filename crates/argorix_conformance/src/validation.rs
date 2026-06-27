@@ -23,7 +23,7 @@ pub const STAGES: [&str; 14] = [
     "graph_package",
 ];
 
-pub const CATEGORIES: [&str; 34] = [
+pub const CATEGORIES: [&str; 35] = [
     "parser",
     "semantics",
     "ir",
@@ -58,6 +58,7 @@ pub const CATEGORIES: [&str; 34] = [
     "trust_ledgers",
     "bridge_contracts",
     "atrust_evidence_maps",
+    "governance_mappings",
 ];
 
 #[derive(Debug, Error)]
@@ -90,9 +91,10 @@ pub fn validate_suite(
             | "0.30"
             | "0.31"
             | "0.32"
+            | "0.33"
     ) {
         errors.push(format!(
-            "suite_version must be `0.16`..`0.32`, found `{}`",
+            "suite_version must be `0.16`..`0.33`, found `{}`",
             suite.suite_version
         ));
     }
@@ -112,60 +114,147 @@ pub fn validate_suite(
         }
         if !matches!(
             suite.suite_version.as_str(),
-            "0.18" | "0.19" | "0.20" | "0.21"
+            "0.18"
+                | "0.19"
+                | "0.20"
+                | "0.21"
+                | "0.22"
+                | "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
+                | "0.32"
+                | "0.33"
         ) && category == "typed_messages"
         {
             continue;
         }
-        if !matches!(suite.suite_version.as_str(), "0.19" | "0.20" | "0.21")
-            && category == "agent_passport"
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.19"
+                | "0.20"
+                | "0.21"
+                | "0.22"
+                | "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
+                | "0.32"
+                | "0.33"
+        ) && category == "agent_passport"
         {
             continue;
         }
-        if !matches!(suite.suite_version.as_str(), "0.20" | "0.21")
-            && category == "provider_harness"
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.20"
+                | "0.21"
+                | "0.22"
+                | "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
+                | "0.32"
+                | "0.33"
+        ) && category == "provider_harness"
         {
             continue;
         }
-        if suite.suite_version != "0.21" && matches!(category, "feature_flags" | "secret_boundary")
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.21"
+                | "0.22"
+                | "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
+                | "0.32"
+                | "0.33"
+        ) && matches!(category, "feature_flags" | "secret_boundary")
         {
             continue;
         }
         // crypto_registry was introduced in v0.24; crypto_boundaries in v0.25.
-        if !matches!(suite.suite_version.as_str(), "0.24" | "0.25") && category == "crypto_registry"
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+        ) && category == "crypto_registry"
         {
             continue;
         }
-        if !matches!(suite.suite_version.as_str(), "0.25" | "0.26" | "0.27")
-            && category == "crypto_boundaries"
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+        ) && category == "crypto_boundaries"
         {
             continue;
         }
-        if !matches!(suite.suite_version.as_str(), "0.26" | "0.27")
-            && matches!(category, "did_methods" | "atrust_boundaries")
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+        ) && matches!(category, "did_methods" | "atrust_boundaries")
         {
             continue;
         }
-        if suite.suite_version != "0.27" && category == "atrust_identities" {
-            continue;
-        }
-        if suite.suite_version != "0.28" && category == "atrust_credential_contracts" {
-            continue;
-        }
-        if suite.suite_version != "0.29" && category == "atrust_handshakes" {
-            continue;
-        }
-        if !matches!(suite.suite_version.as_str(), "0.30" | "0.31" | "0.32")
-            && category == "trust_ledgers"
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+        ) && category == "atrust_identities"
         {
             continue;
         }
-        if !matches!(suite.suite_version.as_str(), "0.31" | "0.32")
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+        ) && category == "atrust_credential_contracts"
+        {
+            continue;
+        }
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
+        ) && category == "atrust_handshakes"
+        {
+            continue;
+        }
+        if !matches!(
+            suite.suite_version.as_str(),
+            "0.30" | "0.31" | "0.32" | "0.33"
+        ) && category == "trust_ledgers"
+        {
+            continue;
+        }
+        if !matches!(suite.suite_version.as_str(), "0.31" | "0.32" | "0.33")
             && category == "bridge_contracts"
         {
             continue;
         }
-        if suite.suite_version != "0.32" && category == "atrust_evidence_maps" {
+        if !matches!(suite.suite_version.as_str(), "0.32" | "0.33")
+            && category == "atrust_evidence_maps"
+        {
+            continue;
+        }
+        if suite.suite_version != "0.33" && category == "governance_mappings" {
             continue;
         }
         if !categories.contains(category) && category != "adapter_framework" {

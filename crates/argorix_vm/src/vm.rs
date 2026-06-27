@@ -391,6 +391,75 @@ impl Vm {
                 EventFields::default(),
             );
         }
+        for profile in &bytecode.governance_profiles {
+            state.trace_ledger.record(
+                EventType::GovernanceProfileDeclared,
+                "declared",
+                format!(
+                    "governance_profile {} declared as governance metadata; declaration does not establish compliance",
+                    profile.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::GovernanceControlsMapped,
+                "mapped",
+                format!(
+                    "governance_profile {} maps {} controls; mapped does not mean externally audited",
+                    profile.name,
+                    profile.controls.len()
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::GovernanceRuntimeDisabled,
+                "disabled",
+                format!(
+                    "governance_profile {} runtime, network, external execution, keys and secrets disabled",
+                    profile.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::GovernanceSecurityClaimsDenied,
+                "none",
+                format!(
+                    "governance_profile {} security_claims none; risk level declared does not mean risk eliminated",
+                    profile.name
+                ),
+                EventFields::default(),
+            );
+        }
+        for mapping in &bytecode.regulatory_mappings {
+            state.trace_ledger.record(
+                EventType::RegulatoryMappingDeclared,
+                "declared",
+                format!(
+                    "regulatory_mapping {} declared as an audit aid, not legal advice",
+                    mapping.name
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::RegulatoryObligationsMapped,
+                "mapped",
+                format!(
+                    "regulatory_mapping {} maps {} obligations; mapped does not mean legally satisfied",
+                    mapping.name,
+                    mapping.obligations.len()
+                ),
+                EventFields::default(),
+            );
+            state.trace_ledger.record(
+                EventType::LegalCertificationDenied,
+                "none",
+                format!(
+                    "regulatory_mapping {} legal_claims none and certification none; no regulator approval",
+                    mapping.name
+                ),
+                EventFields::default(),
+            );
+        }
         let execution_providers = match self.load_provider_contracts(bytecode, &mut state) {
             Ok(providers) => providers,
             Err(error) => {
@@ -514,7 +583,7 @@ impl Vm {
         let provider_contracts = state.provider_contracts.clone();
         let provider_calls = state.provider_calls.clone();
         let trace = ReactiveExecutionTrace {
-            vm_version: "0.32".into(),
+            vm_version: "0.33".into(),
             status: match state.status {
                 RuntimeStatus::Completed => "completed",
                 RuntimeStatus::Failed => "failed",
@@ -535,6 +604,8 @@ impl Vm {
             adapter_profiles: bytecode.adapter_profiles.clone(),
             cryptos: bytecode.cryptos.clone(),
             atrust_evidence_maps: bytecode.atrust_evidence_maps.clone(),
+            governance_profiles: bytecode.governance_profiles.clone(),
+            regulatory_mappings: bytecode.regulatory_mappings.clone(),
             injected,
             steps,
             mailboxes,
@@ -832,6 +903,8 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
     let features = &bytecode.features;
     let secrets = &bytecode.secrets;
     let evidence_maps = &bytecode.atrust_evidence_maps;
+    let governance_profiles = &bytecode.governance_profiles;
+    let regulatory_mappings = &bytecode.regulatory_mappings;
     PolicyEvidenceContext {
         agent_passport_declared,
         agent_passport_attested: !passports.is_empty()
@@ -1100,6 +1173,99 @@ fn policy_evidence_context(bytecode: &BytecodeProgram) -> PolicyEvidenceContext 
             && evidence_maps.iter().all(|m| m.execution == "disabled"),
         atrust_evidence_map_security_claims_absent: !evidence_maps.is_empty()
             && evidence_maps.iter().all(|m| m.security_claims == "none"),
+        governance_profiles_declared: !governance_profiles.is_empty(),
+        governance_profiles_evidence_bound: !governance_profiles.is_empty()
+            && governance_profiles.iter().all(|profile| {
+                bytecode
+                    .atrust_evidence_maps
+                    .iter()
+                    .any(|map| map.name == profile.evidence_map)
+                    && bytecode
+                        .trust_ledgers
+                        .iter()
+                        .any(|ledger| ledger.name == profile.trust_ledger)
+            }),
+        governance_profiles_controls_mapped: !governance_profiles.is_empty()
+            && governance_profiles.iter().all(|profile| {
+                !profile.controls.is_empty()
+                    && profile.controls.iter().all(|control| {
+                        matches!(
+                            control.status.as_str(),
+                            "mapped" | "declared" | "pending_review" | "not_applicable"
+                        )
+                    })
+            }),
+        governance_profiles_runtime_disabled: !governance_profiles.is_empty()
+            && governance_profiles.iter().all(|profile| {
+                profile.network == "denied"
+                    && profile.external_execution == "disabled"
+                    && profile.secret_material == "denied"
+                    && profile.key_material == "denied"
+                    && profile.execution == "disabled"
+            }),
+        governance_profiles_security_claims_absent: !governance_profiles.is_empty()
+            && governance_profiles
+                .iter()
+                .all(|profile| profile.security_claims == "none"),
+        governance_profiles_no_legal_certification: !governance_profiles.is_empty()
+            && governance_profiles.iter().all(|profile| {
+                matches!(
+                    profile.assurance.as_str(),
+                    "declared_only" | "evidence_mapped" | "manually_reviewed"
+                )
+            }),
+        regulatory_mappings_declared: !regulatory_mappings.is_empty(),
+        regulatory_mappings_profiles_bound: !regulatory_mappings.is_empty()
+            && regulatory_mappings.iter().all(|mapping| {
+                governance_profiles.iter().any(|profile| {
+                    profile.name == mapping.governance_profile
+                        && profile.evidence_map == mapping.evidence_map
+                })
+            }),
+        regulatory_mappings_obligations_mapped: !regulatory_mappings.is_empty()
+            && regulatory_mappings.iter().all(|mapping| {
+                !mapping.obligations.is_empty()
+                    && mapping.obligations.iter().all(|obligation| {
+                        matches!(
+                            obligation.status.as_str(),
+                            "mapped" | "pending_review" | "gap" | "not_applicable"
+                        )
+                    })
+            }),
+        regulatory_mappings_controls_bound: !regulatory_mappings.is_empty()
+            && regulatory_mappings.iter().all(|mapping| {
+                governance_profiles
+                    .iter()
+                    .find(|profile| profile.name == mapping.governance_profile)
+                    .is_some_and(|profile| {
+                        mapping.obligations.iter().all(|obligation| {
+                            profile
+                                .controls
+                                .iter()
+                                .any(|control| control.id == obligation.control)
+                        })
+                    })
+            }),
+        regulatory_mappings_legal_claims_absent: !regulatory_mappings.is_empty()
+            && regulatory_mappings
+                .iter()
+                .all(|mapping| mapping.legal_claims == "none"),
+        regulatory_mappings_certification_absent: !regulatory_mappings.is_empty()
+            && regulatory_mappings
+                .iter()
+                .all(|mapping| mapping.certification == "none"),
+        regulatory_mappings_runtime_disabled: !regulatory_mappings.is_empty()
+            && regulatory_mappings.iter().all(|mapping| {
+                mapping.network == "denied"
+                    && mapping.external_execution == "disabled"
+                    && mapping.secret_material == "denied"
+                    && mapping.key_material == "denied"
+                    && mapping.execution == "disabled"
+            }),
+        regulatory_mappings_security_claims_absent: !regulatory_mappings.is_empty()
+            && regulatory_mappings
+                .iter()
+                .all(|mapping| mapping.security_claims == "none"),
         ..PolicyEvidenceContext::default()
     }
 }
@@ -1166,6 +1332,8 @@ mod tests {
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
             atrust_evidence_maps: vec![],
+            governance_profiles: vec![],
+            regulatory_mappings: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],
@@ -1319,7 +1487,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.32");
+        assert_eq!(json["vm_version"], "0.33");
         assert_eq!(json["agent_state"].as_array().unwrap().len(), 3);
         assert_eq!(json["intrinsics"].as_array().unwrap().len(), 5);
     }
@@ -1341,7 +1509,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.32");
+        assert_eq!(json["vm_version"], "0.33");
         assert_eq!(json["tool_calls"][0]["tool"], "WebSearch");
         assert_eq!(json["tool_calls"][0]["mode"], "dry-run");
     }
@@ -1363,7 +1531,7 @@ mod tests {
             )
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
-        assert_eq!(json["vm_version"], "0.32");
+        assert_eq!(json["vm_version"], "0.33");
         assert_eq!(json["model_calls"][0]["model"], "GuardModel");
         assert_eq!(json["model_calls"][0]["provider"], "simulated");
     }
@@ -1418,7 +1586,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.32");
+        assert_eq!(trace.vm_version, "0.33");
         assert_eq!(trace.providers[0].name, "simulated");
         assert_eq!(trace.providers[0].kind, "simulated");
         assert_eq!(trace.provider_calls.len(), 2);
@@ -1492,7 +1660,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(trace.vm_version, "0.32");
+        assert_eq!(trace.vm_version, "0.33");
         assert_eq!(
             trace.provider_contracts[0].allowed_targets,
             vec!["GuardModel"]
@@ -1544,7 +1712,7 @@ mod tests {
             .unwrap();
         let json = serde_json::to_value(trace).unwrap();
 
-        assert_eq!(json["vm_version"], "0.32");
+        assert_eq!(json["vm_version"], "0.33");
         assert_eq!(json["providers"][0]["name"], "simulated");
         assert_eq!(json["providers"][0]["enabled"], true);
         assert_eq!(json["provider_contracts"][0]["name"], "OpenAI");
@@ -1794,7 +1962,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(trace.vm_version, "0.32");
+        assert_eq!(trace.vm_version, "0.33");
         assert_eq!(trace.provider_harnesses, bytecode.provider_harnesses);
         assert_eq!(trace.policy_report.status, "passed");
         for expected in [

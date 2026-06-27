@@ -16,12 +16,16 @@ use crate::{
         AssertionDecl, BridgeAuthentication, BridgeAuthorization, BridgeDirection, BridgeTransport,
         CapabilityDecl, CapabilityLevel, CryptoBoundaryDecl, CryptoDecl, CryptoKind, CryptoStatus,
         CryptoStrength, DidLedgerMode, DidMethodDecl, DidMethodStatus, DidResolutionMode, EnumDecl,
-        FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, HandlerDecl,
-        HandlerInstruction, HarnessFilesystem, HarnessMode, HarnessNetwork, HarnessSecrets,
-        ImportDecl, McpBridgeContractDecl, McpProtocol, MessageFieldType, ModelDecl,
-        PassportAsnDecl, PassportDecl, PolicyDecl, PolicyRule, PolicyRuleDecl,
-        PolicyViolationAction, PolicyViolationDecl, Program, ProtocolDecl, ProtocolStep,
-        ProviderDecl, ProviderHarnessDecl, ProviderKindDecl, ReceiveDecl, SecretAccess, SecretDecl,
+        FailureDecl, FeatureDecl, FeatureDefault, FeatureStatus, FieldDecl, GovernanceAssurance,
+        GovernanceControlCategory, GovernanceControlDecl, GovernanceControlStatus,
+        GovernanceDomain, GovernanceLevel, GovernanceProfileDecl, GovernanceReviewStatus,
+        GovernanceRiskLevel, GovernanceScope, HandlerDecl, HandlerInstruction, HarnessFilesystem,
+        HarnessMode, HarnessNetwork, HarnessSecrets, ImportDecl, McpBridgeContractDecl,
+        McpProtocol, MessageFieldType, ModelDecl, PassportAsnDecl, PassportDecl, PolicyDecl,
+        PolicyRule, PolicyRuleDecl, PolicyViolationAction, PolicyViolationDecl, Program,
+        ProtocolDecl, ProtocolStep, ProviderDecl, ProviderHarnessDecl, ProviderKindDecl,
+        ReceiveDecl, RegulatoryAssessment, RegulatoryCoverage, RegulatoryMappingDecl,
+        RegulatoryObligationDecl, RegulatoryObligationStatus, SecretAccess, SecretDecl,
         SecretScope, SecretSource, SendDecl, ToolDecl, TrustLedgerChainPolicy, TrustLedgerDecl,
         TrustLedgerEntryDecl, TrustLedgerEntryKind, TrustLedgerMode, TrustLedgerScope, TypeDecl,
     },
@@ -92,6 +96,139 @@ fn parse_bridge_authorization(value: &str) -> BridgeAuthorization {
     }
 }
 
+fn parse_governance_scope(value: &str) -> GovernanceScope {
+    match value {
+        "agent" => GovernanceScope::Agent,
+        "system" => GovernanceScope::System,
+        "package" => GovernanceScope::Package,
+        "organization" => GovernanceScope::Organization,
+        other => GovernanceScope::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_level(value: &str) -> GovernanceLevel {
+    match value {
+        "baseline" => GovernanceLevel::Baseline,
+        "audit" => GovernanceLevel::Audit,
+        "regulated" => GovernanceLevel::Regulated,
+        "experimental" => GovernanceLevel::Experimental,
+        other => GovernanceLevel::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_domain(value: &str) -> GovernanceDomain {
+    match value {
+        "ai_agent" => GovernanceDomain::AiAgent,
+        "security" => GovernanceDomain::Security,
+        "compliance" => GovernanceDomain::Compliance,
+        "privacy" => GovernanceDomain::Privacy,
+        "safety" => GovernanceDomain::Safety,
+        "custom" => GovernanceDomain::Custom,
+        other => GovernanceDomain::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_risk_level(value: &str) -> GovernanceRiskLevel {
+    match value {
+        "low" => GovernanceRiskLevel::Low,
+        "moderate" => GovernanceRiskLevel::Moderate,
+        "high" => GovernanceRiskLevel::High,
+        "critical" => GovernanceRiskLevel::Critical,
+        "unknown" => GovernanceRiskLevel::UnknownRisk,
+        other => GovernanceRiskLevel::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_review_status(value: &str) -> GovernanceReviewStatus {
+    match value {
+        "draft" => GovernanceReviewStatus::Draft,
+        "reviewed" => GovernanceReviewStatus::Reviewed,
+        "approved_internal" => GovernanceReviewStatus::ApprovedInternal,
+        "deprecated" => GovernanceReviewStatus::Deprecated,
+        other => GovernanceReviewStatus::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_assurance(value: &str) -> GovernanceAssurance {
+    match value {
+        "declared_only" => GovernanceAssurance::DeclaredOnly,
+        "evidence_mapped" => GovernanceAssurance::EvidenceMapped,
+        "manually_reviewed" => GovernanceAssurance::ManuallyReviewed,
+        other => GovernanceAssurance::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_control_category(value: &str) -> GovernanceControlCategory {
+    match value {
+        "identity" => GovernanceControlCategory::Identity,
+        "credential" => GovernanceControlCategory::Credential,
+        "handshake" => GovernanceControlCategory::Handshake,
+        "ledger" => GovernanceControlCategory::Ledger,
+        "bridge" => GovernanceControlCategory::Bridge,
+        "evidence" => GovernanceControlCategory::Evidence,
+        "runtime_boundary" => GovernanceControlCategory::RuntimeBoundary,
+        "policy" => GovernanceControlCategory::Policy,
+        "security" => GovernanceControlCategory::Security,
+        "privacy" => GovernanceControlCategory::Privacy,
+        "safety" => GovernanceControlCategory::Safety,
+        "compliance" => GovernanceControlCategory::Compliance,
+        "custom" => GovernanceControlCategory::Custom,
+        other => GovernanceControlCategory::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_control_status(value: &str) -> GovernanceControlStatus {
+    match value {
+        "mapped" => GovernanceControlStatus::Mapped,
+        "declared" => GovernanceControlStatus::Declared,
+        "pending_review" => GovernanceControlStatus::PendingReview,
+        "not_applicable" => GovernanceControlStatus::NotApplicable,
+        other => GovernanceControlStatus::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_regulatory_coverage(value: &str) -> RegulatoryCoverage {
+    match value {
+        "mapped" => RegulatoryCoverage::Mapped,
+        "partial" => RegulatoryCoverage::Partial,
+        "pending_review" => RegulatoryCoverage::PendingReview,
+        other => RegulatoryCoverage::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_regulatory_assessment(value: &str) -> RegulatoryAssessment {
+    match value {
+        "declared_only" => RegulatoryAssessment::DeclaredOnly,
+        "evidence_mapped" => RegulatoryAssessment::EvidenceMapped,
+        "manual_review_required" => RegulatoryAssessment::ManualReviewRequired,
+        other => RegulatoryAssessment::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_regulatory_obligation_status(value: &str) -> RegulatoryObligationStatus {
+    match value {
+        "mapped" => RegulatoryObligationStatus::Mapped,
+        "pending_review" => RegulatoryObligationStatus::PendingReview,
+        "gap" => RegulatoryObligationStatus::Gap,
+        "not_applicable" => RegulatoryObligationStatus::NotApplicable,
+        other => RegulatoryObligationStatus::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_network(value: &str) -> ATrustNetworkBoundary {
+    match value {
+        "denied" => ATrustNetworkBoundary::Denied,
+        other => ATrustNetworkBoundary::Unknown(other.to_owned()),
+    }
+}
+
+fn parse_governance_security_claims(value: &str) -> ATrustSecurityClaims {
+    match value {
+        "none" => ATrustSecurityClaims::None,
+        other => ATrustSecurityClaims::Unknown(other.to_owned()),
+    }
+}
+
 struct Parser {
     tokens: Vec<Token>,
     current: usize,
@@ -135,6 +272,8 @@ impl Parser {
             mcp_bridge_contracts: Vec::new(),
             a2a_bridge_contracts: Vec::new(),
             atrust_evidence_maps: Vec::new(),
+            governance_profiles: Vec::new(),
+            regulatory_mappings: Vec::new(),
             assertions: Vec::new(),
             policies: Vec::new(),
             failures: Vec::new(),
@@ -176,6 +315,12 @@ impl Parser {
                 Some("atrust_evidence_map") => program
                     .atrust_evidence_maps
                     .push(self.parse_atrust_evidence_map()?),
+                Some("governance_profile") => program
+                    .governance_profiles
+                    .push(self.parse_governance_profile()?),
+                Some("regulatory_mapping") => program
+                    .regulatory_mappings
+                    .push(self.parse_regulatory_mapping()?),
                 Some("capability") => program.capabilities.push(self.parse_capability()?),
                 Some("assert") => program.assertions.push(self.parse_assertion()?),
                 Some("policy") => program.policies.push(self.parse_policy()?),
@@ -195,7 +340,7 @@ impl Parser {
                 }
                 None => {
                     return Err(Diagnostic::new(
-                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
+                        "expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`",
                         self.peek().span,
                     ))
                 }
@@ -3761,6 +3906,655 @@ impl Parser {
         })
     }
 
+    fn parse_governance_profile(&mut self) -> Result<GovernanceProfileDecl, Diagnostic> {
+        self.expect_keyword("governance_profile")?;
+        let name = self.expect_identifier("governance_profile name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+
+        let mut scope = None;
+        let mut level = None;
+        let mut domain = None;
+        let mut owner = None;
+        let mut jurisdiction = None;
+        let mut framework = None;
+        let mut evidence_map = None;
+        let mut trust_ledger = None;
+        let mut policies = None;
+        let mut controls = None;
+        let mut risk_level = None;
+        let mut review_status = None;
+        let mut assurance = None;
+        let mut network = None;
+        let mut external_execution = None;
+        let mut secret_material = None;
+        let mut key_material = None;
+        let mut execution = None;
+        let mut security_claims = None;
+        let mut purpose = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated governance_profile declaration")?;
+            match self.peek_identifier() {
+                Some("scope") => {
+                    self.set_block_field(&mut scope, "governance_profile", "scope", |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile scope",
+                            parse_governance_scope,
+                        )
+                    })?
+                }
+                Some("level") => {
+                    self.set_block_field(&mut level, "governance_profile", "level", |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile level",
+                            parse_governance_level,
+                        )
+                    })?
+                }
+                Some("domain") => {
+                    self.set_block_field(&mut domain, "governance_profile", "domain", |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile domain",
+                            parse_governance_domain,
+                        )
+                    })?
+                }
+                Some("owner") => {
+                    self.set_block_field(&mut owner, "governance_profile", "owner", |p| {
+                        p.expect_string("governance_profile owner")
+                    })?
+                }
+                Some("jurisdiction") => self.set_block_field(
+                    &mut jurisdiction,
+                    "governance_profile",
+                    "jurisdiction",
+                    |p| p.expect_string("governance_profile jurisdiction"),
+                )?,
+                Some("framework") => {
+                    self.set_block_field(&mut framework, "governance_profile", "framework", |p| {
+                        p.expect_string("governance_profile framework")
+                    })?
+                }
+                Some("evidence_map") => self.set_block_field(
+                    &mut evidence_map,
+                    "governance_profile",
+                    "evidence_map",
+                    |p| p.expect_identifier("governance_profile evidence_map"),
+                )?,
+                Some("trust_ledger") => self.set_block_field(
+                    &mut trust_ledger,
+                    "governance_profile",
+                    "trust_ledger",
+                    |p| p.expect_identifier("governance_profile trust_ledger"),
+                )?,
+                Some("policies") => {
+                    self.set_block_field(&mut policies, "governance_profile", "policies", |p| {
+                        p.parse_string_array("governance_profile policy")
+                    })?
+                }
+                Some("controls") => {
+                    self.set_block_field(&mut controls, "governance_profile", "controls", |p| {
+                        p.parse_governance_controls()
+                    })?
+                }
+                Some("risk_level") => self.set_block_field(
+                    &mut risk_level,
+                    "governance_profile",
+                    "risk_level",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile risk_level",
+                            parse_governance_risk_level,
+                        )
+                    },
+                )?,
+                Some("review_status") => self.set_block_field(
+                    &mut review_status,
+                    "governance_profile",
+                    "review_status",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile review_status",
+                            parse_governance_review_status,
+                        )
+                    },
+                )?,
+                Some("assurance") => {
+                    self.set_block_field(&mut assurance, "governance_profile", "assurance", |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile assurance",
+                            parse_governance_assurance,
+                        )
+                    })?
+                }
+                Some("network") => {
+                    self.set_block_field(&mut network, "governance_profile", "network", |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile network",
+                            parse_governance_network,
+                        )
+                    })?
+                }
+                Some("external_execution") => self.set_block_field(
+                    &mut external_execution,
+                    "governance_profile",
+                    "external_execution",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile external_execution",
+                            parse_bridge_execution,
+                        )
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "governance_profile",
+                    "secret_material",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile secret_material",
+                            parse_bridge_material,
+                        )
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "governance_profile",
+                    "key_material",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile key_material",
+                            parse_bridge_material,
+                        )
+                    },
+                )?,
+                Some("execution") => {
+                    self.set_block_field(&mut execution, "governance_profile", "execution", |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile execution",
+                            parse_bridge_execution,
+                        )
+                    })?
+                }
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "governance_profile",
+                    "security_claims",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "governance_profile security_claims",
+                            parse_governance_security_claims,
+                        )
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "governance_profile", "purpose", |p| {
+                        p.parse_string_array("governance_profile purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "governance_profile", "notes", |p| {
+                        p.expect_string("governance_profile notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected governance_profile item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected governance_profile field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+
+        let fallback = name.span;
+        let empty = || Spanned::new(String::new(), fallback);
+        Ok(GovernanceProfileDecl {
+            name,
+            scope: scope
+                .unwrap_or_else(|| Spanned::new(GovernanceScope::Unknown(String::new()), fallback)),
+            level: level
+                .unwrap_or_else(|| Spanned::new(GovernanceLevel::Unknown(String::new()), fallback)),
+            domain: domain.unwrap_or_else(|| {
+                Spanned::new(GovernanceDomain::Unknown(String::new()), fallback)
+            }),
+            owner: owner.unwrap_or_else(empty),
+            jurisdiction: jurisdiction.unwrap_or_else(empty),
+            framework: framework.unwrap_or_else(empty),
+            evidence_map: evidence_map.unwrap_or_else(empty),
+            trust_ledger: trust_ledger.unwrap_or_else(empty),
+            policies: policies.unwrap_or_default(),
+            controls: controls.unwrap_or_default(),
+            risk_level: risk_level.unwrap_or_else(|| {
+                Spanned::new(GovernanceRiskLevel::Unknown(String::new()), fallback)
+            }),
+            review_status: review_status.unwrap_or_else(|| {
+                Spanned::new(GovernanceReviewStatus::Unknown(String::new()), fallback)
+            }),
+            assurance: assurance.unwrap_or_else(|| {
+                Spanned::new(GovernanceAssurance::Unknown(String::new()), fallback)
+            }),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback)
+            }),
+            external_execution: external_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            secret_material: secret_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            key_material: key_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            execution: execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_governance_controls(&mut self) -> Result<Vec<GovernanceControlDecl>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut controls = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            self.ensure_not_eof("unterminated governance_profile controls array")?;
+            controls.push(self.parse_governance_control()?);
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.advance();
+        Ok(controls)
+    }
+
+    fn parse_governance_control(&mut self) -> Result<GovernanceControlDecl, Diagnostic> {
+        let open = self.peek().span;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut id = None;
+        let mut category = None;
+        let mut requirement = None;
+        let mut evidence_ref = None;
+        let mut status = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated governance control")?;
+            match self.peek_identifier() {
+                Some("id") => self.set_block_field(&mut id, "governance control", "id", |p| {
+                    p.expect_string("governance control id")
+                })?,
+                Some("category") => {
+                    self.set_block_field(&mut category, "governance control", "category", |p| {
+                        p.parse_mapped_identifier(
+                            "governance control category",
+                            parse_governance_control_category,
+                        )
+                    })?
+                }
+                Some("requirement") => self.set_block_field(
+                    &mut requirement,
+                    "governance control",
+                    "requirement",
+                    |p| p.expect_string("governance control requirement"),
+                )?,
+                Some("evidence_ref") => self.set_block_field(
+                    &mut evidence_ref,
+                    "governance control",
+                    "evidence_ref",
+                    |p| p.expect_string("governance control evidence_ref"),
+                )?,
+                Some("status") => {
+                    self.set_block_field(&mut status, "governance control", "status", |p| {
+                        p.parse_mapped_identifier(
+                            "governance control status",
+                            parse_governance_control_status,
+                        )
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected governance control item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected governance control field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        let empty = || Spanned::new(String::new(), open);
+        Ok(GovernanceControlDecl {
+            id: id.unwrap_or_else(empty),
+            category: category.unwrap_or_else(|| {
+                Spanned::new(GovernanceControlCategory::Unknown(String::new()), open)
+            }),
+            requirement: requirement.unwrap_or_else(empty),
+            evidence_ref: evidence_ref.unwrap_or_else(empty),
+            status: status.unwrap_or_else(|| {
+                Spanned::new(GovernanceControlStatus::Unknown(String::new()), open)
+            }),
+        })
+    }
+
+    fn parse_regulatory_mapping(&mut self) -> Result<RegulatoryMappingDecl, Diagnostic> {
+        self.expect_keyword("regulatory_mapping")?;
+        let name = self.expect_identifier("regulatory_mapping name")?;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut governance_profile = None;
+        let mut evidence_map = None;
+        let mut jurisdiction = None;
+        let mut framework = None;
+        let mut obligations = None;
+        let mut coverage = None;
+        let mut assessment = None;
+        let mut legal_claims = None;
+        let mut certification = None;
+        let mut network = None;
+        let mut external_execution = None;
+        let mut secret_material = None;
+        let mut key_material = None;
+        let mut execution = None;
+        let mut security_claims = None;
+        let mut purpose = None;
+        let mut notes = None;
+
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated regulatory_mapping declaration")?;
+            match self.peek_identifier() {
+                Some("governance_profile") => self.set_block_field(
+                    &mut governance_profile,
+                    "regulatory_mapping",
+                    "governance_profile",
+                    |p| p.expect_identifier("regulatory_mapping governance_profile"),
+                )?,
+                Some("evidence_map") => self.set_block_field(
+                    &mut evidence_map,
+                    "regulatory_mapping",
+                    "evidence_map",
+                    |p| p.expect_identifier("regulatory_mapping evidence_map"),
+                )?,
+                Some("jurisdiction") => self.set_block_field(
+                    &mut jurisdiction,
+                    "regulatory_mapping",
+                    "jurisdiction",
+                    |p| p.expect_string("regulatory_mapping jurisdiction"),
+                )?,
+                Some("framework") => {
+                    self.set_block_field(&mut framework, "regulatory_mapping", "framework", |p| {
+                        p.expect_string("regulatory_mapping framework")
+                    })?
+                }
+                Some("obligations") => self.set_block_field(
+                    &mut obligations,
+                    "regulatory_mapping",
+                    "obligations",
+                    |p| p.parse_regulatory_obligations(),
+                )?,
+                Some("coverage") => {
+                    self.set_block_field(&mut coverage, "regulatory_mapping", "coverage", |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory_mapping coverage",
+                            parse_regulatory_coverage,
+                        )
+                    })?
+                }
+                Some("assessment") => self.set_block_field(
+                    &mut assessment,
+                    "regulatory_mapping",
+                    "assessment",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory_mapping assessment",
+                            parse_regulatory_assessment,
+                        )
+                    },
+                )?,
+                Some("legal_claims") => self.set_block_field(
+                    &mut legal_claims,
+                    "regulatory_mapping",
+                    "legal_claims",
+                    |p| p.expect_identifier("regulatory_mapping legal_claims"),
+                )?,
+                Some("certification") => self.set_block_field(
+                    &mut certification,
+                    "regulatory_mapping",
+                    "certification",
+                    |p| p.expect_identifier("regulatory_mapping certification"),
+                )?,
+                Some("network") => {
+                    self.set_block_field(&mut network, "regulatory_mapping", "network", |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory_mapping network",
+                            parse_governance_network,
+                        )
+                    })?
+                }
+                Some("external_execution") => self.set_block_field(
+                    &mut external_execution,
+                    "regulatory_mapping",
+                    "external_execution",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory_mapping external_execution",
+                            parse_bridge_execution,
+                        )
+                    },
+                )?,
+                Some("secret_material") => self.set_block_field(
+                    &mut secret_material,
+                    "regulatory_mapping",
+                    "secret_material",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory_mapping secret_material",
+                            parse_bridge_material,
+                        )
+                    },
+                )?,
+                Some("key_material") => self.set_block_field(
+                    &mut key_material,
+                    "regulatory_mapping",
+                    "key_material",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory_mapping key_material",
+                            parse_bridge_material,
+                        )
+                    },
+                )?,
+                Some("execution") => {
+                    self.set_block_field(&mut execution, "regulatory_mapping", "execution", |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory_mapping execution",
+                            parse_bridge_execution,
+                        )
+                    })?
+                }
+                Some("security_claims") => self.set_block_field(
+                    &mut security_claims,
+                    "regulatory_mapping",
+                    "security_claims",
+                    |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory_mapping security_claims",
+                            parse_governance_security_claims,
+                        )
+                    },
+                )?,
+                Some("purpose") => {
+                    self.set_block_field(&mut purpose, "regulatory_mapping", "purpose", |p| {
+                        p.parse_string_array("regulatory_mapping purpose")
+                    })?
+                }
+                Some("notes") => {
+                    self.set_block_field(&mut notes, "regulatory_mapping", "notes", |p| {
+                        p.expect_string("regulatory_mapping notes")
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected regulatory_mapping item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected regulatory_mapping field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        let fallback = name.span;
+        let empty = || Spanned::new(String::new(), fallback);
+        Ok(RegulatoryMappingDecl {
+            name,
+            governance_profile: governance_profile.unwrap_or_else(empty),
+            evidence_map: evidence_map.unwrap_or_else(empty),
+            jurisdiction: jurisdiction.unwrap_or_else(empty),
+            framework: framework.unwrap_or_else(empty),
+            obligations: obligations.unwrap_or_default(),
+            coverage: coverage.unwrap_or_else(|| {
+                Spanned::new(RegulatoryCoverage::Unknown(String::new()), fallback)
+            }),
+            assessment: assessment.unwrap_or_else(|| {
+                Spanned::new(RegulatoryAssessment::Unknown(String::new()), fallback)
+            }),
+            legal_claims: legal_claims.unwrap_or_else(empty),
+            certification: certification.unwrap_or_else(empty),
+            network: network.unwrap_or_else(|| {
+                Spanned::new(ATrustNetworkBoundary::Unknown(String::new()), fallback)
+            }),
+            external_execution: external_execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            secret_material: secret_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            key_material: key_material.unwrap_or_else(|| {
+                Spanned::new(ATrustMaterialBoundary::Unknown(String::new()), fallback)
+            }),
+            execution: execution
+                .unwrap_or_else(|| Spanned::new(ATrustExecution::Unknown(String::new()), fallback)),
+            security_claims: security_claims.unwrap_or_else(|| {
+                Spanned::new(ATrustSecurityClaims::Unknown(String::new()), fallback)
+            }),
+            purpose: purpose.unwrap_or_default(),
+            notes,
+        })
+    }
+
+    fn parse_regulatory_obligations(
+        &mut self,
+    ) -> Result<Vec<RegulatoryObligationDecl>, Diagnostic> {
+        self.expect_symbol(TokenKind::LeftBracket, "`[`")?;
+        let mut obligations = Vec::new();
+        while !self.check(&TokenKind::RightBracket) {
+            self.ensure_not_eof("unterminated regulatory_mapping obligations array")?;
+            obligations.push(self.parse_regulatory_obligation()?);
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.advance();
+        Ok(obligations)
+    }
+
+    fn parse_regulatory_obligation(&mut self) -> Result<RegulatoryObligationDecl, Diagnostic> {
+        let open = self.peek().span;
+        self.expect_symbol(TokenKind::LeftBrace, "`{`")?;
+        let mut id = None;
+        let mut source = None;
+        let mut requirement = None;
+        let mut control = None;
+        let mut evidence_ref = None;
+        let mut status = None;
+        while !self.check(&TokenKind::RightBrace) {
+            self.ensure_not_eof("unterminated regulatory obligation")?;
+            match self.peek_identifier() {
+                Some("id") => {
+                    self.set_block_field(&mut id, "regulatory obligation", "id", |p| {
+                        p.expect_string("regulatory obligation id")
+                    })?
+                }
+                Some("source") => {
+                    self.set_block_field(&mut source, "regulatory obligation", "source", |p| {
+                        p.expect_string("regulatory obligation source")
+                    })?
+                }
+                Some("requirement") => self.set_block_field(
+                    &mut requirement,
+                    "regulatory obligation",
+                    "requirement",
+                    |p| p.expect_string("regulatory obligation requirement"),
+                )?,
+                Some("control") => {
+                    self.set_block_field(&mut control, "regulatory obligation", "control", |p| {
+                        p.expect_string("regulatory obligation control")
+                    })?
+                }
+                Some("evidence_ref") => self.set_block_field(
+                    &mut evidence_ref,
+                    "regulatory obligation",
+                    "evidence_ref",
+                    |p| p.expect_string("regulatory obligation evidence_ref"),
+                )?,
+                Some("status") => {
+                    self.set_block_field(&mut status, "regulatory obligation", "status", |p| {
+                        p.parse_mapped_identifier(
+                            "regulatory obligation status",
+                            parse_regulatory_obligation_status,
+                        )
+                    })?
+                }
+                Some(other) => {
+                    return Err(Diagnostic::new(
+                        format!("unexpected regulatory obligation item `{other}`"),
+                        self.peek().span,
+                    ))
+                }
+                None => {
+                    return Err(Diagnostic::new(
+                        "expected regulatory obligation field",
+                        self.peek().span,
+                    ))
+                }
+            }
+        }
+        self.advance();
+        let empty = || Spanned::new(String::new(), open);
+        Ok(RegulatoryObligationDecl {
+            id: id.unwrap_or_else(empty),
+            source: source.unwrap_or_else(empty),
+            requirement: requirement.unwrap_or_else(empty),
+            control: control.unwrap_or_else(empty),
+            evidence_ref: evidence_ref.unwrap_or_else(empty),
+            status: status.unwrap_or_else(|| {
+                Spanned::new(RegulatoryObligationStatus::Unknown(String::new()), open)
+            }),
+        })
+    }
+
+    fn parse_mapped_identifier<T>(
+        &mut self,
+        description: &str,
+        map: impl FnOnce(&str) -> T,
+    ) -> Result<Spanned<T>, Diagnostic> {
+        let token = self.expect_identifier(description)?;
+        Ok(Spanned::new(map(&token.value), token.span))
+    }
+
     /// Consume a block key keyword and parse its value, rejecting duplicates.
     fn set_block_field<T>(
         &mut self,
@@ -4097,6 +4891,32 @@ impl Parser {
             }
             "atrust_evidence_map_security_claims_absent" => {
                 PolicyRule::ATrustEvidenceMapSecurityClaimsAbsent
+            }
+            "governance_profiles_declared" => PolicyRule::GovernanceProfilesDeclared,
+            "governance_profiles_evidence_bound" => PolicyRule::GovernanceProfilesEvidenceBound,
+            "governance_profiles_controls_mapped" => PolicyRule::GovernanceProfilesControlsMapped,
+            "governance_profiles_runtime_disabled" => PolicyRule::GovernanceProfilesRuntimeDisabled,
+            "governance_profiles_security_claims_absent" => {
+                PolicyRule::GovernanceProfilesSecurityClaimsAbsent
+            }
+            "governance_profiles_no_legal_certification" => {
+                PolicyRule::GovernanceProfilesNoLegalCertification
+            }
+            "regulatory_mappings_declared" => PolicyRule::RegulatoryMappingsDeclared,
+            "regulatory_mappings_profiles_bound" => PolicyRule::RegulatoryMappingsProfilesBound,
+            "regulatory_mappings_obligations_mapped" => {
+                PolicyRule::RegulatoryMappingsObligationsMapped
+            }
+            "regulatory_mappings_controls_bound" => PolicyRule::RegulatoryMappingsControlsBound,
+            "regulatory_mappings_legal_claims_absent" => {
+                PolicyRule::RegulatoryMappingsLegalClaimsAbsent
+            }
+            "regulatory_mappings_certification_absent" => {
+                PolicyRule::RegulatoryMappingsCertificationAbsent
+            }
+            "regulatory_mappings_runtime_disabled" => PolicyRule::RegulatoryMappingsRuntimeDisabled,
+            "regulatory_mappings_security_claims_absent" => {
+                PolicyRule::RegulatoryMappingsSecurityClaimsAbsent
             }
             "runtime_status" => {
                 let argument = self.expect_identifier("runtime status policy argument")?;

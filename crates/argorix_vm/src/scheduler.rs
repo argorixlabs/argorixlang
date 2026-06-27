@@ -228,6 +228,8 @@ mod tests {
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
             atrust_evidence_maps: vec![],
+            governance_profiles: vec![],
+            regulatory_mappings: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

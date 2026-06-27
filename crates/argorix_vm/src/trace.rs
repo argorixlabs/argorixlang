@@ -98,6 +98,13 @@ pub enum EventType {
     ATrustEvidenceMapLinksValidated,
     ATrustEvidenceMapRuntimeDisabled,
     ATrustEvidenceMapSecurityClaimsDenied,
+    GovernanceProfileDeclared,
+    GovernanceControlsMapped,
+    RegulatoryMappingDeclared,
+    RegulatoryObligationsMapped,
+    GovernanceRuntimeDisabled,
+    GovernanceSecurityClaimsDenied,
+    LegalCertificationDenied,
     VmCompleted,
     VmFailed,
 }
@@ -198,6 +205,10 @@ pub struct ReactiveExecutionTrace {
     pub cryptos: Vec<argorix_bytecode::BytecodeCrypto>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub atrust_evidence_maps: Vec<argorix_bytecode::BytecodeATrustEvidenceMap>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub governance_profiles: Vec<argorix_bytecode::BytecodeGovernanceProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regulatory_mappings: Vec<argorix_bytecode::BytecodeRegulatoryMapping>,
     pub injected: InjectedMessage,
     pub steps: Vec<ReactiveStep>,
     pub mailboxes: Vec<MailboxSummary>,

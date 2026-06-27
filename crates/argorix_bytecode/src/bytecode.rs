@@ -47,6 +47,10 @@ pub struct BytecodeProgram {
     pub a2a_bridge_contracts: Vec<BytecodeA2ABridgeContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub atrust_evidence_maps: Vec<BytecodeATrustEvidenceMap>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub governance_profiles: Vec<BytecodeGovernanceProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regulatory_mappings: Vec<BytecodeRegulatoryMapping>,
     #[serde(default)]
     pub assertions: Vec<BytecodeAssertion>,
     #[serde(default)]
@@ -440,6 +444,75 @@ pub struct BytecodeATrustEvidenceMap {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeGovernanceProfile {
+    pub name: String,
+    pub scope: String,
+    pub level: String,
+    pub domain: String,
+    pub owner: String,
+    pub jurisdiction: String,
+    pub framework: String,
+    pub evidence_map: String,
+    pub trust_ledger: String,
+    pub policies: Vec<String>,
+    pub controls: Vec<BytecodeGovernanceControl>,
+    pub risk_level: String,
+    pub review_status: String,
+    pub assurance: String,
+    pub network: String,
+    pub external_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeGovernanceControl {
+    pub id: String,
+    pub category: String,
+    pub requirement: String,
+    pub evidence_ref: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeRegulatoryMapping {
+    pub name: String,
+    pub governance_profile: String,
+    pub evidence_map: String,
+    pub jurisdiction: String,
+    pub framework: String,
+    pub obligations: Vec<BytecodeRegulatoryObligation>,
+    pub coverage: String,
+    pub assessment: String,
+    pub legal_claims: String,
+    pub certification: String,
+    pub network: String,
+    pub external_execution: String,
+    pub secret_material: String,
+    pub key_material: String,
+    pub execution: String,
+    pub security_claims: String,
+    pub purpose: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BytecodeRegulatoryObligation {
+    pub id: String,
+    pub source: String,
+    pub requirement: String,
+    pub control: String,
+    pub evidence_ref: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BytecodeProviderHarness {
     pub name: String,
     pub provider: String,
@@ -823,6 +896,16 @@ pub enum BytecodeError {
     DuplicateATrustEvidenceMap(String),
     #[error("invalid atrust_evidence_map `{name}`: {reason}")]
     InvalidATrustEvidenceMap { name: String, reason: String },
+    #[error("governance_profiles and regulatory_mappings require bytecode_version 0.33")]
+    GovernanceMappingsRequireV033,
+    #[error("duplicate governance_profile `{0}`")]
+    DuplicateGovernanceProfile(String),
+    #[error("invalid governance_profile `{name}`: {reason}")]
+    InvalidGovernanceProfile { name: String, reason: String },
+    #[error("duplicate regulatory_mapping `{0}`")]
+    DuplicateRegulatoryMapping(String),
+    #[error("invalid regulatory_mapping `{name}`: {reason}")]
+    InvalidRegulatoryMapping { name: String, reason: String },
 }
 
 pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeError>> {
@@ -860,6 +943,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.30"
             | "0.31"
             | "0.32"
+            | "0.33"
     ) {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -892,6 +976,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
             | "0.30"
             | "0.31"
             | "0.32"
+            | "0.33"
     ) && !program.providers.is_empty()
     {
         errors.push(BytecodeError::ContractsRequireV011);
@@ -916,6 +1001,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.30"
                 | "0.31"
                 | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::ModulesRequireV016);
@@ -951,6 +1037,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.30"
                 | "0.31"
                 | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::PoliciesRequireV017);
@@ -975,6 +1062,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 | "0.30"
                 | "0.31"
                 | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::AdaptersRequireV022);
@@ -982,7 +1070,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.adapter_profiles.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.23" | "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32"
+            "0.23"
+                | "0.24"
+                | "0.25"
+                | "0.26"
+                | "0.27"
+                | "0.28"
+                | "0.29"
+                | "0.30"
+                | "0.31"
+                | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::AdapterProfilesRequireV023);
@@ -990,7 +1088,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.cryptos.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32"
+            "0.24" | "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
         )
     {
         errors.push(BytecodeError::CryptosRequireV024);
@@ -998,7 +1096,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.crypto_boundaries.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32"
+            "0.25" | "0.26" | "0.27" | "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
         )
     {
         errors.push(BytecodeError::CryptoBoundariesRequireV025);
@@ -1006,7 +1104,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_credential_contracts.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.28" | "0.29" | "0.30" | "0.31" | "0.32"
+            "0.28" | "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1016,7 +1114,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     if !program.atrust_handshakes.is_empty()
         && !matches!(
             program.bytecode_version.as_str(),
-            "0.29" | "0.30" | "0.31" | "0.32"
+            "0.29" | "0.30" | "0.31" | "0.32" | "0.33"
         )
     {
         errors.push(BytecodeError::UnsupportedVersion(
@@ -1025,7 +1123,10 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     validate_atrust_handshakes(program, &mut errors);
     if !program.trust_ledgers.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.30" | "0.31" | "0.32")
+        && !matches!(
+            program.bytecode_version.as_str(),
+            "0.30" | "0.31" | "0.32" | "0.33"
+        )
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -1033,7 +1134,7 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     }
     validate_trust_ledgers(program, &mut errors);
     if (!program.mcp_bridge_contracts.is_empty() || !program.a2a_bridge_contracts.is_empty())
-        && !matches!(program.bytecode_version.as_str(), "0.31" | "0.32")
+        && !matches!(program.bytecode_version.as_str(), "0.31" | "0.32" | "0.33")
     {
         errors.push(BytecodeError::UnsupportedVersion(
             program.bytecode_version.clone(),
@@ -1042,11 +1143,18 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
     validate_mcp_bridge_contracts(program, &mut errors);
     validate_a2a_bridge_contracts(program, &mut errors);
     if !program.atrust_evidence_maps.is_empty()
-        && !matches!(program.bytecode_version.as_str(), "0.32")
+        && !matches!(program.bytecode_version.as_str(), "0.32" | "0.33")
     {
         errors.push(BytecodeError::ATrustEvidenceMapsRequireV032);
     }
     validate_atrust_evidence_maps(program, &mut errors);
+    if (!program.governance_profiles.is_empty() || !program.regulatory_mappings.is_empty())
+        && program.bytecode_version != "0.33"
+    {
+        errors.push(BytecodeError::GovernanceMappingsRequireV033);
+    }
+    validate_governance_profiles(program, &mut errors);
+    validate_regulatory_mappings(program, &mut errors);
     validate_adapters(program, &mut errors);
     validate_adapter_profiles(program, &mut errors);
     validate_cryptos(program, &mut errors);
@@ -1333,6 +1441,7 @@ fn validate_message_contracts(program: &BytecodeProgram, errors: &mut Vec<Byteco
                 | "0.30"
                 | "0.31"
                 | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::MessageContractsRequireV018);
@@ -1394,6 +1503,7 @@ fn validate_passports(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>
                 | "0.30"
                 | "0.31"
                 | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::PassportsRequireV019);
@@ -1486,6 +1596,7 @@ fn validate_provider_harnesses(program: &BytecodeProgram, errors: &mut Vec<Bytec
                 | "0.30"
                 | "0.31"
                 | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::HarnessesRequireV020);
@@ -1598,6 +1709,7 @@ fn validate_features(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
                 | "0.30"
                 | "0.31"
                 | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::FeaturesRequireV021);
@@ -1669,6 +1781,7 @@ fn validate_secrets(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) 
                 | "0.30"
                 | "0.31"
                 | "0.32"
+                | "0.33"
         )
     {
         errors.push(BytecodeError::SecretsRequireV021);
@@ -2521,6 +2634,259 @@ fn validate_atrust_evidence_maps(program: &BytecodeProgram, errors: &mut Vec<Byt
     }
 }
 
+fn validate_governance_profiles(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let ledgers: HashSet<&str> = program
+        .trust_ledgers
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let policies: HashSet<&str> = program
+        .policies
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for profile in &program.governance_profiles {
+        if !names.insert(profile.name.as_str()) {
+            errors.push(BytecodeError::DuplicateGovernanceProfile(
+                profile.name.clone(),
+            ));
+        }
+        let mut invalid = |reason: &str| {
+            errors.push(BytecodeError::InvalidGovernanceProfile {
+                name: profile.name.clone(),
+                reason: reason.into(),
+            });
+        };
+        for (field, value) in [
+            ("name", profile.name.as_str()),
+            ("owner", profile.owner.as_str()),
+            ("jurisdiction", profile.jurisdiction.as_str()),
+            ("framework", profile.framework.as_str()),
+            ("evidence_map", profile.evidence_map.as_str()),
+            ("trust_ledger", profile.trust_ledger.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                invalid(&format!("{field} must not be empty"));
+            }
+        }
+        if !matches!(
+            profile.scope.as_str(),
+            "agent" | "system" | "package" | "organization"
+        ) {
+            invalid("invalid scope");
+        }
+        if !matches!(
+            profile.level.as_str(),
+            "baseline" | "audit" | "regulated" | "experimental"
+        ) {
+            invalid("invalid level");
+        }
+        if !matches!(
+            profile.domain.as_str(),
+            "ai_agent" | "security" | "compliance" | "privacy" | "safety" | "custom"
+        ) {
+            invalid("invalid domain");
+        }
+        if !evidence_maps.contains(profile.evidence_map.as_str()) {
+            invalid("unknown evidence_map");
+        }
+        if !ledgers.contains(profile.trust_ledger.as_str()) {
+            invalid("unknown trust_ledger");
+        }
+        if profile.policies.is_empty()
+            || profile
+                .policies
+                .iter()
+                .any(|value| value.is_empty() || !policies.contains(value.as_str()))
+        {
+            invalid("policies must be non-empty and reference declared policies");
+        }
+        if profile.controls.is_empty() {
+            invalid("controls must not be empty");
+        }
+        let mut control_ids = HashSet::new();
+        for control in &profile.controls {
+            if !control_ids.insert(control.id.as_str()) {
+                invalid("duplicate control id");
+            }
+            if control.id.trim().is_empty()
+                || control.requirement.trim().is_empty()
+                || control.evidence_ref.trim().is_empty()
+            {
+                invalid("control fields must not be empty");
+            }
+            if !matches!(
+                control.category.as_str(),
+                "identity"
+                    | "credential"
+                    | "handshake"
+                    | "ledger"
+                    | "bridge"
+                    | "evidence"
+                    | "runtime_boundary"
+                    | "policy"
+                    | "security"
+                    | "privacy"
+                    | "safety"
+                    | "compliance"
+                    | "custom"
+            ) {
+                invalid("invalid control category");
+            }
+            if !matches!(
+                control.status.as_str(),
+                "mapped" | "declared" | "pending_review" | "not_applicable"
+            ) {
+                invalid("invalid control status");
+            }
+        }
+        if !matches!(
+            profile.risk_level.as_str(),
+            "low" | "moderate" | "high" | "critical" | "unknown"
+        ) {
+            invalid("invalid risk_level");
+        }
+        if !matches!(
+            profile.review_status.as_str(),
+            "draft" | "reviewed" | "approved_internal" | "deprecated"
+        ) {
+            invalid("invalid review_status");
+        }
+        if !matches!(
+            profile.assurance.as_str(),
+            "declared_only" | "evidence_mapped" | "manually_reviewed"
+        ) {
+            invalid("invalid assurance");
+        }
+        if profile.network != "denied"
+            || profile.external_execution != "disabled"
+            || profile.secret_material != "denied"
+            || profile.key_material != "denied"
+            || profile.execution != "disabled"
+            || profile.security_claims != "none"
+        {
+            invalid("runtime boundaries must remain denied/disabled and security_claims none");
+        }
+        if profile.purpose.is_empty() || profile.purpose.iter().any(|value| value.is_empty()) {
+            invalid("purpose must not be empty");
+        }
+        if profile.notes.as_ref().is_some_and(|value| value.is_empty()) {
+            invalid("notes must not be empty");
+        }
+    }
+}
+
+fn validate_regulatory_mappings(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
+    let profiles: std::collections::HashMap<&str, &BytecodeGovernanceProfile> = program
+        .governance_profiles
+        .iter()
+        .map(|value| (value.name.as_str(), value))
+        .collect();
+    let evidence_maps: HashSet<&str> = program
+        .atrust_evidence_maps
+        .iter()
+        .map(|value| value.name.as_str())
+        .collect();
+    let mut names = HashSet::new();
+    for mapping in &program.regulatory_mappings {
+        if !names.insert(mapping.name.as_str()) {
+            errors.push(BytecodeError::DuplicateRegulatoryMapping(
+                mapping.name.clone(),
+            ));
+        }
+        let mut invalid = |reason: &str| {
+            errors.push(BytecodeError::InvalidRegulatoryMapping {
+                name: mapping.name.clone(),
+                reason: reason.into(),
+            });
+        };
+        let profile = profiles.get(mapping.governance_profile.as_str()).copied();
+        if profile.is_none() {
+            invalid("unknown governance_profile");
+        }
+        if !evidence_maps.contains(mapping.evidence_map.as_str()) {
+            invalid("unknown evidence_map");
+        }
+        if profile.is_some_and(|profile| profile.evidence_map != mapping.evidence_map) {
+            invalid("evidence_map does not match governance_profile");
+        }
+        if mapping.jurisdiction.trim().is_empty() || mapping.framework.trim().is_empty() {
+            invalid("jurisdiction and framework must not be empty");
+        }
+        if mapping.obligations.is_empty() {
+            invalid("obligations must not be empty");
+        }
+        let controls: HashSet<&str> = profile
+            .map(|value| {
+                value
+                    .controls
+                    .iter()
+                    .map(|control| control.id.as_str())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut obligation_ids = HashSet::new();
+        for obligation in &mapping.obligations {
+            if !obligation_ids.insert(obligation.id.as_str()) {
+                invalid("duplicate obligation id");
+            }
+            if obligation.id.trim().is_empty()
+                || obligation.source.trim().is_empty()
+                || obligation.requirement.trim().is_empty()
+                || obligation.control.trim().is_empty()
+                || obligation.evidence_ref.trim().is_empty()
+            {
+                invalid("obligation fields must not be empty");
+            }
+            if !controls.contains(obligation.control.as_str()) {
+                invalid("obligation references unknown control");
+            }
+            if !matches!(
+                obligation.status.as_str(),
+                "mapped" | "pending_review" | "gap" | "not_applicable"
+            ) {
+                invalid("invalid obligation status");
+            }
+        }
+        if !matches!(
+            mapping.coverage.as_str(),
+            "mapped" | "partial" | "pending_review"
+        ) {
+            invalid("invalid coverage");
+        }
+        if !matches!(
+            mapping.assessment.as_str(),
+            "declared_only" | "evidence_mapped" | "manual_review_required"
+        ) {
+            invalid("invalid assessment");
+        }
+        if mapping.legal_claims != "none" || mapping.certification != "none" {
+            invalid("legal_claims and certification must be none");
+        }
+        if mapping.network != "denied"
+            || mapping.external_execution != "disabled"
+            || mapping.secret_material != "denied"
+            || mapping.key_material != "denied"
+            || mapping.execution != "disabled"
+            || mapping.security_claims != "none"
+        {
+            invalid("runtime boundaries must remain denied/disabled and security_claims none");
+        }
+        if mapping.purpose.is_empty() || mapping.purpose.iter().any(|value| value.is_empty()) {
+            invalid("purpose must not be empty");
+        }
+        if mapping.notes.as_ref().is_some_and(|value| value.is_empty()) {
+            invalid("notes must not be empty");
+        }
+    }
+}
+
 fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>) {
     const RULES: &[&str] = &[
         "no_unhandled_messages",
@@ -2692,6 +3058,20 @@ fn validate_policies(program: &BytecodeProgram, errors: &mut Vec<BytecodeError>)
         "atrust_evidence_map_key_material_denied",
         "atrust_evidence_map_execution_disabled",
         "atrust_evidence_map_security_claims_absent",
+        "governance_profiles_declared",
+        "governance_profiles_evidence_bound",
+        "governance_profiles_controls_mapped",
+        "governance_profiles_runtime_disabled",
+        "governance_profiles_security_claims_absent",
+        "governance_profiles_no_legal_certification",
+        "regulatory_mappings_declared",
+        "regulatory_mappings_profiles_bound",
+        "regulatory_mappings_obligations_mapped",
+        "regulatory_mappings_controls_bound",
+        "regulatory_mappings_legal_claims_absent",
+        "regulatory_mappings_certification_absent",
+        "regulatory_mappings_runtime_disabled",
+        "regulatory_mappings_security_claims_absent",
     ];
     let mut names = HashSet::new();
     for policy in &program.policies {
@@ -2804,6 +3184,8 @@ mod tests {
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
             atrust_evidence_maps: vec![],
+            governance_profiles: vec![],
+            regulatory_mappings: vec![],
             assertions: vec![],
             policies: vec![],
             types: vec![],

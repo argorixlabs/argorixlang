@@ -46,6 +46,10 @@ pub struct SecurityReport {
     pub a2a_bridge_contracts: A2ABridgeContractsSummary,
     #[serde(default)]
     pub atrust_evidence_maps: ATrustEvidenceMapsSummary,
+    #[serde(default)]
+    pub governance_profiles: GovernanceProfilesSummary,
+    #[serde(default)]
+    pub regulatory_mappings: RegulatoryMappingsSummary,
     pub policy: PolicySummary,
     pub provider_boundary: ProviderBoundarySummary,
     pub calls: CallSummary,
@@ -119,6 +123,41 @@ pub struct ATrustEvidenceMapsSummary {
     pub handshake_links_total: usize,
     pub ledger_links_total: usize,
     pub bridge_links_total: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GovernanceProfilesSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub scopes: BTreeMap<String, usize>,
+    pub levels: BTreeMap<String, usize>,
+    pub domains: BTreeMap<String, usize>,
+    pub risk_levels: BTreeMap<String, usize>,
+    pub review_statuses: BTreeMap<String, usize>,
+    pub assurance: BTreeMap<String, usize>,
+    pub controls_total: usize,
+    pub control_categories: BTreeMap<String, usize>,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub execution: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegulatoryMappingsSummary {
+    pub total: usize,
+    pub names: Vec<String>,
+    pub jurisdictions: Vec<String>,
+    pub frameworks: Vec<String>,
+    pub obligations_total: usize,
+    pub coverage: BTreeMap<String, usize>,
+    pub assessment: BTreeMap<String, usize>,
+    pub legal_claims_none: usize,
+    pub certification_none: usize,
+    pub network: BTreeMap<String, usize>,
+    pub external_execution: BTreeMap<String, usize>,
+    pub execution: BTreeMap<String, usize>,
+    pub security_claims: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -600,7 +639,7 @@ impl SecurityReport {
         let verdict = verdict(outcome, &policy, &provider_boundary, &calls);
 
         Self {
-            report_version: "0.32".into(),
+            report_version: "0.33".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -608,7 +647,7 @@ impl SecurityReport {
             bytecode_version: bytecode.bytecode_version.clone(),
             vm_version: trace
                 .map(|trace| trace.vm_version.clone())
-                .unwrap_or_else(|| "0.32".into()),
+                .unwrap_or_else(|| "0.33".into()),
             execution,
             message_contracts: message_contract_summary(&bytecode.types),
             agent_passports: agent_passport_summary(&bytecode.passports),
@@ -625,6 +664,8 @@ impl SecurityReport {
             mcp_bridge_contracts: mcp_bridge_contracts_summary(&bytecode.mcp_bridge_contracts),
             a2a_bridge_contracts: a2a_bridge_contracts_summary(&bytecode.a2a_bridge_contracts),
             atrust_evidence_maps: atrust_evidence_maps_summary(&bytecode.atrust_evidence_maps),
+            governance_profiles: governance_profiles_summary(&bytecode.governance_profiles),
+            regulatory_mappings: regulatory_mappings_summary(&bytecode.regulatory_mappings),
             policy,
             provider_boundary,
             calls,
@@ -633,6 +674,97 @@ impl SecurityReport {
             verdict,
         }
     }
+}
+
+fn governance_profiles_summary(
+    profiles: &[argorix_bytecode::BytecodeGovernanceProfile],
+) -> GovernanceProfilesSummary {
+    let mut summary = GovernanceProfilesSummary {
+        total: profiles.len(),
+        ..Default::default()
+    };
+    for profile in profiles {
+        summary.names.push(profile.name.clone());
+        *summary.scopes.entry(profile.scope.clone()).or_insert(0) += 1;
+        *summary.levels.entry(profile.level.clone()).or_insert(0) += 1;
+        *summary.domains.entry(profile.domain.clone()).or_insert(0) += 1;
+        *summary
+            .risk_levels
+            .entry(profile.risk_level.clone())
+            .or_insert(0) += 1;
+        *summary
+            .review_statuses
+            .entry(profile.review_status.clone())
+            .or_insert(0) += 1;
+        *summary
+            .assurance
+            .entry(profile.assurance.clone())
+            .or_insert(0) += 1;
+        summary.controls_total += profile.controls.len();
+        for control in &profile.controls {
+            *summary
+                .control_categories
+                .entry(control.category.clone())
+                .or_insert(0) += 1;
+        }
+        *summary.network.entry(profile.network.clone()).or_insert(0) += 1;
+        *summary
+            .external_execution
+            .entry(profile.external_execution.clone())
+            .or_insert(0) += 1;
+        *summary
+            .execution
+            .entry(profile.execution.clone())
+            .or_insert(0) += 1;
+        *summary
+            .security_claims
+            .entry(profile.security_claims.clone())
+            .or_insert(0) += 1;
+    }
+    summary
+}
+
+fn regulatory_mappings_summary(
+    mappings: &[argorix_bytecode::BytecodeRegulatoryMapping],
+) -> RegulatoryMappingsSummary {
+    let mut summary = RegulatoryMappingsSummary {
+        total: mappings.len(),
+        ..Default::default()
+    };
+    for mapping in mappings {
+        summary.names.push(mapping.name.clone());
+        if !summary.jurisdictions.contains(&mapping.jurisdiction) {
+            summary.jurisdictions.push(mapping.jurisdiction.clone());
+        }
+        if !summary.frameworks.contains(&mapping.framework) {
+            summary.frameworks.push(mapping.framework.clone());
+        }
+        summary.obligations_total += mapping.obligations.len();
+        *summary
+            .coverage
+            .entry(mapping.coverage.clone())
+            .or_insert(0) += 1;
+        *summary
+            .assessment
+            .entry(mapping.assessment.clone())
+            .or_insert(0) += 1;
+        summary.legal_claims_none += usize::from(mapping.legal_claims == "none");
+        summary.certification_none += usize::from(mapping.certification == "none");
+        *summary.network.entry(mapping.network.clone()).or_insert(0) += 1;
+        *summary
+            .external_execution
+            .entry(mapping.external_execution.clone())
+            .or_insert(0) += 1;
+        *summary
+            .execution
+            .entry(mapping.execution.clone())
+            .or_insert(0) += 1;
+        *summary
+            .security_claims
+            .entry(mapping.security_claims.clone())
+            .or_insert(0) += 1;
+    }
+    summary
 }
 
 fn atrust_evidence_maps_summary(

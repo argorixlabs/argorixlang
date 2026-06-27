@@ -35,7 +35,7 @@ fn json_stdout_remains_trace_only_and_parent_directory_is_created() {
     assert_eq!(stdout["mode"], "reactive-dry-run");
     assert!(!String::from_utf8_lossy(&output.stdout).contains("Security report written"));
     let report: Value = serde_json::from_slice(&fs::read(&report_path).unwrap()).unwrap();
-    assert_eq!(report["report_version"], "0.32");
+    assert_eq!(report["report_version"], "0.33");
     assert_eq!(report["execution"]["failed"], false);
 
     fs::remove_dir_all(report_path.ancestors().nth(2).unwrap()).unwrap();

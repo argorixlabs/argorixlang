@@ -1,0 +1,2 @@
+module Invalid
+regulatory_mapping R { governance_profile Missing evidence_map Missing jurisdiction "CL" framework "f" obligations [{ id "o" source "s" requirement "r" control "c" evidence_ref "e" status mapped }] coverage mapped assessment declared_only legal_claims none certification none network denied external_execution disabled secret_material denied key_material denied execution disabled security_claims none purpose ["test"] }

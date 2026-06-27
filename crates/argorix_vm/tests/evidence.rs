@@ -91,7 +91,7 @@ fn bundle_preserves_metadata_digests_and_relative_paths() {
     )
     .unwrap();
 
-    assert!(matches!(bundle.bundle_version.as_str(), "0.32"));
+    assert!(matches!(bundle.bundle_version.as_str(), "0.33"));
     assert_eq!(bundle.language, bytecode.language);
     assert_eq!(bundle.module, bytecode.module);
     assert_eq!(bundle.bytecode_version, bytecode.bytecode_version);

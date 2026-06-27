@@ -6,10 +6,12 @@ pub use bytecode::{
     BytecodeATrustCredentialContract, BytecodeATrustEvidenceMap, BytecodeATrustHandshake,
     BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent,
     BytecodeAssertion, BytecodeCapability, BytecodeCrypto, BytecodeCryptoBoundary,
-    BytecodeDidMethod, BytecodeError, BytecodeFailure, BytecodeFeature, BytecodeMcpBridgeContract,
-    BytecodeModel, BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn,
-    BytecodePolicy, BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram,
-    BytecodeProviderContract, BytecodeProviderHarness, BytecodeSecret, BytecodeTool,
-    BytecodeTrustLedger, BytecodeTrustLedgerEntry, BytecodeType, BytecodeTypeField, Instruction,
+    BytecodeDidMethod, BytecodeError, BytecodeFailure, BytecodeFeature, BytecodeGovernanceControl,
+    BytecodeGovernanceProfile, BytecodeMcpBridgeContract, BytecodeModel, BytecodeModule,
+    BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
+    BytecodeProviderHarness, BytecodeRegulatoryMapping, BytecodeRegulatoryObligation,
+    BytecodeSecret, BytecodeTool, BytecodeTrustLedger, BytecodeTrustLedgerEntry, BytecodeType,
+    BytecodeTypeField, Instruction,
 };
 pub use lower::lower_ir;

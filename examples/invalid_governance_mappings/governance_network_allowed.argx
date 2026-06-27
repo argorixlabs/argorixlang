@@ -1,0 +1,2 @@
+module Invalid
+governance_profile G { scope system level audit domain ai_agent owner "o" jurisdiction "CL" framework "f" evidence_map Missing trust_ledger Missing policies ["Missing"] controls [{ id "c" category identity requirement "r" evidence_ref "e" status mapped }] risk_level moderate review_status draft assurance declared_only network allowed external_execution disabled secret_material denied key_material denied execution disabled security_claims none purpose ["test"] }

@@ -3,9 +3,10 @@ use crate::{
     BytecodeATrustEvidenceMap, BytecodeATrustHandshake, BytecodeATrustIdentity, BytecodeAdapter,
     BytecodeAdapterProfile, BytecodeAgent, BytecodeAssertion, BytecodeCapability, BytecodeCrypto,
     BytecodeCryptoBoundary, BytecodeDidMethod, BytecodeFailure, BytecodeFeature,
-    BytecodeMcpBridgeContract, BytecodeModel, BytecodeModule, BytecodeModuleImport,
-    BytecodePassport, BytecodePassportAsn, BytecodePolicy, BytecodePolicyRule,
-    BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract, BytecodeProviderHarness,
+    BytecodeGovernanceControl, BytecodeGovernanceProfile, BytecodeMcpBridgeContract, BytecodeModel,
+    BytecodeModule, BytecodeModuleImport, BytecodePassport, BytecodePassportAsn, BytecodePolicy,
+    BytecodePolicyRule, BytecodePolicyViolation, BytecodeProgram, BytecodeProviderContract,
+    BytecodeProviderHarness, BytecodeRegulatoryMapping, BytecodeRegulatoryObligation,
     BytecodeSecret, BytecodeTool, BytecodeTrustLedger, BytecodeTrustLedgerEntry, BytecodeType,
     BytecodeTypeField, Instruction,
 };
@@ -176,7 +177,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
-        bytecode_version: "0.32".to_owned(),
+        bytecode_version: "0.33".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),
         modules: ir
@@ -541,6 +542,79 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
                 notes: m.notes.clone(),
             })
             .collect(),
+        governance_profiles: ir
+            .governance_profiles
+            .iter()
+            .map(|p| BytecodeGovernanceProfile {
+                name: p.name.clone(),
+                scope: p.scope.clone(),
+                level: p.level.clone(),
+                domain: p.domain.clone(),
+                owner: p.owner.clone(),
+                jurisdiction: p.jurisdiction.clone(),
+                framework: p.framework.clone(),
+                evidence_map: p.evidence_map.clone(),
+                trust_ledger: p.trust_ledger.clone(),
+                policies: p.policies.clone(),
+                controls: p
+                    .controls
+                    .iter()
+                    .map(|c| BytecodeGovernanceControl {
+                        id: c.id.clone(),
+                        category: c.category.clone(),
+                        requirement: c.requirement.clone(),
+                        evidence_ref: c.evidence_ref.clone(),
+                        status: c.status.clone(),
+                    })
+                    .collect(),
+                risk_level: p.risk_level.clone(),
+                review_status: p.review_status.clone(),
+                assurance: p.assurance.clone(),
+                network: p.network.clone(),
+                external_execution: p.external_execution.clone(),
+                secret_material: p.secret_material.clone(),
+                key_material: p.key_material.clone(),
+                execution: p.execution.clone(),
+                security_claims: p.security_claims.clone(),
+                purpose: p.purpose.clone(),
+                notes: p.notes.clone(),
+            })
+            .collect(),
+        regulatory_mappings: ir
+            .regulatory_mappings
+            .iter()
+            .map(|m| BytecodeRegulatoryMapping {
+                name: m.name.clone(),
+                governance_profile: m.governance_profile.clone(),
+                evidence_map: m.evidence_map.clone(),
+                jurisdiction: m.jurisdiction.clone(),
+                framework: m.framework.clone(),
+                obligations: m
+                    .obligations
+                    .iter()
+                    .map(|o| BytecodeRegulatoryObligation {
+                        id: o.id.clone(),
+                        source: o.source.clone(),
+                        requirement: o.requirement.clone(),
+                        control: o.control.clone(),
+                        evidence_ref: o.evidence_ref.clone(),
+                        status: o.status.clone(),
+                    })
+                    .collect(),
+                coverage: m.coverage.clone(),
+                assessment: m.assessment.clone(),
+                legal_claims: m.legal_claims.clone(),
+                certification: m.certification.clone(),
+                network: m.network.clone(),
+                external_execution: m.external_execution.clone(),
+                secret_material: m.secret_material.clone(),
+                key_material: m.key_material.clone(),
+                execution: m.execution.clone(),
+                security_claims: m.security_claims.clone(),
+                purpose: m.purpose.clone(),
+                notes: m.notes.clone(),
+            })
+            .collect(),
         imports: ir
             .imports
             .iter()
@@ -727,6 +801,8 @@ mod tests {
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
             atrust_evidence_maps: vec![],
+            governance_profiles: vec![],
+            regulatory_mappings: vec![],
             assertions: vec![IrAssertion {
                 name: "runtime_status".into(),
                 argument: Some("completed".into()),
@@ -792,7 +868,7 @@ mod tests {
         };
 
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.32");
+        assert_eq!(bytecode.bytecode_version, "0.33");
         assert!(bytecode
             .instructions
             .iter()
@@ -891,6 +967,8 @@ mod tests {
             mcp_bridge_contracts: vec![],
             a2a_bridge_contracts: vec![],
             atrust_evidence_maps: vec![],
+            governance_profiles: vec![],
+            regulatory_mappings: vec![],
             assertions: vec![],
             policies: vec![],
             failures: vec![],
@@ -904,7 +982,7 @@ mod tests {
             passports: vec![],
         };
         let bytecode = lower_ir(&ir);
-        assert_eq!(bytecode.bytecode_version, "0.32");
+        assert_eq!(bytecode.bytecode_version, "0.33");
         assert_eq!(bytecode.provider_harnesses.len(), 1);
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         assert_eq!(
