@@ -77,6 +77,14 @@ class VerificationResultsTests(unittest.TestCase):
             "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
             "AKIAABCDEFGHIJKLMNOP",
             "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature123",
+            "bare-password-value-123456789",
+            "bare-token-value-123456789",
+            "bare-secret-value-123456789",
+            "bare-api-key-value-123456789",
+            "quoted-password-value-123456789",
+            "unquoted-token-value-123456789",
+            "unquoted-secret-value-123456789",
+            "quoted-api-key-value-123456789",
         ]
         diagnostic = "\n".join(
             [
@@ -86,7 +94,15 @@ class VerificationResultsTests(unittest.TestCase):
                 json.dumps({"password": secrets[3]}),
                 json.dumps({"secret": secrets[4]}),
                 f"ACCESS_TOKEN={secrets[5]}",
-                *secrets[6:],
+                *secrets[6:10],
+                f"Password={secrets[10]}",
+                f"TOKEN: '{secrets[11]}'",
+                f'SeCrEt="{secrets[12]}"',
+                f"aPi_KeY = {secrets[13]}",
+                f"PASSWORD: '{secrets[14]}'",
+                f"token={secrets[15]}",
+                f"SECRET: {secrets[16]}",
+                f'API_KEY="{secrets[17]}"',
                 "ordinary diagnostic remains",
             ]
         )
