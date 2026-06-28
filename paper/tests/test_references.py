@@ -25,7 +25,10 @@ def test_unique_keys_and_required_fields():
     for kind, key, body in parsed:
         assert re.search(r"(?m)^\s*title\s*=", body), key
         assert re.search(r"(?m)^\s*(author|editor)\s*=", body), key
-        assert re.search(r"(?m)^\s*(year|urldate)\s*=", body), key
+        if key == "vazquez_atrust":
+            assert not re.search(r"(?m)^\s*(year|urldate|url|doi)\s*=", body)
+        else:
+            assert re.search(r"(?m)^\s*(year|urldate)\s*=", body), key
 
 
 def normalized_title(value):
@@ -54,3 +57,29 @@ def test_audit_matches_bibliography():
             doi_url = f"https://doi.org/{entry['doi']}" if "doi" in entry else None
             assert row["primary_url"] in {entry.get("url"), doi_url}
     assert bib_entries["naranjo_dcpai"]["doi"] == "10.31224/6671"
+
+
+def test_required_source_truths():
+    parsed = bibtexparser.load(BIB.open(encoding="utf-8"))
+    records = {entry["ID"]: entry for entry in parsed.entries}
+    with AUDIT.open(encoding="utf-8", newline="") as handle:
+        audits = {row["citation_key"]: row for row in csv.DictReader(handle)}
+
+    assert records["projectnanda2026"]["title"] == "Architecting the Internet of Agents"
+    for key in ("w3c_did_core_2022", "w3c_vc_data_model_2025"):
+        assert records[key]["author"] == "{World Wide Web Consortium}"
+        assert "editor" not in records[key]
+    assert records["naranjo_dcpai"]["author"] == "Naranjo Emparanza, Danilo"
+
+    a2a = records["a2a_spec"]
+    assert normalized_title(a2a["title"]) == "Agent2Agent (A2A) Protocol Specification"
+    assert a2a["version"] == "1.0.0"
+    assert a2a["url"] == "https://a2a-protocol.org/v1.0.0/specification/"
+    assert records["rust_project"]["title"] == "Rust Programming Language"
+
+    atrust = records["vazquez_atrust"]
+    assert atrust["note"] == (
+        "Author-supplied metadata used in this study; unpublished conceptual protocol"
+    )
+    assert not {"year", "urldate", "url", "doi"} & atrust.keys()
+    assert audits["vazquez_atrust"]["source_type"] == "author-supplied metadata"
