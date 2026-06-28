@@ -116,6 +116,71 @@ See
 [`examples/runtime_mvp_project`](examples/runtime_mvp_project), and
 [`conformance/suite.v100.json`](conformance/suite.v100.json).
 
+## Quickstart
+
+### Requirements
+
+- **Rust** toolchain (stable) with `cargo` — to build the compiler and VM.
+- **Node.js ≥ 18.18** and **npm** — only for the web chat demo (Demo1).
+
+### 1. Build and verify the toolchain
+
+```bash
+# from the repo root
+cargo build --workspace          # builds argorixc, argorix-vm, argorix-conformance
+cargo test  --workspace          # run the test suite (optional but recommended)
+```
+
+The binaries land in `target/debug/` (`argorixc`, `argorix-vm`,
+`argorix-conformance`; `.exe` on Windows).
+
+### 2. Compile and run a contract
+
+```bash
+# validate syntax + semantics
+cargo run -p argorixc -- check examples/runtime_mvp_v100.argx
+
+# emit + verify bytecode
+cargo run -p argorixc -- emit-bytecode   examples/runtime_mvp_v100.argx
+cargo run -p argorixc -- verify-bytecode examples/runtime_mvp_v100.argx
+
+# dry-run the VM and export evidence + security report
+cargo run -p argorix-vm -- run examples/runtime_mvp_v100.argbc.json \
+  --dry-run --reactive --inject "User:ResearchAgent:tell:UserPrompt" \
+  --security-report report.security.json \
+  --trace-out report.trace.json \
+  --evidence-bundle report.evidence.json
+
+# verify the evidence bundle integrity
+cargo run -p argorix-vm -- verify-evidence report.evidence.json
+
+# run the conformance suite
+cargo run -p argorix-conformance -- run conformance/suite.v100.json
+```
+
+### 3. Run the web chat demo (Demo1)
+
+A Next.js chatbot governed by Argorix Lang v1.0. It shells out to the binaries
+built in step 1, so build the workspace first.
+
+```bash
+cd demo/argorix-chatbot-runtime
+npm install
+cp .env.example .env.local        # then edit .env.local
+npm run dev                       # open http://localhost:3000
+```
+
+- **Plan-only (default, no API key):** with `ARGORIX_SANDBOXED_EXTERNAL=false`
+  the demo validates the contract and returns an auditable plan + evidence, and
+  **never** contacts any provider.
+- **Sandboxed external call:** set `ARGORIX_SANDBOXED_EXTERNAL=true` and
+  `OPENAI_API_KEY=...` in `.env.local` (server-side only — never committed, never
+  sent to the browser) to let Argorix *plan* and then perform the sandboxed call.
+- Try the example chips, including the prompt-injection / secret-exfiltration
+  ones, to see the input guard fail-closed.
+
+Full details: [`demo/argorix-chatbot-runtime/README.md`](demo/argorix-chatbot-runtime/README.md).
+
 ## v0.36 specification freeze
 
 Version 0.36 adds Spec Freeze + v1.0 Release Candidate metadata. A top-level
