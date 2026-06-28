@@ -59,6 +59,19 @@ def main() -> None:
     for section in EXPECTED_SECTIONS:
         if rf"\input{{sections/{section}}}" not in main_text:
             fail(f"missing modular input: {section}")
+    affiliation_requirements = (
+        r"Gustavo Venegas\textsuperscript{1}",
+        r"Edison Vazquez\textsuperscript{1}",
+        r"Danilo Naranjo\textsuperscript{2}",
+        r"Benjamin Gonzalez\textsuperscript{1}",
+    )
+    for requirement in affiliation_requirements:
+        if requirement not in main_text:
+            fail(f"missing author affiliation marker: {requirement}")
+    if main_text.count("Chilean Chamber of Artificial Intelligence") != 1:
+        fail("shared Chamber affiliation must appear exactly once")
+    if main_text.count(r"\textsuperscript{2}Ocular") != 1:
+        fail("Ocular affiliation must appear exactly once")
 
     tex_paths = [MAIN, *sorted((ROOT / "sections").glob("*.tex")),
                  *sorted((ROOT / "appendices").glob("*.tex"))]
@@ -77,6 +90,14 @@ def main() -> None:
     for table in tables:
         if not (ROOT / "tables" / f"{table}.tex").is_file():
             fail(f"missing table file: {table}")
+    table_text = "\n".join(
+        (ROOT / "tables" / f"{table}.tex").read_text(encoding="utf-8")
+        for table in sorted(tables)
+    )
+    if "local catalog" in table_text.lower():
+        fail("stale local catalog implementation claim found")
+    if r"local ans\_name binding/metadata" not in table_text:
+        fail("claim-boundary table lacks local ans_name binding/metadata")
 
     labels = set(re.findall(r"\\label\{([^}]+)\}", text))
     refs = set(re.findall(r"\\(?:c|C)?ref\{([^}]+)\}", text))
@@ -149,7 +170,8 @@ def main() -> None:
         "six contain source only",
         "1,188",
         "7,155",
-        "0 of 33",
+        "0 of 27",
+        "six source-only directories",
         "27/27",
         "Source integrity is outside EvidenceBundle verification",
         r"\code{bytecode_path}",
@@ -175,6 +197,10 @@ def main() -> None:
     for phrase in forbidden:
         if phrase in lowered:
             fail(f"forbidden claim phrase found: {phrase}")
+
+    for stale_prompt_denominator in ("0/33", "0 of 33"):
+        if stale_prompt_denominator in lowered:
+            fail(f"stale prompt denominator found: {stale_prompt_denominator}")
 
     unsupported_bundle_claims = [
         "links source, bytecode",

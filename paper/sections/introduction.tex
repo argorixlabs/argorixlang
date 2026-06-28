@@ -12,6 +12,14 @@ credential standards define interoperable data models
 make an application policy executable or its local execution evidence
 reproducible.
 
+Existing work demonstrates complementary separations: OPA decouples policy
+decision from enforcement \citep{opa_docs}, Jason provides an agent-oriented
+language and interpreter \citep{bordini2007jason}, in-toto verifies
+software-supply-chain provenance \citep{torresarias2019intoto}, and WASI
+defines capability-oriented host interfaces \citep{wasi_intro}.  Our question
+is narrower and compositional: what can be compiled and evidenced together in
+one governed agent runtime without upgrading metadata into external assurance?
+
 \Argorix addresses this systems boundary by compiling declarations for agents,
 messages, passports, policies, providers, governance, and evidence into a
 validated intermediate representation and bytecode executed by a constrained
@@ -60,3 +68,8 @@ deliberately narrower than an assurance claim: we observe deterministic
 structure, bounded execution, and verifiable artifact relationships in one
 corpus.  We neither conduct a controlled attack experiment nor infer production
 security from successful digest verification.
+
+Where a figure and table address the same topic, they are deliberately paired
+rather than duplicative: the figure communicates topology, flow, or boundary
+placement, while the table provides exact categorical or quantitative
+comparison.  Captions and prose identify the distinct evidentiary role of each.

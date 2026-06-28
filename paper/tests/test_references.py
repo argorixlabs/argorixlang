@@ -87,3 +87,16 @@ def test_required_source_truths():
     )
     assert not {"year", "urldate", "url", "doi"} & atrust.keys()
     assert audits["vazquez_atrust"]["source_type"] == "author-supplied metadata"
+
+    assert records["opa_docs"]["url"] == "https://www.openpolicyagent.org/docs"
+    assert records["opa_docs"]["urldate"] == "2026-06-28"
+    assert records["bordini2007jason"]["doi"] == "10.1002/9780470061848"
+    assert records["bordini2007jason"]["year"] == "2007"
+    assert records["torresarias2019intoto"]["booktitle"] == (
+        "28th USENIX Security Symposium (USENIX Security 19)"
+    )
+    assert records["torresarias2019intoto"]["pages"] == "1393--1410"
+    assert records["wasi_intro"]["url"] == "https://wasi.dev/"
+    assert records["wasi_intro"]["urldate"] == "2026-06-28"
+    assert records["wasi_intro"]["author"] == "{WASI Subgroup}"
+    assert records["wasi_intro"]["title"] == "Introduction"

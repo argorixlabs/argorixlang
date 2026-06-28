@@ -224,6 +224,41 @@ class RuntimeAnalysisTests(unittest.TestCase):
         row = analyze_runtime.inventory_sessions(self.root)["sessions"][0]
 
         self.assertIsNone(row["prompt_text"])
+        self.assertIs(row["prompt_content_present"], False)
+
+    def test_prompt_presence_is_measured_when_publication_is_suppressed(self):
+        self.write_complete()
+
+        result = analyze_runtime.inventory_sessions(self.root)
+        row = result["sessions"][0]
+
+        self.assertIsNone(row["prompt_text"])
+        self.assertIs(row["prompt_content_present"], True)
+        self.assertEqual(result["traces_inspected_for_prompt_content"], 1)
+        self.assertEqual(result["traces_with_prompt_content"], 1)
+
+    def test_prompt_presence_is_unassessable_without_valid_trace(self):
+        complete = self.write_complete("broken-trace")
+        (complete / "session.trace.json").write_text("{broken", encoding="utf-8")
+        source_only = self.root / "source-only"
+        source_only.mkdir()
+        (source_only / "session.argx").write_text("module SourceOnly", encoding="utf-8")
+
+        result = analyze_runtime.inventory_sessions(self.root)
+
+        self.assertIsNone(result["sessions"][0]["prompt_content_present"])
+        self.assertIsNone(result["sessions"][1]["prompt_content_present"])
+        self.assertEqual(result["traces_inspected_for_prompt_content"], 0)
+        self.assertEqual(result["traces_with_prompt_content"], 0)
+
+    def test_non_object_trace_is_unassessable_for_prompt_presence(self):
+        complete = self.write_complete()
+        (complete / "session.trace.json").write_text("[]", encoding="utf-8")
+
+        result = analyze_runtime.inventory_sessions(self.root)
+
+        self.assertIsNone(result["sessions"][0]["prompt_content_present"])
+        self.assertEqual(result["traces_inspected_for_prompt_content"], 0)
 
     def test_prompt_publication_requires_allowlist_and_redacts_credentials(self):
         session = self.write_complete()

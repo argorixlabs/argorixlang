@@ -34,6 +34,28 @@ injection and sensitive-information disclosure \citep{owasp_llm_top10}.  These
 sources inform threat categories, not certification mappings.  A policy name
 or governance record cannot establish legal compliance.
 
+\paragraph{Policy as code and agent languages.}
+Open Policy Agent (OPA) separates a general-purpose policy decision engine from
+application enforcement and expresses decisions in Rego
+\citep{opa_docs}.  \Argorix instead compiles policy together with agent,
+passport, provider, and evidence declarations and emits VM-local decision
+events; it is not an OPA implementation or Rego evaluator.  Jason interprets an
+extension of AgentSpeak for belief--desire--intention multi-agent programming
+\citep{bordini2007jason}.  Jason's primary concern is agent reasoning and
+multi-agent execution, whereas this study examines compiled governance,
+provider denial, and runtime evidence.  \Argorix does not claim Jason
+compatibility or equivalent BDI semantics.
+
+\paragraph{Provenance and isolation.}
+in-toto cryptographically records and verifies software supply-chain steps
+\citep{torresarias2019intoto}.  \Argorix EvidenceBundles concern one local
+runtime result, use unsigned semantic digests, and exclude source; they neither
+implement in-toto layouts nor provide its signer-based supply-chain guarantees.
+WASI specifies standards-track host APIs and a capability-based sandbox in
+which authority is explicitly granted \citep{wasi_intro}.  The current
+\Argorix profile denies operations at the VM/application layer but does not run
+inside, implement, or empirically compare a WASI sandbox.
+
 \begin{table}[t]
 \centering
 \caption{Scope of related-work comparisons. Each row is relational, not an
@@ -42,9 +64,10 @@ equivalence or conformance claim.}
 \input{tables/related-work}
 \end{table}
 
-\Cref{tab:related-work} limits the comparison to the distinct problem each
-work frames; it does not claim implementation equivalence, protocol
-conformance, or shared assurance.
+\Cref{tab:related-work} pairs each system with one comparison dimension.  Its
+rows are exact side-by-side comparisons, while the surrounding figure program
+shows architectural topology; neither claims implementation equivalence,
+protocol conformance, or shared assurance.
 
 \begin{figure}[t]
 \centering

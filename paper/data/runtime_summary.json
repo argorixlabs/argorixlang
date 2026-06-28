@@ -182,6 +182,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -384,6 +385,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -586,6 +588,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -788,6 +791,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -990,6 +994,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -1067,6 +1072,7 @@
       "policy_violation_count": 0,
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
+      "prompt_content_present": null,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": null,
@@ -1261,6 +1267,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -1463,6 +1470,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -1665,6 +1673,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -1867,6 +1876,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -2069,6 +2079,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -2146,6 +2157,7 @@
       "policy_violation_count": 0,
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
+      "prompt_content_present": null,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": null,
@@ -2340,6 +2352,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -2417,6 +2430,7 @@
       "policy_violation_count": 0,
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
+      "prompt_content_present": null,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": null,
@@ -2611,6 +2625,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -2813,6 +2828,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -3015,6 +3031,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -3217,6 +3234,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -3419,6 +3437,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -3621,6 +3640,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -3823,6 +3843,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -4025,6 +4046,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -4227,6 +4249,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -4429,6 +4452,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -4631,6 +4655,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -4833,6 +4858,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -5035,6 +5061,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -5237,6 +5264,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -5439,6 +5467,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -5516,6 +5545,7 @@
       "policy_violation_count": 0,
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
+      "prompt_content_present": null,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": null,
@@ -5710,6 +5740,7 @@
         "trust_ledger_signature_absent",
         "trust_ledgers_declared"
       ],
+      "prompt_content_present": false,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
@@ -5787,6 +5818,7 @@
       "policy_violation_count": 0,
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
+      "prompt_content_present": null,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": null,
@@ -5856,6 +5888,7 @@
       "policy_violation_count": 0,
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
+      "prompt_content_present": null,
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": null,
@@ -5871,5 +5904,7 @@
       "security_checks": null
     }
   ],
-  "total_sessions": 33
+  "total_sessions": 33,
+  "traces_inspected_for_prompt_content": 27,
+  "traces_with_prompt_content": 0
 }

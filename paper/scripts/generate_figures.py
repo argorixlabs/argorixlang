@@ -194,7 +194,7 @@ def generate(data: Path, out: Path):
     flow_figure(out/"evolution-timeline.pdf","Language evolution and bounded future work",
                 ["Core runtime","Provider contracts","Evidence + governance","Operational federation"],{3})
     flow_figure(out/"sovereign-discovery.pdf","Sovereign discovery boundary",
-                ["Local declaration","Semantic validation","Offline catalog","Operational DNS"],{3})
+                ["Local declaration","Semantic validation","Local ans_name","Operational DNS"],{3})
     flow_figure(out/"artifact-schema.pdf","Normalized artifact relationships",
                 ["session.\nargx","session.\nargbc.json","session.\ntrace.json",
                  "session.\nsecurity.json","session.\nevidence.json"])

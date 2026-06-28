@@ -152,7 +152,8 @@ def _normalize_session(root, directory, publish_prompt=False):
         if artifacts[name]["present"]
     }
     bytecode = _mapping(documents.get("session.argbc.json"))
-    trace = _mapping(documents.get("session.trace.json"))
+    raw_trace = documents.get("session.trace.json")
+    trace = _mapping(raw_trace)
     security = _mapping(documents.get("session.security.json"))
     evidence = _mapping(documents.get("session.evidence.json"))
     policy = _mapping(security.get("policy") or trace.get("policy_report"))
@@ -186,6 +187,14 @@ def _normalize_session(root, directory, publish_prompt=False):
     # trace producer includes the authorized content, read only that bounded
     # field; never recursively search payloads where secret values also live.
     injected = _mapping(trace.get("injected"))
+    trace_assessable = (
+        artifacts["session.trace.json"]["present"]
+        and "session.trace.json" not in errors
+        and isinstance(raw_trace, dict)
+    )
+    prompt_content_present = (
+        isinstance(injected.get("content"), str) if trace_assessable else None
+    )
     prompt = (
         _sanitize_text(injected.get("content"), 2000)
         if publish_prompt
@@ -237,6 +246,7 @@ def _normalize_session(root, directory, publish_prompt=False):
         ),
         "provider_boundary": boundary,
         "evidence_digests": digest_values,
+        "prompt_content_present": prompt_content_present,
         "prompt_text": prompt,
     }
 
@@ -257,10 +267,18 @@ def inventory_sessions(root: Path, prompt_allowlist=None):
         and safe_path.is_dir()
     ]
     complete = sum(1 for session in sessions if session["complete"])
+    inspected = sum(
+        session["prompt_content_present"] is not None for session in sessions
+    )
+    with_content = sum(
+        session["prompt_content_present"] is True for session in sessions
+    )
     return {
         "total_sessions": len(sessions),
         "complete_sessions": complete,
         "incomplete_sessions": len(sessions) - complete,
+        "traces_inspected_for_prompt_content": inspected,
+        "traces_with_prompt_content": with_content,
         "sessions": sessions,
     }
 
@@ -298,7 +316,8 @@ def _write_sessions(path, sessions):
         "policy_violation_reasons", "security_checks", "ledger_events_total",
         "passport_total", "passport_countries", "passport_jurisdictions",
         "passport_data_residency", "runtime_profiles", "sandboxed_adapters",
-        "provider_boundary", "evidence_digests", "prompt_text", "artifacts",
+        "provider_boundary", "evidence_digests", "prompt_content_present",
+        "prompt_text", "artifacts",
         "json_errors",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)

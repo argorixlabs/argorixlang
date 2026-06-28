@@ -81,7 +81,10 @@ jurisdiction, and Chilean and European Union residency declarations.  These
 values show that sovereign metadata survives to runtime evidence.  They do not
 show that data was physically stored in either region.
 
-Prompt content is absent from all 33 normalized records.  Therefore no
-qualitative prompt themes, quotations, injection labels, or attack success
-rates can be reported.  This is simultaneously a data-minimization benefit and
-an evaluation limitation.
+The bounded \code{injected.content} field is present in 0 of the 27 complete,
+valid traces.  The six source-only directories have no trace and are not
+assessable.  This presence metric is independent of the publication allowlist:
+\code{prompt_text} remains null unless explicitly allowlisted even when content
+is present.  In this corpus no qualitative prompt themes, quotations,
+injection labels, or attack success rates can be reported.  This is
+simultaneously a data-minimization benefit and an evaluation limitation.

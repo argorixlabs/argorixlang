@@ -98,6 +98,7 @@ def test_tables_are_deterministic_and_quantitative_values_are_derived(tmp_path):
     empirical = (first / "empirical-results.tex").read_text(encoding="utf-8")
     assert "27" in empirical
     assert "6" in empirical
+    assert "Prompt-content traces inspected / present & 27 / 0 &" in empirical
 
 
 def test_latex_escape_covers_every_special_character():
@@ -155,6 +156,10 @@ def test_flow_node_labels_have_separate_nonoverlapping_text_blocks(tmp_path):
             "Core runtime", "Provider contracts", "Evidence + governance",
             "Operational federation",
         ],
+        "sovereign-discovery.pdf": [
+            "Local declaration", "Semantic validation", "Local ans_name",
+            "Operational DNS",
+        ],
     }
     for name, labels in expected.items():
         page = fitz.open(out / name)[0]
@@ -189,6 +194,9 @@ def test_claim_boundary_table_has_four_status_columns(tmp_path):
     assert header == (
         r"Concept & Implemented & Declarative & Proposed & Not claimed \\"
     )
+    text = "\n".join(lines)
+    assert "local ans\\_name binding/metadata" in text
+    assert "local catalog" not in text
 
 
 def test_policy_heatmap_reserves_space_for_colorbar(tmp_path):

@@ -17,8 +17,10 @@ all 27 detailed policy reports set \code{passed=false}, require review, and
 record 44 unknown-rule violations each, despite a favorable top-level
 \code{security_checks} label.  Thus bundle integrity does not imply policy
 approval, security, or certification.  The corpus contains 7,155 ledger events
-and 1,188 detailed policy violations.  It persists no prompt content in any of
-the 33 directories, precluding prompt-level qualitative analysis.  We describe
+and 1,188 detailed policy violations.  The bounded \code{injected.content}
+field is present in 0 of 27---that is, none of the 27---complete, valid
+traces; six source-only directories have no trace and are not assessable,
+precluding prompt-level qualitative analysis.  We describe
 the compiler, fail-closed runtime, Agent Passport metadata, a declarative
 encoding of the unpublished ATrust conceptual protocol, its relationship to
 DCP-AI, and trace/report/bundle generation.  The results demonstrate

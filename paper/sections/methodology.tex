@@ -56,11 +56,15 @@ result is successful only when the verifier exit code is zero and its explicit
 verified flag is true.
 
 \subsection{Prompt analysis boundary}
-Although the user authorized publication, persisted artifacts contain prompt
-content in 0 of 33 directories.  We therefore perform no prompt-level
-qualitative analysis, quote no prompts, and report no prompt-injection attack
-success rate.  Inferring prompts from request identifiers, trace shape, or
-response metadata would be methodologically unsound and privacy-increasing.
+Although the user authorized publication, we inspect only the bounded
+\code{trace.injected.content} schema field.  It is absent from all 27 valid
+complete traces (0 of 27 present).  The six source-only directories contain no
+trace and are not assessable.  Prompt publication is a separate allowlisted
+operation; its suppression is not evidence of content absence.  We therefore
+perform no prompt-level qualitative analysis, quote no prompts, and report no
+prompt-injection attack success rate.  Inferring prompts from request
+identifiers, trace shape, or response metadata would be methodologically
+unsound and privacy-increasing.
 
 \subsection{Threats to validity}
 Construct validity is limited by our mapping of runtime fields to concepts such

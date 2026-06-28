@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$InputRoot = "demo/argorix-chatbot-runtime/generated",
-    [string]$OutputPath = "paper/data/verification-results.json"
+    [string]$OutputPath = "paper/data/verification-results.json",
+    [string]$CargoPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +23,30 @@ function Resolve-FromRepository([string]$Path) {
         return [IO.Path]::GetFullPath($Path)
     }
     return [IO.Path]::GetFullPath((Join-Path $repositoryRoot $Path))
+}
+
+function Resolve-CargoExecutable {
+    if ($CargoPath) {
+        $explicit = [IO.Path]::GetFullPath($CargoPath)
+        if (-not (Test-Path -LiteralPath $explicit -PathType Leaf)) {
+            throw "Explicit CargoPath does not exist or is not a file: $explicit"
+        }
+        return $explicit
+    }
+
+    $fromPath = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue
+    if ($fromPath) {
+        return $fromPath.Source
+    }
+
+    $legacy = "C:\Users\nanos\.cargo\bin\cargo.exe"
+    if (Test-Path -LiteralPath $legacy -PathType Leaf) {
+        return $legacy
+    }
+    throw (
+        "Cargo executable was not found. Pass -CargoPath, install cargo on PATH, " +
+        "or install it at the legacy Windows location $legacy."
+    )
 }
 
 function Assert-NoReparsePoint([string]$Path, [string]$Description) {
@@ -103,10 +128,7 @@ if (
 }
 Assert-NoReparseComponents $outputFull "Output path"
 
-$cargo = "C:\Users\nanos\.cargo\bin\cargo.exe"
-if (-not (Test-Path -LiteralPath $cargo -PathType Leaf)) {
-    throw "Required Cargo executable not found: $cargo"
-}
+$cargo = Resolve-CargoExecutable
 
 & $cargo build -q -p argorix-vm
 if ($LASTEXITCODE -ne 0) {

@@ -53,6 +53,9 @@ def render(data: Path, out: Path):
         ("Normalized sessions",len(sessions),"sessions.csv"),
         ("Complete-session policy violations",sum(int(r.get("policy_violation_count") or 0) for r in complete),"sessions.csv"),
         ("Counted ledger events",event_total,"event_counts.csv"),
+        ("Prompt-content traces inspected / present",
+         f"{summary['traces_inspected_for_prompt_content']} / {summary['traces_with_prompt_content']}",
+         "runtime_summary.json"),
         ("Verified evidence bundles",f"{verified_total} / {len(verification)}","verification-results.json")]),
       "threat-mapping.tex": table(["Threat","Mitigation","Claim status"],[
         ("Unauthorized provider execution","Executable-provider allowlist","Implemented"),
@@ -62,12 +65,16 @@ def render(data: Path, out: Path):
       "related-work.tex": table(["System","Comparison dimension","Bibliographic scope"],[
         ("Project NANDA","Agent naming and discovery","Project-level comparison only"),
         ("ATrust","Agent trust relationships","Project-level comparison only"),
-        ("DCP-AI","Discovery and control plane","Project-level comparison only")]),
+        ("DCP-AI","Discovery and control plane","Project-level comparison only"),
+        ("Open Policy Agent","External policy-as-code engine","Direct architectural comparison"),
+        ("Jason / AgentSpeak","BDI agent language and interpreter","Direct language/runtime comparison"),
+        ("in-toto","Signed supply-chain provenance","Direct evidence-model comparison"),
+        ("WASI","Capability-based host isolation","Direct isolation-boundary comparison")]),
       "claim-boundaries.tex": table(
         ["Concept","Implemented","Declarative","Proposed","Not claimed"],[
         ("Provider boundary","simulated allowlist","contract metadata","--","external execution"),
         ("Trust evidence","digest bundle","ATrust map","--","live attestation"),
-        ("Discovery","local catalog","sovereign metadata","federation","operational DNS"),
+        ("Discovery","local ans_name binding/metadata","sovereign metadata","federation","operational DNS"),
         ("Security scope","fail-closed controls","threat mappings","deployment study","certification"),
       ], width=r"\textwidth"),
     }

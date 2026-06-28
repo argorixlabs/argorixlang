@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 PAPER = Path(__file__).parents[1]
 RESULTS = PAPER / "data" / "verification-results.json"
 SESSIONS = PAPER / "data" / "sessions.csv"
+SUMMARY = PAPER / "data" / "runtime_summary.json"
 SCRIPT = PAPER / "scripts" / "verify_runtime.ps1"
 REQUIRED_FIELDS = {
     "request_id",
@@ -40,6 +41,17 @@ class VerificationResultsTests(unittest.TestCase):
         self.assertEqual(len(request_ids), 27)
         self.assertTrue(all(set(record) == REQUIRED_FIELDS for record in self.records))
 
+    def test_cargo_resolution_is_explicit_then_path_then_legacy_fallback(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("[string]$CargoPath", source)
+        explicit = source.index("if ($CargoPath)")
+        path_lookup = source.index("Get-Command cargo")
+        legacy = source.index(r'C:\Users\nanos\.cargo\bin\cargo.exe')
+        self.assertLess(explicit, path_lookup)
+        self.assertLess(path_lookup, legacy)
+        self.assertIn("Cargo executable was not found", source)
+
     def test_records_are_sorted_and_evidence_paths_are_safe_and_relative(self):
         request_ids = [record["request_id"] for record in self.records]
         self.assertEqual(request_ids, sorted(request_ids))
@@ -52,6 +64,16 @@ class VerificationResultsTests(unittest.TestCase):
                 evidence_path,
                 PurePosixPath(record["request_id"]) / "session.evidence.json",
             )
+
+    def test_prompt_presence_denominator_uses_only_valid_traces(self):
+        summary = json.loads(SUMMARY.read_text(encoding="utf-8"))
+
+        self.assertEqual(summary["traces_inspected_for_prompt_content"], 27)
+        self.assertEqual(summary["traces_with_prompt_content"], 0)
+        complete = [row for row in summary["sessions"] if row["complete"]]
+        source_only = [row for row in summary["sessions"] if not row["complete"]]
+        self.assertEqual({row["prompt_content_present"] for row in complete}, {False})
+        self.assertEqual({row["prompt_content_present"] for row in source_only}, {None})
 
     def test_failures_are_preserved_as_bounded_diagnostics(self):
         for record in self.records:
