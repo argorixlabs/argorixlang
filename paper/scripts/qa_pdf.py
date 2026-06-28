@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import subprocess
@@ -10,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import fitz
-from build_metadata import resolve_base
+from atomic_io import atomic_write_text
+from build_metadata import input_manifest
 
 
 PAPER = Path(__file__).resolve().parents[1]
@@ -18,8 +20,56 @@ REPO = PAPER.parent
 AUTHORS = ("Gustavo Venegas", "Edison Vazquez", "Danilo Naranjo", "Benjamin Gonzalez")
 
 
-def git(*args: str) -> str:
-    return subprocess.check_output(["git", *args], cwd=REPO, text=True).strip()
+def collect_data_metrics(data: Path) -> dict:
+    runtime = json.loads((data / "runtime_summary.json").read_text(encoding="utf-8"))
+    with (data / "sessions.csv").open(encoding="utf-8", newline="") as handle:
+        sessions = list(csv.DictReader(handle))
+    verification = json.loads(
+        (data / "verification-results.json").read_text(encoding="utf-8")
+    )
+    if not isinstance(verification, list):
+        raise ValueError("verification results must be a list")
+    passed = sum(
+        record.get("verified") is True and record.get("exit_code") == 0
+        for record in verification
+        if isinstance(record, dict)
+    )
+    complete = sum(row.get("complete", "").lower() == "true" for row in sessions)
+    total = len(sessions)
+    metrics = {
+        "dataset": {
+            "total": total,
+            "complete": complete,
+            "source_only": total - complete,
+        },
+        "prompt_traces": {
+            "evaluated": runtime["traces_inspected_for_prompt_content"],
+            "detected": runtime["traces_with_prompt_content"],
+        },
+        "verification": {"passed": passed, "total": len(verification)},
+    }
+    expected = (
+        runtime["total_sessions"],
+        runtime["complete_sessions"],
+        runtime["incomplete_sessions"],
+    )
+    observed = (total, complete, total - complete)
+    if observed != expected:
+        raise ValueError(f"dataset counts disagree: {observed} != {expected}")
+    if not verification or passed != len(verification):
+        raise ValueError(f"verification did not fully pass: {passed}/{len(verification)}")
+    return metrics
+
+
+def all_fonts_embedded(doc: fitz.Document) -> bool:
+    xrefs = {
+        font[0]
+        for page in doc
+        for font in page.get_fonts(full=True)
+    }
+    if not xrefs or 0 in xrefs:
+        return False
+    return all(bool(doc.extract_font(xref)[3]) for xref in xrefs)
 
 
 def main() -> None:
@@ -28,8 +78,8 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--pdfinfo", required=True)
     parser.add_argument("--engine", required=True)
-    parser.add_argument("--base-ref")
     parser.add_argument("--source-date-epoch", required=True, type=int)
+    parser.add_argument("--test-results", required=True, type=Path)
     parser.add_argument("--visual-inspection-passed", action="store_true")
     args = parser.parse_args()
 
@@ -53,27 +103,33 @@ def main() -> None:
         "no_placeholders": not re.search(
             r"\b(?:TODO|TBD|FIXME|PLACEHOLDER)\b|turn\d+(?:search|fetch)\d+", text, re.I
         ),
-        "fonts_embedded": all(page.get_fonts(full=True) for page in doc),
+        "fonts_embedded": all_fonts_embedded(doc),
         "visual_inspection_passed": args.visual_inspection_passed,
     }
     if not all(value for key, value in checks.items() if key != "visual_inspection_passed"):
         raise SystemExit(f"PDF QA failed: {checks}")
     info = subprocess.check_output([args.pdfinfo, str(args.pdf)], text=True, errors="replace")
-    verification = json.loads((PAPER / "data/verification-results.json").read_text(encoding="utf-8"))
-    runtime = json.loads((PAPER / "data/runtime_summary.json").read_text(encoding="utf-8"))
+    metrics = collect_data_metrics(PAPER / "data")
+    test_results = json.loads(args.test_results.read_text(encoding="utf-8"))
+    if (
+        test_results.get("failed") != 0
+        or test_results.get("passed") != test_results.get("total")
+        or test_results.get("total", 0) < 1
+    ):
+        raise SystemExit(f"test suite did not fully pass: {test_results}")
+    manifest_sha256, manifest_file_count = input_manifest(REPO)
     qa = {
-        "schema_version": 1,
-        "source_commit": git("rev-parse", "HEAD"),
-        "base": resolve_base(REPO, args.base_ref),
+        "schema_version": 2,
+        "input_manifest_sha256": manifest_sha256,
+        "input_manifest_file_count": manifest_file_count,
+        "input_manifest_algorithm": "sha256(path NUL sha256(file_bytes), sorted by path)",
         "source_date_epoch": args.source_date_epoch,
         "qa_artifact_note": (
-            "This QA artifact records the source commit used as build input and is "
-            "committed in a successor commit; it does not identify its containing commit."
+            "Reproducibility is bound to input_manifest_sha256, which excludes "
+            "this QA file, the final PDF, temporary files, and caches."
         ),
-        "dataset": {"total": 33, "complete": 27, "source_only": 6},
-        "prompt_traces": {"evaluated": 27, "detected": 0},
-        "tests": {"passed": 52, "failed": 0, "status": "passed"},
-        "verification": {"passed": 27, "total": 27},
+        **metrics,
+        "tests": {**test_results, "status": "passed"},
         "engine": args.engine,
         "page_count": doc.page_count,
         "figure_count": len(figures),
@@ -93,15 +149,8 @@ def main() -> None:
         "checks": checks,
         "pdf_metadata": doc.metadata,
         "pdfinfo": info,
-        "observed_runtime_counts": {
-            "requests": runtime["total_sessions"],
-            "verification_records": len(
-                verification["results"] if isinstance(verification, dict) else verification
-            ),
-        },
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(qa, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(args.output, json.dumps(qa, indent=2) + "\n")
     print(f"PDF QA passed: {doc.page_count} pages, {len(figures)} figures, {len(tables)} tables")
 
 

@@ -240,6 +240,30 @@ class VerificationResultsTests(unittest.TestCase):
             self.assertFalse((input_root / "verification-results.json").exists())
             self.assertIn("reparse", (completed.stdout + completed.stderr).lower())
 
+    def test_verifier_build_is_independent_of_caller_working_directory(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("--manifest-path", source)
+        self.assertIn('Join-Path $repositoryRoot "Cargo.toml"', source)
+        self.assertIn('CARGO_TARGET_DIR', source)
+        input_root = (
+            PAPER.parent / "../../demo/argorix-chatbot-runtime/generated"
+        ).resolve()
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "verification.json"
+            completed = subprocess.run(
+                [
+                    "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                    "-File", str(SCRIPT), "-InputRoot", str(input_root),
+                    "-OutputPath", str(output),
+                    "-CargoPath", r"C:\Users\nanos\.cargo\bin\cargo.exe",
+                ],
+                cwd=temporary, capture_output=True, text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            records = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(len(records), 27)
+            self.assertTrue(all(r["verified"] and r["exit_code"] == 0 for r in records))
+
 
 def sanitize_with_powershell(diagnostic, sentinel="controlled-environment"):
     command = r"""

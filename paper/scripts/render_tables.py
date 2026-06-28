@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse, csv, json, re
 from pathlib import Path
+from atomic_io import atomic_write_text
 
 
 def esc(value) -> str:
@@ -78,7 +79,8 @@ def render(data: Path, out: Path):
         ("Security scope","fail-closed controls","threat mappings","deployment study","certification"),
       ], width=r"\textwidth"),
     }
-    for name,text in files.items(): (out/name).write_text(text,encoding="utf-8",newline="\n")
+    for name, text in files.items():
+        atomic_write_text(out / name, text)
 
 
 def main():

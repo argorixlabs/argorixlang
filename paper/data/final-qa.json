@@ -1,9 +1,10 @@
 {
-  "schema_version": 1,
-  "source_commit": "2a1a307a88e56c9cc40ac2cf106285e1a5f46049",
-  "base": "88d6b9748042bf83af3fee7a6850b58db8ae77be",
+  "schema_version": 2,
+  "input_manifest_sha256": "a0331ca29586e6461b2911f906e855a98e6b65211512ed9e9b3615dee125d237",
+  "input_manifest_file_count": 53,
+  "input_manifest_algorithm": "sha256(path NUL sha256(file_bytes), sorted by path)",
   "source_date_epoch": 1782664572,
-  "qa_artifact_note": "This QA artifact records the source commit used as build input and is committed in a successor commit; it does not identify its containing commit.",
+  "qa_artifact_note": "Reproducibility is bound to input_manifest_sha256, which excludes this QA file, the final PDF, temporary files, and caches.",
   "dataset": {
     "total": 33,
     "complete": 27,
@@ -13,14 +14,15 @@
     "evaluated": 27,
     "detected": 0
   },
-  "tests": {
-    "passed": 52,
-    "failed": 0,
-    "status": "passed"
-  },
   "verification": {
     "passed": 27,
     "total": 27
+  },
+  "tests": {
+    "passed": 57,
+    "failed": 0,
+    "total": 57,
+    "status": "passed"
   },
   "engine": "Tectonic 0.16.9",
   "page_count": 23,
@@ -32,7 +34,7 @@
     "pages_rendered": 23,
     "method": "144 dpi Poppler PNGs, contact sheets, flagged-page review"
   },
-  "inspection_timestamp": "2026-06-28T16:48:56.252474+00:00",
+  "inspection_timestamp": "2026-06-28T17:20:01.190907+00:00",
   "warnings": [
     "Harmless underfull-box warnings remain in narrow tables and bibliography entries.",
     "BibTeX reports an empty year for the deliberately undated unpublished ATrust source.",
@@ -61,9 +63,5 @@
     "trapped": "",
     "encryption": null
   },
-  "pdfinfo": "Title:           ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence\nSubject:         Reproducible preprint on ArgorixLang runtime evidence and governance\nKeywords:        ArgorixLang, AI agents, governance, runtime evidence, policy\nAuthor:          Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez\nCreator:         LaTeX with hyperref\nProducer:        xdvipdfmx (0.1)\nCreationDate:    Sun Jun 28 12:36:12 2026 Hora est. Sudam\u00e9rica Pac\u00edfico\nCustom Metadata: no\nMetadata Stream: no\nTagged:          no\nUserProperties:  no\nSuspects:        no\nForm:            none\nJavaScript:      no\nPages:           23\nEncrypted:       no\nPage size:       612 x 792 pts (letter)\nPage rot:        0\nFile size:       293838 bytes\nOptimized:       no\nPDF version:     1.5\n",
-  "observed_runtime_counts": {
-    "requests": 33,
-    "verification_records": 27
-  }
+  "pdfinfo": "Title:           ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence\nSubject:         Reproducible preprint on ArgorixLang runtime evidence and governance\nKeywords:        ArgorixLang, AI agents, governance, runtime evidence, policy\nAuthor:          Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez\nCreator:         LaTeX with hyperref\nProducer:        xdvipdfmx (0.1)\nCreationDate:    Sun Jun 28 12:36:12 2026 Hora est. Sudam\u00e9rica Pac\u00edfico\nCustom Metadata: no\nMetadata Stream: no\nTagged:          no\nUserProperties:  no\nSuspects:        no\nForm:            none\nJavaScript:      no\nPages:           23\nEncrypted:       no\nPage size:       612 x 792 pts (letter)\nPage rot:        0\nFile size:       293838 bytes\nOptimized:       no\nPDF version:     1.5\n"
 }

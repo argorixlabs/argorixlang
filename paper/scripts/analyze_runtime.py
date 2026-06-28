@@ -5,7 +5,10 @@ import argparse
 import csv
 import json
 import re
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from atomic_io import atomic_publish, atomic_write_text
 
 
 ARTIFACT_NAMES = (
@@ -320,24 +323,28 @@ def _write_sessions(path, sessions):
         "prompt_text", "artifacts",
         "json_errors",
     ]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for session in sessions:
-            writer.writerow({field: _csv_value(session.get(field)) for field in fields})
+    def write(temporary):
+        with temporary.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            for session in sessions:
+                writer.writerow(
+                    {field: _csv_value(session.get(field)) for field in fields}
+                )
+    atomic_publish(path, write)
 
 
 def _write_events(path, sessions):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(("request_id", "event_kind", "count"))
-        for session in sessions:
-            for kind, count in session["ledger_event_kinds"].items():
-                writer.writerow(
-                    (_csv_value(session["request_id"]), _csv_value(kind), count)
-                )
+    def write(temporary):
+        with temporary.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(("request_id", "event_kind", "count"))
+            for session in sessions:
+                for kind, count in session["ledger_event_kinds"].items():
+                    writer.writerow(
+                        (_csv_value(session["request_id"]), _csv_value(kind), count)
+                    )
+    atomic_publish(path, write)
 
 
 def load_prompt_allowlist(path):
@@ -365,10 +372,9 @@ def main():
     inventory = inventory_sessions(
         args.input, prompt_allowlist=load_prompt_allowlist(args.prompt_allowlist)
     )
-    args.summary.parent.mkdir(parents=True, exist_ok=True)
-    args.summary.write_text(
+    atomic_write_text(
+        args.summary,
         json.dumps(inventory, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
     _write_sessions(args.sessions, inventory["sessions"])
     _write_events(args.events, inventory["sessions"])

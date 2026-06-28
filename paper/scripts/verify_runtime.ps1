@@ -130,12 +130,22 @@ Assert-NoReparseComponents $outputFull "Output path"
 
 $cargo = Resolve-CargoExecutable
 
-& $cargo build -q -p argorix-vm
-if ($LASTEXITCODE -ne 0) {
-    throw "argorix-vm build failed with exit code $LASTEXITCODE"
+$manifestPath = Join-Path $repositoryRoot "Cargo.toml"
+$targetDirectory = Join-Path $repositoryRoot "target"
+$previousTargetDirectory = $env:CARGO_TARGET_DIR
+$env:CARGO_TARGET_DIR = $targetDirectory
+& $cargo build -q -p argorix-vm --manifest-path $manifestPath
+$buildExitCode = $LASTEXITCODE
+if ($null -eq $previousTargetDirectory) {
+    Remove-Item Env:CARGO_TARGET_DIR
+} else {
+    $env:CARGO_TARGET_DIR = $previousTargetDirectory
+}
+if ($buildExitCode -ne 0) {
+    throw "argorix-vm build failed with exit code $buildExitCode"
 }
 
-$binary = Join-Path $repositoryRoot "target\debug\argorix-vm.exe"
+$binary = Join-Path $targetDirectory "debug\argorix-vm.exe"
 if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
     throw "Built argorix-vm binary not found: $binary"
 }

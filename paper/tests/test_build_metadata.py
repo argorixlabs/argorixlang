@@ -33,6 +33,7 @@ def test_build_script_pins_official_engine_and_checksum():
     assert '$TectonicVersion = "0.16.9"' in script
     assert "github.com/tectonic-typesetting/tectonic/releases/download/" in script
     assert "131a24604785a9600989a3d91225f597df52ac06f00aeffe86fd529f99ee5cdd" in script
+    assert "a0a9a5eaf1a940d9a615ad78d35225ca59420c7984576c6402fffb3e9fb05ceb" in script
     assert "Get-FileHash" in script
     assert "SOURCE_DATE_EPOCH" in script
 
@@ -48,14 +49,20 @@ def test_final_qa_schema_when_artifact_exists():
     if not path.exists():
         return
     qa = json.loads(path.read_text(encoding="utf-8"))
+    if qa.get("schema_version", 1) < 2:
+        return
     assert qa["dataset"] == {"total": 33, "complete": 27, "source_only": 6}
     assert qa["prompt_traces"] == {"evaluated": 27, "detected": 0}
     assert qa["verification"] == {"passed": 27, "total": 27}
     assert qa["figure_count"] == 12
     assert qa["table_count"] == 7
-    assert "commit" not in qa
-    assert qa["source_commit"]
-    assert "successor" in qa["qa_artifact_note"].lower()
+    assert "source_commit" not in qa and "base" not in qa
+    assert len(qa["input_manifest_sha256"]) == 64
+    assert qa["input_manifest_file_count"] > 0
+    assert qa["input_manifest_algorithm"].startswith("sha256")
+    assert "reproducibility is bound" in qa["qa_artifact_note"].lower()
+    assert qa["tests"]["passed"] == qa["tests"]["total"]
+    assert qa["tests"]["failed"] == 0
 
 
 def test_stable_epoch_ignores_build_tooling_and_generated_successor(tmp_path):

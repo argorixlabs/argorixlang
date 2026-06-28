@@ -234,12 +234,13 @@ def test_declared_python_dependencies_match_runtime():
     import matplotlib
     import pytest
     requirements = (ROOT / "paper" / "requirements.txt").read_text(encoding="utf-8")
-    assert "matplotlib>=3.10,<3.11" in requirements
-    assert "pytest>=9,<10" in requirements
-    assert "PyMuPDF>=1.27,<1.28" in requirements
-    assert matplotlib.__version__.startswith("3.10.")
-    assert pytest.__version__.startswith("9.")
-    assert fitz.__doc__ and "1.27." in fitz.__doc__
+    assert "matplotlib==3.10.8" in requirements
+    assert "pytest==9.0.2" in requirements
+    assert "PyMuPDF==1.27.1" in requirements
+    assert "bibtexparser==1.4.4" in requirements
+    assert matplotlib.__version__ == "3.10.8"
+    assert pytest.__version__ == "9.0.2"
+    assert fitz.__doc__ and "1.27.1" in fitz.__doc__
 
 
 def test_mutated_normalized_data_recalculates_tables_and_empirical_figures(tmp_path):

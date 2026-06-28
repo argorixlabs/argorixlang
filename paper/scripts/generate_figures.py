@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 from pathlib import Path
+from atomic_io import atomic_publish
 
 import matplotlib
 matplotlib.use("pdf")
@@ -48,8 +49,15 @@ def arrow(ax, a, b, dashed=False, color=GREY):
 
 
 def save(fig, path):
-    fig.savefig(path, format="pdf", bbox_inches="tight", metadata=PDF_META)
-    plt.close(fig)
+    try:
+        atomic_publish(
+            path,
+            lambda temporary: fig.savefig(
+                temporary, format="pdf", bbox_inches="tight", metadata=PDF_META
+            ),
+        )
+    finally:
+        plt.close(fig)
 
 
 def architecture(path):

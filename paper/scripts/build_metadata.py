@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -51,16 +52,46 @@ def resolve_base(repo: Path, explicit: str | None = None) -> str:
     return git(repo, "merge-base", "HEAD", "origin/main")
 
 
+def input_manifest(repo: Path) -> tuple[str, int]:
+    paper = repo / "paper"
+    included = [
+        paper / "main.tex",
+        paper / "references.bib",
+        paper / "requirements.txt",
+        paper / "Makefile",
+        *sorted((paper / "sections").glob("*.tex")),
+        *sorted((paper / "appendices").glob("*.tex")),
+        *sorted((paper / "scripts").glob("*.py")),
+        *sorted((paper / "scripts").glob("*.ps1")),
+        *sorted((paper / "figures").glob("*.pdf")),
+        *sorted((paper / "tables").glob("*.tex")),
+        *sorted((paper / "data").glob("*")),
+    ]
+    files = sorted(
+        {path.resolve() for path in included if path.is_file()}
+        - {(paper / "data/final-qa.json").resolve()}
+    )
+    digest = hashlib.sha256()
+    for path in files:
+        relative = path.relative_to(repo.resolve()).as_posix().encode()
+        digest.update(relative + b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest(), len(files)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("stable-epoch", "resolve-base"))
+    parser.add_argument("command", choices=("stable-epoch", "resolve-base", "manifest"))
     parser.add_argument("--repo", required=True, type=Path)
     parser.add_argument("--base-ref")
     args = parser.parse_args()
     if args.command == "stable-epoch":
         print(stable_source_epoch(args.repo))
-    else:
+    elif args.command == "resolve-base":
         print(resolve_base(args.repo, args.base_ref))
+    else:
+        digest, count = input_manifest(args.repo)
+        print(f"{digest} {count}")
 
 
 if __name__ == "__main__":

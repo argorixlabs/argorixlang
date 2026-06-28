@@ -11,7 +11,7 @@ checks.
 - Rust and Cargo compatible with the repository toolchain
 - GNU Make is optional; the canonical entrypoint is the PowerShell script
 
-Install the pinned Python dependencies from the repository root:
+Install the exactly pinned, environment-verified Python dependencies from the repository root:
 
 ```powershell
 python -m pip install -r paper/requirements.txt
@@ -74,6 +74,10 @@ the repository. The archive comes from the
 [official GitHub release](https://github.com/tectonic-typesetting/tectonic/releases/tag/tectonic%400.16.9)
 and must match GitHub's published SHA-256:
 `131a24604785a9600989a3d91225f597df52ac06f00aeffe86fd529f99ee5cdd`.
+The extracted executable is also checked on every use against the derived
+SHA-256 `a0a9a5eaf1a940d9a615ad78d35225ca59420c7984576c6402fffb3e9fb05ceb`;
+an executable is never run before this hash check. Installation or recovery
+downloads, verifies, and retains the official archive in the external cache.
 No executable is committed.
 
 Build and render the final artifact from the repository root:
@@ -98,13 +102,13 @@ Windows host, Tectonic also prints a harmless Fontconfig
 default-configuration diagnostic; the bundled Latin Modern fonts remain
 embedded in the PDF.
 
-`paper/data/final-qa.json` uses `source_commit` for the Git commit/tree used as
-the build input. Because the QA manifest and PDF are themselves committed
-after the build, the manifest explicitly notes that it lives in a successor
-commit and never claims to identify its own containing commit. Base resolution
-uses an explicit `--base-ref` when supplied, then `origin/main` when present,
-and finally `HEAD^`; it does not require a local `main` branch and works from a
-detached checkout.
+`paper/data/final-qa.json` binds provenance to
+`input_manifest_sha256`, a deterministic digest over sorted manuscript,
+bibliography, normalized-data, figure, table, dependency, and build-tool
+inputs. The final PDF, final QA JSON, temporary files, and caches are excluded.
+The test totals in the manifest come from the parsed output of the pytest
+invocation executed by the build script; dataset, prompt, and
+verification totals are recomputed from normalized records.
 
 The pipeline intentionally preserves incomplete and unfavorable observations.
 Successful offline EvidenceBundle verification is not policy approval, a

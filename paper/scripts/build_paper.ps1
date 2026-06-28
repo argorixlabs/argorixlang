@@ -18,6 +18,7 @@ $FinalPdf = Join-Path $PaperRoot "argorixlang-preprint.pdf"
 $TectonicVersion = "0.16.9"
 $TectonicAsset = "tectonic-0.16.9-x86_64-pc-windows-msvc.zip"
 $TectonicSha256 = "131a24604785a9600989a3d91225f597df52ac06f00aeffe86fd529f99ee5cdd"
+$TectonicExeSha256 = "a0a9a5eaf1a940d9a615ad78d35225ca59420c7984576c6402fffb3e9fb05ceb"
 $TectonicUrl = "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.16.9/$TectonicAsset"
 
 function Invoke-Checked {
@@ -44,8 +45,13 @@ function Get-Tectonic {
     }
     $exe = Join-Path $cacheBase "tectonic.exe"
     if (Test-Path $exe) {
-        $version = (& $exe --version 2>&1 | Out-String).Trim()
-        if ($LASTEXITCODE -eq 0 -and $version -eq "Tectonic $TectonicVersion") { return $exe }
+        $exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($exeHash -eq $TectonicExeSha256) {
+            $version = (& $exe --version 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0 -and $version -eq "Tectonic $TectonicVersion") {
+                return $exe
+            }
+        }
         Remove-Item -LiteralPath $exe -Force
     }
     New-Item -ItemType Directory -Force -Path $cacheBase | Out-Null
@@ -57,7 +63,11 @@ function Get-Tectonic {
         throw "Tectonic archive checksum mismatch: expected $TectonicSha256, got $actual"
     }
     Expand-Archive -LiteralPath $archive -DestinationPath $cacheBase -Force
-    Remove-Item -LiteralPath $archive -Force
+    $exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($exeHash -ne $TectonicExeSha256) {
+        Remove-Item -LiteralPath $exe -Force
+        throw "Extracted Tectonic executable checksum mismatch"
+    }
     return $exe
 }
 
@@ -170,7 +180,8 @@ function Invoke-Qa {
         (Join-Path $PSScriptRoot "qa_pdf.py"), "--pdf", $FinalPdf,
         "--output", (Join-Path $PaperRoot "data/final-qa.json"),
         "--pdfinfo", $pdfinfo, "--engine", "Tectonic $TectonicVersion",
-        "--source-date-epoch", "$effectiveEpoch"
+        "--source-date-epoch", "$effectiveEpoch",
+        "--test-results", (Join-Path $TmpRoot "test-results.json")
     )
     if ($VisualInspectionPassed) { $qaArgs += "--visual-inspection-passed" }
     Invoke-Checked python $qaArgs
@@ -178,7 +189,23 @@ function Invoke-Qa {
 
 function Invoke-Tests {
     Invoke-Checked python @((Join-Path $PSScriptRoot "check_manuscript.py"))
-    Invoke-Checked python @("-m", "pytest", (Join-Path $PaperRoot "tests"), "-q")
+    New-Item -ItemType Directory -Force -Path $TmpRoot | Out-Null
+    $stdout = Join-Path $TmpRoot "pytest-stdout.log"
+    $stderr = Join-Path $TmpRoot "pytest-stderr.log"
+    $process = Start-Process -FilePath python -ArgumentList @(
+        "-m", "pytest", (Join-Path $PaperRoot "tests"), "-q"
+    ) -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $output = ((Get-Content -Raw $stdout) + (Get-Content -Raw $stderr))
+    $output | Write-Host
+    $passed = if ($output -match '(\d+) passed') { [int]$Matches[1] } else { 0 }
+    $failed = if ($output -match '(\d+) failed') { [int]$Matches[1] } else { 0 }
+    $result = [ordered]@{ passed = $passed; failed = $failed; total = $passed + $failed }
+    $resultJson = $result | ConvertTo-Json -Compress
+    $testResult = Join-Path $TmpRoot "test-results.json"
+    $temporary = "$testResult.tmp"
+    [IO.File]::WriteAllText($temporary, $resultJson + [Environment]::NewLine)
+    Move-Item -LiteralPath $temporary -Destination $testResult -Force
+    if ($process.ExitCode -ne 0) { throw "pytest failed with exit code $($process.ExitCode)" }
 }
 
 function Invoke-Clean {
