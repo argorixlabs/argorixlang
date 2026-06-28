@@ -1,5 +1,7 @@
 import csv
 import json
+import os
+import subprocess
 import unittest
 from pathlib import Path, PurePosixPath
 
@@ -7,6 +9,7 @@ from pathlib import Path, PurePosixPath
 PAPER = Path(__file__).parents[1]
 RESULTS = PAPER / "data" / "verification-results.json"
 SESSIONS = PAPER / "data" / "sessions.csv"
+SCRIPT = PAPER / "scripts" / "verify_runtime.ps1"
 REQUIRED_FIELDS = {
     "request_id",
     "exit_code",
@@ -61,6 +64,74 @@ class VerificationResultsTests(unittest.TestCase):
             if not record["verified"]:
                 self.assertNotEqual(record["exit_code"], 0)
                 self.assertTrue(record["stdout"] or record["stderr"])
+
+    def test_sanitizer_redacts_credentials_without_ambient_environment(self):
+        secrets = [
+            "bearer-credential-123456789",
+            "json-token-value-123456789",
+            "json-api-key-value-123456789",
+            "json-password-value-123456789",
+            "json-secret-value-123456789",
+            "assignment-token-value-123456789",
+            "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz123456",
+            "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
+            "AKIAABCDEFGHIJKLMNOP",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature123",
+        ]
+        diagnostic = "\n".join(
+            [
+                f"Authorization: Bearer {secrets[0]}",
+                json.dumps({"token": secrets[1]}),
+                json.dumps({"api_key": secrets[2]}),
+                json.dumps({"password": secrets[3]}),
+                json.dumps({"secret": secrets[4]}),
+                f"ACCESS_TOKEN={secrets[5]}",
+                *secrets[6:],
+                "ordinary diagnostic remains",
+            ]
+        )
+
+        sanitized = sanitize_with_powershell(diagnostic)
+
+        for secret in secrets:
+            self.assertNotIn(secret, sanitized)
+        self.assertIn("ordinary diagnostic remains", sanitized)
+        self.assertGreaterEqual(sanitized.count("<redacted>"), len(secrets))
+        self.assertEqual(
+            sanitized,
+            sanitize_with_powershell(diagnostic, sentinel="different-environment"),
+        )
+
+
+def sanitize_with_powershell(diagnostic, sentinel="controlled-environment"):
+    command = r"""
+$tokens = $null
+$errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile(
+    $env:ARGORIX_TEST_SCRIPT, [ref]$tokens, [ref]$errors
+)
+if ($errors.Count -ne 0) { throw $errors[0] }
+$function = $ast.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'ConvertTo-SafeDiagnostic'
+}, $true)
+Invoke-Expression $function.Extent.Text
+$diagnostic = [Console]::In.ReadToEnd()
+ConvertTo-SafeDiagnostic $diagnostic 'C:\controlled-corpus'
+"""
+    environment = os.environ.copy()
+    environment["ARGORIX_TEST_SECRET_SENTINEL"] = sentinel
+    environment["ARGORIX_TEST_SCRIPT"] = str(SCRIPT)
+    completed = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", command],
+        input=diagnostic,
+        text=True,
+        capture_output=True,
+        check=True,
+        env=environment,
+    )
+    return completed.stdout.strip()
 
 
 if __name__ == "__main__":

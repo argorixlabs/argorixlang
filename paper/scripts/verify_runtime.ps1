@@ -49,7 +49,14 @@ function ConvertTo-SafeDiagnostic([string]$Text, [string]$Root) {
     }
     $safe = $Text -replace "`e\[[0-9;?]*[ -/]*[@-~]", ""
     $safe = $safe.Replace($Root, "<input-root>")
-    $safe = $safe -replace '(?i)(authorization|api[-_]?key|token|password|secret)(\s*[:=]\s*)\S+', '$1$2<redacted>'
+    $safe = $safe -replace '(?im)(\bAuthorization\s*:\s*)(?:(?:Bearer|Basic|Token)\s+)?[^\s,\r\n]+', '$1<redacted>'
+    $safe = $safe -replace '(?i)("(?:[^"]*[_-])?(?:token|api[_-]?key|password|secret)"\s*:\s*)"(?:[^"\\]|\\.)*"', '${1}"<redacted>"'
+    $safe = $safe -replace "(?im)(\b[A-Za-z][A-Za-z0-9_-]*(?:token|api[_-]?key|password|secret)\s*[:=]\s*)(?:`"[^`"]*`"|'[^']*'|[^\s,;]+)", '$1<redacted>'
+    $safe = $safe -replace '(?i)\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b', '<redacted>'
+    $safe = $safe -replace '\bgh[pousr]_[A-Za-z0-9]{20,}\b', '<redacted>'
+    $safe = $safe -replace '\bxox[baprs]-[A-Za-z0-9-]{10,}\b', '<redacted>'
+    $safe = $safe -replace '\bAKIA[0-9A-Z]{16}\b', '<redacted>'
+    $safe = $safe -replace '\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b', '<redacted>'
     $safe = $safe -replace '[^\P{C}\r\n\t]', ''
     $safe = $safe.Trim()
     if ($safe.Length -gt $maxDiagnosticLength) {
