@@ -1,0 +1,42 @@
+\section{Limitations and Claim Boundaries}\label{sec:limitations}
+
+The dataset is small, single-application, and structurally homogeneous.  Its 33
+directories are not an independent random sample, and the 27 complete traces
+have identical event totals.  Percentages are descriptive only.  Six
+source-only directories have unknown outcomes, introducing survivor bias if
+analysis is restricted to complete sessions.
+
+No controlled baseline, adversarial campaign, fault injection, concurrency
+study, performance benchmark, or usability study was conducted.  Prompt
+content was persisted in 0/33 directories, so prompt-level qualitative
+analysis and injection measurement are impossible.  We do not infer attack
+success from policy violations: those violations report unknown rules, not
+successful attacks.
+
+Offline verification checks internal consistency against an unsigned local
+bundle.  It does not authenticate authorship, establish trusted time, prevent
+replacement of the entire bundle, or prove that the trace is complete.  SHA-256
+is used for semantic digests; no post-quantum security property is evaluated
+or claimed.
+
+Passports, \code{ans_name}, jurisdictions, residency, ATrust identities,
+credential contracts, handshakes, ledgers, MCP bridges, and A2A bridges are
+partly or wholly declarative.  The current system does not resolve Sovereign
+DNS/ANS names or DIDs, authenticate real agents, verify credentials, execute
+cryptographic handshakes, provide blockchain consensus or immutable storage,
+or run live MCP/A2A interoperability.
+
+Application-level deny flags and the provider registry do not establish
+production isolation.  We did not audit dependencies, prove memory safety of
+all unsafe/transitive code, inspect operating-system calls, or test container
+escapes.  We make no guarantee against all prompt injection, data leakage, or
+malicious providers.
+
+Governance mappings are not compliance certification.  Neither the language
+nor this study certifies conformity with a law, regulator, NIST AI RMF, or any
+other framework \citep{tabassi2023airmf}.  The empirical contradiction between
+the top-level and detailed statuses further prevents a positive assurance
+conclusion.
+
+Future evaluations should publish controlled workloads, independent
+verifiers, OS-level telemetry, and pre-registered outcome definitions.

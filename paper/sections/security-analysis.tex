@@ -1,0 +1,71 @@
+\section{Security Analysis}\label{sec:security}
+
+We analyze threats as attack paths across trust boundaries, not as proof that a
+named control defeats every adversary.  The relevant assets are authorization
+state, source and bytecode, policy results, provider selection, credentials and
+secret material, trace/report integrity, and jurisdictional metadata.
+Adversaries may supply malformed programs, attempt unauthorized operations,
+tamper with stored artifacts, exploit a provider adapter, or induce a consumer
+to accept a favorable summary while ignoring detailed failures.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{threat-mitigation.pdf}
+\caption{Threat--mitigation mapping for the evaluated architecture. Mapping
+means a control is present or declared; it is not a measured attack-blocking
+rate.}
+\label{fig:threat-mitigation}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Principal threats and bounded mitigation claims.}
+\label{tab:threats}
+\input{tables/threat-mapping}
+\end{table}
+
+\paragraph{Unauthorized provider execution.}
+The split between declarative and executable registries prevents a provider
+contract from becoming callable merely by being named.  Capability checks,
+approval requirements, and a simulated-only allowlist reduce the observed
+attack surface.  A malicious executable adapter or VM defect remains in scope
+for future testing.
+
+\paragraph{Network and secret side effects.}
+The demonstrated runtime profile denies network access, external execution,
+plaintext secrets, and key material.  Events make these decisions visible.
+Because this study does not instrument the host operating system, the evidence
+supports VM-level denial behavior, not production-grade isolation.
+
+\paragraph{Artifact tampering.}
+Semantic digests detect changes relative to an EvidenceBundle and avoid
+formatting-dependent hashes.  An attacker able to replace both artifacts and
+the unsigned bundle can create a self-consistent replacement.  Signatures,
+trusted timestamps, independent publication, and key governance are outside
+the implementation evaluated here.
+
+\paragraph{Policy confusion.}
+The observed status contradiction is an integrity-of-interpretation threat.
+A dashboard reading only \code{security_checks} could present an unsafe
+conclusion even when the detailed object requires review.  Consumers should
+apply a precedence rule: any explicit failure, unknown rule, or required review
+prevents an aggregate pass.  Future schemas should compute one canonical
+tri-state decision from typed component results.
+
+\paragraph{Prompt injection and content attacks.}
+Prompt injection is a recognized application risk \citep{owasp_llm_top10}.
+\Argorix can constrain resulting operations through capabilities and policy,
+but this corpus contains no prompt text and no controlled attacks.  We make no
+claim of universal injection prevention and report no success rate.
+
+\paragraph{Identity and trust spoofing.}
+Local semantic checks prevent dangling identity and credential references.
+They do not establish control of a DID, truth of a credential, or execution of
+a cryptographic handshake.  A future resolver and verifier would introduce
+new trust anchors, replay concerns, revocation, privacy, and network-failure
+paths \citep{w3c_did_core_2022,w3c_vc_data_model_2025}.
+
+The strongest supported security statement is therefore conditional: within
+the observed runtime path, requests are mediated by compiled policy and an
+executable-provider allowlist, denials are recorded, and complete artifacts are
+offline-consistent.  Security outside that path remains unmeasured.

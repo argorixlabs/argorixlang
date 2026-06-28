@@ -1,0 +1,55 @@
+\section{Trace, Report, and Evidence Model}\label{sec:evidence}
+
+Each complete request directory contains five artifacts:
+\code{session.argx}, compiled \code{session.argbc.json},
+\code{session.trace.json}, \code{session.security.json}, and
+\code{session.evidence.json}.  The trace is an ordered ledger of compiler/VM
+and policy events.  The SecurityReport is a structured interpretation of
+runtime evidence, including execution status, policy results, review state,
+provider boundary, and declared controls.  The EvidenceBundle links source,
+bytecode, trace, report, and ledger through semantic SHA-256 digests.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{artifact-schema.pdf}
+\caption{Schema-level view of the five-artifact request directory. The evidence
+bundle references normalized content digests; it does not contain a security
+verdict.}
+\label{fig:artifact-schema}
+\end{figure}
+
+A semantic digest is computed over canonical JSON derived from a deserialized
+value, avoiding dependence on whitespace or object-key formatting.  Bundle
+paths resolve relative to the bundle directory.  Offline verification loads
+the referenced artifacts, recomputes their semantic digests, and compares them
+with the bundle.  It requires neither network access nor provider credentials.
+This verifies internal linkage: the inspected artifacts correspond to the
+values named by the bundle.
+
+Three distinctions are essential.  First, a valid digest detects content
+change relative to the bundle but does not prove who created the bundle.
+Second, a linked trace does not prove that events outside the instrumented
+runtime did not occur.  Third, artifact integrity does not turn a failing
+policy result into approval.  No signature, trusted timestamp, transparency
+service, hardware root, or independent witness is evaluated here.
+
+The local trust ledger is similarly bounded.  Hash-linked entries and validated
+references can expose accidental or adversarial modification when the verifier
+has an expected root or bundle.  They do not provide distributed consensus,
+blockchain immutability, or non-repudiation.  The declarations explicitly deny
+such security claims.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{claim-boundaries.pdf}
+\caption{Claim-boundary plate separating implemented mechanisms, declarative
+metadata, proposed architecture, and properties not claimed.}
+\label{fig:claim-boundaries}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Interpretive boundaries applied to every result in this study.}
+\label{tab:claim-boundaries}
+\input{tables/claim-boundaries}
+\end{table}

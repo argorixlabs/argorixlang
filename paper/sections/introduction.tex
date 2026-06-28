@@ -1,0 +1,60 @@
+\section{Introduction}\label{sec:introduction}
+
+An agentic application is not merely a model invocation.  It is a composition
+of principals, messages, provider operations, tools, policy decisions, and
+evidence.  When these concerns are distributed among prompts, deployment
+configuration, and application code, a reviewer cannot determine from one
+artifact which operation was authorized, which boundary was enforced, or which
+claim is only aspirational.  Protocols such as MCP and A2A standardize useful
+interaction surfaces \citep{mcp_spec_2025,a2a_spec}, while identity and
+credential standards define interoperable data models
+\citep{w3c_did_core_2022,w3c_vc_data_model_2025}.  They do not by themselves
+make an application policy executable or its local execution evidence
+reproducible.
+
+\Argorix addresses this systems boundary by compiling declarations for agents,
+messages, passports, policies, providers, governance, and evidence into a
+validated intermediate representation and bytecode executed by a constrained
+virtual machine \citep{argorixlang2026}.  The core design decision is to retain
+source-faithful declarations until semantic validation, then lower only
+validated constructs.  Runtime decisions produce a trace, a SecurityReport,
+and an EvidenceBundle containing semantic SHA-256 digests.  An executable
+provider registry is separate from declarative external-provider contracts.
+In the studied configuration, only \code{simulated} is executable.
+
+The paper asks five explicit research questions:
+\begin{description}
+\item[RQ1.] How can governance, sovereign identity, and evidence requirements
+be represented as compiled language constructs?
+\item[RQ2.] How does the \Argorix pipeline constrain a chatbot request before a
+provider operation can be planned?
+\item[RQ3.] What evidence does the runtime generate, and how can its internal
+consistency be checked offline?
+\item[RQ4.] What do the existing runtime sessions demonstrate, and what do they
+not demonstrate?
+\item[RQ5.] How can Agent Passports, ATrust, DCP-AI, and future sovereign
+discovery fit into an open agentic-web architecture?
+\end{description}
+
+Our contributions are: (1) a language architecture that exposes governance and
+sovereign metadata to compilation; (2) a fail-closed runtime/provider boundary
+with explicit negative controls; (3) an evidence model separating artifact
+integrity from policy judgment; (4) a reproducible observational study that
+reports complete, incomplete, and internally inconsistent outcomes; and (5) a
+claim-bounded roadmap connecting implemented passport identifiers to proposed
+sovereign discovery.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{architecture.pdf}
+\caption{The governed execution and sovereign trust stack. Solid paths denote
+implemented compilation and runtime behavior; metadata layers do not imply
+external verification.}
+\label{fig:architecture}
+\end{figure}
+
+\Cref{fig:architecture} summarizes the stack.  The empirical result is
+deliberately narrower than an assurance claim: we observe deterministic
+structure, bounded execution, and verifiable artifact relationships in one
+corpus.  We neither conduct a controlled attack experiment nor infer production
+security from successful digest verification.

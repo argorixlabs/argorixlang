@@ -1,0 +1,70 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\usepackage{url}
+
+\graphicspath{{figures/}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Argorix}{ArgorixLang}
+\newcommand{\ATrust}{ATrust}
+\newcommand{\DCPAI}{DCP-AI}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\setlist{nosep,leftmargin=*}
+\setlength{\emergencystretch}{2em}
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,frame=single,
+  columns=fullflexible,keepspaces=true}
+
+\title{\Argorix: Compiled Governance, Sovereign Agent Metadata,\\
+and Offline-Verifiable Runtime Evidence}
+\author{
+Gustavo Venegas\\
+\small Chilean Chamber of Artificial Intelligence
+\and
+Edison Vazquez\\
+\small Chilean Chamber of Artificial Intelligence
+\and
+Danilo Naranjo\\
+\small Ocular
+\and
+Benjamin Gonzalez\\
+\small Chilean Chamber of Artificial Intelligence
+}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+\input{sections/abstract}
+\input{sections/introduction}
+\input{sections/background}
+\input{sections/language-architecture}
+\input{sections/sovereign-identity}
+\input{sections/atrust-dcp}
+\input{sections/runtime}
+\input{sections/evidence}
+\input{sections/methodology}
+\input{sections/results}
+\input{sections/security-analysis}
+\input{sections/discussion}
+\input{sections/limitations}
+\input{sections/future-work}
+\input{sections/conclusion}
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\appendix
+\input{appendices/artifact-excerpts}
+\end{document}

@@ -1,0 +1,68 @@
+\section{Bounded Artifact Excerpts}\label{app:excerpts}
+
+The following excerpts are schematic projections of fields present in the
+normalized data.  Values that identify individual requests are omitted; no
+prompt, secret, endpoint, absolute path, full log, or identifier dump is
+included.
+
+\begin{lstlisting}[caption={Redacted session-level projection.}]
+{
+  "complete": true,
+  "artifact_count": 5,
+  "execution_status": "completed",
+  "security_checks": "passed",
+  "policy_passed": false,
+  "review_required": true,
+  "policy_violation_count": 44,
+  "prompt_text": null
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Redacted provider-boundary projection.}]
+{
+  "declarative_contract_names": ["OpenAIProvider"],
+  "executable_providers": ["simulated"],
+  "external_contracts_total": 1,
+  "blocked_attempts": 1,
+  "external_execution_blocked": true
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Bounded verification-result projection.}]
+{
+  "exit_code": 0,
+  "verified": true,
+  "stdout": "Evidence verification: passed",
+  "stderr": ""
+}
+\end{lstlisting}
+
+\section{Reproduction Commands}\label{app:reproduce}
+
+From the repository root, use the committed Python environment and scripts:
+
+\begin{lstlisting}
+python -m pip install -r paper/requirements.txt
+python paper/scripts/analyze_runtime.py
+python paper/scripts/render_tables.py
+python paper/scripts/generate_figures.py
+powershell -File paper/scripts/verify_runtime.ps1
+python paper/scripts/check_manuscript.py
+python -m pytest paper/tests -q
+\end{lstlisting}
+
+The runtime analyzer expects the authorized source artifact directory in the
+location documented by its command-line interface; it fails visibly if that
+input is absent.  The paper can be built, when a TeX distribution is available,
+with:
+
+\begin{lstlisting}
+cd paper
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
+bibtex main
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
+\end{lstlisting}
+
+The committed normalized data permit manuscript and figure regeneration
+without publishing the original request-directory names or prompt content.

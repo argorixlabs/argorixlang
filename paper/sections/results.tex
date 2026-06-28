@@ -1,0 +1,78 @@
+\section{Results}\label{sec:results}
+
+\subsection{Completeness and execution}
+Of 33 request directories, 27 (81.8\%) contain all expected artifacts and six
+(18.2\%) contain source only.  All 27 complete sessions report execution status
+\code{completed}; execution status is unavailable for the six incomplete
+sessions.  The distinction matters: the study cannot determine whether those
+six requests failed during compilation, were interrupted, or were retained
+before downstream artifacts were written.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{session-outcomes.pdf}
+\caption{Artifact completeness and observed outcomes for all 33 request
+directories. Source-only observations remain explicit negative/incomplete
+results.}
+\label{fig:session-outcomes}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Empirical totals derived from the normalized datasets.}
+\label{tab:empirical}
+\input{tables/empirical-results}
+\end{table}
+
+\subsection{Policy inconsistency}
+Each of the 27 complete sessions has \code{security_checks=passed} at the
+top level.  Nevertheless, each detailed policy object has
+\code{policy_passed=false}, \code{review_required=true}, and 44 violations,
+all carrying the reason ``unknown policy rule.''  The total is therefore 1,188
+policy violations.  These rules cover ATrust, trust-ledger, MCP, and A2A
+checks, among others.
+
+We treat this as an inconsistent outcome, not a successful policy evaluation.
+The top-level field may describe a narrower check or stale aggregation, but the
+artifacts do not establish which.  The appropriate behavior is review and
+diagnosis.  This finding illustrates why evidence schemas should preserve
+component status and why consumers must not collapse a report to one favorable
+label.
+
+\subsection{Event totals and boundaries}
+The 27 complete traces contain 7,155 counted ledger events, exactly 265 per
+complete session.  Thus the corpus has low structural variation.  Each complete
+trace includes 142 \code{PolicyEvaluated} events, 44
+\code{PolicyViolation} events, one \code{ExternalProviderExecutionBlocked}
+event, one \code{RuntimeNetworkDenied} event, and one
+\code{RuntimeSecretsDenied} event.  It also records declaration events for two
+agents, six policies, two passports, governance, threat, public-conformance,
+release, ATrust, MCP, and A2A metadata.
+
+The repeated structure supports reproducibility of the pipeline but weakens
+claims about behavioral diversity.  It does not show how the system responds
+to varied prompts, providers, jurisdictions, policy sets, or attacks.  Nor does
+a recorded denial independently prove host-level enforcement.
+
+\subsection{Offline bundle verification}
+All 27 complete bundles pass the repository's offline verifier (27/27).  Their
+bytecode, trace, report, and ledger digest fields are syntactically valid
+SHA-256 identifiers.  The successful result answers RQ3 narrowly: given each
+bundle and its relative artifact paths, the verifier can reproduce the
+semantic digests and cross-artifact linkage without network access.
+
+It does not answer whether policy approved the request; the detailed policy
+result is negative.  It does not authenticate the producer, prove absence of
+side effects, or establish semantic correctness of every event.  Integrity and
+approval are orthogonal axes.
+
+\subsection{Passports and prompts}
+Every complete session reports two passports, Chile as country and
+jurisdiction, and Chilean and European Union residency declarations.  These
+values show that sovereign metadata survives to runtime evidence.  They do not
+show that data was physically stored in either region.
+
+Prompt content is absent from all 33 normalized records.  Therefore no
+qualitative prompt themes, quotations, injection labels, or attack success
+rates can be reported.  This is simultaneously a data-minimization benefit and
+an evaluation limitation.

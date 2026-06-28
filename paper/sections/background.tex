@@ -1,0 +1,58 @@
+\section{Background and Related Work}\label{sec:background}
+
+\paragraph{Open agent discovery.}
+Project NANDA's official title is \emph{Architecting the Internet of Agents}
+\citep{projectnanda2026}.  Its research anchor, ``Beyond DNS: Unlocking the
+Internet of AI Agents via the NANDA Index and Verified AgentFacts,'' proposes
+indexing and verifiable facts for networked agents
+\citep{raskar2025beyonddns}.  This work motivates an open discovery layer, but
+\Argorix does not implement NANDA, DNS resolution, or a remote index.  The
+comparison is architectural: locally compiled sovereign metadata could become
+an input to a future discovery service.
+
+\paragraph{Names, identifiers, and credentials.}
+DNS separates hierarchical naming from the mechanisms that applications build
+above it \citep{mockapetris1987dnsconcepts,mockapetris1987dnsimplementation}.
+DID Core specifies identifiers and DID documents, while the Verifiable
+Credentials Data Model specifies a credential data model
+\citep{w3c_did_core_2022,w3c_vc_data_model_2025}.  Declaring a string shaped
+like a DID or a credential reference is not equivalent to resolving,
+authenticating, issuing, or verifying it.  We use that distinction throughout.
+
+\paragraph{Agent interaction protocols.}
+MCP defines a protocol for context and tool interactions; A2A defines
+inter-agent communication \citep{mcp_spec_2025,a2a_spec}.  \Argorix models
+bindings and bridge constraints for these boundaries declaratively.  The
+observed runtime records that bridge runtime, network, tool, or agent execution
+is disabled.  It therefore tests declarations and negative controls rather
+than interoperability with live MCP or A2A endpoints.
+
+\paragraph{Risk framing.}
+NIST AI RMF organizes AI risk management as a lifecycle activity
+\citep{tabassi2023airmf}, and OWASP catalogs application risks including prompt
+injection and sensitive-information disclosure \citep{owasp_llm_top10}.  These
+sources inform threat categories, not certification mappings.  A policy name
+or governance record cannot establish legal compliance.
+
+\begin{table}[t]
+\centering
+\caption{Scope of related-work comparisons. Each row is relational, not an
+equivalence or conformance claim.}
+\label{tab:related-work}
+\input{tables/related-work}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{evolution-timeline.pdf}
+\caption{\Argorix language evolution represented by repository versions and
+feature boundaries. The timeline establishes implementation sequence, not
+maturity or deployment readiness.}
+\label{fig:evolution}
+\end{figure}
+
+The language is implemented in Rust \citep{rust_project}.  The evolution in
+\cref{fig:evolution} reflects a sequence from agent execution toward typed
+messages, provider contracts, passports, ATrust metadata, governance,
+hardening, and evidence.  Version numbers establish repository history only;
+they are not external certifications.

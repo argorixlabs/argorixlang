@@ -1,0 +1,29 @@
+\begin{abstract}
+Agent systems increasingly combine model calls, tools, data movement, and
+inter-agent protocols, but their governance assumptions are commonly expressed
+outside the executable artifact.  This paper presents \Argorix, a compiled
+language and runtime in which agent capabilities, policy, sovereign metadata,
+provider boundaries, and evidence requirements are explicit program
+constructs.  We distinguish four claim classes throughout: implemented
+mechanisms, declarative metadata, proposed architecture, and properties not
+claimed.  We study an authorized corpus of 33 runtime request directories using
+a reproducible, observational pipeline.  Twenty-seven directories contain all
+five expected artifacts and six contain source only.  All 27 complete evidence
+bundles pass offline digest and cross-artifact verification.  At the same time,
+all 27 detailed policy reports set \code{passed=false}, require review, and
+record 44 unknown-rule violations each, despite a favorable top-level
+\code{security_checks} label.  Thus bundle integrity does not imply policy
+approval, security, or certification.  The corpus contains 7,155 ledger events
+and 1,188 detailed policy violations.  It persists no prompt content in any of
+the 33 directories, precluding prompt-level qualitative analysis.  We describe
+the compiler, fail-closed runtime, Agent Passport metadata, a declarative
+encoding of the unpublished ATrust conceptual protocol, its relationship to
+DCP-AI, and trace/report/bundle generation.  The results demonstrate
+reproducible artifact production and offline integrity checking under the
+observed configuration; they do not demonstrate real identity authentication,
+credential verification, cryptographic handshakes, blockchain immutability,
+post-quantum security, compliance certification, or production isolation.
+\end{abstract}
+
+\noindent\textbf{Keywords:} agent programming languages; compiled governance;
+sovereign identity; runtime evidence; fail-closed execution; reproducibility
