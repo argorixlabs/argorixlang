@@ -4,7 +4,6 @@
 import argparse
 import csv
 import json
-import os
 import re
 from pathlib import Path
 
@@ -35,6 +34,10 @@ def _list(value):
     return value if isinstance(value, list) else []
 
 
+def _integer(value):
+    return value if type(value) is int else None
+
+
 def _sorted_strings(value):
     return sorted(str(item) for item in _list(value))
 
@@ -48,13 +51,6 @@ def _sanitize_text(value, limit=200):
         lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", text
     )
     text = KEY_SHAPE.sub("[REDACTED]", text)
-    for key, secret in os.environ.items():
-        if (
-            secret
-            and len(secret) >= 4
-            and any(marker in key.upper() for marker in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
-        ):
-            text = text.replace(secret, "[REDACTED]")
     if len(text) > limit:
         text = text[:limit] + "…"
     return text
@@ -126,25 +122,19 @@ def _normalize_provider_boundary(value):
             for item in contracts
             if (name := _sanitize_text(item.get("name"), 120)) is not None
         ),
-        "external_contracts_total": (
+        "external_contracts_total": _integer(
             boundary.get("external_contracts_total")
-            if isinstance(boundary.get("external_contracts_total"), int)
-            else None
         ),
         "external_execution_blocked": (
             boundary.get("external_execution_blocked")
             if isinstance(boundary.get("external_execution_blocked"), bool)
             else None
         ),
-        "blocked_attempts": (
-            boundary.get("blocked_attempts")
-            if isinstance(boundary.get("blocked_attempts"), int)
-            else None
-        ),
+        "blocked_attempts": _integer(boundary.get("blocked_attempts")),
     }
 
 
-def _normalize_session(root, directory):
+def _normalize_session(root, directory, publish_prompt=False):
     artifacts = {}
     for name in ARTIFACT_NAMES:
         path = directory / name
@@ -176,7 +166,11 @@ def _normalize_session(root, directory):
                 kind = event.get("event_type") or event.get("kind")
                 if kind is not None:
                     event_kinds[str(kind)] = event_kinds.get(str(kind), 0) + 1
-    event_kinds = {key: event_kinds[key] for key in sorted(event_kinds)}
+    event_kinds = {
+        key: event_kinds[key]
+        for key in sorted(event_kinds)
+        if type(event_kinds[key]) is int
+    }
     passports = _mapping(security.get("agent_passports"))
     boundary = _normalize_provider_boundary(security.get("provider_boundary"))
     digest_values = {}
@@ -192,7 +186,11 @@ def _normalize_session(root, directory):
     # trace producer includes the authorized content, read only that bounded
     # field; never recursively search payloads where secret values also live.
     injected = _mapping(trace.get("injected"))
-    prompt = _sanitize_text(injected.get("content"), 2000)
+    prompt = (
+        _sanitize_text(injected.get("content"), 2000)
+        if publish_prompt
+        else None
+    )
 
     execution = _mapping(security.get("execution"))
     security_checks = trace.get("security_checks")
@@ -219,11 +217,13 @@ def _normalize_session(root, directory):
             }
         ),
         "security_checks": security_checks,
-        "ledger_events_total": ledger.get(
-            "events_total", sum(v for v in event_kinds.values() if isinstance(v, int))
+        "ledger_events_total": (
+            _integer(ledger.get("events_total"))
+            if "events_total" in ledger
+            else sum(event_kinds.values())
         ),
         "ledger_event_kinds": event_kinds,
-        "passport_total": passports.get("total"),
+        "passport_total": _integer(passports.get("total")),
         "passport_countries": _sorted_strings(passports.get("countries")),
         "passport_jurisdictions": _sorted_strings(passports.get("jurisdictions")),
         "passport_data_residency": _sorted_strings(passports.get("data_residency")),
@@ -241,14 +241,17 @@ def _normalize_session(root, directory):
     }
 
 
-def inventory_sessions(root: Path):
+def inventory_sessions(root: Path, prompt_allowlist=None):
     """Return a deterministic inventory of request directories under *root*."""
+    prompt_allowlist = frozenset(prompt_allowlist or ())
     root = Path(root)
     if _is_link_or_reparse(root):
         raise ValueError(f"input root must not be a link or reparse point: {root}")
     root = root.resolve(strict=True)
     sessions = [
-        _normalize_session(root, safe_path)
+        _normalize_session(
+            root, safe_path, publish_prompt=safe_path.name in prompt_allowlist
+        )
         for path in sorted(root.iterdir(), key=lambda item: item.name)
         if (safe_path := _contained_resolved_path(root, path)) is not None
         and safe_path.is_dir()
@@ -274,7 +277,7 @@ def _csv_value(value):
     return value
 
 
-def validate_output_paths(input_root, summary, sessions, events):
+def validate_output_paths(input_root, summary, sessions, events, extra_inputs=()):
     root = Path(input_root).resolve(strict=True)
     outputs = [
         Path(path).resolve(strict=False) for path in (summary, sessions, events)
@@ -283,6 +286,9 @@ def validate_output_paths(input_root, summary, sessions, events):
         raise ValueError("output paths must be distinct")
     if any(path == root or path.is_relative_to(root) for path in outputs):
         raise ValueError("output paths must be outside the input root")
+    inputs = {Path(path).resolve(strict=True) for path in extra_inputs}
+    if any(path in inputs for path in outputs):
+        raise ValueError("output paths must not overwrite explicit inputs")
 
 
 def _write_sessions(path, sessions):
@@ -310,7 +316,18 @@ def _write_events(path, sessions):
         writer.writerow(("request_id", "event_kind", "count"))
         for session in sessions:
             for kind, count in session["ledger_event_kinds"].items():
-                writer.writerow((session["request_id"], kind, count))
+                writer.writerow(
+                    (_csv_value(session["request_id"]), _csv_value(kind), count)
+                )
+
+
+def load_prompt_allowlist(path):
+    if path is None:
+        return set()
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError("prompt allowlist must be a JSON array of request_id strings")
+    return set(value)
 
 
 def main():
@@ -319,10 +336,16 @@ def main():
     parser.add_argument("--summary", required=True, type=Path)
     parser.add_argument("--sessions", required=True, type=Path)
     parser.add_argument("--events", required=True, type=Path)
+    parser.add_argument("--prompt-allowlist", type=Path)
     args = parser.parse_args()
 
-    validate_output_paths(args.input, args.summary, args.sessions, args.events)
-    inventory = inventory_sessions(args.input)
+    extra_inputs = [args.prompt_allowlist] if args.prompt_allowlist else []
+    validate_output_paths(
+        args.input, args.summary, args.sessions, args.events, extra_inputs
+    )
+    inventory = inventory_sessions(
+        args.input, prompt_allowlist=load_prompt_allowlist(args.prompt_allowlist)
+    )
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(
         json.dumps(inventory, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

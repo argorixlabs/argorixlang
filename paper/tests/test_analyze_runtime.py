@@ -165,7 +165,9 @@ class RuntimeAnalysisTests(unittest.TestCase):
     def test_normalizes_runtime_ledger_passport_boundary_digest_and_prompt_fields(self):
         self.write_complete()
 
-        row = analyze_runtime.inventory_sessions(self.root)["sessions"][0]
+        row = analyze_runtime.inventory_sessions(
+            self.root, prompt_allowlist={"request-b"}
+        )["sessions"][0]
 
         self.assertEqual(row["execution_status"], "completed")
         self.assertEqual(row["ledger_events_total"], 3)
@@ -223,13 +225,13 @@ class RuntimeAnalysisTests(unittest.TestCase):
 
         self.assertIsNone(row["prompt_text"])
 
-    def test_prompt_and_policy_text_redact_secret_patterns_and_env_values(self):
+    def test_prompt_publication_requires_allowlist_and_redacts_credentials(self):
         session = self.write_complete()
         trace_path = session / "session.trace.json"
         trace = json.loads(trace_path.read_text(encoding="utf-8"))
         trace["injected"]["content"] = (
             "harmless context Bearer abc.def password=hunter2 "
-            "token: tok_live_123 key sk-proj-123456789 env-secret-value"
+            "token: tok_live_123 key sk-proj-123456789"
         )
         trace_path.write_text(json.dumps(trace), encoding="utf-8")
         security_path = session / "session.security.json"
@@ -240,22 +242,43 @@ class RuntimeAnalysisTests(unittest.TestCase):
         }
         security_path.write_text(json.dumps(security), encoding="utf-8")
 
+        default_row = analyze_runtime.inventory_sessions(self.root)["sessions"][0]
+        row = analyze_runtime.inventory_sessions(
+            self.root, prompt_allowlist={"request-b"}
+        )["sessions"][0]
+
+        serialized = json.dumps(row)
+        self.assertIsNone(default_row["prompt_text"])
+        self.assertIn("harmless context", row["prompt_text"])
+        for secret in ("abc.def", "hunter2", "tok_live_123",
+                       "sk-proj-123456789", "rule-secret", "reason-secret"):
+            self.assertNotIn(secret, serialized)
+        self.assertIn("[REDACTED]", serialized)
+
+    def test_non_allowlisted_sensitive_prompt_is_never_published(self):
+        self.write_complete("sensitive-request")
+        row = analyze_runtime.inventory_sessions(
+            self.root, prompt_allowlist={"different-request"}
+        )["sessions"][0]
+        self.assertIsNone(row["prompt_text"])
+
+    def test_inventory_is_invariant_under_environment_changes(self):
+        self.write_complete()
+        before = analyze_runtime.inventory_sessions(
+            self.root, prompt_allowlist={"request-b"}
+        )
         previous = os.environ.get("PAPER_TEST_API_KEY")
-        os.environ["PAPER_TEST_API_KEY"] = "env-secret-value"
+        os.environ["PAPER_TEST_API_KEY"] = "trace prompt"
         try:
-            row = analyze_runtime.inventory_sessions(self.root)["sessions"][0]
+            after = analyze_runtime.inventory_sessions(
+                self.root, prompt_allowlist={"request-b"}
+            )
         finally:
             if previous is None:
                 os.environ.pop("PAPER_TEST_API_KEY", None)
             else:
                 os.environ["PAPER_TEST_API_KEY"] = previous
-
-        serialized = json.dumps(row)
-        self.assertIn("harmless context", row["prompt_text"])
-        for secret in ("abc.def", "hunter2", "tok_live_123", "env-secret-value",
-                       "sk-proj-123456789", "rule-secret", "reason-secret"):
-            self.assertNotIn(secret, serialized)
-        self.assertIn("[REDACTED]", serialized)
+        self.assertEqual(before, after)
 
     def test_external_linked_session_and_artifact_are_not_read(self):
         external = self.root.parent / (self.root.name + "-external")
@@ -334,6 +357,40 @@ class RuntimeAnalysisTests(unittest.TestCase):
         finally:
             output.unlink(missing_ok=True)
 
+    def test_event_csv_neutralizes_formula_request_and_kind(self):
+        output = self.root.parent / (self.root.name + "-events.csv")
+        sessions = [{
+            "request_id": " +request",
+            "ledger_event_kinds": {"@event": 1},
+        }]
+        try:
+            analyze_runtime._write_events(output, sessions)
+            with output.open(encoding="utf-8", newline="") as handle:
+                row = next(csv.DictReader(handle))
+            self.assertEqual(row["request_id"], "' +request")
+            self.assertEqual(row["event_kind"], "'@event")
+        finally:
+            output.unlink(missing_ok=True)
+
+    def test_boolean_provider_counts_are_rejected(self):
+        session = self.write_complete()
+        security_path = session / "session.security.json"
+        security = json.loads(security_path.read_text(encoding="utf-8"))
+        security["provider_boundary"]["external_contracts_total"] = True
+        security["provider_boundary"]["blocked_attempts"] = False
+        security["ledger"]["events_total"] = True
+        security["ledger"]["event_kinds"]["PolicyEvaluated"] = False
+        security["agent_passports"]["total"] = True
+        security_path.write_text(json.dumps(security), encoding="utf-8")
+
+        row = analyze_runtime.inventory_sessions(self.root)["sessions"][0]
+        boundary = row["provider_boundary"]
+        self.assertIsNone(boundary["external_contracts_total"])
+        self.assertIsNone(boundary["blocked_attempts"])
+        self.assertIsNone(row["ledger_events_total"])
+        self.assertNotIn("PolicyEvaluated", row["ledger_event_kinds"])
+        self.assertIsNone(row["passport_total"])
+
     def test_output_paths_cannot_collide_or_enter_input_root(self):
         output = self.root.parent / (self.root.name + "-summary.json")
         with self.assertRaises(ValueError):
@@ -347,6 +404,20 @@ class RuntimeAnalysisTests(unittest.TestCase):
                 output.with_name("sessions.csv"),
                 output.with_name("events.csv"),
             )
+
+    def test_prompt_allowlist_loads_explicit_request_ids(self):
+        allowlist = self.root.parent / (self.root.name + "-allowlist.json")
+        try:
+            allowlist.write_text(
+                json.dumps(["request-b", "request-a"]), encoding="utf-8"
+            )
+            self.assertEqual(
+                analyze_runtime.load_prompt_allowlist(allowlist),
+                {"request-a", "request-b"},
+            )
+            self.assertEqual(analyze_runtime.load_prompt_allowlist(None), set())
+        finally:
+            allowlist.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
