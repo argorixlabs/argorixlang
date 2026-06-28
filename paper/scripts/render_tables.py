@@ -1,0 +1,76 @@
+"""Render deterministic LaTeX table fragments from normalized paper data."""
+from __future__ import annotations
+import argparse, csv, json, re
+from pathlib import Path
+
+
+def esc(value) -> str:
+    replacements = {
+        "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
+        "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}",
+        "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
+    }
+    return re.sub(r"[\\&%$#_{}~^]", lambda match: replacements[match.group()], str(value))
+
+
+def table(headers, rows):
+    cols="@{}" + "l" * len(headers) + "@{}"
+    lines=[f"\\begin{{tabular}}{{{cols}}}", "\\toprule",
+           " & ".join(map(esc,headers))+r" \\", "\\midrule"]
+    lines += [" & ".join(esc(v) for v in row)+r" \\" for row in rows]
+    lines += ["\\bottomrule","\\end{tabular}",""]
+    return "\n".join(lines)
+
+
+def render(data: Path, out: Path):
+    out.mkdir(parents=True,exist_ok=True)
+    summary=json.loads((data/"runtime_summary.json").read_text(encoding="utf-8"))
+    verification=json.loads((data/"verification-results.json").read_text(encoding="utf-8"))
+    with (data/"sessions.csv").open(encoding="utf-8",newline="") as f: sessions=list(csv.DictReader(f))
+    with (data/"event_counts.csv").open(encoding="utf-8",newline="") as f: events=list(csv.DictReader(f))
+    complete=[r for r in sessions if r.get("complete","").lower()=="true"]
+    event_total=sum(int(r["count"]) for r in events)
+    files={
+      "dataset-inventory.tex": table(["Normalized source","Rows / records","Role"],[
+        ("runtime_summary.json",len(summary.get("sessions",[])),"Session-level normalized summary"),
+        ("sessions.csv",len(sessions),"Tabular session observations"),
+        ("event_counts.csv",len(events),"Per-session event-kind counts"),
+        ("verification-results.json",len(verification),"Verification result groups")]),
+      "language-constructs.tex": table(["Construct family","Representation","Boundary"],[
+        ("Agents and messages","Typed declarations","Implemented"),
+        ("Provider contracts","Declarative metadata","Declarative"),
+        ("Policies and passports","Semantic plus runtime controls","Implemented"),
+        ("ATrust evidence maps","Validated evidence links","Declarative")]),
+      "runtime-controls.tex": table(["Control","Observed behavior","Scope"],[
+        ("Provider execution","simulated only","Implemented"),
+        ("External execution","Blocked","Implemented"),
+        ("Network access","Denied by runtime profiles","Implemented"),
+        ("Secrets and key material","Denied","Implemented")]),
+      "empirical-results.tex": table(["Measure","Derived value","Source"],[
+        ("Complete sessions",summary["complete_sessions"],"runtime_summary.json"),
+        ("Incomplete sessions",summary["incomplete_sessions"],"runtime_summary.json"),
+        ("Normalized sessions",len(sessions),"sessions.csv"),
+        ("Complete-session policy violations",sum(int(r.get("policy_violation_count") or 0) for r in complete),"sessions.csv"),
+        ("Counted ledger events",event_total,"event_counts.csv")]),
+      "threat-mapping.tex": table(["Threat","Mitigation","Claim status"],[
+        ("Unauthorized provider execution","Executable-provider allowlist","Implemented"),
+        ("Network side effects","Offline and network-denied profiles","Implemented"),
+        ("Secret disclosure","Secret and key-material denial","Implemented"),
+        ("Evidence tampering","Digest-linked artifact bundle","Implemented")]),
+      "related-work.tex": table(["System","Comparison dimension","Bibliographic scope"],[
+        ("Project NANDA","Agent naming and discovery","Project-level comparison only"),
+        ("ATrust","Agent trust relationships","Project-level comparison only"),
+        ("DCP-AI","Discovery and control plane","Project-level comparison only")]),
+      "claim-boundaries.tex": table(["Class","Meaning","Example"],[
+        ("Implemented","Executable behavior verified in repository","Fail-closed provider boundary"),
+        ("Declarative","Validated metadata with no external execution","ATrust evidence map"),
+        ("Proposed","Future design; not implemented","Operational federation"),
+        ("Not claimed","Outside paper evidence","Operational DNS deployment")]),
+    }
+    for name,text in files.items(): (out/name).write_text(text,encoding="utf-8",newline="\n")
+
+
+def main():
+    p=argparse.ArgumentParser(); p.add_argument("--data",type=Path,required=True); p.add_argument("--output",type=Path,required=True)
+    a=p.parse_args(); render(a.data,a.output)
+if __name__=="__main__": main()
