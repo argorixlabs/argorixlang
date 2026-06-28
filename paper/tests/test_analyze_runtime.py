@@ -31,7 +31,9 @@ class RuntimeAnalysisTests(unittest.TestCase):
         session = self.root / request_id
         session.mkdir()
         (session / "session.argx").write_text(
-            'module Fixture\n// prompt: "source prompt"\nsecret API_TOKEN env "never-export-me"\n',
+            "module Fixture\n"
+            "type UserPrompt { content: string }\n"
+            "secret API_TOKEN env \"never-export-me\"\n",
             encoding="utf-8",
         )
         (session / "session.argbc.json").write_text(
@@ -47,7 +49,14 @@ class RuntimeAnalysisTests(unittest.TestCase):
             json.dumps(
                 {
                     "status": "completed",
-                    "prompt": "trace prompt",
+                    "injected": {
+                        "from": "User",
+                        "to": "AssistantAgent",
+                        "act": "tell",
+                        "message_type": "UserPrompt",
+                        "content": "trace prompt",
+                        "secret_value": "never-export-me",
+                    },
                     "security_checks": "passed",
                     "events": [
                         {"event_type": "PolicyEvaluated"},
@@ -120,6 +129,7 @@ class RuntimeAnalysisTests(unittest.TestCase):
         self.assertEqual(result["total_sessions"], 1)
         self.assertEqual(result["complete_sessions"], 1)
         self.assertEqual(result["incomplete_sessions"], 0)
+        self.assertEqual(row["artifact_count"], 5)
         self.assertEqual(row["security_checks"], "passed")
         self.assertIs(row["policy_passed"], False)
         self.assertIs(row["review_required"], True)
@@ -138,6 +148,8 @@ class RuntimeAnalysisTests(unittest.TestCase):
         self.assertEqual([s["request_id"] for s in result["sessions"]], ["request-a", "request-z"])
         self.assertEqual(result["complete_sessions"], 1)
         self.assertEqual(result["incomplete_sessions"], 1)
+        self.assertEqual(result["sessions"][0]["artifact_count"], 1)
+        self.assertEqual(result["sessions"][1]["artifact_count"], 5)
         artifact = result["sessions"][0]["artifacts"]["session.argbc.json"]
         self.assertEqual(artifact, {"present": False, "size_bytes": 0})
 
@@ -174,6 +186,22 @@ class RuntimeAnalysisTests(unittest.TestCase):
         self.assertEqual(result["total_sessions"], 2)
         self.assertIn("session.trace.json", result["sessions"][0]["json_errors"])
         self.assertEqual(result["sessions"][1]["execution_status"], "completed")
+
+    def test_actual_redacted_injected_schema_does_not_invent_prompt_text(self):
+        session = self.write_complete()
+        trace_path = session / "session.trace.json"
+        trace = json.loads(trace_path.read_text(encoding="utf-8"))
+        trace["injected"] = {
+            "from": "User",
+            "to": "AssistantAgent",
+            "act": "tell",
+            "message_type": "UserPrompt",
+        }
+        trace_path.write_text(json.dumps(trace), encoding="utf-8")
+
+        row = analyze_runtime.inventory_sessions(self.root)["sessions"][0]
+
+        self.assertIsNone(row["prompt_text"])
 
 
 if __name__ == "__main__":

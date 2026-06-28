@@ -17,9 +17,6 @@ ARTIFACT_NAMES = (
 )
 JSON_ARTIFACTS = ARTIFACT_NAMES[1:]
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
-SOURCE_PROMPT_PATTERN = re.compile(
-    r'^\s*(?://\s*)?prompt\s*[:=]\s*"([^"\r\n]*)"\s*$', re.MULTILINE
-)
 
 
 def _mapping(value):
@@ -43,11 +40,6 @@ def _names(value):
         for item in _list(value)
         if isinstance(item, dict) and "name" in item
     )
-
-
-def _source_prompt(source):
-    match = SOURCE_PROMPT_PATTERN.search(source)
-    return match.group(1) if match else None
 
 
 def _load_json(path, errors):
@@ -100,16 +92,14 @@ def _normalize_session(directory):
             "valid": isinstance(value, str) and DIGEST_PATTERN.fullmatch(value) is not None,
         }
 
-    prompt = trace.get("prompt")
+    # Current traces describe the injected UserPrompt under ``injected``.
+    # Production artifacts redact its value, so absence remains explicit. If a
+    # trace producer includes the authorized content, read only that bounded
+    # field; never recursively search payloads where secret values also live.
+    injected = _mapping(trace.get("injected"))
+    prompt = injected.get("content")
     if not isinstance(prompt, str):
         prompt = None
-    if prompt is None and artifacts["session.argx"]["present"]:
-        try:
-            prompt = _source_prompt(
-                (directory / "session.argx").read_text(encoding="utf-8")
-            )
-        except (OSError, UnicodeError) as exc:
-            errors["session.argx"] = f"{type(exc).__name__}: {exc}"
 
     execution = _mapping(security.get("execution"))
     security_checks = trace.get("security_checks")
@@ -118,6 +108,7 @@ def _normalize_session(directory):
     return {
         "request_id": directory.name,
         "complete": all(item["present"] for item in artifacts.values()),
+        "artifact_count": sum(item["present"] for item in artifacts.values()),
         "artifacts": artifacts,
         "json_errors": errors,
         "execution_status": execution.get("status", trace.get("status")),
@@ -182,7 +173,7 @@ def _csv_value(value):
 
 def _write_sessions(path, sessions):
     fields = [
-        "request_id", "complete", "execution_status", "policy_passed",
+        "request_id", "complete", "artifact_count", "execution_status", "policy_passed",
         "review_required", "policy_violation_count", "policy_violation_rules",
         "policy_violation_reasons", "security_checks", "ledger_events_total",
         "passport_total", "passport_countries", "passport_jurisdictions",

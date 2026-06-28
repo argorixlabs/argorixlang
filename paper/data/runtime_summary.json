@@ -3,6 +3,7 @@
   "incomplete_sessions": 6,
   "sessions": [
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -213,6 +214,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -423,6 +425,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -633,6 +636,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -843,6 +847,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -1053,6 +1058,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 1,
       "artifacts": {
         "session.argbc.json": {
           "present": false,
@@ -1115,6 +1121,7 @@
       "security_checks": null
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -1325,6 +1332,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -1535,6 +1543,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -1745,6 +1754,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -1955,6 +1965,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -2165,6 +2176,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 1,
       "artifacts": {
         "session.argbc.json": {
           "present": false,
@@ -2227,6 +2239,7 @@
       "security_checks": null
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -2437,6 +2450,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 1,
       "artifacts": {
         "session.argbc.json": {
           "present": false,
@@ -2499,6 +2513,7 @@
       "security_checks": null
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -2709,6 +2724,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -2919,6 +2935,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -3129,6 +3146,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -3339,6 +3357,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -3549,6 +3568,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -3759,6 +3779,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -3969,6 +3990,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -4179,6 +4201,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -4389,6 +4412,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -4599,6 +4623,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -4809,6 +4834,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -5019,6 +5045,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -5229,6 +5256,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -5439,6 +5467,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -5649,6 +5678,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 1,
       "artifacts": {
         "session.argbc.json": {
           "present": false,
@@ -5711,6 +5741,7 @@
       "security_checks": null
     },
     {
+      "artifact_count": 5,
       "artifacts": {
         "session.argbc.json": {
           "present": true,
@@ -5921,6 +5952,7 @@
       "security_checks": "passed"
     },
     {
+      "artifact_count": 1,
       "artifacts": {
         "session.argbc.json": {
           "present": false,
@@ -5983,6 +6015,7 @@
       "security_checks": null
     },
     {
+      "artifact_count": 1,
       "artifacts": {
         "session.argbc.json": {
           "present": false,
