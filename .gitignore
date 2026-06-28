@@ -5,3 +5,5 @@ reports/*.security.json
 reports/*.bundle.json
 reports/*.trace.json
 docs/superpowers/
+.worktrees/
+.superpowers/
