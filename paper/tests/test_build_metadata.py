@@ -1,8 +1,31 @@
 import json
+import os
+import subprocess
 from pathlib import Path
 
 
 PAPER = Path(__file__).resolve().parents[1]
+METADATA = PAPER / "scripts/build_metadata.py"
+
+
+def git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=repo, env=env, text=True, stderr=subprocess.STDOUT
+    ).strip()
+
+
+def commit(repo: Path, message: str, epoch: int) -> None:
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.invalid",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.invalid",
+        "GIT_AUTHOR_DATE": f"{epoch} +0000",
+        "GIT_COMMITTER_DATE": f"{epoch} +0000",
+    }
+    git(repo, "add", ".", env=env)
+    git(repo, "commit", "-m", message, env=env)
 
 
 def test_build_script_pins_official_engine_and_checksum():
@@ -30,3 +53,46 @@ def test_final_qa_schema_when_artifact_exists():
     assert qa["verification"] == {"passed": 27, "total": 27}
     assert qa["figure_count"] == 12
     assert qa["table_count"] == 7
+    assert "commit" not in qa
+    assert qa["source_commit"]
+    assert "successor" in qa["qa_artifact_note"].lower()
+
+
+def test_stable_epoch_ignores_build_tooling_and_generated_successor(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    (repo / "paper").mkdir()
+    (repo / "paper/main.tex").write_text("content", encoding="utf-8")
+    commit(repo, "paper content", 1_700_000_000)
+    (repo / "paper/scripts").mkdir()
+    (repo / "paper/scripts/build_paper.ps1").write_text("tool", encoding="utf-8")
+    (repo / "paper/argorixlang-preprint.pdf").write_bytes(b"pdf")
+    (repo / "paper/data").mkdir()
+    (repo / "paper/data/final-qa.json").write_text("{}", encoding="utf-8")
+    commit(repo, "build successor", 1_800_000_000)
+
+    epoch = subprocess.check_output(
+        ["python", str(METADATA), "stable-epoch", "--repo", str(repo)], text=True
+    ).strip()
+    assert epoch == "1700000000"
+
+
+def test_base_resolution_works_detached_without_local_main(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    (repo / "one").write_text("1", encoding="utf-8")
+    commit(repo, "one", 1_700_000_000)
+    parent = git(repo, "rev-parse", "HEAD")
+    (repo / "two").write_text("2", encoding="utf-8")
+    commit(repo, "two", 1_700_000_100)
+    git(repo, "checkout", "--detach")
+    assert subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", "refs/heads/main"], cwd=repo
+    ).returncode != 0
+
+    base = subprocess.check_output(
+        ["python", str(METADATA), "resolve-base", "--repo", str(repo)], text=True
+    ).strip()
+    assert base == parent

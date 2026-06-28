@@ -4,6 +4,7 @@ param(
     [string]$Target = "all",
     [string]$InputRoot,
     [string]$CargoPath,
+    [long]$SourceDateEpoch = 0,
     [switch]$VisualInspectionPassed
 )
 
@@ -74,6 +75,14 @@ function Find-Poppler {
     throw "$Name from Poppler is required (Codex bundled runtime or system installation)"
 }
 
+function Get-SourceEpoch {
+    if ($SourceDateEpoch -ne 0) { return $SourceDateEpoch }
+    $epoch = & python (Join-Path $PSScriptRoot "build_metadata.py") `
+        stable-epoch --repo $RepoRoot
+    if ($LASTEXITCODE -ne 0) { throw "failed to derive stable paper source epoch" }
+    return [long]$epoch
+}
+
 function Invoke-Analyze {
     $input = Resolve-InputRoot
     Invoke-Checked python @(
@@ -115,7 +124,8 @@ function Invoke-Paper {
     $stdout = Join-Path $BuildRoot "tectonic-stdout.log"
     $stderr = Join-Path $BuildRoot "tectonic-stderr.log"
     $previousSourceDateEpoch = $env:SOURCE_DATE_EPOCH
-    $env:SOURCE_DATE_EPOCH = (& git -C $RepoRoot show -s --format=%ct HEAD).Trim()
+    $effectiveEpoch = Get-SourceEpoch
+    $env:SOURCE_DATE_EPOCH = "$effectiveEpoch"
     $process = Start-Process -FilePath $tectonic -ArgumentList @(
         "-X", "compile", (Join-Path $PaperRoot "main.tex"), "--outdir", $BuildRoot,
         "--keep-logs", "--keep-intermediates", "--print"
@@ -150,6 +160,7 @@ function Invoke-Paper {
 
 function Invoke-Qa {
     if (-not (Test-Path $FinalPdf)) { Invoke-Paper }
+    $effectiveEpoch = Get-SourceEpoch
     $pdftoppm = Find-Poppler "pdftoppm"
     $pdfinfo = Find-Poppler "pdfinfo"
     if (Test-Path $RenderRoot) { Remove-Item -LiteralPath $RenderRoot -Recurse -Force }
@@ -158,7 +169,8 @@ function Invoke-Qa {
     $qaArgs = @(
         (Join-Path $PSScriptRoot "qa_pdf.py"), "--pdf", $FinalPdf,
         "--output", (Join-Path $PaperRoot "data/final-qa.json"),
-        "--pdfinfo", $pdfinfo, "--engine", "Tectonic $TectonicVersion"
+        "--pdfinfo", $pdfinfo, "--engine", "Tectonic $TectonicVersion",
+        "--source-date-epoch", "$effectiveEpoch"
     )
     if ($VisualInspectionPassed) { $qaArgs += "--visual-inspection-passed" }
     Invoke-Checked python $qaArgs

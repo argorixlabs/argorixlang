@@ -86,7 +86,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File paper/scripts/build_paper.ps
 The stable output is `paper/argorixlang-preprint.pdf`; rendered QA pages are
 temporary files under `paper/tmp/pdfs`. Tectonic stabilizes BibTeX citations
 and cross-references automatically, while `SOURCE_DATE_EPOCH` is derived from
-the input Git commit for stable PDF timestamps. The build fails on undefined
+the latest commit touching manuscript, bibliography, normalized data, tables,
+or figures. Build-tooling, final-QA, and PDF-only successor commits therefore
+do not change the PDF timestamp or bytes. An explicit epoch can be supplied
+with `-SourceDateEpoch 1700000000`. The build fails on undefined
 citations/references, bibliography errors, missing inputs, and any overfull
 box. Harmless underfull boxes in narrow table cells, long bibliography URLs,
 and BibTeX's empty-year warning for the deliberately undated unpublished
@@ -94,6 +97,14 @@ ATrust source are accepted and recorded in `paper/data/final-qa.json`. On this
 Windows host, Tectonic also prints a harmless Fontconfig
 default-configuration diagnostic; the bundled Latin Modern fonts remain
 embedded in the PDF.
+
+`paper/data/final-qa.json` uses `source_commit` for the Git commit/tree used as
+the build input. Because the QA manifest and PDF are themselves committed
+after the build, the manifest explicitly notes that it lives in a successor
+commit and never claims to identify its own containing commit. Base resolution
+uses an explicit `--base-ref` when supplied, then `origin/main` when present,
+and finally `HEAD^`; it does not require a local `main` branch and works from a
+detached checkout.
 
 The pipeline intentionally preserves incomplete and unfavorable observations.
 Successful offline EvidenceBundle verification is not policy approval, a

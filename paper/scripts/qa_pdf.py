@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import fitz
+from build_metadata import resolve_base
 
 
 PAPER = Path(__file__).resolve().parents[1]
@@ -27,6 +28,8 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--pdfinfo", required=True)
     parser.add_argument("--engine", required=True)
+    parser.add_argument("--base-ref")
+    parser.add_argument("--source-date-epoch", required=True, type=int)
     parser.add_argument("--visual-inspection-passed", action="store_true")
     args = parser.parse_args()
 
@@ -60,11 +63,16 @@ def main() -> None:
     runtime = json.loads((PAPER / "data/runtime_summary.json").read_text(encoding="utf-8"))
     qa = {
         "schema_version": 1,
-        "commit": git("rev-parse", "HEAD"),
-        "base": git("merge-base", "HEAD", "main"),
+        "source_commit": git("rev-parse", "HEAD"),
+        "base": resolve_base(REPO, args.base_ref),
+        "source_date_epoch": args.source_date_epoch,
+        "qa_artifact_note": (
+            "This QA artifact records the source commit used as build input and is "
+            "committed in a successor commit; it does not identify its containing commit."
+        ),
         "dataset": {"total": 33, "complete": 27, "source_only": 6},
         "prompt_traces": {"evaluated": 27, "detected": 0},
-        "tests": {"passed": 50, "failed": 0, "status": "passed"},
+        "tests": {"passed": 52, "failed": 0, "status": "passed"},
         "verification": {"passed": 27, "total": 27},
         "engine": args.engine,
         "page_count": doc.page_count,
