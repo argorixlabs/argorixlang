@@ -13,12 +13,12 @@ def esc(value) -> str:
     return re.sub(r"[\\&%$#_{}~^]", lambda match: replacements[match.group()], str(value))
 
 
-def table(headers, rows):
-    cols="@{}" + "l" * len(headers) + "@{}"
-    lines=[f"\\begin{{tabular}}{{{cols}}}", "\\toprule",
+def table(headers, rows, width=r"\linewidth"):
+    cols="@{}" + "X" * len(headers) + "@{}"
+    lines=[f"\\begin{{tabularx}}{{{width}}}{{{cols}}}", "\\toprule",
            " & ".join(map(esc,headers))+r" \\", "\\midrule"]
     lines += [" & ".join(esc(v) for v in row)+r" \\" for row in rows]
-    lines += ["\\bottomrule","\\end{tabular}",""]
+    lines += ["\\bottomrule","\\end{tabularx}",""]
     return "\n".join(lines)
 
 
@@ -30,6 +30,7 @@ def render(data: Path, out: Path):
     with (data/"event_counts.csv").open(encoding="utf-8",newline="") as f: events=list(csv.DictReader(f))
     complete=[r for r in sessions if r.get("complete","").lower()=="true"]
     event_total=sum(int(r["count"]) for r in events)
+    verified_total=sum(bool(item.get("verified")) for item in verification)
     files={
       "dataset-inventory.tex": table(["Normalized source","Rows / records","Role"],[
         ("runtime_summary.json",len(summary.get("sessions",[])),"Session-level normalized summary"),
@@ -51,7 +52,8 @@ def render(data: Path, out: Path):
         ("Incomplete sessions",summary["incomplete_sessions"],"runtime_summary.json"),
         ("Normalized sessions",len(sessions),"sessions.csv"),
         ("Complete-session policy violations",sum(int(r.get("policy_violation_count") or 0) for r in complete),"sessions.csv"),
-        ("Counted ledger events",event_total,"event_counts.csv")]),
+        ("Counted ledger events",event_total,"event_counts.csv"),
+        ("Verified evidence bundles",f"{verified_total} / {len(verification)}","verification-results.json")]),
       "threat-mapping.tex": table(["Threat","Mitigation","Claim status"],[
         ("Unauthorized provider execution","Executable-provider allowlist","Implemented"),
         ("Network side effects","Offline and network-denied profiles","Implemented"),
@@ -67,7 +69,7 @@ def render(data: Path, out: Path):
         ("Trust evidence","digest bundle","ATrust map","--","live attestation"),
         ("Discovery","local catalog","sovereign metadata","federation","operational DNS"),
         ("Security scope","fail-closed controls","threat mappings","deployment study","certification"),
-      ]),
+      ], width=r"\textwidth"),
     }
     for name,text in files.items(): (out/name).write_text(text,encoding="utf-8",newline="\n")
 

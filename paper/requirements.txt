@@ -1,0 +1,4 @@
+# Reproducible paper figure/table pipeline and its test harness.
+matplotlib>=3.10,<3.11
+pytest>=9,<10
+PyMuPDF>=1.27,<1.28

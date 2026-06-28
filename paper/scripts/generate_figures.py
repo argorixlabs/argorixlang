@@ -24,7 +24,7 @@ PDF_META = {"Creator": "Argorix paper pipeline", "Producer": "Matplotlib",
 
 
 def canvas(title: str, wide: bool = False):
-    fig, ax = plt.subplots(figsize=(10.0 if wide else 3.35, 3.6))
+    fig, ax = plt.subplots(figsize=(7.2 if wide else 3.35, 3.6))
     fig.patch.set_facecolor("white")
     ax.set(xlim=(0, 10), ylim=(0, 10))
     ax.axis("off")
@@ -77,7 +77,7 @@ def request_sequence(path):
              (5,7,"permit / deny"), (7,9,"append events"), (9,1,"bundle result")]
     for row, (a,b,t) in enumerate(steps):
         y=7.5-row*1.25; arrow(ax,(a,y),(b,y), color=[BLUE,ORANGE,GREEN,RED,NAVY][row])
-        ax.text((a+b)/2,y+.18,t,ha="center",fontsize=7,color=GREY)
+        ax.text((a+b)/2,y+.18,t,ha="center",fontsize=8,color=GREY)
     save(fig, path)
 
 
@@ -118,6 +118,7 @@ def empirical(data, out):
 
 
 def wrap_label(label):
+    if "\n" in label: return label
     words=label.split()
     if len(words) <= 1: return label
     midpoint=(len(words)+1)//2
@@ -133,9 +134,9 @@ def flow_figure(path, title, labels, proposed=None):
         if is_prop:
             width=gap-.6
             box(ax,x,4.1,width,1.8,"",[BLUE,GREEN,ORANGE,RED][i%4],True)
-            ax.text(x+width/2,5.43,"PROPOSED / NOT IMPLEMENTED",
-                    ha="center",va="center",fontsize=6,color=GREY,weight="bold")
-            ax.text(x+width/2,4.78,shown,ha="center",va="center",
+            ax.text(x+width/2,5.38,"PROPOSED /\nNOT IMPLEMENTED",
+                    ha="center",va="center",fontsize=7,color=NAVY,weight="bold")
+            ax.text(x+width/2,4.60,shown,ha="center",va="center",
                     fontsize=8,color=NAVY)
         else:
             box(ax,x,4.1,gap-.6,1.8,shown,[BLUE,GREEN,ORANGE,RED][i%4])
@@ -160,7 +161,8 @@ def generate(data: Path, out: Path):
     flow_figure(out/"sovereign-discovery.pdf","Sovereign discovery boundary",
                 ["Local declaration","Semantic validation","Offline catalog","Operational DNS"],{3})
     flow_figure(out/"artifact-schema.pdf","Normalized artifact relationships",
-                ["session.argx","session.argbc.json","session.trace.json","session.security.json","session.evidence.json"])
+                ["session.\nargx","session.\nargbc.json","session.\ntrace.json",
+                 "session.\nsecurity.json","session.\nevidence.json"])
     flow_figure(out/"claim-boundaries.pdf","Claim boundary taxonomy",
                 ["Implemented","Declarative","Proposed","Not claimed"],{2})
 
