@@ -13,23 +13,6 @@ authors:
     given-names: Benjamin
 repository-code: "https://github.com/argorixlabs/argorixlang"
 url: "https://github.com/argorixlabs/argorixlang"
-version: "0.1.0"
-date-released: "2026-06-28"
-license: "Apache-2.0"cff-version: 1.2.0
-message: "If you use ArgorixLang, please cite it as below."
-title: "ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence"
-type: software
-authors:
-  - family-names: Venegas
-    given-names: Gustavo
-  - family-names: Vazquez
-    given-names: Edison
-  - family-names: Naranjo
-    given-names: Danilo
-  - family-names: Gonzalez
-    given-names: Benjamin
-repository-code: "https://github.com/argorixlabs/argorixlang"
-url: "https://github.com/argorixlabs/argorixlang"
-version: "0.1.0"
+version: "1.0.1"
 date-released: "2026-06-28"
 license: "Apache-2.0"
