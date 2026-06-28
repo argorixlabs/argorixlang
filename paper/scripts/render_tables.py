@@ -61,11 +61,13 @@ def render(data: Path, out: Path):
         ("Project NANDA","Agent naming and discovery","Project-level comparison only"),
         ("ATrust","Agent trust relationships","Project-level comparison only"),
         ("DCP-AI","Discovery and control plane","Project-level comparison only")]),
-      "claim-boundaries.tex": table(["Class","Meaning","Example"],[
-        ("Implemented","Executable behavior verified in repository","Fail-closed provider boundary"),
-        ("Declarative","Validated metadata with no external execution","ATrust evidence map"),
-        ("Proposed","Future design; not implemented","Operational federation"),
-        ("Not claimed","Outside paper evidence","Operational DNS deployment")]),
+      "claim-boundaries.tex": table(
+        ["Concept","Implemented","Declarative","Proposed","Not claimed"],[
+        ("Provider boundary","simulated allowlist","contract metadata","--","external execution"),
+        ("Trust evidence","digest bundle","ATrust map","--","live attestation"),
+        ("Discovery","local catalog","sovereign metadata","federation","operational DNS"),
+        ("Security scope","fail-closed controls","threat mappings","deployment study","certification"),
+      ]),
     }
     for name,text in files.items(): (out/name).write_text(text,encoding="utf-8",newline="\n")
 

@@ -87,3 +87,90 @@ def test_latex_escape_covers_every_special_character():
     assert escaped == (
         r"\textbackslash{}\&\%\$\#\_\{\}\textasciitilde{}\textasciicircum{}"
     )
+
+
+def _pdf_blocks(path):
+    import fitz
+    doc = fitz.open(path)
+    page = doc[0]
+    blocks = [
+        (tuple(block[:4]), " ".join(block[4].split()))
+        for block in page.get_text("blocks")
+        if block[4].strip()
+    ]
+    return page.rect, blocks
+
+
+def test_every_pdf_text_block_is_inside_page(tmp_path):
+    out = tmp_path / "figures"
+    run("generate_figures.py", out)
+    for pdf in out.glob("*.pdf"):
+        page, blocks = _pdf_blocks(pdf)
+        assert blocks, pdf.name
+        for (x0, y0, x1, y1), text in blocks:
+            assert x0 >= 0 and y0 >= 0 and x1 <= page.width and y1 <= page.height, (
+                pdf.name, text, (x0, y0, x1, y1), page
+            )
+
+
+def test_flow_node_labels_have_separate_nonoverlapping_text_blocks(tmp_path):
+    import fitz
+    out = tmp_path / "figures"
+    run("generate_figures.py", out)
+    expected = {
+        "architecture.pdf": [
+            "Argorix source", "Parser + semantics", "Typed IR + bytecode",
+            "Fail-closed VM", "Trace + ledger", "Evidence + reports",
+        ],
+        "artifact-schema.pdf": [
+            "session.argx", "session.argbc.json", "session.trace.json",
+            "session.security.json", "session.evidence.json",
+        ],
+        "claim-boundaries.pdf": [
+            "Implemented", "Declarative", "Proposed", "Not claimed",
+        ],
+        "evolution-timeline.pdf": [
+            "Core runtime", "Provider contracts", "Evidence + governance",
+            "Operational federation",
+        ],
+    }
+    for name, labels in expected.items():
+        page = fitz.open(out / name)[0]
+        words = page.get_text("words")
+        text_tokens = [word[4] for word in words]
+        label_boxes = []
+        for label in labels:
+            tokens = label.split()
+            starts = [
+                i for i in range(len(words) - len(tokens) + 1)
+                if text_tokens[i:i + len(tokens)] == tokens
+            ]
+            assert len(starts) == 1, (name, label, text_tokens)
+            group = words[starts[0]:starts[0] + len(tokens)]
+            label_boxes.append((
+                min(w[0] for w in group), min(w[1] for w in group),
+                max(w[2] for w in group), max(w[3] for w in group),
+            ))
+        ordered = sorted(label_boxes)
+        for left, right in zip(ordered, ordered[1:]):
+            assert left[2] + 4 <= right[0], (name, left, right)
+
+
+def test_claim_boundary_table_has_four_status_columns(tmp_path):
+    out = tmp_path / "tables"
+    run("render_tables.py", out)
+    lines = (out / "claim-boundaries.tex").read_text(encoding="utf-8").splitlines()
+    header = next(line for line in lines if "Implemented" in line)
+    assert header == (
+        r"Concept & Implemented & Declarative & Proposed & Not claimed \\"
+    )
+
+
+def test_policy_heatmap_reserves_space_for_colorbar(tmp_path):
+    out = tmp_path / "figures"
+    run("generate_figures.py", out)
+    page, blocks = _pdf_blocks(out / "policy-heatmap.pdf")
+    title = next(box for box, text in blocks if "Policy and evidence" in text)
+    tick_boxes = [box for box, text in blocks if text in {"2000", "3000", "4000", "5000", "6000", "7000"}]
+    assert tick_boxes
+    assert title[2] + 12 < min(box[0] for box in tick_boxes)

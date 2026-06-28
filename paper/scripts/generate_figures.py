@@ -24,7 +24,7 @@ PDF_META = {"Creator": "Argorix paper pipeline", "Producer": "Matplotlib",
 
 
 def canvas(title: str, wide: bool = False):
-    fig, ax = plt.subplots(figsize=(7.0 if wide else 3.35, 3.6))
+    fig, ax = plt.subplots(figsize=(10.0 if wide else 3.35, 3.6))
     fig.patch.set_facecolor("white")
     ax.set(xlim=(0, 10), ylim=(0, 10))
     ax.axis("off")
@@ -56,9 +56,11 @@ def architecture(path):
     fig, ax = canvas("Argorix compilation and evidence architecture", True)
     labels = ["Argorix source", "Parser + semantics", "Typed IR + bytecode",
               "Fail-closed VM", "Trace + ledger", "Evidence + reports"]
+    labels = ["Argorix\nsource", "Parser +\nsemantics", "Typed IR +\nbytecode",
+              "Fail-closed\nVM", "Trace +\nledger", "Evidence +\nreports"]
     for i, label in enumerate(labels):
-        x = .25 + i * 1.63
-        box(ax, x, 4.2, 1.35, 1.5, label, [NAVY, BLUE, SKY, GREEN, ORANGE, RED][i])
+        x = .2 + i * 1.65
+        box(ax, x, 4.2, 1.3, 1.5, label, [NAVY, BLUE, SKY, GREEN, ORANGE, RED][i])
         if i: arrow(ax, (x-.27, 4.95), (x, 4.95))
     ax.text(5, 2.5, "Offline runtime boundary • simulated is the sole executable provider",
             ha="center", color=GREY)
@@ -104,23 +106,40 @@ def empirical(data, out):
     completed=[r for r in rows if r.get("complete","").lower()=="true"]
     values=[[sum(int(r.get("policy_violation_count") or 0) for r in completed),
              sum(int(r.get("ledger_events_total") or 0) for r in completed)]]
-    fig,ax=plt.subplots(figsize=(3.35,3.2))
+    fig=plt.figure(figsize=(7.0,3.2), constrained_layout=True)
+    grid=fig.add_gridspec(1,2,width_ratios=[15,1],wspace=.35)
+    ax=fig.add_subplot(grid[0,0]); cax=fig.add_subplot(grid[0,1])
     im=ax.imshow(values,cmap=matplotlib.colors.LinearSegmentedColormap.from_list("argorix",[PALE,ORANGE,RED]))
     ax.set_xticks([0,1],["Policy\nviolations","Ledger\nevents"]); ax.set_yticks([0],["Observed total"])
     for j,v in enumerate(values[0]): ax.text(j,0,f"{v:,}",ha="center",va="center",color=NAVY,weight="bold")
     ax.set_title("Policy and evidence event volume",color=NAVY,weight="bold")
-    fig.colorbar(im,ax=ax,fraction=.05,pad=.08)
+    fig.colorbar(im,cax=cax)
     save(fig,out/"policy-heatmap.pdf")
+
+
+def wrap_label(label):
+    words=label.split()
+    if len(words) <= 1: return label
+    midpoint=(len(words)+1)//2
+    return " ".join(words[:midpoint])+"\n"+" ".join(words[midpoint:])
 
 
 def flow_figure(path, title, labels, proposed=None):
     fig,ax=canvas(title, True)
-    n=len(labels); gap=9.2/n
+    n=len(labels); gap=9.55/n
     for i,label in enumerate(labels):
-        x=.25+i*gap; is_prop=proposed is not None and i>=proposed
-        shown=("PROPOSED / NOT IMPLEMENTED\n"+label) if is_prop else label
-        box(ax,x,4.1,gap-.35,1.8,shown,[BLUE,GREEN,ORANGE,RED][i%4],is_prop)
-        if i: arrow(ax,(x-.28,5),(x,5),is_prop)
+        x=.15+i*gap; is_prop=proposed is not None and i in proposed
+        shown=wrap_label(label)
+        if is_prop:
+            width=gap-.6
+            box(ax,x,4.1,width,1.8,"",[BLUE,GREEN,ORANGE,RED][i%4],True)
+            ax.text(x+width/2,5.43,"PROPOSED / NOT IMPLEMENTED",
+                    ha="center",va="center",fontsize=6,color=GREY,weight="bold")
+            ax.text(x+width/2,4.78,shown,ha="center",va="center",
+                    fontsize=8,color=NAVY)
+        else:
+            box(ax,x,4.1,gap-.6,1.8,shown,[BLUE,GREEN,ORANGE,RED][i%4])
+        if i: arrow(ax,(x-.48,5),(x,5),is_prop)
     save(fig,path)
 
 
@@ -137,13 +156,13 @@ def generate(data: Path, out: Path):
     flow_figure(out/"threat-mitigation.pdf","Threat-to-control mapping",
                 ["External execution","Deny by default","Network denied","Secrets denied","Review evidence"])
     flow_figure(out/"evolution-timeline.pdf","Language evolution and bounded future work",
-                ["Core runtime","Provider contracts","Evidence + governance","Operational federation"],3)
+                ["Core runtime","Provider contracts","Evidence + governance","Operational federation"],{3})
     flow_figure(out/"sovereign-discovery.pdf","Sovereign discovery boundary",
-                ["Local declaration","Semantic validation","Offline catalog","Operational DNS"],3)
+                ["Local declaration","Semantic validation","Offline catalog","Operational DNS"],{3})
     flow_figure(out/"artifact-schema.pdf","Normalized artifact relationships",
                 ["session.argx","session.argbc.json","session.trace.json","session.security.json","session.evidence.json"])
     flow_figure(out/"claim-boundaries.pdf","Claim boundary taxonomy",
-                ["Implemented","Declarative","Proposed","Not claimed"],2)
+                ["Implemented","Declarative","Proposed","Not claimed"],{2})
 
 
 def main():
