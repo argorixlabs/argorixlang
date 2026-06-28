@@ -1,0 +1,33 @@
+{
+  "title": "ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence",
+  "upload_type": "software",
+  "description": "Research release of ArgorixLang, a compiled language and runtime for AI-agent governance, sovereign metadata, provider boundaries, and offline-verifiable runtime evidence.",
+  "creators": [
+    {
+      "name": "Venegas, Gustavo",
+      "affiliation": "Chilean Chamber of Artificial Intelligence"
+    },
+    {
+      "name": "Vazquez, Edison",
+      "affiliation": "Chilean Chamber of Artificial Intelligence"
+    },
+    {
+      "name": "Naranjo, Danilo",
+      "affiliation": "Ocular"
+    },
+    {
+      "name": "Gonzalez, Benjamin",
+      "affiliation": "Chilean Chamber of Artificial Intelligence"
+    }
+  ],
+  "keywords": [
+    "AI agents",
+    "agent governance",
+    "runtime evidence",
+    "sovereign metadata",
+    "compiled governance",
+    "ArgorixLang"
+  ],
+  "license": "Apache-2.0",
+  "access_right": "open"
+}
