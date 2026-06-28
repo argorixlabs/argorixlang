@@ -26,6 +26,18 @@
 [![DCO](https://github.com/argorixlabs/argorixlang/actions/workflows/dco.yml/badge.svg)](https://github.com/argorixlabs/argorixlang/actions/workflows/dco.yml)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196.svg)](https://conventionalcommits.org)
 
+<div align="center">
+
+<!-- GitHub strips <iframe>, so this clickable thumbnail is the embed that renders on the repo page. -->
+<a href="https://www.youtube.com/watch?v=ZhQMps17CFo">
+  <img width="560" src="https://img.youtube.com/vi/ZhQMps17CFo/maxresdefault.jpg" alt="Watch the Argorix Lang video" />
+</a>
+
+<!-- Renders on sites that allow iframes (e.g. argorix-lang.org). -->
+<iframe width="560" height="315" src="https://www.youtube.com/embed/ZhQMps17CFo?si=6UW1u-i3evlLdN04" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+</div>
+
 # Argorix Lang
 
 **Argorix Lang** is a compiled language for secure, verifiable communication between AI agents.
