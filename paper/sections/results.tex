@@ -61,10 +61,12 @@ a recorded denial independently prove host-level enforcement.
 
 \subsection{Offline bundle verification}
 All 27 complete bundles pass the repository's offline verifier (27/27).  Their
-bytecode, trace, security-report, and embedded-ledger digest fields are syntactically valid
+bytecode, trace, security-report, and trace-event-ledger digest fields are syntactically valid
 SHA-256 identifiers.  The successful result answers RQ3 narrowly: given each
 bundle and its relative artifact paths, the verifier can reproduce the
-semantic digests and cross-artifact linkage without network access.  The
+semantic digests, recompute the ledger digest from trace events, check the
+SecurityReport LedgerSummary's stored digest against it, and validate
+cross-artifact linkage without network access.  The
 verifier does not digest or verify \code{session.argx}; source integrity is
 outside this result.
 

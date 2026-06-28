@@ -16,7 +16,8 @@ fail-closed application architecture, while leaving host isolation untested.
 \paragraph{RQ3: evidence and offline consistency.}
 Trace, SecurityReport, and EvidenceBundle serve different functions: event
 history, interpreted runtime state, and content linkage among bytecode, trace,
-security report, and embedded ledger.  All complete bundles verify offline;
+security report, and the ledger digest derived from trace events.  The report's
+LedgerSummary stores that digest, not the events.  All complete bundles verify offline;
 the upstream source is not part of that verification.  The policy contradiction proves why these artifacts should
 not be collapsed: valid evidence can faithfully preserve an unfavorable
 result.

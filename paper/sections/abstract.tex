@@ -10,7 +10,8 @@ claimed.  We study an authorized corpus of 33 runtime request directories using
 a reproducible, observational pipeline.  Twenty-seven directories contain all
 five expected artifacts and six contain source only.  All 27 complete evidence
 bundles pass offline digest and cross-artifact verification of bytecode, trace,
-security report, and embedded ledger; source integrity is outside bundle
+and security report, including a ledger digest recomputed from trace events and
+matched against the report's LedgerSummary; source integrity is outside bundle
 verification.  At the same time,
 all 27 detailed policy reports set \code{passed=false}, require review, and
 record 44 unknown-rule violations each, despite a favorable top-level

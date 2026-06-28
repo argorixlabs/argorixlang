@@ -19,7 +19,7 @@ virtual machine \citep{argorixlang2026}.  The core design decision is to retain
 source-faithful declarations until semantic validation, then lower only
 validated constructs.  Runtime decisions produce a trace, a SecurityReport,
 and an EvidenceBundle containing semantic SHA-256 digests for bytecode, trace,
-the security report, and its embedded ledger.  Source remains an upstream
+the security report, and the trace event ledger.  Source remains an upstream
 input outside bundle verification.  An executable
 provider registry is separate from declarative external-provider contracts.
 In the studied configuration, only \code{simulated} is executable.

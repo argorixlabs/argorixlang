@@ -9,8 +9,8 @@ and policy events.  The SecurityReport is a structured interpretation of
 runtime evidence, including execution status, policy results, review state,
 provider boundary, and declared controls.  The EvidenceBundle records four
 semantic SHA-256 values: \code{bytecode_digest}, \code{trace_digest},
-\code{report_digest} for the security report, and \code{ledger_digest} for the
-ledger embedded in that report.  Its artifact map contains
+\code{report_digest} for the security report, and \code{ledger_digest}, which
+is the canonical digest of \code{trace.events}.  Its artifact map contains
 \code{bytecode_path}, \code{trace_path}, and
 \code{security_report_path}; there is no source path or source digest, and
 there is no standalone ledger path.
@@ -20,19 +20,22 @@ there is no standalone ledger path.
 \includegraphics[width=\linewidth]{artifact-schema.pdf}
 \caption{Schema-level view of the five-artifact request directory. Source is an
 upstream input outside EvidenceBundle verification; the bundle references
-bytecode, trace, security-report, and embedded-ledger semantic digests and does
-not contain a security verdict.}
+bytecode, trace, and security-report semantic digests plus a ledger digest
+derived from trace events, and does not contain a security verdict.}
 \label{fig:artifact-schema}
 \end{figure}
 
 A semantic digest is computed over canonical JSON derived from a deserialized
 value, avoiding dependence on whitespace or object-key formatting.  The three
 artifact paths resolve relative to the bundle directory.  Offline verification
-loads bytecode, trace, and the security report, recomputes their semantic
-digests and the digest of the report's embedded ledger, and compares all four
-values with the bundle.  It requires neither network access nor provider
-credentials.  This verifies internal linkage among the bundled JSON values.
-Source integrity is outside EvidenceBundle verification.
+loads bytecode, trace, and the security report and recomputes their three
+semantic digests.  It separately computes \code{ledger_digest} from
+\code{trace.events}.  Finally, it checks that the \code{ledger_digest} stored
+in the SecurityReport's LedgerSummary equals the bundle's
+\code{ledger_digest}; the report stores this summary digest, not ledger events.
+It requires neither network access nor provider credentials.  This verifies
+the relationships encoded by the bundle.  Source integrity is outside
+EvidenceBundle verification.
 
 \Cref{fig:artifact-schema} exposes this asymmetry: a complete request directory
 contains source, but the bundle verifier starts at compiled bytecode and never

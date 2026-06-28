@@ -46,8 +46,8 @@ root-relative paths and provide every mandatory analyzer argument:
 \begin{lstlisting}
 python -m pip install -r paper/requirements.txt
 python paper/scripts/analyze_runtime.py --input ../../demo/argorix-chatbot-runtime/generated --summary paper/data/runtime_summary.json --sessions paper/data/sessions.csv --events paper/data/event_counts.csv
-python paper/scripts/render_tables.py
-python paper/scripts/generate_figures.py
+python paper/scripts/render_tables.py --data paper/data --output paper/tables
+python paper/scripts/generate_figures.py --data paper/data --output paper/figures
 powershell -File paper/scripts/verify_runtime.ps1 -InputRoot ../../demo/argorix-chatbot-runtime/generated -OutputPath paper/data/verification-results.json
 python paper/scripts/check_manuscript.py
 python -m pytest paper/tests -q

@@ -144,14 +144,49 @@ def flow_figure(path, title, labels, proposed=None):
     save(fig,path)
 
 
+def evidence_verification_scope(path):
+    fig, ax = canvas("Offline evidence verification scope", True)
+    nodes = [
+        (.12, "Source\n(upstream;\nnot bundle-verified)", GREY, True),
+        (2.05, "Bytecode", BLUE, False),
+        (3.85, "Trace +\nevents", GREEN, False),
+        (5.65, "Security\nreport", ORANGE, False),
+        (7.70, "Evidence\nbundle", RED, False),
+    ]
+    widths = [1.48, 1.25, 1.25, 1.35, 1.55]
+    for (x, label, color, dashed), width in zip(nodes, widths):
+        box(ax, x, 4.55, width, 1.75, label, color, dashed)
+    arrow(ax, (1.60, 5.42), (2.05, 5.42), dashed=True)
+    arrow(ax, (3.30, 5.42), (3.85, 5.42), color=GREEN)
+    arrow(ax, (5.10, 5.42), (5.65, 5.42), color=ORANGE)
+    arrow(ax, (7.00, 5.42), (7.70, 5.42), color=RED)
+    ax.text(
+        5.0,
+        2.85,
+        "Bundle checks bytecode, trace, and report digests",
+        ha="center",
+        color=NAVY,
+        fontsize=8,
+        weight="bold",
+    )
+    ax.text(
+        5.0,
+        2.10,
+        "ledger_digest = digest(trace.events); report LedgerSummary must match",
+        ha="center",
+        color=GREY,
+        fontsize=8,
+    )
+    save(fig, path)
+
+
 def generate(data: Path, out: Path):
     out.mkdir(parents=True,exist_ok=True)
     architecture(out/"architecture.pdf")
     request_sequence(out/"request-sequence.pdf")
     state_machine(out/"decision-state-machine.pdf")
     empirical(data,out)
-    flow_figure(out/"evidence-chain.pdf","Tamper-evident evidence chain",
-                ["Source","Bytecode digest","Trace ledger","Security report","Evidence bundle"])
+    evidence_verification_scope(out/"evidence-chain.pdf")
     flow_figure(out/"trust-relationships.pdf","Declarative trust relationships",
                 ["Agent identity","Passport","ATrust map","Trust ledger","Claim boundary"])
     flow_figure(out/"threat-mitigation.pdf","Threat-to-control mapping",

@@ -34,15 +34,16 @@ checks demonstrates that a remote party is genuine.
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{evidence-chain.pdf}
-\caption{From declarative trust relationships to runtime artifacts and
-semantic digests. Digest validity establishes content linkage only; it does not
-validate the truth of a credential or policy assertion.}
+\caption{Offline evidence verification scope. Source is upstream and outside
+bundle verification; verified inputs are bytecode, trace, and security report,
+with the ledger digest derived from trace events and matched to the report's
+LedgerSummary.}
 \label{fig:evidence-chain}
 \end{figure}
 
-\Cref{fig:evidence-chain} therefore ends the implemented chain at local
-artifact linkage; it does not extend the chain to an issuer, credential
-authority, or remote agent.
+\Cref{fig:evidence-chain} therefore distinguishes the dashed, unverified source
+input from the bundle-verified JSON artifacts.  Its scope does not extend to an
+issuer, credential authority, or remote agent.
 
 MCP and A2A bridges follow the same principle.  They bind agents, passports,
 identities, message contracts, and boundaries while requiring network and

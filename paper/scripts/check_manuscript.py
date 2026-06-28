@@ -155,9 +155,12 @@ def main() -> None:
         r"\code{bytecode_path}",
         r"\code{trace_path}",
         r"\code{security_report_path}",
+        r"computes \code{ledger_digest} from \code{trace.events}",
+        "the report stores this summary digest, not ledger events",
     ]
+    normalized_text = re.sub(r"\s+", " ", text)
     for claim in required_claims:
-        if claim not in text:
+        if claim not in normalized_text:
             fail(f"required traceable claim absent: {claim}")
 
     forbidden = [
@@ -178,6 +181,9 @@ def main() -> None:
         "source digest verification",
         "source, bytecode, trace, report, and ledger",
         "verifies source, bytecode",
+        "embedded ledger",
+        "embedded-ledger",
+        "report's embedded ledger",
     ]
     for phrase in unsupported_bundle_claims:
         if phrase in lowered:

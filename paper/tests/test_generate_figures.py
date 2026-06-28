@@ -56,6 +56,25 @@ def test_figures_are_deterministic(tmp_path):
     assert digests(first) == digests(second)
 
 
+def test_evidence_figure_matches_verifier_scope(tmp_path):
+    import fitz
+    out = tmp_path / "figures"
+    run("generate_figures.py", out)
+    text = " ".join(fitz.open(out / "evidence-chain.pdf")[0].get_text().split())
+    for required in (
+        "Offline evidence verification scope",
+        "Source (upstream; not bundle-verified)",
+        "Bytecode",
+        "Trace + events",
+        "Security report",
+        "Evidence bundle",
+        "ledger_digest = digest(trace.events)",
+        "report LedgerSummary must match",
+    ):
+        assert required in text
+    assert "Tamper-evident evidence chain" not in text
+
+
 def test_render_exact_latex_inventory_and_escape(tmp_path):
     out = tmp_path / "tables"
     run("render_tables.py", out)
