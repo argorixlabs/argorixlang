@@ -2462,3 +2462,13 @@ Secure AI-agent systems should be:
 Argorix Lang is an open-source exploration of that direction.
 
 > Rust is the forge. Argorix Lang is the sword.
+
+## Demo1
+
+A chatbot governed by Argorix Lang v1.0 — contracts, policy, evidence and
+fail-closed enforcement (including input-boundary prompt-injection / secret
+exfiltration blocking). Source: [`demo/argorix-chatbot-runtime/`](demo/argorix-chatbot-runtime/).
+
+<video src="https://github.com/argorixlabs/argorixlang/raw/main/videodemo/Demo1.mp4" controls width="720"></video>
+
+▶️ If the player does not load above, [watch Demo1 directly](videodemo/Demo1.mp4).

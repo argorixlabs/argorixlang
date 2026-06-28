@@ -1,0 +1,25 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# secrets — never commit real environment values
+.env
+.env.local
+.env.*.local
+
+# argorix per-session generated artifacts (contracts, bytecode, evidence, reports)
+/generated/*
+!/generated/.gitkeep
+
+# build info
+*.tsbuildinfo
+
+# os / editor
+.DS_Store
+*.log
