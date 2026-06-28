@@ -4,6 +4,7 @@
 import argparse
 import csv
 import json
+import os
 import re
 from pathlib import Path
 
@@ -17,6 +18,13 @@ ARTIFACT_NAMES = (
 )
 JSON_ARTIFACTS = ARTIFACT_NAMES[1:]
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
+REPARSE_POINT = 0x400
+SECRET_ASSIGNMENT = re.compile(
+    r"(?i)\b(api[_ -]?key|password|passwd|token|secret)"
+    r"(\s*[:=]\s*)[\"']?[^\s,\"';]+"
+)
+BEARER_SECRET = re.compile(r"(?i)\bBearer\s+[^\s,;]+")
+KEY_SHAPE = re.compile(r"\b(?:sk|rk|pk|tok)[_-][A-Za-z0-9_-]{8,}\b")
 
 
 def _mapping(value):
@@ -31,15 +39,68 @@ def _sorted_strings(value):
     return sorted(str(item) for item in _list(value))
 
 
+def _sanitize_text(value, limit=200):
+    if not isinstance(value, str):
+        return None
+    text = value.replace("\x00", "")
+    text = BEARER_SECRET.sub("Bearer [REDACTED]", text)
+    text = SECRET_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", text
+    )
+    text = KEY_SHAPE.sub("[REDACTED]", text)
+    for key, secret in os.environ.items():
+        if (
+            secret
+            and len(secret) >= 4
+            and any(marker in key.upper() for marker in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+        ):
+            text = text.replace(secret, "[REDACTED]")
+    if len(text) > limit:
+        text = text[:limit] + "…"
+    return text
+
+
+def _sanitize_strings(value, limit=120):
+    return sorted(
+        sanitized
+        for item in _list(value)
+        if (sanitized := _sanitize_text(item, limit)) is not None
+    )
+
+
 def _names(value):
     value = _mapping(value)
     if isinstance(value.get("names"), list):
-        return _sorted_strings(value["names"])
+        return _sanitize_strings(value["names"])
     return sorted(
-        str(item["name"])
+        sanitized
         for item in _list(value)
         if isinstance(item, dict) and "name" in item
+        if (sanitized := _sanitize_text(item["name"], 120)) is not None
     )
+
+
+def _is_link_or_reparse(path):
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        if is_junction is not None and is_junction():
+            return True
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+        return bool(attributes & REPARSE_POINT)
+    except OSError:
+        return True
+
+
+def _contained_resolved_path(root, path):
+    if _is_link_or_reparse(path):
+        return None
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return None
+    return resolved if resolved.is_relative_to(root) else None
 
 
 def _load_json(path, errors):
@@ -50,19 +111,53 @@ def _load_json(path, errors):
         return {}
 
 
-def _normalize_session(directory):
+def _normalize_provider_boundary(value):
+    boundary = _mapping(value)
+    contracts = [
+        item for item in _list(boundary.get("declarative_contracts"))
+        if isinstance(item, dict)
+    ]
+    return {
+        "executable_providers": _sanitize_strings(
+            boundary.get("executable_providers")
+        ),
+        "declarative_contract_names": sorted(
+            name
+            for item in contracts
+            if (name := _sanitize_text(item.get("name"), 120)) is not None
+        ),
+        "external_contracts_total": (
+            boundary.get("external_contracts_total")
+            if isinstance(boundary.get("external_contracts_total"), int)
+            else None
+        ),
+        "external_execution_blocked": (
+            boundary.get("external_execution_blocked")
+            if isinstance(boundary.get("external_execution_blocked"), bool)
+            else None
+        ),
+        "blocked_attempts": (
+            boundary.get("blocked_attempts")
+            if isinstance(boundary.get("blocked_attempts"), int)
+            else None
+        ),
+    }
+
+
+def _normalize_session(root, directory):
     artifacts = {}
     for name in ARTIFACT_NAMES:
         path = directory / name
-        present = path.is_file()
+        safe_path = _contained_resolved_path(root, path) if path.exists() else None
+        present = safe_path is not None and safe_path.is_file()
         artifacts[name] = {
             "present": present,
-            "size_bytes": path.stat().st_size if present else 0,
+            "size_bytes": safe_path.stat().st_size if present else 0,
         }
 
     errors = {}
     documents = {
-        name: _load_json(directory / name, errors)
+        name: _load_json(_contained_resolved_path(root, directory / name), errors)
         for name in JSON_ARTIFACTS
         if artifacts[name]["present"]
     }
@@ -83,7 +178,7 @@ def _normalize_session(directory):
                     event_kinds[str(kind)] = event_kinds.get(str(kind), 0) + 1
     event_kinds = {key: event_kinds[key] for key in sorted(event_kinds)}
     passports = _mapping(security.get("agent_passports"))
-    boundary = _mapping(security.get("provider_boundary"))
+    boundary = _normalize_provider_boundary(security.get("provider_boundary"))
     digest_values = {}
     for key in ("bytecode_digest", "trace_digest", "report_digest", "ledger_digest"):
         value = evidence.get(key)
@@ -97,9 +192,7 @@ def _normalize_session(directory):
     # trace producer includes the authorized content, read only that bounded
     # field; never recursively search payloads where secret values also live.
     injected = _mapping(trace.get("injected"))
-    prompt = injected.get("content")
-    if not isinstance(prompt, str):
-        prompt = None
+    prompt = _sanitize_text(injected.get("content"), 2000)
 
     execution = _mapping(security.get("execution"))
     security_checks = trace.get("security_checks")
@@ -116,10 +209,14 @@ def _normalize_session(directory):
         "review_required": policy.get("review_required"),
         "policy_violation_count": len(violations),
         "policy_violation_rules": sorted(
-            str(item["rule"]) for item in violations if item.get("rule") is not None
+            text for item in violations
+            if (text := _sanitize_text(item.get("rule"), 200)) is not None
         ),
         "policy_violation_reasons": sorted(
-            {str(item["reason"]) for item in violations if item.get("reason") is not None}
+            {
+                text for item in violations
+                if (text := _sanitize_text(item.get("reason"), 500)) is not None
+            }
         ),
         "security_checks": security_checks,
         "ledger_events_total": ledger.get(
@@ -147,10 +244,14 @@ def _normalize_session(directory):
 def inventory_sessions(root: Path):
     """Return a deterministic inventory of request directories under *root*."""
     root = Path(root)
+    if _is_link_or_reparse(root):
+        raise ValueError(f"input root must not be a link or reparse point: {root}")
+    root = root.resolve(strict=True)
     sessions = [
-        _normalize_session(path)
+        _normalize_session(root, safe_path)
         for path in sorted(root.iterdir(), key=lambda item: item.name)
-        if path.is_dir()
+        if (safe_path := _contained_resolved_path(root, path)) is not None
+        and safe_path.is_dir()
     ]
     complete = sum(1 for session in sessions if session["complete"])
     return {
@@ -168,7 +269,20 @@ def _csv_value(value):
         return ""
     if isinstance(value, bool):
         return str(value).lower()
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
     return value
+
+
+def validate_output_paths(input_root, summary, sessions, events):
+    root = Path(input_root).resolve(strict=True)
+    outputs = [
+        Path(path).resolve(strict=False) for path in (summary, sessions, events)
+    ]
+    if len(set(outputs)) != len(outputs):
+        raise ValueError("output paths must be distinct")
+    if any(path == root or path.is_relative_to(root) for path in outputs):
+        raise ValueError("output paths must be outside the input root")
 
 
 def _write_sessions(path, sessions):
@@ -207,6 +321,7 @@ def main():
     parser.add_argument("--events", required=True, type=Path)
     args = parser.parse_args()
 
+    validate_output_paths(args.input, args.summary, args.sessions, args.events)
     inventory = inventory_sessions(args.input)
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(

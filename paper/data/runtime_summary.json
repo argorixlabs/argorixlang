@@ -185,17 +185,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -396,17 +387,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -607,17 +589,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -818,17 +791,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -1029,17 +993,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -1113,7 +1068,13 @@
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
       "prompt_text": null,
-      "provider_boundary": {},
+      "provider_boundary": {
+        "blocked_attempts": null,
+        "declarative_contract_names": [],
+        "executable_providers": [],
+        "external_contracts_total": null,
+        "external_execution_blocked": null
+      },
       "request_id": "44aebee5-3e10-4bd3-9895-8df63d9219a9",
       "review_required": null,
       "runtime_profiles": [],
@@ -1303,17 +1264,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -1514,17 +1466,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -1725,17 +1668,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -1936,17 +1870,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -2147,17 +2072,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -2231,7 +2147,13 @@
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
       "prompt_text": null,
-      "provider_boundary": {},
+      "provider_boundary": {
+        "blocked_attempts": null,
+        "declarative_contract_names": [],
+        "executable_providers": [],
+        "external_contracts_total": null,
+        "external_execution_blocked": null
+      },
       "request_id": "5d00e350-4412-446e-9897-7aa86534069a",
       "review_required": null,
       "runtime_profiles": [],
@@ -2421,17 +2343,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -2505,7 +2418,13 @@
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
       "prompt_text": null,
-      "provider_boundary": {},
+      "provider_boundary": {
+        "blocked_attempts": null,
+        "declarative_contract_names": [],
+        "executable_providers": [],
+        "external_contracts_total": null,
+        "external_execution_blocked": null
+      },
       "request_id": "7014acb3-926b-485f-ad8a-ebd6d17d59ed",
       "review_required": null,
       "runtime_profiles": [],
@@ -2695,17 +2614,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -2906,17 +2816,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -3117,17 +3018,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -3328,17 +3220,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -3539,17 +3422,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -3750,17 +3624,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -3961,17 +3826,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -4172,17 +4028,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -4383,17 +4230,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -4594,17 +4432,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -4805,17 +4634,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -5016,17 +4836,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -5227,17 +5038,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -5438,17 +5240,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -5649,17 +5442,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -5733,7 +5517,13 @@
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
       "prompt_text": null,
-      "provider_boundary": {},
+      "provider_boundary": {
+        "blocked_attempts": null,
+        "declarative_contract_names": [],
+        "executable_providers": [],
+        "external_contracts_total": null,
+        "external_execution_blocked": null
+      },
       "request_id": "f13aea99-2469-455c-8838-db60b4d37f5e",
       "review_required": null,
       "runtime_profiles": [],
@@ -5923,17 +5713,8 @@
       "prompt_text": null,
       "provider_boundary": {
         "blocked_attempts": 1,
-        "declarative_contracts": [
-          {
-            "allowed_capabilities": [],
-            "allowed_targets": [],
-            "dry_run_only": true,
-            "enabled": false,
-            "kind": "external",
-            "name": "OpenAIProvider",
-            "requires_explicit_approval": true,
-            "requires_feature_flag": true
-          }
+        "declarative_contract_names": [
+          "OpenAIProvider"
         ],
         "executable_providers": [
           "simulated"
@@ -6007,7 +5788,13 @@
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
       "prompt_text": null,
-      "provider_boundary": {},
+      "provider_boundary": {
+        "blocked_attempts": null,
+        "declarative_contract_names": [],
+        "executable_providers": [],
+        "external_contracts_total": null,
+        "external_execution_blocked": null
+      },
       "request_id": "fbd72430-b314-4c32-8016-8b8f7f1c9ba6",
       "review_required": null,
       "runtime_profiles": [],
@@ -6070,7 +5857,13 @@
       "policy_violation_reasons": [],
       "policy_violation_rules": [],
       "prompt_text": null,
-      "provider_boundary": {},
+      "provider_boundary": {
+        "blocked_attempts": null,
+        "declarative_contract_names": [],
+        "executable_providers": [],
+        "external_contracts_total": null,
+        "external_execution_blocked": null
+      },
       "request_id": "fce226f0-3501-4e29-87b0-d437feca6896",
       "review_required": null,
       "runtime_profiles": [],
