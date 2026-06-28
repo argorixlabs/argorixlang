@@ -1,0 +1,15 @@
+citation_key,title,source_type,primary_url,metadata_verified,notes
+projectnanda2026,Architecting the Internet of AI Agents,official project website,https://projectnanda.org/,true,Corporate authorship and displayed title verified on the Project NANDA website
+raskar2025beyonddns,Beyond DNS: Unlocking the Internet of AI Agents via the NANDA Index and Verified AgentFacts,primary research preprint,https://arxiv.org/abs/2507.14263,true,Authors title year identifier DOI and subject class verified on arXiv
+vazquez_atrust,ATrust: Agentic Trust Protocol,unpublished conceptual protocol,,true,Author and title verified only against the user-supplied manuscript requirements; no independent public record found and no year DOI venue or URL asserted
+naranjo_dcpai,Agents Don't Need a Better Brain---They Need a World: Toward a Digital Citizenship Protocol for Autonomous AI Systems,primary research preprint,https://engrxiv.org/preprint/view/6671,true,Public preprint verifies author title date affiliation and DCP-AI project framing
+w3c_did_core_2022,"Decentralized Identifiers (DIDs) v1.0: Core Architecture, Data Model, and Representations",W3C Recommendation,https://www.w3.org/TR/2022/REC-did-core-20220719/,true,Publication date authors and stable recommendation URL verified on W3C
+w3c_vc_data_model_2025,Verifiable Credentials Data Model v2.0,W3C Recommendation,https://www.w3.org/TR/2025/REC-vc-data-model-2.0-20250515/,true,Publication date credited authors and stable recommendation URL verified on W3C
+mockapetris1987dnsconcepts,Domain Names---Concepts and Facilities,IETF RFC,https://www.rfc-editor.org/rfc/rfc1034.html,true,Author date RFC number and DOI verified through RFC Editor
+mockapetris1987dnsimplementation,Domain Names---Implementation and Specification,IETF RFC,https://www.rfc-editor.org/rfc/rfc1035.html,true,Author date RFC number and DOI verified through RFC Editor
+tabassi2023airmf,Artificial Intelligence Risk Management Framework (AI RMF 1.0),NIST technical report,https://doi.org/10.6028/NIST.AI.100-1,true,Author report number date and DOI verified through NIST
+mcp_spec_2025,Model Context Protocol Specification Version 2025-06-18,official protocol specification,https://modelcontextprotocol.io/specification/2025-06-18,true,Version and authoritative specification status verified on official MCP site
+a2a_spec,A2A Protocol Specification,official protocol specification,https://a2a-protocol.org/latest/specification/,true,Title and current specification URL verified on official A2A Project site; no publication year asserted
+rust_project,The Rust Programming Language,official project website,https://rust-lang.org/,true,Project name and official URL verified on Rust Project site; no publication year asserted
+owasp_llm_top10,OWASP Top 10 for Large Language Model Applications,primary security guidance,https://owasp.org/www-project-top-10-for-large-language-model-applications/,true,Title and project ownership verified on OWASP
+argorixlang2026,ArgorixLang,software repository,https://github.com/argorixlabs/argorixlang,true,Repository URL verified from git origin and version 1.0.0 verified from Cargo.toml
