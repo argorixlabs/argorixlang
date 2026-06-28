@@ -31,7 +31,9 @@ authorized artifact snapshot.}
 \input{tables/dataset-inventory}
 \end{table}
 
-The analysis parses available JSON, records parse errors, counts sizes and
+\Cref{tab:dataset} separates session-level normalization, event-level counts,
+and verifier outcomes so that totals can be recomputed without treating one
+row type as another.  The analysis parses available JSON, records parse errors, counts sizes and
 artifact presence, extracts execution and policy fields, counts ledger-event
 kinds, and records passport, runtime-profile, adapter, provider-boundary, and
 digest metadata.  It writes one session row to \code{sessions.csv}, one

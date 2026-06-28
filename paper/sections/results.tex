@@ -24,6 +24,11 @@ results.}
 \input{tables/empirical-results}
 \end{table}
 
+\Cref{fig:session-outcomes} keeps the six source-only directories in view,
+while \cref{tab:empirical} reports aggregate totals only where normalized
+values exist; together they prevent complete-case counts from becoming a
+33-session success claim.
+
 \subsection{Policy inconsistency}
 Each of the 27 complete sessions has \code{security_checks=passed} at the
 top level.  Nevertheless, each detailed policy object has
@@ -56,10 +61,12 @@ a recorded denial independently prove host-level enforcement.
 
 \subsection{Offline bundle verification}
 All 27 complete bundles pass the repository's offline verifier (27/27).  Their
-bytecode, trace, report, and ledger digest fields are syntactically valid
+bytecode, trace, security-report, and embedded-ledger digest fields are syntactically valid
 SHA-256 identifiers.  The successful result answers RQ3 narrowly: given each
 bundle and its relative artifact paths, the verifier can reproduce the
-semantic digests and cross-artifact linkage without network access.
+semantic digests and cross-artifact linkage without network access.  The
+verifier does not digest or verify \code{session.argx}; source integrity is
+outside this result.
 
 It does not answer whether policy approved the request; the detailed policy
 result is negative.  It does not authenticate the producer, prove absence of

@@ -39,22 +39,26 @@ included.
 
 \section{Reproduction Commands}\label{app:reproduce}
 
-From the repository root, use the committed Python environment and scripts:
+From the root of this paper worktree, the authorized artifact snapshot resides
+in the primary checkout two levels above.  The following commands use only
+root-relative paths and provide every mandatory analyzer argument:
 
 \begin{lstlisting}
 python -m pip install -r paper/requirements.txt
-python paper/scripts/analyze_runtime.py
+python paper/scripts/analyze_runtime.py --input ../../demo/argorix-chatbot-runtime/generated --summary paper/data/runtime_summary.json --sessions paper/data/sessions.csv --events paper/data/event_counts.csv
 python paper/scripts/render_tables.py
 python paper/scripts/generate_figures.py
-powershell -File paper/scripts/verify_runtime.ps1
+powershell -File paper/scripts/verify_runtime.ps1 -InputRoot ../../demo/argorix-chatbot-runtime/generated -OutputPath paper/data/verification-results.json
 python paper/scripts/check_manuscript.py
 python -m pytest paper/tests -q
 \end{lstlisting}
 
-The runtime analyzer expects the authorized source artifact directory in the
-location documented by its command-line interface; it fails visibly if that
-input is absent.  The paper can be built, when a TeX distribution is available,
-with:
+In a conventional checkout where generated artifacts are directly under the
+repository root, replace each \code{../../demo/} prefix with \code{demo/}.
+The runtime analyzer fails visibly if the input is absent.  The explicit
+\code{-InputRoot} prevents a worktree's tracked but empty
+\code{generated/.gitkeep} directory from being mistaken for the authorized
+snapshot.  The paper can be built, when a TeX distribution is available, with:
 
 \begin{lstlisting}
 cd paper

@@ -65,7 +65,11 @@ def test_required_source_truths():
     with AUDIT.open(encoding="utf-8", newline="") as handle:
         audits = {row["citation_key"]: row for row in csv.DictReader(handle)}
 
-    assert records["projectnanda2026"]["title"] == "Architecting the Internet of Agents"
+    assert normalized_title(records["projectnanda2026"]["title"]) == (
+        "Architecting the Internet of AI Agents"
+    )
+    assert records["projectnanda2026"]["urldate"] == "2026-06-28"
+    assert audits["projectnanda2026"]["primary_url"] == "https://projectnanda.org/"
     for key in ("w3c_did_core_2022", "w3c_vc_data_model_2025"):
         assert records[key]["author"] == "{World Wide Web Consortium}"
         assert "editor" not in records[key]

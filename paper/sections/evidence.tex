@@ -3,28 +3,40 @@
 Each complete request directory contains five artifacts:
 \code{session.argx}, compiled \code{session.argbc.json},
 \code{session.trace.json}, \code{session.security.json}, and
-\code{session.evidence.json}.  The trace is an ordered ledger of compiler/VM
+\code{session.evidence.json}.  Source is an upstream compiler input, not an
+EvidenceBundle member.  The trace is an ordered ledger of compiler/VM
 and policy events.  The SecurityReport is a structured interpretation of
 runtime evidence, including execution status, policy results, review state,
-provider boundary, and declared controls.  The EvidenceBundle links source,
-bytecode, trace, report, and ledger through semantic SHA-256 digests.
+provider boundary, and declared controls.  The EvidenceBundle records four
+semantic SHA-256 values: \code{bytecode_digest}, \code{trace_digest},
+\code{report_digest} for the security report, and \code{ledger_digest} for the
+ledger embedded in that report.  Its artifact map contains
+\code{bytecode_path}, \code{trace_path}, and
+\code{security_report_path}; there is no source path or source digest, and
+there is no standalone ledger path.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{artifact-schema.pdf}
-\caption{Schema-level view of the five-artifact request directory. The evidence
-bundle references normalized content digests; it does not contain a security
-verdict.}
+\caption{Schema-level view of the five-artifact request directory. Source is an
+upstream input outside EvidenceBundle verification; the bundle references
+bytecode, trace, security-report, and embedded-ledger semantic digests and does
+not contain a security verdict.}
 \label{fig:artifact-schema}
 \end{figure}
 
 A semantic digest is computed over canonical JSON derived from a deserialized
-value, avoiding dependence on whitespace or object-key formatting.  Bundle
-paths resolve relative to the bundle directory.  Offline verification loads
-the referenced artifacts, recomputes their semantic digests, and compares them
-with the bundle.  It requires neither network access nor provider credentials.
-This verifies internal linkage: the inspected artifacts correspond to the
-values named by the bundle.
+value, avoiding dependence on whitespace or object-key formatting.  The three
+artifact paths resolve relative to the bundle directory.  Offline verification
+loads bytecode, trace, and the security report, recomputes their semantic
+digests and the digest of the report's embedded ledger, and compares all four
+values with the bundle.  It requires neither network access nor provider
+credentials.  This verifies internal linkage among the bundled JSON values.
+Source integrity is outside EvidenceBundle verification.
+
+\Cref{fig:artifact-schema} exposes this asymmetry: a complete request directory
+contains source, but the bundle verifier starts at compiled bytecode and never
+asserts that \code{session.argx} produced it.
 
 Three distinctions are essential.  First, a valid digest detects content
 change relative to the bundle but does not prove who created the bundle.
@@ -47,9 +59,17 @@ metadata, proposed architecture, and properties not claimed.}
 \label{fig:claim-boundaries}
 \end{figure}
 
+\Cref{fig:claim-boundaries} is the interpretive key for the remainder of the
+paper: each result is assigned to an implemented, declarative, proposed, or
+not-claimed region before it is discussed.
+
 \begin{table}[t]
 \centering
 \caption{Interpretive boundaries applied to every result in this study.}
 \label{tab:claim-boundaries}
 \input{tables/claim-boundaries}
 \end{table}
+
+\Cref{tab:claim-boundaries} applies the same distinction to concrete system
+concepts, preventing digest success from being promoted to live attestation or
+certification.

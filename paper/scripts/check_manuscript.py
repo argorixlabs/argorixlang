@@ -83,6 +83,22 @@ def main() -> None:
     if refs - labels:
         fail(f"unresolved labels: {sorted(refs - labels)}")
 
+    float_labels = {label for label in labels if label.startswith(("fig:", "tab:"))}
+    prose = re.sub(
+        r"\\begin\{(?:figure|table)\}.*?\\end\{(?:figure|table)\}",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    prose_refs: set[str] = set()
+    for group in re.findall(r"\\(?:c|C)?ref\{([^}]+)\}", prose):
+        prose_refs.update(label.strip() for label in group.split(","))
+    if float_labels - prose_refs:
+        fail(
+            "figure/table labels without non-caption prose references: "
+            f"{sorted(float_labels - prose_refs)}"
+        )
+
     bib_text = (ROOT / "references.bib").read_text(encoding="utf-8")
     bib_keys = set(re.findall(r"@\w+\{([^,]+),", bib_text))
     cited: set[str] = set()
@@ -127,6 +143,7 @@ def main() -> None:
         fail(f"unbalanced TeX braces: depth {brace_depth}")
 
     required_claims = [
+        "Architecting the Internet of AI Agents",
         "33 request directories",
         "27 complete",
         "six contain source only",
@@ -134,6 +151,10 @@ def main() -> None:
         "7,155",
         "0 of 33",
         "27/27",
+        "Source integrity is outside EvidenceBundle verification",
+        r"\code{bytecode_path}",
+        r"\code{trace_path}",
+        r"\code{security_report_path}",
     ]
     for claim in required_claims:
         if claim not in text:
@@ -152,10 +173,20 @@ def main() -> None:
         if phrase in lowered:
             fail(f"forbidden claim phrase found: {phrase}")
 
+    unsupported_bundle_claims = [
+        "links source, bytecode",
+        "source digest verification",
+        "source, bytecode, trace, report, and ledger",
+        "verifies source, bytecode",
+    ]
+    for phrase in unsupported_bundle_claims:
+        if phrase in lowered:
+            fail(f"unsupported EvidenceBundle source claim found: {phrase}")
+
     print(
         f"manuscript check passed: {len(tex_paths)} TeX files, "
         f"{len(figures)} figures, {len(tables)} tables, {len(cited)} citation keys; "
-        "environments and braces balanced"
+        "environments and braces balanced; all figure/table labels referenced in prose"
     )
 
 
