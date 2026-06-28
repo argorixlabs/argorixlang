@@ -31,6 +31,21 @@ function Assert-NoReparsePoint([string]$Path, [string]$Description) {
     }
 }
 
+function Assert-NoReparseComponents([string]$Path, [string]$Description) {
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetPathRoot($fullPath)
+    $current = $root
+    Assert-NoReparsePoint $current $Description
+    $relative = $fullPath.Substring($root.Length)
+    foreach ($component in ($relative -split '[\\/]' | Where-Object { $_ })) {
+        $current = Join-Path $current $component
+        if (-not (Test-Path -LiteralPath $current)) {
+            break
+        }
+        Assert-NoReparsePoint $current $Description
+    }
+}
+
 function Test-IsWithin([string]$Candidate, [string]$Root) {
     $candidateFull = [IO.Path]::GetFullPath($Candidate)
     $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd(
@@ -48,10 +63,18 @@ function ConvertTo-SafeDiagnostic([string]$Text, [string]$Root) {
         return ""
     }
     $safe = $Text -replace "`e\[[0-9;?]*[ -/]*[@-~]", ""
-    $safe = $safe.Replace($Root, "<input-root>")
-    $safe = $safe -replace '(?im)(\bAuthorization\s*:\s*)(?:(?:Bearer|Basic|Token)\s+)?[^\s,\r\n]+', '$1<redacted>'
-    $safe = $safe -replace '(?i)("(?:[^"]*[_-])?(?:token|api[_-]?key|password|secret)"\s*:\s*)"(?:[^"\\]|\\.)*"', '${1}"<redacted>"'
-    $safe = $safe -replace "(?im)(\b(?:[A-Za-z][A-Za-z0-9_-]*[_-])?(?:token|api[_-]?key|password|secret)\s*[:=]\s*)(?:`"[^`"]*`"|'[^']*'|[^\s,;]+)", '$1<redacted>'
+    $rootPattern = (($Root.TrimEnd('\', '/') -split '[\\/]+') |
+        ForEach-Object { [regex]::Escape($_) }) -join '[\\/]'
+    $safe = [regex]::Replace(
+        $safe,
+        $rootPattern,
+        "<input-root>",
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    $safe = $safe -replace '(?im)(\bAuthorization\s*:\s*)[^\r\n]*', '$1<redacted>'
+    $sensitiveName = '(?:(?:access|refresh|auth)[_-]?token|client[_-]?secret|api[_-]?key|password|secret|credential|private[_-]?key|token)'
+    $safe = $safe -replace "(?i)(`"$sensitiveName`"\s*:\s*)`"(?:[^`"\\]|\\.)*`"", '${1}"<redacted>"'
+    $safe = $safe -replace "(?im)(\b(?:[A-Za-z][A-Za-z0-9]*[_-])?$sensitiveName\s*[:=]\s*)(?:`"[^`"]*`"|'[^']*'|[^\s,;]+)", '$1<redacted>'
     $safe = $safe -replace '(?i)\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b', '<redacted>'
     $safe = $safe -replace '\bgh[pousr]_[A-Za-z0-9]{20,}\b', '<redacted>'
     $safe = $safe -replace '\bxox[baprs]-[A-Za-z0-9-]{10,}\b', '<redacted>'
@@ -78,6 +101,7 @@ if (
 ) {
     throw "Output path cannot equal or be inside the input root."
 }
+Assert-NoReparseComponents $outputFull "Output path"
 
 $cargo = "C:\Users\nanos\.cargo\bin\cargo.exe"
 if (-not (Test-Path -LiteralPath $cargo -PathType Leaf)) {
@@ -152,14 +176,34 @@ $records = foreach ($session in $sessions) {
     }
 }
 
-$outputDirectory = Split-Path -Parent $outputFull
+$outputDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $outputFull))
 [IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
+Assert-NoReparseComponents $outputFull "Output path"
 $json = ConvertTo-Json -InputObject @($records) -Depth 4
-[IO.File]::WriteAllText(
-    $outputFull,
-    $json + [Environment]::NewLine,
-    [Text.UTF8Encoding]::new($false)
+$temporaryOutput = Join-Path $outputDirectory (
+    ".verification-results.$([guid]::NewGuid().ToString('N')).tmp"
 )
+try {
+    [IO.File]::WriteAllText(
+        $temporaryOutput,
+        $json + [Environment]::NewLine,
+        [Text.UTF8Encoding]::new($false)
+    )
+    Assert-NoReparseComponents $temporaryOutput "Temporary output path"
+    Assert-NoReparseComponents $outputFull "Output path"
+    if (
+        -not ([IO.Path]::GetFullPath((Split-Path -Parent $temporaryOutput))).Equals(
+            $outputDirectory,
+            [StringComparison]::OrdinalIgnoreCase
+        )
+    ) {
+        throw "Temporary output escaped the validated output directory."
+    }
+    Move-Item -LiteralPath $temporaryOutput -Destination $outputFull -Force
+}
+finally {
+    Remove-Item -LiteralPath $temporaryOutput -Force -ErrorAction SilentlyContinue
+}
 
 $verifiedCount = @($records | Where-Object verified).Count
 $failedCount = @($records).Count - $verifiedCount

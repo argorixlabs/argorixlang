@@ -2,6 +2,7 @@ import csv
 import json
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path, PurePosixPath
 
@@ -117,6 +118,105 @@ class VerificationResultsTests(unittest.TestCase):
             sanitized,
             sanitize_with_powershell(diagnostic, sentinel="different-environment"),
         )
+
+    def test_sanitizer_consumes_full_authorization_values_and_sensitive_variants(self):
+        secrets = [
+            "basic-credential-value-123456789",
+            "bearer-credential-value-123456789",
+            "access-token-value-123456789",
+            "client-secret-value-123456789",
+            "api-key-value-123456789",
+            "refresh-token-value-123456789",
+            "auth-token-value-123456789",
+            "password-value-123456789",
+            "secret-value-123456789",
+            "credential-value-123456789",
+            "private-key-value-123456789",
+        ]
+        diagnostic = "\n".join(
+            [
+                f'Authorization: "Basic {secrets[0]}"',
+                f"Authorization: Bearer {secrets[1]}",
+                json.dumps({"accessToken": secrets[2]}),
+                f"clientSecret='{secrets[3]}'",
+                f"apiKey={secrets[4]}",
+                f"refresh-token: {secrets[5]}",
+                f"AUTH_TOKEN={secrets[6]}",
+                f"password={secrets[7]}",
+                f"secret={secrets[8]}",
+                f"credential={secrets[9]}",
+                f'privateKey="{secrets[10]}"',
+                "The password policy and private key documentation remain ordinary prose.",
+            ]
+        )
+
+        sanitized = sanitize_with_powershell(diagnostic)
+
+        for secret in secrets:
+            self.assertNotIn(secret, sanitized)
+        self.assertIn(
+            "The password policy and private key documentation remain ordinary prose.",
+            sanitized,
+        )
+
+    def test_sanitizer_scrubs_windows_root_case_and_separator_variants(self):
+        diagnostic = (
+            r"failed at c:/CONTROLLED-CORPUS/request/session.evidence.json"
+            "\n"
+            r"failed at C:\controlled-corpus\request\session.trace.json"
+        )
+
+        sanitized = sanitize_with_powershell(diagnostic)
+
+        self.assertNotIn("controlled-corpus", sanitized.lower())
+        self.assertEqual(sanitized.count("<input-root>"), 2)
+
+    def test_output_path_rejects_junction_components_before_writing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            input_root = root / "input"
+            output_container = root / "output"
+            junction = output_container / "redirect"
+            input_root.mkdir()
+            output_container.mkdir()
+            environment = os.environ.copy()
+            environment["ARGORIX_TEST_JUNCTION"] = str(junction)
+            environment["ARGORIX_TEST_JUNCTION_TARGET"] = str(input_root)
+            subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "New-Item -ItemType Junction -Path "
+                    "$env:ARGORIX_TEST_JUNCTION -Target "
+                    "$env:ARGORIX_TEST_JUNCTION_TARGET | Out-Null",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            completed = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(SCRIPT),
+                    "-InputRoot",
+                    str(input_root),
+                    "-OutputPath",
+                    str(junction / "verification-results.json"),
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertFalse((input_root / "verification-results.json").exists())
+            self.assertIn("reparse", (completed.stdout + completed.stderr).lower())
 
 
 def sanitize_with_powershell(diagnostic, sentinel="controlled-environment"):
