@@ -2,6 +2,8 @@ import csv
 import re
 from pathlib import Path
 
+import bibtexparser
+
 
 ROOT = Path(__file__).parents[1]
 BIB = ROOT / "references.bib"
@@ -23,12 +25,17 @@ def test_unique_keys_and_required_fields():
     for kind, key, body in parsed:
         assert re.search(r"(?m)^\s*title\s*=", body), key
         assert re.search(r"(?m)^\s*(author|editor)\s*=", body), key
-        if kind not in {"misc", "software"}:
-            assert re.search(r"(?m)^\s*year\s*=", body), key
+        assert re.search(r"(?m)^\s*(year|urldate)\s*=", body), key
+
+
+def normalized_title(value):
+    return value.replace("{", "").replace("}", "")
 
 
 def test_audit_matches_bibliography():
-    bib_keys = {key for _, key, _ in entries()}
+    parsed = bibtexparser.load(BIB.open(encoding="utf-8"))
+    bib_entries = {entry["ID"]: entry for entry in parsed.entries}
+    bib_keys = set(bib_entries)
     with AUDIT.open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         assert reader.fieldnames == [
@@ -40,3 +47,10 @@ def test_audit_matches_bibliography():
     assert audit_keys == bib_keys
     assert len(rows) == len(audit_keys)
     assert all(row["metadata_verified"] == "true" for row in rows)
+    for row in rows:
+        entry = bib_entries[row["citation_key"]]
+        assert row["title"] == normalized_title(entry["title"])
+        if row["primary_url"]:
+            doi_url = f"https://doi.org/{entry['doi']}" if "doi" in entry else None
+            assert row["primary_url"] in {entry.get("url"), doi_url}
+    assert bib_entries["naranjo_dcpai"]["doi"] == "10.31224/6671"
