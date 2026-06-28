@@ -2,7 +2,7 @@
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage{lmodern}
-\usepackage[margin=1in]{geometry}
+\usepackage[margin=0.8in]{geometry}
 \usepackage{microtype}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -17,7 +17,7 @@
 \usepackage{url}
 
 \graphicspath{{figures/}}
-\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\code}[1]{\nolinkurl{#1}}
 \newcommand{\Argorix}{ArgorixLang}
 \newcommand{\ATrust}{ATrust}
 \newcommand{\DCPAI}{DCP-AI}
@@ -38,6 +38,12 @@ Benjamin Gonzalez\textsuperscript{1}\\[0.45em]
 \textsuperscript{2}Ocular
 }
 \date{June 2026}
+\hypersetup{
+  pdftitle={ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence},
+  pdfauthor={Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez},
+  pdfsubject={Reproducible preprint on ArgorixLang runtime evidence and governance},
+  pdfkeywords={ArgorixLang, AI agents, governance, runtime evidence, policy}
+}
 
 \begin{document}
 \maketitle

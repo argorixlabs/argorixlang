@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "commit": "451b7e441f4c59fa30b61c68766994c19f808411",
+  "base": "57351bd7c86e55c0ee2d734214f1f8258a84329d",
+  "dataset": {
+    "total": 33,
+    "complete": 27,
+    "source_only": 6
+  },
+  "prompt_traces": {
+    "evaluated": 27,
+    "detected": 0
+  },
+  "tests": {
+    "passed": 50,
+    "failed": 0,
+    "status": "passed"
+  },
+  "verification": {
+    "passed": 27,
+    "total": 27
+  },
+  "engine": "Tectonic 0.16.9",
+  "page_count": 23,
+  "figure_count": 12,
+  "table_count": 7,
+  "citation_count": 18,
+  "visual_inspection": {
+    "passed": true,
+    "pages_rendered": 23,
+    "method": "144 dpi Poppler PNGs, contact sheets, flagged-page review"
+  },
+  "inspection_timestamp": "2026-06-28T16:36:00.930026+00:00",
+  "warnings": [
+    "Harmless underfull-box warnings remain in narrow tables and bibliography entries.",
+    "BibTeX reports an empty year for the deliberately undated unpublished ATrust source.",
+    "Fontconfig emits a missing-default-config diagnostic on this Windows host; bundled Latin Modern fonts render and embed."
+  ],
+  "checks": {
+    "page_range_16_24": true,
+    "all_authors_present": true,
+    "figures_12": true,
+    "tables_7": true,
+    "citations_resolved": true,
+    "no_placeholders": true,
+    "fonts_embedded": true,
+    "visual_inspection_passed": true
+  },
+  "pdf_metadata": {
+    "format": "PDF 1.5",
+    "title": "ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence",
+    "author": "Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez",
+    "subject": "Reproducible preprint on ArgorixLang runtime evidence and governance",
+    "keywords": "ArgorixLang, AI agents, governance, runtime evidence, policy",
+    "creator": "LaTeX with hyperref",
+    "producer": "xdvipdfmx (0.1)",
+    "creationDate": "D:20260628161342-00'00'",
+    "modDate": "",
+    "trapped": "",
+    "encryption": null
+  },
+  "pdfinfo": "Title:           ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence\nSubject:         Reproducible preprint on ArgorixLang runtime evidence and governance\nKeywords:        ArgorixLang, AI agents, governance, runtime evidence, policy\nAuthor:          Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez\nCreator:         LaTeX with hyperref\nProducer:        xdvipdfmx (0.1)\nCreationDate:    Sun Jun 28 12:13:42 2026 Hora est. Sudam\u00e9rica Pac\u00edfico\nCustom Metadata: no\nMetadata Stream: no\nTagged:          no\nUserProperties:  no\nSuspects:        no\nForm:            none\nJavaScript:      no\nPages:           23\nEncrypted:       no\nPage size:       612 x 792 pts (letter)\nPage rot:        0\nFile size:       293844 bytes\nOptimized:       no\nPDF version:     1.5\n",
+  "observed_runtime_counts": {
+    "requests": 33,
+    "verification_records": 27
+  }
+}

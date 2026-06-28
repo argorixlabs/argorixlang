@@ -1,0 +1,194 @@
+[CmdletBinding()]
+param(
+    [ValidateSet("analyze", "verify", "figures", "tables", "paper", "qa", "test", "clean", "all")]
+    [string]$Target = "all",
+    [string]$InputRoot,
+    [string]$CargoPath,
+    [switch]$VisualInspectionPassed
+)
+
+$ErrorActionPreference = "Stop"
+$PaperRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$RepoRoot = (Resolve-Path (Join-Path $PaperRoot "..")).Path
+$TmpRoot = Join-Path $PaperRoot "tmp"
+$BuildRoot = Join-Path $TmpRoot "build"
+$RenderRoot = Join-Path $TmpRoot "pdfs"
+$FinalPdf = Join-Path $PaperRoot "argorixlang-preprint.pdf"
+$TectonicVersion = "0.16.9"
+$TectonicAsset = "tectonic-0.16.9-x86_64-pc-windows-msvc.zip"
+$TectonicSha256 = "131a24604785a9600989a3d91225f597df52ac06f00aeffe86fd529f99ee5cdd"
+$TectonicUrl = "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.16.9/$TectonicAsset"
+
+function Invoke-Checked {
+    param([string]$Program, [string[]]$Arguments)
+    & $Program @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "command failed ($LASTEXITCODE): $Program $($Arguments -join ' ')"
+    }
+}
+
+function Resolve-InputRoot {
+    if ($InputRoot) { return (Resolve-Path $InputRoot).Path }
+    $local = Join-Path $RepoRoot "demo/argorix-chatbot-runtime/generated"
+    if (Test-Path (Join-Path $local "request-*")) { return $local }
+    $shared = Join-Path $RepoRoot "../../demo/argorix-chatbot-runtime/generated"
+    return (Resolve-Path $shared).Path
+}
+
+function Get-Tectonic {
+    $cacheBase = if ($env:LOCALAPPDATA) {
+        Join-Path $env:LOCALAPPDATA "ArgorixLang/tools/tectonic-$TectonicVersion"
+    } else {
+        Join-Path ([Environment]::GetFolderPath("UserProfile")) ".cache/argorixlang/tectonic-$TectonicVersion"
+    }
+    $exe = Join-Path $cacheBase "tectonic.exe"
+    if (Test-Path $exe) {
+        $version = (& $exe --version 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and $version -eq "Tectonic $TectonicVersion") { return $exe }
+        Remove-Item -LiteralPath $exe -Force
+    }
+    New-Item -ItemType Directory -Force -Path $cacheBase | Out-Null
+    $archive = Join-Path $cacheBase $TectonicAsset
+    Invoke-WebRequest -Uri $TectonicUrl -OutFile $archive
+    $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $TectonicSha256) {
+        Remove-Item -LiteralPath $archive -Force
+        throw "Tectonic archive checksum mismatch: expected $TectonicSha256, got $actual"
+    }
+    Expand-Archive -LiteralPath $archive -DestinationPath $cacheBase -Force
+    Remove-Item -LiteralPath $archive -Force
+    return $exe
+}
+
+function Find-Poppler {
+    param([string]$Name)
+    $command = Get-Command "$Name.exe" -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($command -and $command.Source -notlike "*.cmd") { return $command.Source }
+    if ($command -and $command.Source -like "*.cmd") {
+        $deps = Split-Path (Split-Path $command.Source -Parent) -Parent
+        $bundled = Join-Path $deps "native/poppler/Library/bin/$Name.exe"
+        if (Test-Path $bundled) { return $bundled }
+    }
+    throw "$Name from Poppler is required (Codex bundled runtime or system installation)"
+}
+
+function Invoke-Analyze {
+    $input = Resolve-InputRoot
+    Invoke-Checked python @(
+        (Join-Path $PSScriptRoot "analyze_runtime.py"), "--input", $input,
+        "--summary", (Join-Path $PaperRoot "data/runtime_summary.json"),
+        "--sessions", (Join-Path $PaperRoot "data/sessions.csv"),
+        "--events", (Join-Path $PaperRoot "data/event_counts.csv")
+    )
+}
+
+function Invoke-Verify {
+    $args = @(
+        "-NoProfile", "-File", (Join-Path $PSScriptRoot "verify_runtime.ps1"),
+        "-InputRoot", (Resolve-InputRoot),
+        "-OutputPath", (Join-Path $PaperRoot "data/verification-results.json")
+    )
+    if ($CargoPath) { $args += @("-CargoPath", $CargoPath) }
+    Invoke-Checked powershell $args
+}
+
+function Invoke-Figures {
+    Invoke-Checked python @(
+        (Join-Path $PSScriptRoot "generate_figures.py"),
+        "--data", (Join-Path $PaperRoot "data"), "--output", (Join-Path $PaperRoot "figures")
+    )
+}
+
+function Invoke-Tables {
+    Invoke-Checked python @(
+        (Join-Path $PSScriptRoot "render_tables.py"),
+        "--data", (Join-Path $PaperRoot "data"), "--output", (Join-Path $PaperRoot "tables")
+    )
+}
+
+function Invoke-Paper {
+    Invoke-Checked python @((Join-Path $PSScriptRoot "check_manuscript.py"))
+    $tectonic = Get-Tectonic
+    New-Item -ItemType Directory -Force -Path $BuildRoot | Out-Null
+    $stdout = Join-Path $BuildRoot "tectonic-stdout.log"
+    $stderr = Join-Path $BuildRoot "tectonic-stderr.log"
+    $previousSourceDateEpoch = $env:SOURCE_DATE_EPOCH
+    $env:SOURCE_DATE_EPOCH = (& git -C $RepoRoot show -s --format=%ct HEAD).Trim()
+    $process = Start-Process -FilePath $tectonic -ArgumentList @(
+        "-X", "compile", (Join-Path $PaperRoot "main.tex"), "--outdir", $BuildRoot,
+        "--keep-logs", "--keep-intermediates", "--print"
+    ) -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if ($null -eq $previousSourceDateEpoch) {
+        Remove-Item Env:SOURCE_DATE_EPOCH
+    } else {
+        $env:SOURCE_DATE_EPOCH = $previousSourceDateEpoch
+    }
+    $output = @((Get-Content $stdout), (Get-Content $stderr))
+    $output | Set-Content -Encoding UTF8 (Join-Path $BuildRoot "tectonic-output.log")
+    $output | Write-Host
+    if ($process.ExitCode -ne 0) { throw "Tectonic compilation failed" }
+    $log = Get-Content -Raw (Join-Path $BuildRoot "main.log")
+    $fatalPatterns = @(
+        "LaTeX Warning:.*undefined", "Citation .* undefined", "Reference .* undefined",
+        "There were undefined references", "Overfull \\[hv]box", "I couldn't open database file",
+        "I found no \\bibdata command", "Emergency stop", "! LaTeX Error"
+    )
+    foreach ($pattern in $fatalPatterns) {
+        if ($log -match $pattern) { throw "fatal TeX diagnostic matched: $pattern" }
+    }
+    $blg = Join-Path $BuildRoot "main.blg"
+    if (Test-Path $blg) {
+        $bibDiagnostics = (Get-Content $blg) |
+            Where-Object { $_ -match "Warning--|error" } |
+            Where-Object { $_ -ne "Warning--empty year in vazquez_atrust" }
+        if ($bibDiagnostics) { throw "bibliography diagnostics remain in main.blg: $bibDiagnostics" }
+    }
+    Copy-Item -LiteralPath (Join-Path $BuildRoot "main.pdf") -Destination $FinalPdf -Force
+}
+
+function Invoke-Qa {
+    if (-not (Test-Path $FinalPdf)) { Invoke-Paper }
+    $pdftoppm = Find-Poppler "pdftoppm"
+    $pdfinfo = Find-Poppler "pdfinfo"
+    if (Test-Path $RenderRoot) { Remove-Item -LiteralPath $RenderRoot -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $RenderRoot | Out-Null
+    Invoke-Checked $pdftoppm @("-png", "-r", "144", $FinalPdf, (Join-Path $RenderRoot "page"))
+    $qaArgs = @(
+        (Join-Path $PSScriptRoot "qa_pdf.py"), "--pdf", $FinalPdf,
+        "--output", (Join-Path $PaperRoot "data/final-qa.json"),
+        "--pdfinfo", $pdfinfo, "--engine", "Tectonic $TectonicVersion"
+    )
+    if ($VisualInspectionPassed) { $qaArgs += "--visual-inspection-passed" }
+    Invoke-Checked python $qaArgs
+}
+
+function Invoke-Tests {
+    Invoke-Checked python @((Join-Path $PSScriptRoot "check_manuscript.py"))
+    Invoke-Checked python @("-m", "pytest", (Join-Path $PaperRoot "tests"), "-q")
+}
+
+function Invoke-Clean {
+    if (Test-Path $TmpRoot) { Remove-Item -LiteralPath $TmpRoot -Recurse -Force }
+}
+
+switch ($Target) {
+    "analyze" { Invoke-Analyze }
+    "verify" { Invoke-Verify }
+    "figures" { Invoke-Figures }
+    "tables" { Invoke-Tables }
+    "paper" { Invoke-Paper }
+    "qa" { Invoke-Qa }
+    "test" { Invoke-Tests }
+    "clean" { Invoke-Clean }
+    "all" {
+        Invoke-Analyze
+        Invoke-Verify
+        Invoke-Tables
+        Invoke-Figures
+        Invoke-Tests
+        Invoke-Paper
+        Invoke-Qa
+    }
+}

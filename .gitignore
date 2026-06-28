@@ -7,3 +7,6 @@ reports/*.trace.json
 docs/superpowers/
 .worktrees/
 .superpowers/
+paper/tmp/
+paper/.tools/
+__pycache__/
