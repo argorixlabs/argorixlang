@@ -1,0 +1,11 @@
+\begin{tabularx}{\linewidth}{@{}XXX@{}}
+\toprule
+Baseline & What it covers & Gap relative to ArgorixLang \\
+\midrule
+Plain application logs & chronological observations & no compiled policy or digest bundle \\
+JSON audit report & structured summary & no cross-artifact verification \\
+OPA/Rego-style external policy & policy decision engine & no compiled passport/evidence constructs unless integrated \\
+in-toto-style provenance & signed supply-chain steps & different scope; Argorix currently unsigned local runtime evidence \\
+MCP/A2A declaration only & protocol surface description & no compiled fail-closed provider boundary \\
+\bottomrule
+\end{tabularx}

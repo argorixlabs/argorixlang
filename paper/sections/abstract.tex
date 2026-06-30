@@ -1,33 +1,31 @@
 \begin{abstract}
-Agent systems increasingly combine model calls, tools, data movement, and
-inter-agent protocols, but their governance assumptions are commonly expressed
-outside the executable artifact.  This paper presents \Argorix, a compiled
-language and runtime in which agent capabilities, policy, sovereign metadata,
-provider boundaries, and evidence requirements are explicit program
-constructs.  We distinguish four claim classes throughout: implemented
-mechanisms, declarative metadata, proposed architecture, and properties not
-claimed.  We study an authorized corpus of 33 runtime request directories using
-a reproducible, observational pipeline.  Twenty-seven directories contain all
-five expected artifacts and six contain source only.  All 27 complete evidence
-bundles pass offline digest and cross-artifact verification of bytecode, trace,
-and security report, including a ledger digest recomputed from trace events and
-matched against the report's LedgerSummary; source integrity is outside bundle
-verification.  At the same time,
-all 27 detailed policy reports set \code{passed=false}, require review, and
-record 44 unknown-rule violations each, despite a favorable top-level
-\code{security_checks} label.  Thus bundle integrity does not imply policy
-approval, security, or certification.  The corpus contains 7,155 ledger events
-and 1,188 detailed policy violations.  The bounded \code{injected.content}
-field is present in 0 of 27---that is, none of the 27---complete, valid
-traces; six source-only directories have no trace and are not assessable,
-precluding prompt-level qualitative analysis.  We describe
-the compiler, fail-closed runtime, Agent Passport metadata, a declarative
-encoding of the unpublished ATrust conceptual protocol, its relationship to
-DCP-AI, and trace/report/bundle generation.  The results demonstrate
-reproducible artifact production and offline integrity checking under the
-observed configuration; they do not demonstrate real identity authentication,
-credential verification, cryptographic handshakes, blockchain immutability,
-post-quantum security, compliance certification, or production isolation.
+Agent runtimes mix identity metadata, provider permissions, policy decisions,
+and audit evidence, but these layers are often distributed across prompts,
+configuration, application code, and logs.  This paper presents \Argorix as a
+systems artifact for \emph{compiled governance}: a language/runtime boundary in
+which agent declarations, passports, provider contracts, executable-provider
+permissions, runtime controls, and evidence artifacts are compiled and checked
+together.  The paper deliberately separates declaration from verification,
+digest integrity from approval, local passport metadata from authenticated
+identity, provider contracts from executable adapters, and EvidenceBundles from
+external attestation.  We evaluate the current artifact through a reproducible
+snapshot of 33 generated request directories.  Twenty-seven directories contain
+complete bytecode, trace, security-report, and EvidenceBundle artifacts; six
+contain source only.  The 27 complete bundles pass offline internal-consistency
+verification for bytecode, trace, security report, and a ledger digest
+recomputed from trace events.  The snapshot is structurally repeated, so its
+7,155 event records and 1,188 detailed policy findings are evidence of
+deterministic artifact production rather than workload diversity.  A negative
+finding is central: all complete v0.1 policy reports require review and encode
+their detailed findings as ``unknown policy rule,'' showing that digest success
+does not imply policy approval.  We therefore specify the required v0.2
+extension: a typed policy decision lattice with pass, deny, review,
+unknown-rule, and malformed-policy outcomes, plus source-digest binding.  We
+also define controlled cases, ablations, and baselines that must be generated
+before broader claims are made.  The current paper claims a compiled governance
+and offline evidence boundary; it does not claim security certification, real
+identity verification, live ANS/DNS, cryptographic attestation, production
+sandboxing, or large-scale empirical coverage.
 \end{abstract}
 
 \noindent\textbf{Keywords:} agent programming languages; compiled governance;

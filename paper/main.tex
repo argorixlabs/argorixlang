@@ -15,12 +15,20 @@
 \usepackage[hidelinks]{hyperref}
 \usepackage[nameinlink,noabbrev]{cleveref}
 \usepackage{url}
+\usepackage{xspace}
 
 \graphicspath{{figures/}}
 \newcommand{\code}[1]{\nolinkurl{#1}}
-\newcommand{\Argorix}{ArgorixLang}
-\newcommand{\ATrust}{ATrust}
-\newcommand{\DCPAI}{DCP-AI}
+% ArgorixLang brand wordmark: per-character gradient across the brand palette.
+\definecolor{argViolet}{HTML}{7C3AED}
+\definecolor{argIndigo}{HTML}{5B3DF5}
+\definecolor{argElectric}{HTML}{2F6BFF}
+\definecolor{argCyan}{HTML}{2BC4F4}
+\definecolor{argCyanBright}{HTML}{5CD6FF}
+\newcommand{\Argorix}{%
+\textcolor{argViolet}{A}\textcolor{argViolet}{r}\textcolor{argIndigo}{g}\textcolor{argIndigo}{o}\textcolor{argElectric}{r}\textcolor{argElectric}{i}\textcolor{argElectric}{x}\textcolor{argCyan}{L}\textcolor{argCyan}{a}\textcolor{argCyanBright}{n}\textcolor{argCyanBright}{g}\xspace}
+\newcommand{\ATrust}{ATrust\xspace}
+\newcommand{\DCPAI}{DCP-AI\xspace}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \setlist{nosep,leftmargin=*}
 \setlength{\emergencystretch}{2em}
@@ -35,7 +43,9 @@ Edison Vazquez\textsuperscript{1}\quad
 Danilo Naranjo\textsuperscript{2}\quad
 Benjamin Gonzalez\textsuperscript{1}\\[0.45em]
 \small\textsuperscript{1}Chilean Chamber of Artificial Intelligence\quad
-\textsuperscript{2}Ocular
+\textsuperscript{2}Ocular\\[0.35em]
+{\footnotesize\ttfamily gustavo@gobiernoia.cl\quad edison@jhedai.com}\\[0.18em]
+{\footnotesize\ttfamily dan@ocularsolution.com\quad ben@nirvana-ai.com}
 }
 \date{June 2026}
 \hypersetup{
@@ -62,10 +72,13 @@ Benjamin Gonzalez\textsuperscript{1}\\[0.45em]
 \input{sections/limitations}
 \input{sections/future-work}
 \input{sections/conclusion}
-
-\bibliographystyle{plainnat}
-\bibliography{references}
+\input{sections/back-matter}
 
 \appendix
 \input{appendices/artifact-excerpts}
+
+% Flush all pending floats so the reference list is genuinely the last content.
+\clearpage
+\bibliographystyle{plainnat}
+\bibliography{references}
 \end{document}

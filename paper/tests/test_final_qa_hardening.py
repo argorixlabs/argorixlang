@@ -94,3 +94,12 @@ def test_atomic_write_preserves_existing_file_on_writer_failure(tmp_path):
         atomic.atomic_publish(target, fail)
     assert target.read_text(encoding="utf-8") == "old"
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_build_script_uses_unique_atomic_publication_paths():
+    script = (PAPER / "scripts" / "build_paper.ps1").read_text(encoding="utf-8")
+    assert "Copy-Item -LiteralPath $sourcePdf -Destination $temporaryPdf" in script
+    assert "Move-Item -LiteralPath $temporaryPdf -Destination $FinalPdf -Force" in script
+    assert "[guid]::NewGuid().ToString('N')" in script
+    assert '"test-results.json.tmp"' not in script
+    assert '$env:ARGORIX_PAPER_INPUT_ROOT = Resolve-InputRoot' in script

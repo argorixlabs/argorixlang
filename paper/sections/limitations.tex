@@ -40,5 +40,18 @@ other framework \citep{tabassi2023airmf}.  The empirical contradiction between
 the top-level and detailed statuses further prevents a positive assurance
 conclusion.
 
+\begin{table}[t]
+\centering
+\caption{Limitations and future assurance requirements. These are excluded
+from current claims unless the required mechanism and evaluation are added.}
+\label{tab:limitations-assurance}
+\input{tables/limitations-future-assurance}
+\end{table}
+
+\Cref{tab:limitations-assurance} converts limitations into concrete future
+requirements: source integrity needs source-to-bytecode binding, producer
+authentication needs signatures and key governance, and replacement detection
+needs an append-only transparency mechanism.
+
 Future evaluations should publish controlled workloads, independent
 verifiers, OS-level telemetry, and pre-registered outcome definitions.

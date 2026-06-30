@@ -245,9 +245,13 @@ class VerificationResultsTests(unittest.TestCase):
         self.assertIn("--manifest-path", source)
         self.assertIn('Join-Path $repositoryRoot "Cargo.toml"', source)
         self.assertIn('CARGO_TARGET_DIR', source)
+        configured = os.environ.get("ARGORIX_PAPER_INPUT_ROOT")
         input_root = (
-            PAPER.parent / "../../demo/argorix-chatbot-runtime/generated"
-        ).resolve()
+            Path(configured).resolve()
+            if configured
+            else (PAPER.parent / "demo/argorix-chatbot-runtime/generated").resolve()
+        )
+        self.assertTrue(input_root.is_dir(), f"input root does not exist: {input_root}")
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "verification.json"
             completed = subprocess.run(

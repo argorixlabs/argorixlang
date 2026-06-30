@@ -95,10 +95,10 @@ def main() -> None:
     for group in re.findall(r"\\cite\w*\{([^}]+)\}", source):
         citations.update(item.strip() for item in group.split(","))
     checks = {
-        "page_range_16_24": 16 <= doc.page_count <= 24,
+        "page_range_20_32": 20 <= doc.page_count <= 32,
         "all_authors_present": all(author in text for author in AUTHORS),
         "figures_12": len(figures) == 12,
-        "tables_7": len(tables) == 7,
+        "tables_12": len(tables) == 12,
         "citations_resolved": "[?]" not in text and "??" not in text,
         "no_placeholders": not re.search(
             r"\b(?:TODO|TBD|FIXME|PLACEHOLDER)\b|turn\d+(?:search|fetch)\d+", text, re.I

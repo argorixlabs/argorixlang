@@ -8,14 +8,6 @@ runtime profiles, and release/conformance records.  Some constructs alter
 runtime behavior; others are validated descriptions whose execution is
 explicitly disabled.
 
-\begin{table}[t]
-\centering
-\caption{Representative construct families and their boundary in the studied
-implementation.}
-\label{tab:language-constructs}
-\input{tables/language-constructs}
-\end{table}
-
 \Cref{tab:language-constructs} shows why ``represented in the language'' is not
 one claim: typed agents and runtime policy have implemented behavior, whereas
 ATrust evidence maps and provider contracts remain validated descriptions at
@@ -38,7 +30,7 @@ runtime profiles, and trust declarations that assert prohibited security
 claims.  The conformance corpus contains positive and negative examples for
 these boundaries.
 
-\begin{figure}[t]
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{request-sequence.pdf}
 \caption{End-to-end request sequence. Semantic validation and policy evaluation

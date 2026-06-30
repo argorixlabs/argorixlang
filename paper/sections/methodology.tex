@@ -1,27 +1,62 @@
-\section{Methodology}\label{sec:methodology}
+\section{Methodology and System Design}\label{sec:methodology}
 
-\subsection{Study design}
-We conduct an observational, reproducible, non-controlled systems study.  The
-unit of analysis is one request directory in an authorized snapshot of the
-chatbot runtime's generated output.  The user authorized publication of the
-runtime material.  Publication authorization does not relax minimization:
-identifiers are aggregated, excerpts are bounded, and prompt content is not
-reconstructed.
+\subsection{System boundary}
+We evaluate \Argorix as a systems artifact for compiled governance, not as a
+security certification.  The implemented path consists of language constructs,
+semantic validation, typed IR/bytecode, a fail-closed VM, an executable-provider
+registry, trace generation, a SecurityReport, and an EvidenceBundle verifier.
+The declarative path consists of Agent Passport fields, \ATrust and DCP-AI
+metadata, external-provider contracts, bridge declarations, and local
+\code{ans_name} metadata.  Proposed paths include source-digest binding,
+signed bundles, append-only logs, DID/VC resolution, and Sovereign DNS/ANS
+federation.
 
-The design is observational because sessions were generated before the
-analysis rather than assigned to controlled treatments.  It is reproducible
-because committed scripts normalize the snapshot, generate tables and figures,
-and rerun offline bundle verification.  It is non-controlled because there is
-no randomized input, baseline runtime, repeated attack suite, or experimental
-manipulation.  Consequently, counts describe this corpus and cannot estimate
-attack success, causal effects, or population rates.
+\begin{table}[t]
+\centering
+\caption{Representative construct families and their boundary in the studied
+implementation.}
+\label{tab:language-constructs}
+\input{tables/language-constructs}
+\end{table}
 
-\subsection{Inventory and normalization}
-The initial inventory contains 33 directories.  A complete directory must have
-all five expected artifacts listed in \cref{sec:evidence}; 27 meet that
-criterion and six contain only \code{session.argx}.  We retain incomplete
-directories in the denominator and represent unavailable values as missing,
-rather than silently discarding them.
+\Cref{tab:language-constructs} is a method table, not a marketing claim:
+represented constructs are classified by what the current artifact actually
+does with them.
+
+\subsection{Policy decision lattice}
+The v0.1 snapshot exposes a design defect: all detailed policy findings are
+reported as ``unknown policy rule.''  We therefore do not treat those findings
+as ordinary deny/pass observations.  Instead, we specify a v0.2 typed policy
+decision lattice that future artifacts must implement before policy outcomes
+can be analyzed as controlled results.
+
+\begin{table}[t]
+\centering
+\caption{Typed policy decision lattice required for v0.2. The current v0.1
+snapshot motivates the \code{UNKNOWN_RULE} outcome; it does not yet implement
+the full lattice.}
+\label{tab:policy-lattice}
+\input{tables/policy-lattice}
+\end{table}
+
+\Cref{tab:policy-lattice} separates known pass/deny/review outcomes from
+configuration errors and malformed policy objects.  Required known rules are
+\code{provider_executable_allowlist},
+\code{external_provider_without_adapter}, \code{runtime_network_denied},
+\code{secrets_denied}, \code{key_material_denied},
+\code{passport_residency_declared}, \code{passport_residency_conflict},
+\code{source_digest_present}, \code{bundle_digest_match}, and
+\code{evidence_report_consistency}.  Until those outcomes are generated, the
+paper reports policy evidence as a negative diagnostic finding.
+
+\subsection{Snapshot inventory and normalization}
+The observational input is an authorized snapshot of 33 request directories
+from the chatbot runtime's generated output.  Publication authorization does
+not relax minimization: identifiers are aggregated, excerpts are bounded, and
+prompt content is not reconstructed.  A complete directory must have all five
+expected artifacts listed in \cref{sec:evidence}; 27 meet that criterion and
+six contain source only.  We retain incomplete directories in the denominator
+and represent unavailable values as missing.
 
 \begin{table}[t]
 \centering
@@ -33,26 +68,77 @@ authorized artifact snapshot.}
 
 \Cref{tab:dataset} separates session-level normalization, event-level counts,
 and verifier outcomes so that totals can be recomputed without treating one
-row type as another.  The analysis parses available JSON, records parse errors, counts sizes and
-artifact presence, extracts execution and policy fields, counts ledger-event
-kinds, and records passport, runtime-profile, adapter, provider-boundary, and
-digest metadata.  It writes one session row to \code{sessions.csv}, one
-session/event-kind row to \code{event_counts.csv}, and a structured summary to
-\code{runtime_summary.json}.  A separate PowerShell procedure invokes the
-repository's offline evidence verifier for every complete bundle and stores
-exit code and bounded standard output.
+row type as another.  The analysis parses available JSON, records parse
+errors, counts sizes and artifact presence, extracts execution and policy
+fields, counts ledger-event kinds, and records passport, runtime-profile,
+adapter, provider-boundary, and digest metadata.  A separate PowerShell
+procedure invokes the repository's offline evidence verifier for every
+complete bundle and stores exit code and bounded standard output.
+
+\subsection{Controlled artifact matrix}
+The snapshot alone is not a behavioral corpus.  We therefore define the
+controlled artifact matrix required to convert the paper from observational
+evidence into controlled systems evidence.  Cases include positive controls,
+negative controls, review controls, tamper controls, and unknown/error
+controls.  Each case must report expected outcome, observed outcome, policy
+decision, provider decision, evidence verification, source verification, trace
+event count, and whether side-effect execution occurred.
+
+\begin{table}[t]
+\centering
+\caption{Controlled evaluation matrix. Rows marked ``Required experiment'' or
+``To be generated'' are study requirements, not claimed results.}
+\label{tab:controlled-matrix}
+\input{tables/controlled-evaluation-matrix}
+\end{table}
+
+\Cref{tab:controlled-matrix} deliberately distinguishes observed snapshot
+properties from required experiments.  In particular, source-digest matching
+and source-mismatch detection are v0.2 requirements, because current
+EvidenceBundles do not verify \code{session.argx}.
+
+\subsection{Ablations and baselines}
+The ablation plan follows a systems-paper discipline: remove one boundary at a
+time and measure false allows, false denies, correct denies, correct reviews,
+tamper detection rate, verification latency, evidence size, trace overhead,
+compile time, and policy evaluation time.  These measurements are not present
+in the current snapshot and must not be claimed until generated.
+
+\begin{table}[t]
+\centering
+\caption{Required ablation study. Metrics in the last column are measurement
+obligations, not current results.}
+\label{tab:ablation}
+\input{tables/ablation-study}
+\end{table}
+
+\Cref{tab:ablation} makes the strongest future claims falsifiable: if removing
+a boundary does not change a target metric, the paper should not treat that
+boundary as empirically justified.
+
+\begin{table}[t]
+\centering
+\caption{Baseline comparison by scope. Baselines are not adversaries; they
+identify which assurance layer each system does or does not cover.}
+\label{tab:baselines}
+\input{tables/baseline-comparison}
+\end{table}
+
+\Cref{tab:baselines} keeps comparisons fair: \Argorix is scoped to language,
+policy, provider boundary, and local evidence linkage, while provenance and
+authorization systems solve different parts of the assurance stack.
 
 \subsection{Analysis rules}
-We define in advance four interpretation rules.  A missing artifact is
+We define four interpretation rules in advance.  A missing artifact is
 ``unavailable,'' never ``passed.''  A detailed policy result overrides a
 coarser summary label for policy interpretation.  Successful evidence
 verification means digest and reference consistency only.  Declarative records
 are not counted as externally performed actions.
 
-We aggregate complete-session policy violations and ledger events by summing
-the normalized per-session fields.  We check all four evidence digest values
-for the \code{sha256:} prefix and 64 hexadecimal digits.  The verification
-result is successful only when the verifier exit code is zero and its explicit
+We aggregate complete-session policy findings and ledger events by summing the
+normalized per-session fields.  We check all four evidence digest values for
+the \code{sha256:} prefix and 64 hexadecimal digits.  The verification result
+is successful only when the verifier exit code is zero and its explicit
 verified flag is true.
 
 \subsection{Prompt analysis boundary}
@@ -62,16 +148,4 @@ complete traces (0 of 27 present).  The six source-only directories contain no
 trace and are not assessable.  Prompt publication is a separate allowlisted
 operation; its suppression is not evidence of content absence.  We therefore
 perform no prompt-level qualitative analysis, quote no prompts, and report no
-prompt-injection attack success rate.  Inferring prompts from request
-identifiers, trace shape, or response metadata would be methodologically
-unsound and privacy-increasing.
-
-\subsection{Threats to validity}
-Construct validity is limited by our mapping of runtime fields to concepts such
-as ``policy result'' and ``blocked attempt.''  We mitigate this by preserving
-field names and reporting contradictions.  Internal validity is weak by
-design: no causal intervention exists.  External validity is limited to one
-snapshot and one runtime configuration.  Reliability depends on the committed
-normalizer and verifier; generated CSV/JSON files permit independent checking.
-Researcher interpretation remains a risk, particularly when declarative and
-operational concepts share terminology.
+prompt-injection attack success rate.

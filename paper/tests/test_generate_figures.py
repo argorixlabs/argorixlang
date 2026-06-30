@@ -17,9 +17,12 @@ FIGURES = {
     "sovereign-discovery.pdf", "artifact-schema.pdf", "claim-boundaries.pdf",
 }
 TABLES = {
+    "ablation-study.tex", "baseline-comparison.tex",
+    "controlled-evaluation-matrix.tex",
     "dataset-inventory.tex", "language-constructs.tex", "runtime-controls.tex",
     "empirical-results.tex", "threat-mapping.tex", "related-work.tex",
-    "claim-boundaries.tex",
+    "claim-boundaries.tex", "limitations-future-assurance.tex",
+    "policy-lattice.tex",
 }
 
 
@@ -87,7 +90,11 @@ def test_render_exact_latex_inventory_and_escape(tmp_path):
     claims = (out / "claim-boundaries.tex").read_text(encoding="utf-8")
     assert all(label in claims for label in ("Implemented", "Declarative", "Proposed", "Not claimed"))
     related = (out / "related-work.tex").read_text(encoding="utf-8")
-    assert all(name in related for name in ("Project NANDA", "ATrust", "DCP-AI"))
+    assert all(name in related for name in ("Project NANDA", "ATrust", "DCP-AI", "SPIFFE"))
+    controlled = (out / "controlled-evaluation-matrix.tex").read_text(encoding="utf-8")
+    assert "Required experiment" in controlled
+    ablation = (out / "ablation-study.tex").read_text(encoding="utf-8")
+    assert "Do not claim until measured" in ablation
 
 
 def test_tables_are_deterministic_and_quantitative_values_are_derived(tmp_path):

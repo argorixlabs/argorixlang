@@ -1,60 +1,60 @@
 \section{Background and Related Work}\label{sec:background}
 
-\paragraph{Open agent discovery.}
+\subsection{Agent naming and discovery}
 Project NANDA's current official title is \emph{Architecting the Internet of AI Agents}
 \citep{projectnanda2026}.  Its research anchor, ``Beyond DNS: Unlocking the
 Internet of AI Agents via the NANDA Index and Verified AgentFacts,'' proposes
 indexing and verifiable facts for networked agents
-\citep{raskar2025beyonddns}.  This work motivates an open discovery layer, but
-\Argorix does not implement NANDA, DNS resolution, or a remote index.  The
-comparison is architectural: locally compiled sovereign metadata could become
-an input to a future discovery service.
+\citep{raskar2025beyonddns}.  DNS itself separates hierarchical naming from
+application semantics \citep{mockapetris1987dnsconcepts,mockapetris1987dnsimplementation}.
+\Argorix does not implement NANDA, AgentFacts publication, ANS federation, or
+remote DNS resolution.  The comparison is architectural: locally compiled
+sovereign metadata could become an input to a future discovery service.
 
-\paragraph{Names, identifiers, and credentials.}
-DNS separates hierarchical naming from the mechanisms that applications build
-above it \citep{mockapetris1987dnsconcepts,mockapetris1987dnsimplementation}.
-DID Core specifies identifiers and DID documents, while the Verifiable
-Credentials Data Model specifies a credential data model
-\citep{w3c_did_core_2022,w3c_vc_data_model_2025}.  Declaring a string shaped
-like a DID or a credential reference is not equivalent to resolving,
-authenticating, issuing, or verifying it.  We use that distinction throughout.
+\subsection{Authenticated delegation and agent authorization}
+OAuth/OIDC-based agent delegation drafts, FIDO's Agentic Authentication Working
+Group, Google AP2, and Mastercard Verifiable Intent all address how agents
+should request, delegate, authenticate, or evidence user intent in real
+ecosystems \citep{oauth_agent_delegation,fido_agentic_awg,google_ap2,mastercard_verifiable_intent}.
+\Argorix does not implement these flows.  It can declare authorization and
+credential requirements locally, but it does not authenticate a human, bind a
+payment mandate, or verify a delegation token.
 
-\paragraph{Agent interaction protocols.}
-MCP defines a protocol for context and tool interactions; A2A defines
-inter-agent communication \citep{mcp_spec_2025,a2a_spec}.  \Argorix models
-bindings and bridge constraints for these boundaries declaratively.  The
-observed runtime records that bridge runtime, network, tool, or agent execution
-is disabled.  It therefore tests declarations and negative controls rather
-than interoperability with live MCP or A2A endpoints.
+\subsection{Non-human and workload identity}
+DID Core and the Verifiable Credentials Data Model define identifier and
+credential representations \citep{w3c_did_core_2022,w3c_vc_data_model_2025}.
+SPIFFE/SPIRE define workload identity mechanisms for software systems
+\citep{spiffe_overview,spire_overview}, and OWASP's Non-Human Identities Top
+10 catalogs operational risks for service accounts, keys, and machine
+principals \citep{owasp_nhi_top10}.  \Argorix passports are local metadata:
+declaring an identifier or country field is not equivalent to resolving,
+issuing, or verifying identity.
 
-\paragraph{Risk framing.}
-NIST AI RMF organizes AI risk management as a lifecycle activity
-\citep{tabassi2023airmf}, and OWASP catalogs application risks including prompt
-injection and sensitive-information disclosure \citep{owasp_llm_top10}.  These
-sources inform threat categories, not certification mappings.  A policy name
-or governance record cannot establish legal compliance.
-
-\paragraph{Policy as code and agent languages.}
-Open Policy Agent (OPA) separates a general-purpose policy decision engine from
-application enforcement and expresses decisions in Rego
-\citep{opa_docs}.  \Argorix instead compiles policy together with agent,
+\subsection{Policy-as-code and enforcement}
+Open Policy Agent separates a general-purpose policy decision engine from
+application enforcement and expresses decisions in Rego \citep{opa_docs}.
+Cedar offers a policy language oriented around authorization decisions
+\citep{cedar_policy}.  \Argorix instead compiles policy together with agent,
 passport, provider, and evidence declarations and emits VM-local decision
-events; it is not an OPA implementation or Rego evaluator.  Jason interprets an
-extension of AgentSpeak for belief--desire--intention multi-agent programming
-\citep{bordini2007jason}.  Jason's primary concern is agent reasoning and
-multi-agent execution, whereas this study examines compiled governance,
-provider denial, and runtime evidence.  \Argorix does not claim Jason
-compatibility or equivalent BDI semantics.
+events.  It is not an OPA/Rego or Cedar evaluator.
 
-\paragraph{Provenance and isolation.}
-in-toto cryptographically records and verifies software supply-chain steps
-\citep{torresarias2019intoto}.  \Argorix EvidenceBundles concern one local
-runtime result, use unsigned semantic digests, and exclude source; they neither
-implement in-toto layouts nor provide its signer-based supply-chain guarantees.
-WASI specifies standards-track host APIs and a capability-based sandbox in
-which authority is explicitly granted \citep{wasi_intro}.  The current
-\Argorix profile denies operations at the VM/application layer but does not run
-inside, implement, or empirically compare a WASI sandbox.
+\subsection{Evidence, provenance, and attestation}
+in-toto records and verifies software supply-chain steps
+\citep{torresarias2019intoto}; SLSA defines supply-chain assurance levels and
+provenance expectations \citep{slsa_spec}; VET Your Agent studies agent
+security evaluation as an external assessment problem \citep{vet_your_agent}.
+\Argorix EvidenceBundles concern one local runtime result, use unsigned
+semantic digests, and currently exclude source.  They do not provide signer
+authentication, trusted time, TEE attestation, zkTLS/web-proof evidence, or
+replacement-resistant transparency.
+
+\subsection{Agent protocols and capability-based isolation}
+MCP defines a protocol for context and tool interactions; A2A defines
+inter-agent communication \citep{mcp_spec_2025,a2a_spec}.  WASI specifies
+standards-track host APIs and a capability-based sandbox model
+\citep{wasi_intro}.  \Argorix models bridge constraints and records negative
+execution controls, but it does not claim live MCP/A2A conformance or WASI
+containment in the current artifact.
 
 \begin{table}[t]
 \centering
@@ -65,11 +65,11 @@ equivalence or conformance claim.}
 \end{table}
 
 \Cref{tab:related-work} pairs each system with one comparison dimension.  Its
-rows are exact side-by-side comparisons, while the surrounding figure program
-shows architectural topology; neither claims implementation equivalence,
-protocol conformance, or shared assurance.
+rows are side-by-side scope comparisons; neither the table nor the surrounding
+text claims implementation equivalence, protocol conformance, or shared
+assurance.
 
-\begin{figure}[t]
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{evolution-timeline.pdf}
 \caption{\Argorix language evolution represented by repository versions and

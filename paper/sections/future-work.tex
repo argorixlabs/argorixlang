@@ -36,3 +36,24 @@ provide producer authentication and replacement detection, subject to key
 governance and availability analysis.  This direction should not be described
 as blockchain immutability unless an actual consensus/storage system is
 implemented and evaluated.
+
+\subsection{Staged roadmap}
+We sequence the proposed work as a claim-bounded roadmap, in which each stage
+adds a single trust property and its own evaluation rather than bundling
+assurance claims.  The version labels are planning milestones, not released
+guarantees.
+
+\begin{description}
+\item[v0.1] Compiled governance with offline-verifiable EvidenceBundles
+(the configuration evaluated here).
+\item[v0.2] Include a source digest in the EvidenceBundle so that compiled
+bytecode can be tied back to its source.
+\item[v0.3] Signed bundles and an append-only transparency log for producer
+authentication and replacement detection.
+\item[v0.4] A live provider adapter executed under explicit sandbox
+constraints, with host-level telemetry.
+\item[v0.5] A DID/VC resolver and credential verification, introducing the
+associated trust anchors and revocation paths.
+\item[v1.0] Independent, production-oriented evaluation against controlled
+workloads and pre-registered outcome definitions.
+\end{description}

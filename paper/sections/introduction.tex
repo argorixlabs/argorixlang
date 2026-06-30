@@ -1,36 +1,52 @@
 \section{Introduction}\label{sec:introduction}
 
-An agentic application is not merely a model invocation.  It is a composition
-of principals, messages, provider operations, tools, policy decisions, and
-evidence.  When these concerns are distributed among prompts, deployment
-configuration, and application code, a reviewer cannot determine from one
-artifact which operation was authorized, which boundary was enforced, or which
-claim is only aspirational.  Protocols such as MCP and A2A standardize useful
-interaction surfaces \citep{mcp_spec_2025,a2a_spec}, while identity and
-credential standards define interoperable data models
-\citep{w3c_did_core_2022,w3c_vc_data_model_2025}.  They do not by themselves
-make an application policy executable or its local execution evidence
-reproducible.
+Modern agent systems compose identities, tools, model providers, delegated
+permissions, jurisdictional claims, policy decisions, and evidence artifacts.
+In many deployments those layers live in different places: prompts describe
+intent, configuration names providers, application code enforces some checks,
+logs record partial outcomes, and documents describe governance after the
+fact.  This separation is operationally convenient, but it makes a systems
+question hard to answer: what can be represented, restricted, and evidenced
+together before an agent operation reaches an executable provider?
 
-Existing work demonstrates complementary separations: OPA decouples policy
-decision from enforcement \citep{opa_docs}, Jason provides an agent-oriented
-language and interpreter \citep{bordini2007jason}, in-toto verifies
-software-supply-chain provenance \citep{torresarias2019intoto}, and WASI
-defines capability-oriented host interfaces \citep{wasi_intro}.  Our question
-is narrower and compositional: what can be compiled and evidenced together in
-one governed agent runtime without upgrading metadata into external assurance?
+\Argorix answers this question as a compiled governance runtime rather than as
+a certification framework.  It compiles agent declarations, typed messages,
+local Agent Passport metadata, provider contracts, policies, runtime profiles,
+and evidence requirements into bytecode that is executed by a fail-closed VM
+\citep{argorixlang2026}.  The VM separates a declarative provider contract from
+an executable provider adapter.  A contract may describe an external provider;
+it does not become callable unless an executable adapter is registered.  In the
+artifact studied here, \code{simulated} is the only executable provider.
 
-\Argorix addresses this systems boundary by compiling declarations for agents,
-messages, passports, policies, providers, governance, and evidence into a
-validated intermediate representation and bytecode executed by a constrained
-virtual machine \citep{argorixlang2026}.  The core design decision is to retain
-source-faithful declarations until semantic validation, then lower only
-validated constructs.  Runtime decisions produce a trace, a SecurityReport,
-and an EvidenceBundle containing semantic SHA-256 digests for bytecode, trace,
-the security report, and the trace event ledger.  Source remains an upstream
-input outside bundle verification.  An executable
-provider registry is separate from declarative external-provider contracts.
-In the studied configuration, only \code{simulated} is executable.
+The central thesis is claim-bounded: \Argorix demonstrates a language/runtime
+boundary that can compile governance metadata, deny unsupported provider
+execution, and generate internally verifiable local evidence.  It does not
+turn declarations into external truth.  Throughout the paper we enforce five
+separations:
+\[
+\begin{array}{rcl}
+\mathrm{declaration} & \ne & \mathrm{verification},\\
+\mathrm{digest\ integrity} & \ne & \mathrm{policy\ approval},\\
+\mathrm{local\ passport\ metadata} & \ne & \mathrm{authenticated\ identity},\\
+\mathrm{provider\ contract} & \ne & \mathrm{executable\ adapter},\\
+\mathrm{EvidenceBundle} & \ne & \mathrm{external\ attestation}.
+\end{array}
+\]
+These separations are not caveats appended at the end; they define the method.
+
+Related systems occupy adjacent points in the design space.  MCP and A2A
+standardize agent interaction surfaces \citep{mcp_spec_2025,a2a_spec}.  NANDA
+and AgentFacts motivate open naming and discovery for agents
+\citep{projectnanda2026,raskar2025beyonddns}.  DID and VC standards define
+identifier and credential data models
+\citep{w3c_did_core_2022,w3c_vc_data_model_2025}.  OPA and Cedar demonstrate
+policy-as-code approaches \citep{opa_docs,cedar_policy}; SPIFFE/SPIRE address
+workload identity \citep{spiffe_overview,spire_overview}; in-toto and SLSA
+address provenance and supply-chain evidence
+\citep{torresarias2019intoto,slsa_spec}.  \Argorix does not replace these
+systems.  Its contribution is to compile local governance constructs and
+evidence boundaries in one agent runtime while marking unresolved assurance
+properties as unresolved.
 
 The paper asks five explicit research questions:
 \begin{description}
@@ -40,21 +56,45 @@ be represented as compiled language constructs?
 provider operation can be planned?
 \item[RQ3.] What evidence does the runtime generate, and how can its internal
 consistency be checked offline?
-\item[RQ4.] What do the existing runtime sessions demonstrate, and what do they
-not demonstrate?
+\item[RQ4.] What do the existing runtime sessions demonstrate, and which
+controlled experiments remain required?
 \item[RQ5.] How can Agent Passports, ATrust, DCP-AI, and future sovereign
 discovery fit into an open agentic-web architecture?
 \end{description}
 
-Our contributions are: (1) a language architecture that exposes governance and
-sovereign metadata to compilation; (2) a fail-closed runtime/provider boundary
-with explicit negative controls; (3) an evidence model separating artifact
-integrity from policy judgment; (4) a reproducible observational study that
-reports complete, incomplete, and internally inconsistent outcomes; and (5) a
-claim-bounded roadmap connecting implemented passport identifiers to proposed
-sovereign discovery.
+Our contributions are:
+\begin{enumerate}
+\item \textbf{Compiled governance constructs:} a language architecture that
+represents agents, passports, policies, runtime profiles, provider contracts,
+and evidence requirements in one validated pipeline.
+\item \textbf{Fail-closed provider boundary:} a split between declarative
+provider contracts and executable adapters, with unsupported external-provider
+execution denied before provider planning.
+\item \textbf{Typed policy lattice design:} a required v0.2 policy model that
+separates pass, deny, review, unknown-rule configuration errors, and malformed
+policy objects instead of collapsing unknown rules into ordinary violations.
+\item \textbf{Offline evidence boundary:} an EvidenceBundle model that checks
+bytecode, trace, security-report, and ledger digest consistency while
+explicitly excluding source integrity, authorship, timestamp, and side-effect
+absence from the current claim.
+\item \textbf{Controlled evaluation agenda:} a snapshot analysis plus required
+controlled-case matrix, ablations, baselines, and claim-boundary taxonomy.
+\end{enumerate}
 
-\begin{figure}[t]
+To prevent overreading, we classify every claim into one of four categories from
+the outset, summarized in \cref{tab:claim-boundaries} and applied uniformly
+thereafter.  \emph{Implemented} mechanisms include the compiler, the fail-closed
+VM path, the simulated-only provider boundary, traces, the SecurityReport, the
+EvidenceBundle, and semantic digest verification.  \emph{Declarative} metadata
+includes passports, \code{ans_name}, \ATrust maps, MCP and A2A bridge
+declarations, and external-provider contracts.  \emph{Proposed} architecture
+includes Sovereign DNS/ANS resolution, a DID/VC resolver, signed bundles,
+source-digest binding, and live federation.  We explicitly do \emph{not} claim
+real identity authentication, credential verification, cryptographic
+handshakes, blockchain immutability, post-quantum security, legal-compliance
+certification, universal prompt-injection prevention, or production isolation.
+
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{architecture.pdf}
 \caption{The governed execution and sovereign trust stack. Solid paths denote
@@ -66,8 +106,8 @@ external verification.}
 \Cref{fig:architecture} summarizes the stack.  The empirical result is
 deliberately narrower than an assurance claim: we observe deterministic
 structure, bounded execution, and verifiable artifact relationships in one
-corpus.  We neither conduct a controlled attack experiment nor infer production
-security from successful digest verification.
+repeated snapshot.  We neither conduct a controlled attack experiment nor infer
+production security from successful digest verification.
 
 Where a figure and table address the same topic, they are deliberately paired
 rather than duplicative: the figure communicates topology, flow, or boundary

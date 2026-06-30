@@ -165,7 +165,16 @@ function Invoke-Paper {
             Where-Object { $_ -ne "Warning--empty year in vazquez_atrust" }
         if ($bibDiagnostics) { throw "bibliography diagnostics remain in main.blg: $bibDiagnostics" }
     }
-    Copy-Item -LiteralPath (Join-Path $BuildRoot "main.pdf") -Destination $FinalPdf -Force
+    $sourcePdf = Join-Path $BuildRoot "main.pdf"
+    $temporaryPdf = Join-Path $PaperRoot ".argorixlang-preprint.$([guid]::NewGuid().ToString('N')).pdf.tmp"
+    try {
+        Copy-Item -LiteralPath $sourcePdf -Destination $temporaryPdf -Force
+        Move-Item -LiteralPath $temporaryPdf -Destination $FinalPdf -Force
+    } finally {
+        if (Test-Path $temporaryPdf) {
+            Remove-Item -LiteralPath $temporaryPdf -Force
+        }
+    }
 }
 
 function Invoke-Qa {
@@ -192,9 +201,16 @@ function Invoke-Tests {
     New-Item -ItemType Directory -Force -Path $TmpRoot | Out-Null
     $stdout = Join-Path $TmpRoot "pytest-stdout.log"
     $stderr = Join-Path $TmpRoot "pytest-stderr.log"
+    $previousInputRoot = $env:ARGORIX_PAPER_INPUT_ROOT
+    $env:ARGORIX_PAPER_INPUT_ROOT = Resolve-InputRoot
     $process = Start-Process -FilePath python -ArgumentList @(
         "-m", "pytest", (Join-Path $PaperRoot "tests"), "-q"
     ) -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if ($null -eq $previousInputRoot) {
+        Remove-Item Env:ARGORIX_PAPER_INPUT_ROOT
+    } else {
+        $env:ARGORIX_PAPER_INPUT_ROOT = $previousInputRoot
+    }
     $output = ((Get-Content -Raw $stdout) + (Get-Content -Raw $stderr))
     $output | Write-Host
     $passed = if ($output -match '(\d+) passed') { [int]$Matches[1] } else { 0 }
@@ -202,9 +218,15 @@ function Invoke-Tests {
     $result = [ordered]@{ passed = $passed; failed = $failed; total = $passed + $failed }
     $resultJson = $result | ConvertTo-Json -Compress
     $testResult = Join-Path $TmpRoot "test-results.json"
-    $temporary = "$testResult.tmp"
+    $temporary = Join-Path $TmpRoot ".test-results.$([guid]::NewGuid().ToString('N')).json.tmp"
     [IO.File]::WriteAllText($temporary, $resultJson + [Environment]::NewLine)
-    Move-Item -LiteralPath $temporary -Destination $testResult -Force
+    try {
+        Move-Item -LiteralPath $temporary -Destination $testResult -Force
+    } finally {
+        if (Test-Path $temporary) {
+            Remove-Item -LiteralPath $temporary -Force
+        }
+    }
     if ($process.ExitCode -ne 0) { throw "pytest failed with exit code $($process.ExitCode)" }
 }
 

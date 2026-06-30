@@ -1,0 +1,18 @@
+\begin{tabularx}{\linewidth}{@{}XXX@{}}
+\toprule
+Case & Expected outcome & Claim status \\
+\midrule
+valid simulated provider plus known policy & PASS; no external side effect & Required experiment \\
+valid passport with residency declared & PASS metadata validation & Required experiment \\
+valid EvidenceBundle & offline verifier passes & Observed for current bundles \\
+valid source digest match & source verification passes & To be generated in v0.2 \\
+external provider without executable adapter & DENY & Observed as blocked boundary \\
+network attempt under denied profile & DENY & Observed as denied event \\
+plaintext secret or key material attempt & DENY & Observed as denied class \\
+residency mismatch or unknown jurisdiction & REVIEW & Required experiment \\
+modified trace / report / bytecode & verifier fails & Required tamper experiment \\
+source mismatch & source verifier fails & To be generated in v0.2 \\
+unknown policy rule & UNKNOWN\_RULE configuration error & Required v0.2 diagnostic \\
+malformed policy object & ERROR parse/semantic failure & Required experiment \\
+\bottomrule
+\end{tabularx}
