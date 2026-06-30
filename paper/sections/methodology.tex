@@ -32,22 +32,22 @@ can be analyzed as controlled results.
 
 \begin{table}[t]
 \centering
-\caption{Typed policy decision lattice required for v0.2. The current v0.1
-snapshot motivates the \code{UNKNOWN_RULE} outcome; it does not yet implement
-the full lattice.}
+\caption{Typed policy decision lattice used in the controlled v0.2 matrix.}
 \label{tab:policy-lattice}
 \input{tables/policy-lattice}
 \end{table}
 
 \Cref{tab:policy-lattice} separates known pass/deny/review outcomes from
-configuration errors and malformed policy objects.  Required known rules are
+configuration errors and malformed policy objects.  Controlled-matrix known
+rules are
 \code{provider_executable_allowlist},
 \code{external_provider_without_adapter}, \code{runtime_network_denied},
 \code{secrets_denied}, \code{key_material_denied},
 \code{passport_residency_declared}, \code{passport_residency_conflict},
 \code{source_digest_present}, \code{bundle_digest_match}, and
-\code{evidence_report_consistency}.  Until those outcomes are generated, the
-paper reports policy evidence as a negative diagnostic finding.
+\code{evidence_report_consistency}.  The observational v0.1 snapshot remains
+reported as a negative diagnostic finding, while the controlled v0.2 matrix
+generates the typed outcomes used for the policy-lattice evaluation.
 
 \subsection{Snapshot inventory and normalization}
 The observational input is an authorized snapshot of 33 request directories

@@ -75,11 +75,11 @@ def render(data: Path, out: Path):
         ("Network access","Denied by runtime profiles","Implemented"),
         ("Secrets and key material","Denied","Implemented")]),
       "policy-lattice.tex": table(["Outcome","Meaning","Current status"],[
-        ("PASS","Known rule satisfied","Required v0.2 outcome"),
-        ("DENY","Known rule violated and execution must stop","Required v0.2 outcome"),
-        ("REVIEW","Known rule requires human review","Required v0.2 outcome"),
-        ("UNKNOWN_RULE","Unsupported policy identifier or configuration error","Diagnosed from v0.1 unknown-rule findings"),
-        ("ERROR","Malformed policy object or parse/semantic failure","Required v0.2 outcome")]),
+        ("PASS","Known rule satisfied","Implemented in controlled matrix"),
+        ("DENY","Known rule violated and execution must stop","Implemented in controlled matrix"),
+        ("REVIEW","Known rule requires human review","Implemented in controlled matrix"),
+        ("UNKNOWN_RULE","Unsupported policy identifier or configuration error","Implemented as diagnostic outcome"),
+        ("ERROR","Malformed policy object or parse/semantic failure","Implemented in controlled matrix")]),
       "controlled-evaluation-matrix.tex": table(["Case","Expected outcome","Claim status"],[
         ("31 same-country passport cases","PASS; no external side effect","Generated in controlled matrix"),
         ("six cross-border residency cases","PASS / REVIEW / DENY by profile","Generated in controlled matrix"),
