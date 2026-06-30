@@ -1,0 +1,151 @@
+\section{Methodology and System Design}\label{sec:methodology}
+
+\subsection{System boundary}
+We evaluate \Argorix as a systems artifact for compiled governance, not as a
+security certification.  The implemented path consists of language constructs,
+semantic validation, typed IR/bytecode, a fail-closed VM, an executable-provider
+registry, trace generation, a SecurityReport, and an EvidenceBundle verifier.
+The declarative path consists of Agent Passport fields, \ATrust and DCP-AI
+metadata, external-provider contracts, bridge declarations, and local
+\code{ans_name} metadata.  Proposed paths include source-digest binding,
+signed bundles, append-only logs, DID/VC resolution, and Sovereign DNS/ANS
+federation.
+
+\begin{table}[t]
+\centering
+\caption{Representative construct families and their boundary in the studied
+implementation.}
+\label{tab:language-constructs}
+\input{tables/language-constructs}
+\end{table}
+
+\Cref{tab:language-constructs} is a method table, not a marketing claim:
+represented constructs are classified by what the current artifact actually
+does with them.
+
+\subsection{Policy decision lattice}
+The v0.1 snapshot exposes a design defect: all detailed policy findings are
+reported as ``unknown policy rule.''  We therefore do not treat those findings
+as ordinary deny/pass observations.  Instead, we specify a v0.2 typed policy
+decision lattice that future artifacts must implement before policy outcomes
+can be analyzed as controlled results.
+
+\begin{table}[t]
+\centering
+\caption{Typed policy decision lattice required for v0.2. The current v0.1
+snapshot motivates the \code{UNKNOWN_RULE} outcome; it does not yet implement
+the full lattice.}
+\label{tab:policy-lattice}
+\input{tables/policy-lattice}
+\end{table}
+
+\Cref{tab:policy-lattice} separates known pass/deny/review outcomes from
+configuration errors and malformed policy objects.  Required known rules are
+\code{provider_executable_allowlist},
+\code{external_provider_without_adapter}, \code{runtime_network_denied},
+\code{secrets_denied}, \code{key_material_denied},
+\code{passport_residency_declared}, \code{passport_residency_conflict},
+\code{source_digest_present}, \code{bundle_digest_match}, and
+\code{evidence_report_consistency}.  Until those outcomes are generated, the
+paper reports policy evidence as a negative diagnostic finding.
+
+\subsection{Snapshot inventory and normalization}
+The observational input is an authorized snapshot of 33 request directories
+from the chatbot runtime's generated output.  Publication authorization does
+not relax minimization: identifiers are aggregated, excerpts are bounded, and
+prompt content is not reconstructed.  A complete directory must have all five
+expected artifacts listed in \cref{sec:evidence}; 27 meet that criterion and
+six contain source only.  We retain incomplete directories in the denominator
+and represent unavailable values as missing.
+
+\begin{table}[t]
+\centering
+\caption{Committed normalized datasets. Values are regenerated from the
+authorized artifact snapshot.}
+\label{tab:dataset}
+\input{tables/dataset-inventory}
+\end{table}
+
+\Cref{tab:dataset} separates session-level normalization, event-level counts,
+and verifier outcomes so that totals can be recomputed without treating one
+row type as another.  The analysis parses available JSON, records parse
+errors, counts sizes and artifact presence, extracts execution and policy
+fields, counts ledger-event kinds, and records passport, runtime-profile,
+adapter, provider-boundary, and digest metadata.  A separate PowerShell
+procedure invokes the repository's offline evidence verifier for every
+complete bundle and stores exit code and bounded standard output.
+
+\subsection{Controlled artifact matrix}
+The snapshot alone is not a behavioral corpus.  We therefore define the
+controlled artifact matrix required to convert the paper from observational
+evidence into controlled systems evidence.  Cases include positive controls,
+negative controls, review controls, tamper controls, and unknown/error
+controls.  Each case must report expected outcome, observed outcome, policy
+decision, provider decision, evidence verification, source verification, trace
+event count, and whether side-effect execution occurred.
+
+\begin{table}[t]
+\centering
+\caption{Controlled evaluation matrix. Rows marked ``Required experiment'' or
+``To be generated'' are study requirements, not claimed results.}
+\label{tab:controlled-matrix}
+\input{tables/controlled-evaluation-matrix}
+\end{table}
+
+\Cref{tab:controlled-matrix} deliberately distinguishes observed snapshot
+properties from required experiments.  In particular, source-digest matching
+and source-mismatch detection are v0.2 requirements, because current
+EvidenceBundles do not verify \code{session.argx}.
+
+\subsection{Ablations and baselines}
+The ablation plan follows a systems-paper discipline: remove one boundary at a
+time and measure false allows, false denies, correct denies, correct reviews,
+tamper detection rate, verification latency, evidence size, trace overhead,
+compile time, and policy evaluation time.  These measurements are not present
+in the current snapshot and must not be claimed until generated.
+
+\begin{table}[t]
+\centering
+\caption{Required ablation study. Metrics in the last column are measurement
+obligations, not current results.}
+\label{tab:ablation}
+\input{tables/ablation-study}
+\end{table}
+
+\Cref{tab:ablation} makes the strongest future claims falsifiable: if removing
+a boundary does not change a target metric, the paper should not treat that
+boundary as empirically justified.
+
+\begin{table}[t]
+\centering
+\caption{Baseline comparison by scope. Baselines are not adversaries; they
+identify which assurance layer each system does or does not cover.}
+\label{tab:baselines}
+\input{tables/baseline-comparison}
+\end{table}
+
+\Cref{tab:baselines} keeps comparisons fair: \Argorix is scoped to language,
+policy, provider boundary, and local evidence linkage, while provenance and
+authorization systems solve different parts of the assurance stack.
+
+\subsection{Analysis rules}
+We define four interpretation rules in advance.  A missing artifact is
+``unavailable,'' never ``passed.''  A detailed policy result overrides a
+coarser summary label for policy interpretation.  Successful evidence
+verification means digest and reference consistency only.  Declarative records
+are not counted as externally performed actions.
+
+We aggregate complete-session policy findings and ledger events by summing the
+normalized per-session fields.  We check all four evidence digest values for
+the \code{sha256:} prefix and 64 hexadecimal digits.  The verification result
+is successful only when the verifier exit code is zero and its explicit
+verified flag is true.
+
+\subsection{Prompt analysis boundary}
+Although the user authorized publication, we inspect only the bounded
+\code{trace.injected.content} schema field.  It is absent from all 27 valid
+complete traces (0 of 27 present).  The six source-only directories contain no
+trace and are not assessable.  Prompt publication is a separate allowlisted
+operation; its suppression is not evidence of content absence.  We therefore
+perform no prompt-level qualitative analysis, quote no prompts, and report no
+prompt-injection attack success rate.

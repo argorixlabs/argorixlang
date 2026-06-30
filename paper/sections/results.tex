@@ -1,0 +1,101 @@
+\section{Results}\label{sec:results}
+
+\subsection{Snapshot completeness}
+Of 33 request directories, 27 (81.8\%) contain all expected artifacts and six
+(18.2\%) contain source only.  All 27 complete sessions report execution status
+\code{completed}; execution status is unavailable for the six incomplete
+sessions.  The distinction matters: the study cannot determine whether those
+six requests failed during compilation, were interrupted, or were retained
+before downstream artifacts were written.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{session-outcomes.pdf}
+\caption{Artifact completeness and observed outcomes for all 33 request
+directories. Source-only observations remain explicit negative/incomplete
+results.}
+\label{fig:session-outcomes}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Empirical totals derived from the normalized snapshot. These totals
+are descriptive, not broad workload evidence.}
+\label{tab:empirical}
+\input{tables/empirical-results}
+\end{table}
+
+\Cref{fig:session-outcomes} keeps the six source-only directories in view,
+while \cref{tab:empirical} reports aggregate totals only where normalized
+values exist; together they prevent complete-case counts from becoming a
+33-session success claim.
+
+\subsection{Deterministic artifact production, limited behavioral diversity}
+The 27 complete traces contain 7,155 counted ledger events, exactly 265 per
+complete session.  Thus the repeated snapshot shows deterministic artifact
+production but limited behavioral diversity.  It does not show how the system
+responds to varied prompts, providers, jurisdictions, policy sets, or attacks.
+The event total is useful for reproducibility checks and evidence-size
+accounting; it is not evidence of scale in the empirical-security sense.
+
+Each complete trace includes the following denial events:
+\code{ExternalProviderExecutionBlocked}, \code{RuntimeNetworkDenied}, and
+\code{RuntimeSecretsDenied}.  It also records declaration events for agents,
+policies, passports, governance, threat, release, ATrust, MCP, and A2A
+metadata.  These observations support the implemented provider-boundary and
+runtime-denial claims in \cref{tab:runtime-controls}; they do not prove
+operating-system containment.
+
+\subsection{Policy diagnostics}
+Each of the 27 complete sessions has \code{security_checks=passed} at the top
+level.  Nevertheless, each detailed policy object has
+\code{policy_passed=false}, \code{review_required=true}, and 44 findings whose
+reason is ``unknown policy rule.''  The total is therefore 1,188 detailed
+policy findings.
+
+We treat this as a diagnostic failure of the v0.1 policy-reporting model, not
+as a normal policy-deny experiment.  The correct paper claim is that the
+current evidence preserves a negative policy state and exposes an aggregation
+inconsistency.  The required v0.2 result is the typed policy decision lattice
+in \cref{tab:policy-lattice}, where unknown rules become configuration errors
+and known rules can produce pass, deny, or review outcomes.
+
+\subsection{Offline bundle verification}
+All 27 complete bundles pass the repository's offline verifier (27/27).  Their
+bytecode, trace, security-report, and trace-event-ledger digest fields are
+syntactically valid SHA-256 identifiers.  The successful result answers RQ3
+narrowly: given each bundle and its relative artifact paths, the verifier can
+reproduce the semantic digests, recompute the ledger digest from trace events,
+check the SecurityReport LedgerSummary's stored digest against it, and validate
+cross-artifact linkage without network access.  The verifier does not digest
+or verify \code{session.argx}; Source integrity is outside EvidenceBundle
+verification.
+
+It does not answer whether policy approved the request; the detailed policy
+result is negative.  It does not authenticate the producer, prove absence of
+side effects, establish trusted time, or establish semantic correctness of
+every event.  Integrity and approval are orthogonal axes.
+
+\subsection{Controlled results still required}
+\Cref{tab:controlled-matrix} should be read as the next experimental design,
+not as completed empirical evidence.  The present snapshot supports only a
+subset of rows: complete bundles verify, external-provider attempts are
+blocked under the current configuration, network and secret/key-material denial
+events are present, and source-only directories are visible rather than
+discarded.  The remaining rows---known policy pass/deny/review, source digest
+match/mismatch, trace/report/bytecode tamper controls, malformed policy errors,
+and jurisdiction review controls---are required experiments.
+
+\subsection{Passports and prompts}
+Every complete session reports two passports, Chile as country and
+jurisdiction, and Chilean and European Union residency declarations.  These
+values show that sovereign metadata survives to runtime evidence.  They do not
+show that data was physically stored in either region or that an external
+authority authenticated the passport.
+
+The bounded \code{injected.content} field is present in 0 of the 27 complete,
+valid traces.  The six source-only directories have no trace and are not
+assessable.  This presence metric is independent of the publication allowlist:
+\code{prompt_text} remains null unless explicitly allowlisted even when content
+is present.  In this snapshot no qualitative prompt themes, quotations,
+injection labels, or attack success rates can be reported.

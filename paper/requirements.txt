@@ -1,0 +1,5 @@
+# Reproducible paper figure/table pipeline and its test harness.
+matplotlib==3.10.8
+pytest==9.0.2
+PyMuPDF==1.27.1
+bibtexparser==1.4.4

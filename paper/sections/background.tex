@@ -1,0 +1,85 @@
+\section{Background and Related Work}\label{sec:background}
+
+\subsection{Agent naming and discovery}
+Project NANDA's current official title is \emph{Architecting the Internet of AI Agents}
+\citep{projectnanda2026}.  Its research anchor, ``Beyond DNS: Unlocking the
+Internet of AI Agents via the NANDA Index and Verified AgentFacts,'' proposes
+indexing and verifiable facts for networked agents
+\citep{raskar2025beyonddns}.  DNS itself separates hierarchical naming from
+application semantics \citep{mockapetris1987dnsconcepts,mockapetris1987dnsimplementation}.
+\Argorix does not implement NANDA, AgentFacts publication, ANS federation, or
+remote DNS resolution.  The comparison is architectural: locally compiled
+sovereign metadata could become an input to a future discovery service.
+
+\subsection{Authenticated delegation and agent authorization}
+OAuth/OIDC-based agent delegation drafts, FIDO's Agentic Authentication Working
+Group, Google AP2, and Mastercard Verifiable Intent all address how agents
+should request, delegate, authenticate, or evidence user intent in real
+ecosystems \citep{oauth_agent_delegation,fido_agentic_awg,google_ap2,mastercard_verifiable_intent}.
+\Argorix does not implement these flows.  It can declare authorization and
+credential requirements locally, but it does not authenticate a human, bind a
+payment mandate, or verify a delegation token.
+
+\subsection{Non-human and workload identity}
+DID Core and the Verifiable Credentials Data Model define identifier and
+credential representations \citep{w3c_did_core_2022,w3c_vc_data_model_2025}.
+SPIFFE/SPIRE define workload identity mechanisms for software systems
+\citep{spiffe_overview,spire_overview}, and OWASP's Non-Human Identities Top
+10 catalogs operational risks for service accounts, keys, and machine
+principals \citep{owasp_nhi_top10}.  \Argorix passports are local metadata:
+declaring an identifier or country field is not equivalent to resolving,
+issuing, or verifying identity.
+
+\subsection{Policy-as-code and enforcement}
+Open Policy Agent separates a general-purpose policy decision engine from
+application enforcement and expresses decisions in Rego \citep{opa_docs}.
+Cedar offers a policy language oriented around authorization decisions
+\citep{cedar_policy}.  \Argorix instead compiles policy together with agent,
+passport, provider, and evidence declarations and emits VM-local decision
+events.  It is not an OPA/Rego or Cedar evaluator.
+
+\subsection{Evidence, provenance, and attestation}
+in-toto records and verifies software supply-chain steps
+\citep{torresarias2019intoto}; SLSA defines supply-chain assurance levels and
+provenance expectations \citep{slsa_spec}; VET Your Agent studies agent
+security evaluation as an external assessment problem \citep{vet_your_agent}.
+\Argorix EvidenceBundles concern one local runtime result, use unsigned
+semantic digests, and currently exclude source.  They do not provide signer
+authentication, trusted time, TEE attestation, zkTLS/web-proof evidence, or
+replacement-resistant transparency.
+
+\subsection{Agent protocols and capability-based isolation}
+MCP defines a protocol for context and tool interactions; A2A defines
+inter-agent communication \citep{mcp_spec_2025,a2a_spec}.  WASI specifies
+standards-track host APIs and a capability-based sandbox model
+\citep{wasi_intro}.  \Argorix models bridge constraints and records negative
+execution controls, but it does not claim live MCP/A2A conformance or WASI
+containment in the current artifact.
+
+\begin{table}[t]
+\centering
+\caption{Scope of related-work comparisons. Each row is relational, not an
+equivalence or conformance claim.}
+\label{tab:related-work}
+\input{tables/related-work}
+\end{table}
+
+\Cref{tab:related-work} pairs each system with one comparison dimension.  Its
+rows are side-by-side scope comparisons; neither the table nor the surrounding
+text claims implementation equivalence, protocol conformance, or shared
+assurance.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{evolution-timeline.pdf}
+\caption{\Argorix language evolution represented by repository versions and
+feature boundaries. The timeline establishes implementation sequence, not
+maturity or deployment readiness.}
+\label{fig:evolution}
+\end{figure}
+
+The language is implemented in Rust \citep{rust_project}.  The evolution in
+\cref{fig:evolution} reflects a sequence from agent execution toward typed
+messages, provider contracts, passports, ATrust metadata, governance,
+hardening, and evidence.  Version numbers establish repository history only;
+they are not external certifications.

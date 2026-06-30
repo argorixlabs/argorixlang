@@ -1,0 +1,11 @@
+\begin{tabularx}{\linewidth}{@{}XXX@{}}
+\toprule
+Outcome & Meaning & Current status \\
+\midrule
+PASS & Known rule satisfied & Required v0.2 outcome \\
+DENY & Known rule violated and execution must stop & Required v0.2 outcome \\
+REVIEW & Known rule requires human review & Required v0.2 outcome \\
+UNKNOWN\_RULE & Unsupported policy identifier or configuration error & Diagnosed from v0.1 unknown-rule findings \\
+ERROR & Malformed policy object or parse/semantic failure & Required v0.2 outcome \\
+\bottomrule
+\end{tabularx}

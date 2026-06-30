@@ -1,0 +1,57 @@
+\section{Discussion}\label{sec:discussion}
+
+\paragraph{RQ1: governance as compilation.}
+The construct inventory shows that identity, residency, provider, policy,
+governance, threat, and evidence relationships can be represented in one
+language and rejected before execution when internally inconsistent.  The
+benefit is not that declarations become true; it is that assumptions become
+typed, referentially checked, and available to both runtime and evidence.
+
+\paragraph{RQ2: constrained request planning.}
+The compiler/VM pipeline and provider split place validation, policy,
+capability, and registry checks before planning.  The observed traces contain
+blocked external attempts and simulated-only execution.  The result supports a
+fail-closed application architecture, while leaving host isolation untested.
+
+\paragraph{RQ3: evidence and offline consistency.}
+Trace, SecurityReport, and EvidenceBundle serve different functions: event
+history, interpreted runtime state, and content linkage among bytecode, trace,
+security report, and the ledger digest derived from trace events.  The report's
+LedgerSummary stores that digest, not the events.  All complete bundles verify offline;
+the upstream source is not part of that verification.  The policy contradiction proves why these artifacts should
+not be collapsed: valid evidence can faithfully preserve an unfavorable
+result.
+
+\paragraph{RQ4: demonstrated and undemonstrated behavior.}
+The snapshot demonstrates repeatable artifact production for 27 complete
+sessions, six visible incomplete sessions, stable control events, and offline
+digest verification.  It does not demonstrate prompt robustness, diverse
+workloads, live providers, identity authentication, credential verification,
+cryptographic handshakes, production containment, or compliance.
+
+\paragraph{RQ5: open agentic-web placement.}
+Project NANDA provides a research direction for indexed, verifiable agent facts
+\citep{projectnanda2026,raskar2025beyonddns}; DCP-AI frames digital citizenship
+and governance \citep{naranjo_dcpai}; ATrust supplies an unpublished conceptual
+trust vocabulary \citep{vazquez_atrust}.  \Argorix can compile local metadata
+that might feed such systems, but it is not their resolver, registry, or trust
+authority.
+
+This positioning differs from protocol conformance.  MCP and A2A define
+interaction protocols \citep{mcp_spec_2025,a2a_spec}; \Argorix presently checks
+declarative bridge boundaries with execution disabled.  Similarly, DID and VC
+standards specify interoperable representations
+\citep{w3c_did_core_2022,w3c_vc_data_model_2025}; the language stores
+descriptions without resolving or verifying them.
+
+The policy contradiction is also a design lesson for evidence-consuming
+systems.  ``Passed'' should not be a free string replicated at multiple
+levels.  A typed lattice such as \emph{deny} $>$ \emph{review} $>$
+\emph{allow}, with unknown treated as review or deny, would make aggregation
+monotone.  An EvidenceBundle should then bind both component results and the
+derived decision, enabling a verifier to recompute the aggregate.
+
+Finally, the repeated 265-event trace suggests that exhaustive metadata can
+become noisy.  Evidence maps and report summaries can improve navigation, but
+summary must remain traceable to component events.  Compact evidence is useful
+only if it cannot erase negative findings.

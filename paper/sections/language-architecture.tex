@@ -1,0 +1,55 @@
+\section{Language and Compiler Architecture}\label{sec:language}
+
+\Argorix programs group declarations into modules.  Construct families include
+agents and capabilities, typed messages and handlers, tools and model calls,
+policies, provider contracts, passports, identity and credential metadata,
+handshakes, trust ledgers, evidence maps, governance profiles, threat models,
+runtime profiles, and release/conformance records.  Some constructs alter
+runtime behavior; others are validated descriptions whose execution is
+explicitly disabled.
+
+\Cref{tab:language-constructs} shows why ``represented in the language'' is not
+one claim: typed agents and runtime policy have implemented behavior, whereas
+ATrust evidence maps and provider contracts remain validated descriptions at
+the boundary discussed here.
+
+The pipeline has five relevant stages.  Parsing produces a source-faithful
+abstract syntax tree.  Name and module resolution bind declarations without
+discarding provenance.  Semantic analysis checks uniqueness, references,
+cross-construct constraints, and denied combinations.  Lowering converts only
+validated forms to intermediate representation and serializable bytecode.
+Finally, the VM loads bytecode, installs explicitly executable providers, and
+evaluates policy before scheduling work.
+
+This order matters.  A runtime check alone discovers invalid configuration
+after deployment; an unchecked lowering pass can erase the distinction between
+an omitted field and an approved field.  Semantic validation rejects, among
+other cases, unknown references, duplicated names, external execution without
+required approval, inconsistent provider/capability bindings, permissive
+runtime profiles, and trust declarations that assert prohibited security
+claims.  The conformance corpus contains positive and negative examples for
+these boundaries.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{request-sequence.pdf}
+\caption{End-to-end request sequence. Semantic validation and policy evaluation
+precede operation planning; evidence is produced from the resulting runtime
+state.}
+\label{fig:request-sequence}
+\end{figure}
+
+\Cref{fig:request-sequence} answers RQ2 at the architectural level.  A request
+cannot directly select an arbitrary provider.  The VM resolves the agent and
+handler, evaluates policy, checks capabilities, and consults the executable
+provider registry.  Declarative contracts such as \code{OpenAIProvider} remain
+descriptions unless an independently executable adapter is registered.  In the
+observed configuration, the registry contains \code{simulated}; attempts to
+cross the external boundary are recorded as blocked.
+
+The language also preserves negative statements.  Fields such as
+\code{network_allowed=false}, denied key material, mandatory audit, and
+fail-closed policy are not comments; their combinations are checked.  However,
+the presence of these fields proves only that the compiler accepted the
+declaration and the runtime recorded its configured handling.  It does not
+prove operating-system containment.

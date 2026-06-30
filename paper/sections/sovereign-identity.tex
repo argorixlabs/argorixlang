@@ -1,0 +1,50 @@
+\section{Sovereign Identity Metadata}\label{sec:sovereign}
+
+An Agent Passport collects locally asserted identity and governance context:
+passport name, subject agent, country, jurisdiction, permitted data residency,
+capabilities, policy bindings, and an \code{ans_name}.  Semantic validation
+ensures that references resolve and that enumerated relationships are
+well-formed.  Runtime traces can therefore identify which passport and
+residency constraints accompanied an operation.
+
+The term \emph{sovereign} refers here to explicit jurisdictional and residency
+metadata controlled by the program, not state recognition or legal status.
+The observed complete sessions each contain two passports, jurisdiction
+\code{CL}, country \code{CL}, and residency values \code{CL} and \code{EU}.
+These values are declarations.  No external registry validates them.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{trust-relationships.pdf}
+\caption{Relationships among passports, agents, policies, ATrust declarations,
+and evidence. Edges indicate validated references, not verified real-world
+relationships.}
+\label{fig:trust-relationships}
+\end{figure}
+
+\code{ans_name} is implemented as a declarative passport identifier.  It
+survives parsing, semantic validation, lowering, and artifact generation.  It
+is not an operational Agent Naming Service: no DNS query, DID resolution,
+registry lookup, ownership challenge, or remote authentication occurs.
+\Cref{fig:trust-relationships} makes the implemented relation explicit: the
+name is bound to a local passport and agent within the compiled program.
+
+This separation avoids a common category error.  A resolvable name answers
+``where is the record?''; an authenticated identity answers ``who controls the
+relevant key or account?''; a credential answers a scoped assertion; and a
+policy decision answers whether an operation is permitted in context.  A
+future architecture may connect these functions, but one cannot substitute
+for another.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{sovereign-discovery.pdf}
+\caption{Implemented and proposed discovery boundary. Local \code{ans_name},
+passport, and policy bindings are implemented; Sovereign DNS/ANS federation,
+DID resolution, and remote discovery are proposed.}
+\label{fig:sovereign-discovery}
+\end{figure}
+
+\Cref{fig:sovereign-discovery} places the operational cut immediately after
+local compilation: federation, DID resolution, and remote proof of control are
+future components and cannot be inferred from a validated \code{ans_name}.
