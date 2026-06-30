@@ -11,10 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "paper" / "data"
 FIGURES = {
-    "architecture.pdf", "request-sequence.pdf", "decision-state-machine.pdf",
-    "session-outcomes.pdf", "policy-heatmap.pdf", "evidence-chain.pdf",
-    "trust-relationships.pdf", "threat-mitigation.pdf", "evolution-timeline.pdf",
-    "sovereign-discovery.pdf", "artifact-schema.pdf", "claim-boundaries.pdf",
+    "system-pipeline.pdf", "provider-boundary.pdf", "policy-lattice-flow.pdf",
+    "evidence-scope.pdf", "claim-boundaries.pdf", "controlled-matrix-outcomes.pdf",
+    "threat-control-mapping.pdf",
 }
 TABLES = {
     "ablation-study.tex", "baseline-comparison.tex",
@@ -65,16 +64,15 @@ def test_evidence_figure_matches_verifier_scope(tmp_path):
     import fitz
     out = tmp_path / "figures"
     run("generate_figures.py", out)
-    text = " ".join(fitz.open(out / "evidence-chain.pdf")[0].get_text().split())
+    text = " ".join(fitz.open(out / "evidence-scope.pdf")[0].get_text().split())
     for required in (
-        "Offline evidence verification scope",
-        "Source (upstream; not bundle-verified)",
-        "Bytecode",
-        "Trace + events",
-        "Security report",
-        "Evidence bundle",
-        "ledger_digest = digest(trace.events)",
-        "report LedgerSummary must match",
+        "EvidenceBundle verification scope",
+        "historical v0.1 bundle verification",
+        "session.argx source",
+        "bytecode",
+        "trace",
+        "source_digest",
+        "mismatch -> VERIFIER_FAIL",
     ):
         assert required in text
     assert "Tamper-evident evidence chain" not in text
@@ -115,6 +113,7 @@ def test_tables_are_deterministic_and_quantitative_values_are_derived(tmp_path):
 
 
 def test_latex_escape_covers_every_special_character():
+    sys.path.insert(0, str(ROOT / "paper" / "scripts"))
     path = ROOT / "paper" / "scripts" / "render_tables.py"
     spec = importlib.util.spec_from_file_location("render_tables", path)
     module = importlib.util.module_from_spec(spec)
@@ -154,24 +153,16 @@ def test_flow_node_labels_have_separate_nonoverlapping_text_blocks(tmp_path):
     out = tmp_path / "figures"
     run("generate_figures.py", out)
     expected = {
-        "architecture.pdf": [
-            "Argorix source", "Parser + semantics", "Typed IR + bytecode",
-            "Fail-closed VM", "Trace + ledger", "Evidence + reports",
+        "system-pipeline.pdf": [
+            "Argorix source", "Parser + semantics", "Typed IR / bytecode",
+            "Fail-closed VM", "Trace / ledger", "Evidence / reports",
         ],
-        "artifact-schema.pdf": [
-            "session.argx", "session.argbc.json", "session.trace.json",
-            "session.security.json", "session.evidence.json",
+        "provider-boundary.pdf": [
+            "Caller", "Compiler validation", "Policy lattice", "VM",
+            "Executable registry", "Evidence",
         ],
         "claim-boundaries.pdf": [
             "Implemented", "Declarative", "Proposed", "Not claimed",
-        ],
-        "evolution-timeline.pdf": [
-            "Core runtime", "Provider contracts", "Evidence + governance",
-            "Operational federation",
-        ],
-        "sovereign-discovery.pdf": [
-            "Local declaration", "Semantic validation", "Local ans_name",
-            "Operational DNS",
         ],
     }
     for name, labels in expected.items():
@@ -212,14 +203,13 @@ def test_claim_boundary_table_has_four_status_columns(tmp_path):
     assert "local catalog" not in text
 
 
-def test_policy_heatmap_reserves_space_for_colorbar(tmp_path):
+def test_controlled_matrix_outcomes_are_sober_bars(tmp_path):
     out = tmp_path / "figures"
     run("generate_figures.py", out)
-    page, blocks = _pdf_blocks(out / "policy-heatmap.pdf")
-    title = next(box for box, text in blocks if "Policy and evidence" in text)
-    tick_boxes = [box for box, text in blocks if text in {"2000", "3000", "4000", "5000", "6000", "7000"}]
-    assert tick_boxes
-    assert title[2] + 12 < min(box[0] for box in tick_boxes)
+    text = " ".join(__import__("fitz").open(out / "controlled-matrix-outcomes.pdf")[0].get_text().split())
+    for required in ("PASS", "DENY", "REVIEW", "UNKNOWN_RULE", "ERROR", "VERIFIER_FAIL", "57 deterministic controlled cases"):
+        assert required in text
+    assert "Policy and evidence event volume" not in text
 
 
 def test_figures_are_legible_at_seven_inch_placement(tmp_path):
@@ -299,10 +289,8 @@ def test_mutated_normalized_data_recalculates_tables_and_empirical_figures(tmp_p
     for value in ("2", "1", "3", "18", "42"):
         assert f"& {value} &" in empirical
     assert "Verified evidence bundles & 2 / 3 &" in empirical
-    outcomes = " ".join(fitz.open(figures / "session-outcomes.pdf")[0].get_text().split())
-    heatmap = " ".join(fitz.open(figures / "policy-heatmap.pdf")[0].get_text().split())
-    assert "2" in outcomes and "1" in outcomes
-    assert "18" in heatmap and "30" in heatmap
+    matrix = " ".join(fitz.open(figures / "controlled-matrix-outcomes.pdf")[0].get_text().split())
+    assert "57 deterministic controlled cases" in matrix
 
 
 def test_tables_use_bounded_tabularx_widths(tmp_path):

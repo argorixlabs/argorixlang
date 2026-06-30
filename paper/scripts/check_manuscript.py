@@ -26,18 +26,13 @@ EXPECTED_SECTIONS = [
     "conclusion",
 ]
 EXPECTED_FIGURES = {
-    "architecture.pdf",
-    "artifact-schema.pdf",
+    "controlled-matrix-outcomes.pdf",
     "claim-boundaries.pdf",
-    "decision-state-machine.pdf",
-    "evidence-chain.pdf",
-    "evolution-timeline.pdf",
-    "policy-heatmap.pdf",
-    "request-sequence.pdf",
-    "session-outcomes.pdf",
-    "sovereign-discovery.pdf",
-    "threat-mitigation.pdf",
-    "trust-relationships.pdf",
+    "evidence-scope.pdf",
+    "policy-lattice-flow.pdf",
+    "provider-boundary.pdf",
+    "system-pipeline.pdf",
+    "threat-control-mapping.pdf",
 }
 EXPECTED_TABLES = {
     "ablation-study",
@@ -191,6 +186,9 @@ def main() -> None:
         "31-country matrix evaluates syntactic and semantic handling of jurisdictional metadata",
         "Country and residency fields are evaluated as local metadata",
         "They do not establish legal compliance or physical storage location",
+        "Solid paths denote implemented compilation and runtime behavior",
+        "UNKNOWN\\_RULE is not treated as an ordinary violation",
+        "57 deterministic cases",
         r"\code{bytecode_path}",
         r"\code{trace_path}",
         r"\code{security_report_path}",
@@ -209,6 +207,7 @@ def main() -> None:
         "certified compliant",
         "prevents all prompt injection",
         "production-grade isolation is implemented",
+        "Policy and evidence event volume",
     ]
     lowered = text.lower()
     for phrase in forbidden:

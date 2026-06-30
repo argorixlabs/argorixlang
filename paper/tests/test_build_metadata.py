@@ -54,7 +54,7 @@ def test_final_qa_schema_when_artifact_exists():
     assert qa["dataset"] == {"total": 33, "complete": 27, "source_only": 6}
     assert qa["prompt_traces"] == {"evaluated": 27, "detected": 0}
     assert qa["verification"] == {"passed": 27, "total": 27}
-    assert qa["figure_count"] == 12
+    assert qa["figure_count"] == 7
     assert qa["table_count"] == 17
     assert "source_commit" not in qa and "base" not in qa
     assert len(qa["input_manifest_sha256"]) == 64

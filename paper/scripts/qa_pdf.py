@@ -97,7 +97,7 @@ def main() -> None:
     checks = {
         "page_range_20_36": 20 <= doc.page_count <= 36,
         "all_authors_present": all(author in text for author in AUTHORS),
-        "figures_12": len(figures) == 12,
+        "figures_7": len(figures) == 7,
         "tables_17": len(tables) == 17,
         "citations_resolved": "[?]" not in text and "??" not in text,
         "no_placeholders": not re.search(

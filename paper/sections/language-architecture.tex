@@ -32,10 +32,11 @@ these boundaries.
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{request-sequence.pdf}
-\caption{End-to-end request sequence. Semantic validation and policy evaluation
-precede operation planning; evidence is produced from the resulting runtime
-state.}
+\includegraphics[width=\linewidth]{provider-boundary.pdf}
+\caption{Provider contracts are declarations; only registered executable
+adapters may be called. In the evaluated path, \code{simulated} is the only
+executable provider. The diagram does not imply live external-provider
+execution or production sandboxing.}
 \label{fig:request-sequence}
 \end{figure}
 

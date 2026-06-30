@@ -13,7 +13,7 @@ def test_manuscript_static_contract() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "12 figures" in result.stdout
+    assert "7 figures" in result.stdout
     assert "17 tables" in result.stdout
     assert "all figure/table labels referenced in prose" in result.stdout
 

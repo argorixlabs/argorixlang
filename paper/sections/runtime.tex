@@ -8,15 +8,6 @@ is incompatible, or a provider is not executable.  Runtime state is retained
 in an outcome object even when execution fails, allowing a report to describe
 the denial without converting it into success.
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\linewidth]{decision-state-machine.pdf}
-\caption{Fail-closed decision state machine. Only validated, policy-permitted
-operations with an executable provider reach execution; every other branch
-terminates with an auditable denial or review state.}
-\label{fig:decision}
-\end{figure}
-
 The provider boundary has two registries.  Declarative contracts state
 capabilities, limits, and allowed operations for an external provider.
 Executable providers contain callable implementations.  A contract's presence
@@ -44,26 +35,25 @@ declarations are likewise runtime-disabled.  These choices make the corpus
 suitable for studying compilation and evidence without contacting an external
 service.
 
-\Cref{fig:decision} also clarifies the meaning of \emph{fail closed}.  It is a
-control-flow property of the implemented VM: missing authorization does not
-fall through to a provider call.  It is not a claim that every host-language,
-dependency, operating-system, or deployment path is isolated.  A production
-assessment would need process, filesystem, network, secret-store, and adapter
-testing beyond the present study.
+\Cref{fig:request-sequence} also clarifies the meaning of \emph{fail closed}.
+It is a control-flow property of the implemented VM: missing authorization
+does not fall through to a provider call.  It is not a claim that every
+host-language, dependency, operating-system, or deployment path is isolated.
+A production assessment would need process, filesystem, network, secret-store,
+and adapter testing beyond the present study.
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\linewidth]{policy-heatmap.pdf}
-\caption{Observed control and policy states across normalized sessions. Blank
-or unavailable cells for source-only directories are missing observations, not
-passes.}
-\label{fig:policy-heatmap}
-\end{figure}
-
-\Cref{fig:policy-heatmap} makes unavailable source-only observations visually
-distinct from favorable results; this prevents missing artifacts from being
-counted as control passes.  Policies can activate actions, emit violations, and require human review.
+Policies can activate actions, emit violations, and require human review.
 Coarse status fields are not authoritative when a detailed policy object is
 available.  This rule becomes consequential in \cref{sec:results}: the corpus
 contains a favorable top-level label alongside uniformly unfavorable detailed
 policy results.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{policy-lattice-flow.pdf}
+\caption{The v0.2 lattice separates policy approval, denial, review,
+configuration errors, and malformed policies. UNKNOWN\_RULE is not treated as
+an ordinary violation, and the figure does not imply legal or operational
+approval outside the local controlled matrix.}
+\label{fig:policy-lattice-flow}
+\end{figure}

@@ -8,15 +8,6 @@ sessions.  The distinction matters: the study cannot determine whether those
 six requests failed during compilation, were interrupted, or were retained
 before downstream artifacts were written.
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\linewidth]{session-outcomes.pdf}
-\caption{Artifact completeness and observed outcomes for all 33 request
-directories. Source-only observations remain explicit negative/incomplete
-results.}
-\label{fig:session-outcomes}
-\end{figure}
-
 \begin{table}[t]
 \centering
 \caption{Empirical totals derived from the normalized snapshot. These totals
@@ -25,10 +16,9 @@ are descriptive, not broad workload evidence.}
 \input{tables/empirical-results}
 \end{table}
 
-\Cref{fig:session-outcomes} keeps the six source-only directories in view,
-while \cref{tab:empirical} reports aggregate totals only where normalized
-values exist; together they prevent complete-case counts from becoming a
-33-session success claim.
+\Cref{tab:empirical} keeps the six source-only directories in view and reports
+aggregate totals only where normalized values exist; this prevents
+complete-case counts from becoming a 33-session success claim.
 
 \subsection{Deterministic artifact production, limited behavioral diversity}
 The 27 complete traces contain 7,155 counted ledger events, exactly 265 per
@@ -86,6 +76,16 @@ produce REVIEW, malformed country values produce ERROR, and missing residency
 with a valid country produces REVIEW.  The matrix also records EU only as a
 regional residency zone, not as a country.
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{controlled-matrix-outcomes.pdf}
+\caption{Controlled v0.2 matrix outcome distribution across 57 deterministic
+cases. The matrix exercises local metadata validation, policy typing, provider
+denial, source-digest checks, and tamper detection; it does not evaluate legal
+compliance, physical residency, or broad workload prevalence.}
+\label{fig:controlled-matrix-outcomes}
+\end{figure}
+
 \begin{table}[t]
 \centering
 \caption{Observed typed policy outcomes in the controlled matrix.}
@@ -93,7 +93,8 @@ regional residency zone, not as a country.
 \input{tables/policy-lattice-outcomes}
 \end{table}
 
-\Cref{tab:policy-lattice-outcomes} shows that PASS, DENY, REVIEW,
+\Cref{fig:controlled-matrix-outcomes} and \cref{tab:policy-lattice-outcomes}
+show that PASS, DENY, REVIEW,
 UNKNOWN\_RULE, ERROR, and VERIFIER\_FAIL outcomes are all represented as typed
 results.  The counts are generated from deterministic fixtures and should not
 be interpreted as prevalence estimates.

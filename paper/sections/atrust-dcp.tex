@@ -31,19 +31,9 @@ credentials, handshakes, ledgers, and evidence; \Argorix checks local
 declarations and emits evidence about their handling.  None of these local
 checks demonstrates that a remote party is genuine.
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\linewidth]{evidence-chain.pdf}
-\caption{Offline evidence verification scope. Source is upstream and outside
-bundle verification; verified inputs are bytecode, trace, and security report,
-with the ledger digest derived from trace events and matched to the report's
-LedgerSummary.}
-\label{fig:evidence-chain}
-\end{figure}
-
-\Cref{fig:evidence-chain} therefore distinguishes the dashed, unverified source
-input from the bundle-verified JSON artifacts.  Its scope does not extend to an
-issuer, credential authority, or remote agent.
+The evidence scope figure in \cref{fig:evidence-chain} distinguishes the
+unverified source input from bundle-verified JSON artifacts.  Its scope does
+not extend to an issuer, credential authority, or remote agent.
 
 MCP and A2A bridges follow the same principle.  They bind agents, passports,
 identities, message contracts, and boundaries while requiring network and

@@ -17,12 +17,14 @@ there is no standalone ledger path.
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=\linewidth]{artifact-schema.pdf}
-\caption{Schema-level view of the five-artifact request directory. Source is an
-upstream input outside EvidenceBundle verification; the bundle references
-bytecode, trace, and security-report semantic digests plus a ledger digest
-derived from trace events, and does not contain a security verdict.}
-\label{fig:artifact-schema}
+\includegraphics[width=\linewidth]{evidence-scope.pdf}
+\caption{Offline evidence scope for historical v0.1 bundles and source-digest
+extension in the controlled v0.2 matrix. v0.1 verifies internal consistency
+among bytecode, trace, report, and ledger digest; v0.2 controlled fixtures
+additionally test source-digest matching and source-mismatch detection. The
+figure does not establish authorship, trusted time, external attestation, or
+absence of side effects.}
+\label{fig:evidence-chain}
 \end{figure}
 
 A semantic digest is computed over canonical JSON derived from a deserialized
@@ -37,7 +39,7 @@ It requires neither network access nor provider credentials.  This verifies
 the relationships encoded by the bundle.  Source integrity is outside
 EvidenceBundle verification.
 
-\Cref{fig:artifact-schema} exposes this asymmetry: a complete request directory
+\Cref{fig:evidence-chain} exposes this asymmetry: a complete request directory
 contains source, but the bundle verifier starts at compiled bytecode and never
 asserts that \code{session.argx} produced it.
 
@@ -57,8 +59,10 @@ such security claims.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{claim-boundaries.pdf}
-\caption{Claim-boundary plate separating implemented mechanisms, declarative
-metadata, proposed architecture, and properties not claimed.}
+\caption{Claim-boundary taxonomy for interpreting every result. It separates
+implemented mechanisms, declarative metadata, proposed/not implemented
+architecture, and properties not claimed; digest success is not upgraded into
+approval, attestation, certification, or real-world identity.}
 \label{fig:claim-boundaries}
 \end{figure}
 
