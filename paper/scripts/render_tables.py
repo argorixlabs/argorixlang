@@ -5,6 +5,9 @@ from pathlib import Path
 from atomic_io import atomic_write_text
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
 def esc(value) -> str:
     replacements = {
         "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
@@ -23,6 +26,10 @@ def table(headers, rows, width=r"\linewidth"):
     return "\n".join(lines)
 
 
+def display_id(value: str) -> str:
+    return str(value).replace("_", " ")
+
+
 def render(data: Path, out: Path):
     out.mkdir(parents=True,exist_ok=True)
     summary=json.loads((data/"runtime_summary.json").read_text(encoding="utf-8"))
@@ -32,6 +39,25 @@ def render(data: Path, out: Path):
     complete=[r for r in sessions if r.get("complete","").lower()=="true"]
     event_total=sum(int(r["count"]) for r in events)
     verified_total=sum(bool(item.get("verified")) for item in verification)
+    matrix_path = ROOT / "results" / "controlled_matrix.json"
+    matrix = json.loads(matrix_path.read_text(encoding="utf-8")) if matrix_path.exists() else {"summary": {}, "rows": []}
+    matrix_summary = matrix.get("summary", {})
+    matrix_rows = matrix.get("rows", [])
+    coverage_path = ROOT / "results" / "passport_country_coverage.csv"
+    coverage = []
+    if coverage_path.exists():
+        with coverage_path.open(encoding="utf-8", newline="") as f:
+            coverage = list(csv.DictReader(f))
+    lattice_path = ROOT / "results" / "policy_lattice_summary.csv"
+    lattice_rows = []
+    if lattice_path.exists():
+        with lattice_path.open(encoding="utf-8", newline="") as f:
+            lattice_rows = list(csv.DictReader(f))
+    tamper_rows = [row for row in matrix_rows if row.get("Outcome") in {"correct_tamper_detection", "correct_source_detection"}]
+    provider_rows = [row for row in matrix_rows if row.get("Case") in {
+        "valid_simulated_provider", "external_provider_without_adapter",
+        "network_denied_profile", "plaintext_secret_attempt", "key_material_attempt",
+    }]
     files={
       "dataset-inventory.tex": table(["Normalized source","Rows / records","Role"],[
         ("runtime_summary.json",len(summary.get("sessions",[])),"Session-level normalized summary"),
@@ -55,18 +81,42 @@ def render(data: Path, out: Path):
         ("UNKNOWN_RULE","Unsupported policy identifier or configuration error","Diagnosed from v0.1 unknown-rule findings"),
         ("ERROR","Malformed policy object or parse/semantic failure","Required v0.2 outcome")]),
       "controlled-evaluation-matrix.tex": table(["Case","Expected outcome","Claim status"],[
-        ("valid simulated provider plus known policy","PASS; no external side effect","Required experiment"),
-        ("valid passport with residency declared","PASS metadata validation","Required experiment"),
+        ("31 same-country passport cases","PASS; no external side effect","Generated in controlled matrix"),
+        ("six cross-border residency cases","PASS / REVIEW / DENY by profile","Generated in controlled matrix"),
         ("valid EvidenceBundle","offline verifier passes","Observed for current bundles"),
-        ("valid source digest match","source verification passes","To be generated in v0.2"),
+        ("valid source digest match","source digest matches fixture source","Generated in controlled matrix"),
         ("external provider without executable adapter","DENY","Observed as blocked boundary"),
         ("network attempt under denied profile","DENY","Observed as denied event"),
         ("plaintext secret or key material attempt","DENY","Observed as denied class"),
-        ("residency mismatch or unknown jurisdiction","REVIEW","Required experiment"),
-        ("modified trace / report / bytecode","verifier fails","Required tamper experiment"),
-        ("source mismatch","source verifier fails","To be generated in v0.2"),
-        ("unknown policy rule","UNKNOWN_RULE configuration error","Required v0.2 diagnostic"),
-        ("malformed policy object","ERROR parse/semantic failure","Required experiment")]),
+        ("residency mismatch or unknown jurisdiction","REVIEW","Generated in controlled matrix"),
+        ("modified trace / report / bytecode / ledger","VERIFIER_FAIL","Generated in controlled matrix"),
+        ("source mismatch","VERIFIER_FAIL","Generated in controlled matrix"),
+        ("unknown policy rule","UNKNOWN_RULE configuration error","Generated in controlled matrix"),
+        ("malformed policy object","ERROR parse/semantic failure","Generated in controlled matrix")]),
+      "passport-jurisdiction-coverage.tex": table(["Region group","Countries","Valid PASS cases"],[
+        (region, len([row for row in coverage if row.get("region_group") == region]),
+         len([row for row in coverage if row.get("region_group") == region and row.get("observed") == "PASS"]))
+        for region in ("home","latin_america","north_america","europe","asia_pacific","africa_middle_east")
+      ]),
+      "controlled-matrix-summary.tex": table(["Measure","Value","Interpretation"],[
+        ("Total controlled rows", matrix_summary.get("total_rows",""), "Generated deterministic fixtures"),
+        ("Countries tested", matrix_summary.get("countries_tested",""), "National ISO alpha-2 metadata only"),
+        ("Valid same-country passport cases", matrix_summary.get("valid_passport_cases",""), "One PASS fixture per country"),
+        ("False allow / deny / review", f"{matrix_summary.get('false_allow_count','')} / {matrix_summary.get('false_deny_count','')} / {matrix_summary.get('false_review_count','')}", "Outcome-classification checks"),
+        ("Evidence pass / fail", f"{matrix_summary.get('evidence_verification_pass_count','')} / {matrix_summary.get('evidence_verification_fail_count','')}", "Bundle or digest-consistency status"),
+      ]),
+      "policy-lattice-outcomes.tex": table(["Outcome","Count","Scope"],[
+        (row.get("outcome",""), row.get("count",""), "Controlled matrix")
+        for row in lattice_rows
+      ]),
+      "matrix-tamper-results.tex": table(["Case","Observed","Evidence","Source"],[
+        (display_id(row.get("Case","")), row.get("Observed",""), display_id(row.get("Evidence","")), display_id(row.get("Source","")))
+        for row in tamper_rows
+      ]),
+      "matrix-provider-boundary.tex": table(["Case","Observed","Provider","Side effect"],[
+        (display_id(row.get("Case","")), row.get("Observed",""), display_id(row.get("Provider","")), row.get("Side Effect",""))
+        for row in provider_rows
+      ]),
       "ablation-study.tex": table(["Variant","Removed boundary","Do not claim until measured"],[
         ("Full ArgorixLang v0.2","none","false allow, false deny, review accuracy, tamper rate, latency"),
         ("w/o typed policy lattice","typed outcomes","unknown-rule collapse and aggregation errors"),

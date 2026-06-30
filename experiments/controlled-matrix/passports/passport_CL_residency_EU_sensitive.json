@@ -1,0 +1,14 @@
+{
+  "case": "passport_CL_residency_EU_sensitive",
+  "country": "CL",
+  "data_class": "sensitive",
+  "expected": "REVIEW",
+  "expected_policy": "REVIEW: cross_border_sensitive_data",
+  "group": "passports",
+  "note": "EU is a regional residency zone, not a country.",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "EU",
+  "tamper_target": null
+}

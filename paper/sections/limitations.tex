@@ -6,13 +6,14 @@ have identical event totals.  Percentages are descriptive only.  Six
 source-only directories have unknown outcomes, introducing survivor bias if
 analysis is restricted to complete sessions.
 
-No controlled baseline, adversarial campaign, fault injection, concurrency
-study, performance benchmark, or usability study was conducted.  The bounded
-prompt-content field was present in 0/27 complete valid traces; six source-only
-directories were unassessable.  Thus prompt-level qualitative analysis and
-injection measurement are impossible.  We do not infer attack
-success from policy violations: those violations report unknown rules, not
-successful attacks.
+The v0.2 controlled matrix is deterministic and local; it is not a randomized
+workload, legal analysis, external identity test, physical data-residency
+measurement, adversarial campaign, concurrency study, performance benchmark,
+or usability study.  The bounded prompt-content field was present in 0/27
+complete valid traces; six source-only directories were unassessable.  Thus
+prompt-level qualitative analysis and injection measurement are impossible.  We
+do not infer attack success from policy violations: those violations report
+unknown rules, not successful attacks.
 
 Offline verification checks bytecode, trace, security-report, and
 trace-event-ledger digest consistency against an unsigned local bundle.  It does not

@@ -1,0 +1,11 @@
+\begin{tabularx}{\linewidth}{@{}XXXX@{}}
+\toprule
+Case & Observed & Evidence & Source \\
+\midrule
+source mismatch & VERIFIER\_FAIL & bundle verified & source digest mismatch \\
+tampered bytecode & VERIFIER\_FAIL & bytecode digest mismatch & source digest match \\
+tampered ledger events & VERIFIER\_FAIL & ledger digest mismatch & source digest match \\
+tampered report & VERIFIER\_FAIL & report digest mismatch & source digest match \\
+tampered trace & VERIFIER\_FAIL & trace digest mismatch & source digest match \\
+\bottomrule
+\end{tabularx}

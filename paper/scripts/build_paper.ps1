@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("analyze", "verify", "figures", "tables", "paper", "qa", "test", "clean", "all")]
+    [ValidateSet("analyze", "verify", "matrix", "figures", "tables", "paper", "qa", "test", "clean", "all")]
     [string]$Target = "all",
     [string]$InputRoot,
     [string]$CargoPath,
@@ -127,6 +127,13 @@ function Invoke-Tables {
     )
 }
 
+function Invoke-Matrix {
+    Invoke-Checked python @((Join-Path $RepoRoot "scripts/generate_passport_matrix.py"))
+    Invoke-Checked python @((Join-Path $RepoRoot "scripts/run_controlled_matrix.py"))
+    Invoke-Checked python @((Join-Path $RepoRoot "scripts/summarize_matrix_results.py"))
+    Invoke-Checked python @((Join-Path $RepoRoot "scripts/verify_matrix_results.py"))
+}
+
 function Invoke-Paper {
     Invoke-Checked python @((Join-Path $PSScriptRoot "check_manuscript.py"))
     $tectonic = Get-Tectonic
@@ -204,7 +211,8 @@ function Invoke-Tests {
     $previousInputRoot = $env:ARGORIX_PAPER_INPUT_ROOT
     $env:ARGORIX_PAPER_INPUT_ROOT = Resolve-InputRoot
     $process = Start-Process -FilePath python -ArgumentList @(
-        "-m", "pytest", (Join-Path $PaperRoot "tests"), "-q"
+        "-m", "pytest", (Join-Path $PaperRoot "tests"),
+        (Join-Path $RepoRoot "tests/test_controlled_matrix.py"), "-q"
     ) -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if ($null -eq $previousInputRoot) {
         Remove-Item Env:ARGORIX_PAPER_INPUT_ROOT
@@ -237,6 +245,7 @@ function Invoke-Clean {
 switch ($Target) {
     "analyze" { Invoke-Analyze }
     "verify" { Invoke-Verify }
+    "matrix" { Invoke-Matrix }
     "figures" { Invoke-Figures }
     "tables" { Invoke-Tables }
     "paper" { Invoke-Paper }
@@ -246,6 +255,7 @@ switch ($Target) {
     "all" {
         Invoke-Analyze
         Invoke-Verify
+        Invoke-Matrix
         Invoke-Tables
         Invoke-Figures
         Invoke-Tests

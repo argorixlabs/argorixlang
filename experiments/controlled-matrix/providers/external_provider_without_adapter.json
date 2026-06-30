@@ -1,0 +1,14 @@
+{
+  "case": "external_provider_without_adapter",
+  "country": "CL",
+  "data_class": "internal",
+  "expected": "DENY",
+  "expected_policy": "DENY: external_provider_without_adapter",
+  "group": "providers",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "external",
+  "residency": "CL",
+  "tamper_target": null
+}

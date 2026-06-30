@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
-  "input_manifest_sha256": "22c561c836f037fc0d0c74961b2c7ee8125213decc8e313207da8975c1f50872",
-  "input_manifest_file_count": 59,
+  "input_manifest_sha256": "2f8464462843c1d4fcb44a00e03dfe2b747cb359b663c7acb762e33c6b13dba6",
+  "input_manifest_file_count": 64,
   "input_manifest_algorithm": "sha256(path NUL sha256(file_bytes), sorted by path)",
   "source_date_epoch": 1782781758,
   "qa_artifact_note": "Reproducibility is bound to input_manifest_sha256, which excludes this QA file, the final PDF, temporary files, and caches.",
@@ -19,32 +19,32 @@
     "total": 27
   },
   "tests": {
-    "passed": 58,
+    "passed": 60,
     "failed": 0,
-    "total": 58,
+    "total": 60,
     "status": "passed"
   },
   "engine": "Tectonic 0.16.9",
-  "page_count": 28,
+  "page_count": 30,
   "figure_count": 12,
-  "table_count": 12,
+  "table_count": 17,
   "citation_count": 27,
   "visual_inspection": {
     "passed": true,
-    "pages_rendered": 28,
+    "pages_rendered": 30,
     "method": "144 dpi Poppler PNGs, contact sheets, flagged-page review"
   },
-  "inspection_timestamp": "2026-06-30T01:12:56.904571+00:00",
+  "inspection_timestamp": "2026-06-30T01:40:07.807350+00:00",
   "warnings": [
     "Harmless underfull-box warnings remain in narrow tables and bibliography entries.",
     "BibTeX reports an empty year for the deliberately undated unpublished ATrust source.",
     "Fontconfig emits a missing-default-config diagnostic on this Windows host; bundled Latin Modern fonts render and embed."
   ],
   "checks": {
-    "page_range_20_32": true,
+    "page_range_20_36": true,
     "all_authors_present": true,
     "figures_12": true,
-    "tables_12": true,
+    "tables_17": true,
     "citations_resolved": true,
     "no_placeholders": true,
     "fonts_embedded": true,
@@ -63,5 +63,5 @@
     "trapped": "",
     "encryption": null
   },
-  "pdfinfo": "Title:           ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence\nSubject:         Reproducible preprint on ArgorixLang runtime evidence and governance\nKeywords:        ArgorixLang, AI agents, governance, runtime evidence, policy\nAuthor:          Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez\nCreator:         LaTeX with hyperref\nProducer:        xdvipdfmx (0.1)\nCreationDate:    Mon Jun 29 21:09:18 2026 Hora est. Sudam\u00e9rica Pac\u00edfico\nCustom Metadata: no\nMetadata Stream: no\nTagged:          no\nUserProperties:  no\nSuspects:        no\nForm:            none\nJavaScript:      no\nPages:           28\nEncrypted:       no\nPage size:       612 x 792 pts (letter)\nPage rot:        0\nFile size:       344898 bytes\nOptimized:       no\nPDF version:     1.5\n"
+  "pdfinfo": "Title:           ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence\nSubject:         Reproducible preprint on ArgorixLang runtime evidence and governance\nKeywords:        ArgorixLang, AI agents, governance, runtime evidence, policy\nAuthor:          Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez\nCreator:         LaTeX with hyperref\nProducer:        xdvipdfmx (0.1)\nCreationDate:    Mon Jun 29 21:09:18 2026 Hora est. Sudam\u00e9rica Pac\u00edfico\nCustom Metadata: no\nMetadata Stream: no\nTagged:          no\nUserProperties:  no\nSuspects:        no\nForm:            none\nJavaScript:      no\nPages:           30\nEncrypted:       no\nPage size:       612 x 792 pts (letter)\nPage rot:        0\nFile size:       349261 bytes\nOptimized:       no\nPDF version:     1.5\n"
 }

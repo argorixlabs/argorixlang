@@ -1,0 +1,14 @@
+{
+  "case": "network_denied_profile",
+  "country": "CL",
+  "data_class": "internal",
+  "expected": "DENY",
+  "expected_policy": "DENY: runtime_network_denied",
+  "group": "providers",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "network",
+  "residency": "CL",
+  "tamper_target": null
+}

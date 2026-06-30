@@ -18,11 +18,13 @@ FIGURES = {
 }
 TABLES = {
     "ablation-study.tex", "baseline-comparison.tex",
-    "controlled-evaluation-matrix.tex",
+    "controlled-evaluation-matrix.tex", "controlled-matrix-summary.tex",
     "dataset-inventory.tex", "language-constructs.tex", "runtime-controls.tex",
     "empirical-results.tex", "threat-mapping.tex", "related-work.tex",
     "claim-boundaries.tex", "limitations-future-assurance.tex",
-    "policy-lattice.tex",
+    "matrix-provider-boundary.tex", "matrix-tamper-results.tex",
+    "passport-jurisdiction-coverage.tex", "policy-lattice.tex",
+    "policy-lattice-outcomes.tex",
 }
 
 
@@ -92,9 +94,13 @@ def test_render_exact_latex_inventory_and_escape(tmp_path):
     related = (out / "related-work.tex").read_text(encoding="utf-8")
     assert all(name in related for name in ("Project NANDA", "ATrust", "DCP-AI", "SPIFFE"))
     controlled = (out / "controlled-evaluation-matrix.tex").read_text(encoding="utf-8")
-    assert "Required experiment" in controlled
+    assert "Generated in controlled matrix" in controlled
     ablation = (out / "ablation-study.tex").read_text(encoding="utf-8")
     assert "Do not claim until measured" in ablation
+    coverage = (out / "passport-jurisdiction-coverage.tex").read_text(encoding="utf-8")
+    assert "latin\\_america" in coverage
+    summary = (out / "controlled-matrix-summary.tex").read_text(encoding="utf-8")
+    assert "Countries tested & 31" in summary
 
 
 def test_tables_are_deterministic_and_quantitative_values_are_derived(tmp_path):

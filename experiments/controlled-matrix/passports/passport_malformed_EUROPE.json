@@ -1,0 +1,14 @@
+{
+  "case": "passport_malformed_EUROPE",
+  "country": "EUROPE",
+  "data_class": "internal",
+  "expected": "ERROR",
+  "expected_policy": "ERROR: malformed_country_code",
+  "group": "passports",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "EU",
+  "tamper_target": null
+}

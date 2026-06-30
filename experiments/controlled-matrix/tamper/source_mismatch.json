@@ -1,0 +1,14 @@
+{
+  "case": "source_mismatch",
+  "country": "CL",
+  "data_class": "internal",
+  "expected": "VERIFIER_FAIL",
+  "expected_policy": "n/a",
+  "group": "tamper",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "CL",
+  "tamper_target": "source"
+}

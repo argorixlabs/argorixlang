@@ -1,0 +1,14 @@
+{
+  "case": "passport_EU_member_ES_residency_DE",
+  "country": "ES",
+  "data_class": "internal",
+  "expected": "PASS",
+  "expected_policy": "PASS: allowed_eu_internal_residency",
+  "group": "passports",
+  "note": "",
+  "policy_rule": null,
+  "profile": "eu_internal_allowed",
+  "provider": "simulated",
+  "residency": "DE",
+  "tamper_target": null
+}

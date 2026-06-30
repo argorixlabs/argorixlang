@@ -1,0 +1,6 @@
+Case,Country,Residency,Data Class,Expected,Observed,Policy,Provider,Evidence,Source,Trace Events,Side Effect,Outcome
+source_mismatch,CL,CL,internal,VERIFIER_FAIL,VERIFIER_FAIL,n/a,simulated_allowed,bundle_verified,source_digest_mismatch,3,no,correct_source_detection
+tampered_bytecode,CL,CL,internal,VERIFIER_FAIL,VERIFIER_FAIL,n/a,simulated_allowed,bytecode_digest_mismatch,source_digest_match,3,no,correct_tamper_detection
+tampered_ledger_events,CL,CL,internal,VERIFIER_FAIL,VERIFIER_FAIL,n/a,simulated_allowed,ledger_digest_mismatch,source_digest_match,3,no,correct_tamper_detection
+tampered_report,CL,CL,internal,VERIFIER_FAIL,VERIFIER_FAIL,n/a,simulated_allowed,report_digest_mismatch,source_digest_match,3,no,correct_tamper_detection
+tampered_trace,CL,CL,internal,VERIFIER_FAIL,VERIFIER_FAIL,n/a,simulated_allowed,trace_digest_mismatch,source_digest_match,3,no,correct_tamper_detection

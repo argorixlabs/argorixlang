@@ -1,0 +1,14 @@
+{
+  "case": "passport_CL_residency_US_sensitive",
+  "country": "CL",
+  "data_class": "sensitive",
+  "expected": "REVIEW",
+  "expected_policy": "REVIEW: cross_border_sensitive_data",
+  "group": "passports",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "US",
+  "tamper_target": null
+}

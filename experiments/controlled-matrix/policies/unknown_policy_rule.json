@@ -1,0 +1,14 @@
+{
+  "case": "unknown_policy_rule",
+  "country": "CL",
+  "data_class": "internal",
+  "expected": "UNKNOWN_RULE",
+  "expected_policy": "UNKNOWN_RULE: unsupported_policy_identifier",
+  "group": "policies",
+  "note": "",
+  "policy_rule": "unsupported_policy_identifier",
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "CL",
+  "tamper_target": null
+}

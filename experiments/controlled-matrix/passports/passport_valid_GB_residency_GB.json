@@ -1,0 +1,14 @@
+{
+  "case": "passport_valid_GB_residency_GB",
+  "country": "GB",
+  "data_class": "internal",
+  "expected": "PASS",
+  "expected_policy": "PASS: passport_country_code_valid + passport_residency_declared + same_country_residency",
+  "group": "passports",
+  "note": "Valid same-country passport fixture for United Kingdom (europe).",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "GB",
+  "tamper_target": null
+}

@@ -1,0 +1,14 @@
+{
+  "case": "passport_valid_CO_residency_CO",
+  "country": "CO",
+  "data_class": "internal",
+  "expected": "PASS",
+  "expected_policy": "PASS: passport_country_code_valid + passport_residency_declared + same_country_residency",
+  "group": "passports",
+  "note": "Valid same-country passport fixture for Colombia (latin_america).",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "CO",
+  "tamper_target": null
+}

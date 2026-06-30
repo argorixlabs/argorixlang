@@ -1,0 +1,14 @@
+{
+  "case": "passport_malformed_123",
+  "country": "123",
+  "data_class": "internal",
+  "expected": "ERROR",
+  "expected_policy": "ERROR: malformed_country_code",
+  "group": "passports",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "CL",
+  "tamper_target": null
+}

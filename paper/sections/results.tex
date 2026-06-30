@@ -76,15 +76,52 @@ result is negative.  It does not authenticate the producer, prove absence of
 side effects, establish trusted time, or establish semantic correctness of
 every event.  Integrity and approval are orthogonal axes.
 
-\subsection{Controlled results still required}
-\Cref{tab:controlled-matrix} should be read as the next experimental design,
-not as completed empirical evidence.  The present snapshot supports only a
-subset of rows: complete bundles verify, external-provider attempts are
-blocked under the current configuration, network and secret/key-material denial
-events are present, and source-only directories are visible rather than
-discarded.  The remaining rows---known policy pass/deny/review, source digest
-match/mismatch, trace/report/bytecode tamper controls, malformed policy errors,
-and jurisdiction review controls---are required experiments.
+\subsection{Controlled v0.2 matrix}
+The generated controlled matrix contains 57 rows: 31 valid same-country
+passport fixtures, six cross-border residency fixtures, invalid and unknown
+jurisdiction fixtures, five provider-boundary fixtures, five tamper/source
+fixtures, and two unknown/error policy fixtures.  All 31 national country codes
+produce same-country PASS outcomes.  Unknown syntactically valid country codes
+produce REVIEW, malformed country values produce ERROR, and missing residency
+with a valid country produces REVIEW.  The matrix also records EU only as a
+regional residency zone, not as a country.
+
+\begin{table}[t]
+\centering
+\caption{Observed typed policy outcomes in the controlled matrix.}
+\label{tab:policy-lattice-outcomes}
+\input{tables/policy-lattice-outcomes}
+\end{table}
+
+\Cref{tab:policy-lattice-outcomes} shows that PASS, DENY, REVIEW,
+UNKNOWN\_RULE, ERROR, and VERIFIER\_FAIL outcomes are all represented as typed
+results.  The counts are generated from deterministic fixtures and should not
+be interpreted as prevalence estimates.
+
+\begin{table}[t]
+\centering
+\caption{Tamper and source-mismatch controls in the controlled matrix.}
+\label{tab:matrix-tamper}
+\input{tables/matrix-tamper-results}
+\end{table}
+
+\Cref{tab:matrix-tamper} reports verifier failures for modified trace, report,
+bytecode, ledger events, and source mismatch.  Source mismatch is checked in
+the controlled v0.2 fixtures; it does not retroactively add source checking to
+the historical runtime EvidenceBundles.
+
+\begin{table}[t]
+\centering
+\caption{Provider-boundary controls in the controlled matrix.}
+\label{tab:matrix-provider}
+\input{tables/matrix-provider-boundary}
+\end{table}
+
+\Cref{tab:matrix-provider} shows the provider-boundary controls: simulated
+provider execution is allowed, while external provider without an executable
+adapter, network attempts, plaintext secret attempts, and key-material attempts
+are denied with no side effect.  The external-provider false-allow count is
+zero in this controlled matrix.
 
 \subsection{Passports and prompts}
 Every complete session reports two passports, Chile as country and
