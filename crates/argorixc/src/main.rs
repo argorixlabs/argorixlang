@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use argorix_bytecode::{lower_ir, verify_bytecode, BytecodeProgram, Instruction};
+use argorix_bytecode::{lower_ir, source_digest, verify_bytecode, BytecodeProgram, Instruction};
 use argorix_ir::IrProgram;
 use argorix_module::{check_package, package_ir, resolve_package, ModuleGraph, ResolvedPackage};
 use argorix_parser::{parse_source, Diagnostic, Program};
@@ -111,7 +111,10 @@ fn run() -> Result<()> {
         Command::EmitBytecode { file } => {
             let compiled = compile(&file, options)?;
             let ir = IrProgram::from(&compiled.program);
-            let bytecode = lower_ir(&ir);
+            let mut bytecode = lower_ir(&ir);
+            // Bind the emitted program to the exact source bytes it came from.
+            // Only the compiler can assert this; the VM never sees the source.
+            bytecode.source_digest = Some(source_digest(compiled.source.as_bytes()));
             verify_bytecode(&bytecode).map_err(bytecode_errors)?;
             println!("{}", serde_json::to_string_pretty(&bytecode)?);
         }
@@ -226,6 +229,7 @@ fn bytecode_errors(errors: Vec<argorix_bytecode::BytecodeError>) -> anyhow::Erro
 
 struct CompiledSource {
     program: Program,
+    source: String,
 }
 
 fn compile(path: &Path, options: CheckOptions) -> Result<CompiledSource> {
@@ -241,7 +245,7 @@ fn compile(path: &Path, options: CheckOptions) -> Result<CompiledSource> {
     check_program_with_options(&program, options)
         .map_err(|diagnostics| diagnostics_error(&diagnostics, &file, &source))?;
 
-    Ok(CompiledSource { program })
+    Ok(CompiledSource { program, source })
 }
 
 fn diagnostics_error(diagnostics: &[Diagnostic], file: &str, source: &str) -> anyhow::Error {

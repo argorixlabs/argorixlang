@@ -53,6 +53,17 @@ impl Vm {
         }
     }
 
+    /// Build a VM over a caller-supplied registry.
+    ///
+    /// Evaluation-only: the release build does not compile this, so no
+    /// production path can substitute the executable provider. It exists so a
+    /// campaign can observe what the VM hands to the provider at its mediation
+    /// point, which the VM cannot demonstrate about itself.
+    #[cfg(feature = "eval-tripwire")]
+    pub fn with_registry(providers: ProviderRegistry) -> Self {
+        Self { providers }
+    }
+
     /// Execute the v1.0 governed runtime entrypoint.
     ///
     /// The default implementation never performs network I/O and never
@@ -2317,6 +2328,19 @@ mod tests {
     };
     use serde_json::json;
 
+    fn declared_payload_types() -> Vec<argorix_bytecode::BytecodeType> {
+        ["UserPrompt", "ToolResult", "Decision"]
+            .into_iter()
+            .map(|name| argorix_bytecode::BytecodeType {
+                name: name.into(),
+                fields: vec![argorix_bytecode::BytecodeTypeField {
+                    name: "content".into(),
+                    field_type: "string".into(),
+                }],
+            })
+            .collect()
+    }
+
     fn add_external_contract(bytecode: &mut BytecodeProgram, enabled: bool) {
         bytecode.bytecode_version = "0.11".into();
         let contract = BytecodeProviderContract {
@@ -2347,6 +2371,7 @@ mod tests {
 
     fn valid_bytecode() -> BytecodeProgram {
         BytecodeProgram {
+            source_digest: None,
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Example".into(),
@@ -2958,6 +2983,9 @@ mod tests {
         .unwrap();
         add_external_contract(&mut bytecode, false);
         bytecode.bytecode_version = "0.20".into();
+        // The v0.9 fixture predates typed messages; declare the payload types
+        // the bumped version's schema requires.
+        bytecode.types = declared_payload_types();
         bytecode.provider_harnesses = vec![BytecodeProviderHarness {
             name: "OpenAIHarness".into(),
             provider: "OpenAI".into(),
@@ -3030,6 +3058,9 @@ mod tests {
         .unwrap();
         add_external_contract(&mut bytecode, false);
         bytecode.bytecode_version = "0.20".into();
+        // The v0.9 fixture predates typed messages; declare the payload types
+        // the bumped version's schema requires.
+        bytecode.types = declared_payload_types();
         bytecode.policies = vec![BytecodePolicy {
             name: "HarnessPolicy".into(),
             rules: ["provider_harness_declared", "external_provider_harnessed"]
@@ -3073,6 +3104,9 @@ mod tests {
         .unwrap();
         add_external_contract(&mut bytecode, false);
         bytecode.bytecode_version = "0.20".into();
+        // The v0.9 fixture predates typed messages; declare the payload types
+        // the bumped version's schema requires.
+        bytecode.types = declared_payload_types();
         bytecode.provider_harnesses = vec![BytecodeProviderHarness {
             name: "OpenAIHarness".into(),
             provider: "OpenAI".into(),

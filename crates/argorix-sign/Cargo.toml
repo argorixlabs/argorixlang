@@ -1,22 +1,18 @@
 [package]
-name = "argorix-vm"
+name = "argorix-sign"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
 
 [[bin]]
-name = "argorix-vm"
+name = "argorix-sign"
 path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-argorix_bytecode.workspace = true
 argorix_vm.workspace = true
 clap.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
 serde_json.workspace = true
-serde.workspace = true
-
-[features]
-# Evaluation-only. Never enabled by the release build.
-eval-tripwire = ["argorix_vm/eval-tripwire"]

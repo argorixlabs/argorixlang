@@ -17,6 +17,7 @@ members = [
     "crates/argorix_vm",
     "crates/argorix-vm",
     "crates/argorix_conformance",
+    "crates/argorix-sign",
 ]
 resolver = "2"
 
@@ -28,6 +29,8 @@ license = "Apache-2.0"
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+ed25519-dalek = "2"
+getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

@@ -1,14 +1,25 @@
 use anyhow::{bail, Context, Result};
 use argorix_bytecode::BytecodeProgram;
 use argorix_vm::{
-    evidence::{verify_evidence, EvidenceBundle},
+    evidence::{verify_evidence_with_anchor, EvidenceBundle},
     parse_injection, ReactiveExecutionTrace, RuntimeExecutionRequest, SecurityReport, Vm,
 };
 use clap::{Args, Parser, Subcommand};
+
+/// The evaluation build must be distinguishable in a run manifest, so the
+/// reported version carries the marker rather than only the crate version.
+#[cfg(feature = "eval-tripwire")]
+const BUILD_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (eval-tripwire)");
+#[cfg(not(feature = "eval-tripwire"))]
+const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 use std::{fs, path::PathBuf};
 
 #[derive(Debug, Parser)]
-#[command(name = "argorix-vm", version, about = "Argorix Bytecode dry-run VM")]
+#[command(
+    name = "argorix-vm",
+    version = BUILD_VERSION,
+    about = "Argorix Bytecode dry-run VM"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -21,6 +32,11 @@ enum Command {
         bundle: PathBuf,
         #[arg(long)]
         json: bool,
+        /// Public key of the expected producer. Supplying one turns the result
+        /// from an integrity statement into an authenticity one, and makes a
+        /// missing or foreign signature a failure.
+        #[arg(long, value_name = "PATH")]
+        trust_anchor: Option<PathBuf>,
     },
 }
 
@@ -55,6 +71,19 @@ struct RunArgs {
     trace_out: Option<PathBuf>,
     #[arg(long, value_name = "PATH")]
     evidence_bundle: Option<PathBuf>,
+    /// Bind the evidence bundle to the source file the bytecode was compiled from.
+    #[arg(long, value_name = "PATH")]
+    source: Option<PathBuf>,
+    /// Evaluation only: record what the VM hands to the provider at its
+    /// mediation point, and write the observations here.
+    #[cfg(feature = "eval-tripwire")]
+    #[arg(long, value_name = "PATH")]
+    eval_tripwire_out: Option<PathBuf>,
+    /// Evaluation only: have the tripwire provider probe this loopback target
+    /// on every invocation, as a positive control at the mediation point.
+    #[cfg(feature = "eval-tripwire")]
+    #[arg(long, value_name = "HOST:PORT/PATH")]
+    eval_tripwire_egress: Option<String>,
     #[arg(long)]
     runtime: Option<String>,
     #[arg(long)]
@@ -91,6 +120,11 @@ fn run() -> Result<()> {
                 security_report,
                 trace_out,
                 evidence_bundle,
+                source: source_path,
+                #[cfg(feature = "eval-tripwire")]
+                eval_tripwire_out,
+                #[cfg(feature = "eval-tripwire")]
+                eval_tripwire_egress,
                 runtime,
                 adapter,
                 operation,
@@ -131,12 +165,41 @@ fn run() -> Result<()> {
                 }
                 return Ok(());
             }
+            #[cfg(feature = "eval-tripwire")]
+            let tripwire = eval_tripwire_out.as_ref().map(|path| {
+                let log = std::sync::Arc::new(argorix_vm::TripwireLog::default());
+                let mut provider = argorix_vm::TripwireProvider::new(log.clone());
+                if let Some(target) = eval_tripwire_egress.as_deref() {
+                    provider = provider.with_egress_probe(target);
+                }
+                let mut registry = argorix_vm::ProviderRegistry::empty();
+                registry
+                    .install_eval_override(std::sync::Arc::new(provider))
+                    .expect("tripwire provider occupies the simulated slot");
+                (path.clone(), log, registry)
+            });
+
             if reactive {
                 let injection = inject
                     .as_deref()
                     .ok_or_else(|| anyhow::anyhow!("`--reactive` requires `--inject`"))
                     .and_then(|value| parse_injection(value).map_err(Into::into))?;
-                let outcome = Vm::new().run_reactive_outcome(&bytecode, injection);
+                #[cfg(feature = "eval-tripwire")]
+                let (tripwire_out, tripwire_log, vm) = match tripwire {
+                    Some((path, log, registry)) => {
+                        (Some(path), Some(log), Vm::with_registry(registry))
+                    }
+                    None => (None, None, Vm::new()),
+                };
+                #[cfg(not(feature = "eval-tripwire"))]
+                let vm = Vm::new();
+
+                let outcome = vm.run_reactive_outcome(&bytecode, injection);
+
+                #[cfg(feature = "eval-tripwire")]
+                if let (Some(path), Some(log)) = (tripwire_out, tripwire_log) {
+                    write_tripwire_log(&path, &log)?;
+                }
                 let report = SecurityReport::from_outcome(&bytecode, &outcome);
                 if let Some(path) = security_report.as_deref() {
                     write_security_report(path, &report)?;
@@ -153,6 +216,7 @@ fn run() -> Result<()> {
                         Some(&file),
                         trace_out.as_deref(),
                         security_report.as_deref(),
+                        source_path.as_deref(),
                     )?;
                     write_evidence_bundle(path, &bundle)?;
                 }
@@ -434,8 +498,17 @@ fn run() -> Result<()> {
                 println!("Status: {}", trace.status);
             }
         }
-        Command::VerifyEvidence { bundle, json } => {
-            let result = verify_evidence(&bundle)?;
+        Command::VerifyEvidence {
+            bundle,
+            json,
+            trust_anchor,
+        } => {
+            let anchor = trust_anchor
+                .as_deref()
+                .map(argorix_vm::signature::read_key_file)
+                .transpose()
+                .map_err(|error| anyhow::anyhow!("{error}"))?;
+            let result = verify_evidence_with_anchor(&bundle, anchor.as_ref())?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else if result.passed {
@@ -452,6 +525,19 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(feature = "eval-tripwire")]
+fn write_tripwire_log(path: &std::path::Path, log: &argorix_vm::TripwireLog) -> Result<()> {
+    let observations = serde_json::json!({
+        "invocations": log.invocations(),
+        "tool_invocations": log.tool_invocations(),
+        "model_invocations": log.model_invocations(),
+        "non_dry_run_requests": log.non_dry_run_requests(),
+        "egress_attempted": log.egress_attempted(),
+        "egress_succeeded": log.egress_succeeded(),
+    });
+    write_pretty_json(path, &observations, "tripwire log")
 }
 
 fn write_security_report(path: &std::path::Path, report: &SecurityReport) -> Result<()> {

@@ -1,9 +1,50 @@
 use crate::{AdapterContract, Provider, ProviderError, ProviderKind, SimulatedProvider};
 use std::collections::HashMap;
+#[cfg(feature = "eval-tripwire")]
+use std::sync::Arc;
 
 pub struct ProviderRegistry {
     providers: HashMap<String, Box<dyn Provider>>,
     contracts: HashMap<String, AdapterContract>,
+    /// Evaluation-only stand-in for the executable provider.
+    ///
+    /// `execution_registry` rebuilds the executable provider from scratch on
+    /// every run, so a substituted registry never reaches the mediation point.
+    /// That is the behaviour the release ships. Under `eval-tripwire` this
+    /// field survives the rebuild so a campaign can observe what the VM hands
+    /// over; it is not compiled into the release.
+    #[cfg(feature = "eval-tripwire")]
+    eval_override: Option<Arc<dyn Provider>>,
+}
+
+/// Delegates to a shared provider so the same instance can survive
+/// `execution_registry`'s rebuild.
+#[cfg(feature = "eval-tripwire")]
+struct SharedProvider(Arc<dyn Provider>);
+
+#[cfg(feature = "eval-tripwire")]
+impl Provider for SharedProvider {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+
+    fn kind(&self) -> ProviderKind {
+        self.0.kind()
+    }
+
+    fn invoke_model(
+        &self,
+        request: crate::ModelProviderRequest,
+    ) -> Result<crate::ModelProviderResponse, ProviderError> {
+        self.0.invoke_model(request)
+    }
+
+    fn invoke_tool(
+        &self,
+        request: crate::ToolProviderRequest,
+    ) -> Result<crate::ToolProviderResponse, ProviderError> {
+        self.0.invoke_tool(request)
+    }
 }
 
 impl Default for ProviderRegistry {
@@ -11,6 +52,8 @@ impl Default for ProviderRegistry {
         let mut registry = Self {
             providers: HashMap::new(),
             contracts: HashMap::new(),
+            #[cfg(feature = "eval-tripwire")]
+            eval_override: None,
         };
         registry
             .register(SimulatedProvider)
@@ -24,7 +67,26 @@ impl ProviderRegistry {
         Self {
             providers: HashMap::new(),
             contracts: HashMap::new(),
+            #[cfg(feature = "eval-tripwire")]
+            eval_override: None,
         }
+    }
+
+    /// Install an evaluation stand-in for the executable provider, one that
+    /// survives `execution_registry`. Evaluation builds only.
+    #[cfg(feature = "eval-tripwire")]
+    pub fn install_eval_override(
+        &mut self,
+        provider: Arc<dyn Provider>,
+    ) -> Result<(), ProviderError> {
+        let name = provider.name().to_owned();
+        if name != "simulated" || provider.kind() != ProviderKind::Simulated {
+            return Err(ProviderError::ExecutableProviderForbidden(name));
+        }
+        self.providers
+            .insert(name, Box::new(SharedProvider(provider.clone())));
+        self.eval_override = Some(provider);
+        Ok(())
     }
 
     pub fn register<P>(&mut self, provider: P) -> Result<(), ProviderError>
@@ -116,6 +178,13 @@ impl ProviderRegistry {
 
     pub fn execution_registry(&self) -> Self {
         let mut registry = Self::empty();
+        #[cfg(feature = "eval-tripwire")]
+        if let Some(provider) = &self.eval_override {
+            registry
+                .install_eval_override(provider.clone())
+                .expect("evaluation override occupies the simulated slot");
+            return registry;
+        }
         if self.contains("simulated") {
             registry
                 .register(SimulatedProvider)

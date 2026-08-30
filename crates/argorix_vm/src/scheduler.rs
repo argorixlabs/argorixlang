@@ -206,6 +206,7 @@ mod tests {
 
     fn prompt_defense_bytecode() -> BytecodeProgram {
         BytecodeProgram {
+            source_digest: None,
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Argorix.Security".into(),

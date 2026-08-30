@@ -380,6 +380,7 @@ fn execute_stage(
                 Some(&workspace.bytecode),
                 trace_path,
                 Some(&workspace.report),
+                None,
             )
             .map_err(|error| error.to_string())?;
             workspace
