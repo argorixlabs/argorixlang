@@ -8,13 +8,13 @@ sessions.  The distinction matters: the study cannot determine whether those
 six requests failed during compilation, were interrupted, or were retained
 before downstream artifacts were written.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Empirical totals derived from the normalized snapshot. These totals
 are descriptive, not broad workload evidence.}
 \label{tab:empirical}
 \input{tables/empirical-results}
-\end{table}
+\end{table*}
 
 \Cref{tab:empirical} keeps the six source-only directories in view and reports
 aggregate totals only where normalized values exist; this prevents
@@ -86,12 +86,12 @@ compliance, physical residency, or broad workload prevalence.}
 \label{fig:controlled-matrix-outcomes}
 \end{figure}
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Observed typed policy outcomes in the controlled matrix.}
 \label{tab:policy-lattice-outcomes}
 \input{tables/policy-lattice-outcomes}
-\end{table}
+\end{table*}
 
 \Cref{fig:controlled-matrix-outcomes} and \cref{tab:policy-lattice-outcomes}
 show that PASS, DENY, REVIEW,
@@ -99,24 +99,24 @@ UNKNOWN\_RULE, ERROR, and VERIFIER\_FAIL outcomes are all represented as typed
 results.  The counts are generated from deterministic fixtures and should not
 be interpreted as prevalence estimates.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Tamper and source-mismatch controls in the controlled matrix.}
 \label{tab:matrix-tamper}
 \input{tables/matrix-tamper-results}
-\end{table}
+\end{table*}
 
 \Cref{tab:matrix-tamper} reports verifier failures for modified trace, report,
 bytecode, ledger events, and source mismatch.  Source mismatch is checked in
 the controlled v0.2 fixtures; it does not retroactively add source checking to
 the historical runtime EvidenceBundles.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Provider-boundary controls in the controlled matrix.}
 \label{tab:matrix-provider}
 \input{tables/matrix-provider-boundary}
-\end{table}
+\end{table*}
 
 \Cref{tab:matrix-provider} shows the provider-boundary controls: simulated
 provider execution is allowed, while external provider without an executable

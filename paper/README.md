@@ -1,6 +1,6 @@
-# ArgorixLang preprint
+# ArgorixLang IEEE conference paper
 
-This directory contains the modular arXiv-style manuscript, normalized
+This directory contains the modular IEEEtran conference manuscript, normalized
 observational data, generated vector figures and tables, and reproducibility
 checks.
 
@@ -87,7 +87,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File paper/scripts/build_paper.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File paper/scripts/build_paper.ps1 -Target qa
 ```
 
-The stable output is `paper/argorixlang-preprint.pdf`; rendered QA pages are
+The stable output is `paper/argorixlang-preprint.pdf` (the historical filename
+is retained for build compatibility); rendered QA pages are
 temporary files under `paper/tmp/pdfs`. Tectonic stabilizes BibTeX citations
 and cross-references automatically, while `SOURCE_DATE_EPOCH` is derived from
 the latest commit touching manuscript, bibliography, normalized data, tables,

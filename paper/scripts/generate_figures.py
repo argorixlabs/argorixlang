@@ -106,7 +106,9 @@ def boundary(ax, x, y, w, h, label, edge=LINE, dotted=False):
         zorder=1,
     )
     ax.add_patch(rect)
-    ax.text(x + 0.1, y + h - 0.18, label, ha="left", va="top", color=MUTED, fontsize=8.0)
+    # Label sits just above the top edge so it never overlaps inner boxes.
+    ax.text(x + 0.12, y + h + 0.06, label, ha="left", va="bottom", color=MUTED,
+            fontsize=8.0)
     return rect
 
 
@@ -127,10 +129,10 @@ def arrow(ax, start, end, color=BLUE, dashed=False, lw=1.4, rad=0):
 
 
 def system_pipeline(path: Path) -> None:
-    fig, ax = base("Figure 1. System pipeline and evidence boundary", 3.1)
+    fig, ax = base("System pipeline and evidence boundary", 3.1)
     boundary(ax, 0.25, 2.25, 5.25, 2.55, "implemented compilation flow", BLUE)
-    boundary(ax, 5.65, 2.25, 1.8, 2.55, "fail-closed runtime boundary", RED)
-    boundary(ax, 7.65, 2.25, 2.1, 2.55, "offline evidence boundary", GREEN)
+    boundary(ax, 5.65, 2.25, 1.8, 2.55, "fail-closed runtime", RED)
+    boundary(ax, 7.65, 2.25, 2.1, 2.55, "offline evidence", GREEN)
     labels = [
         ("Argorix\nsource", 0.45, BLUE, PALE_BLUE),
         ("Parser +\nsemantics", 1.95, BLUE, PALE_BLUE),
@@ -157,7 +159,7 @@ def system_pipeline(path: Path) -> None:
 
 
 def provider_boundary(path: Path) -> None:
-    fig, ax = base("Figure 2. Provider boundary and request lifecycle", 3.25)
+    fig, ax = base("Provider boundary and request lifecycle", 3.25)
     boundary(ax, 0.25, 3.0, 9.45, 1.55, "implemented request lifecycle", BLUE)
     for label, x in [
         ("Caller", 0.55),
@@ -182,7 +184,7 @@ def provider_boundary(path: Path) -> None:
 
 
 def policy_lattice(path: Path) -> None:
-    fig, ax = base("Figure 3. Typed policy lattice v0.2", 3.45)
+    fig, ax = base("Typed policy lattice v0.2", 3.45)
     box(ax, 0.4, 3.0, 1.25, 0.7, "Policy\ninput", BLUE, PALE_BLUE)
     box(ax, 2.25, 4.15, 1.25, 0.65, "known\nrule", GREEN, PALE_GREEN)
     box(ax, 2.25, 3.0, 1.25, 0.65, "unknown\nrule", AMBER, PALE_AMBER)
@@ -208,7 +210,7 @@ def policy_lattice(path: Path) -> None:
 
 
 def evidence_scope(path: Path) -> None:
-    fig, ax = base("Figure 4. EvidenceBundle verification scope", 3.45)
+    fig, ax = base("EvidenceBundle verification scope", 3.45)
     boundary(ax, 0.4, 3.25, 9.0, 1.45, "historical v0.1 bundle verification", GREEN)
     box(ax, 0.75, 3.68, 1.35, 0.55, "session.argx\nsource", LINE, GRAY, dashed=True)
     for label, x in [("bytecode", 2.65), ("trace", 4.05), ("security\nreport", 5.45), ("ledger\ndigest", 6.95), ("Evidence\nBundle", 8.2)]:
@@ -229,7 +231,7 @@ def evidence_scope(path: Path) -> None:
 
 
 def claim_boundaries(path: Path) -> None:
-    fig, ax = base("Figure 5. Claim boundary taxonomy", 3.1)
+    fig, ax = base("Claim boundary taxonomy", 3.1)
     groups = [
         ("Implemented", "VM\ntraces\nEvidenceBundle", GREEN, PALE_GREEN, False),
         ("Declarative", "passports\nans_name\nATrust map", BLUE, PALE_BLUE, False),
@@ -249,31 +251,41 @@ def claim_boundaries(path: Path) -> None:
 def controlled_matrix_outcomes(path: Path, results_root: Path) -> None:
     with (results_root / "controlled_matrix.json").open(encoding="utf-8") as handle:
         summary = json.load(handle)["summary"]
-    labels = ["PASS", "DENY", "REVIEW", "UNKNOWN_RULE", "ERROR", "VERIFIER_FAIL"]
-    values = [
-        summary["pass_outcomes"],
-        summary["deny_outcomes"],
-        summary["review_outcomes"],
-        summary["unknown_rule_outcomes"],
-        summary["error_outcomes"],
-        summary["verifier_fail_outcomes"],
+    rows = [
+        ("PASS", summary["pass_outcomes"], GREEN),
+        ("DENY", summary["deny_outcomes"], RED),
+        ("REVIEW", summary["review_outcomes"], AMBER),
+        ("UNKNOWN_RULE", summary["unknown_rule_outcomes"], PURPLE),
+        ("ERROR", summary["error_outcomes"], RED),
+        ("VERIFIER_FAIL", summary["verifier_fail_outcomes"], INK),
     ]
-    colors = [GREEN, RED, AMBER, PURPLE, RED, INK]
-    fig, ax = plt.subplots(figsize=(7.1, 3.2))
+    # Order bars by frequency so the distribution reads at a glance.
+    rows.sort(key=lambda item: item[1], reverse=True)
+    labels = [item[0] for item in rows]
+    values = [item[1] for item in rows]
+    colors = [item[2] for item in rows]
+
+    # Compact horizontal layout: avoids rotated long labels and keeps the figure
+    # short enough to sit inline rather than floating onto its own page.
+    fig, ax = plt.subplots(figsize=(7.1, 2.55))
     fig.patch.set_facecolor("white")
-    bars = ax.bar(labels, values, color=colors, width=0.62)
-    ax.set_title("Figure 6. Controlled matrix outcome distribution", color=INK, pad=8)
-    ax.set_ylabel("Deterministic cases")
+    ys = list(range(len(rows)))
+    ax.barh(ys, values, color=colors, height=0.62, zorder=3)
+    ax.set_yticks(ys)
+    ax.set_yticklabels(labels)
+    ax.invert_yaxis()
+    ax.set_xlabel("Deterministic cases")
+    ax.set_xlim(0, max(values) * 1.12)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="y", color="#E5E7EB", lw=0.8)
+    ax.grid(axis="x", color="#E5E7EB", lw=0.8)
     ax.set_axisbelow(True)
-    ax.set_ylim(0, max(values) + 6)
-    ax.tick_params(axis="x", labelrotation=18)
-    for bar, value in zip(bars, values):
-        ax.text(bar.get_x() + bar.get_width() / 2, value + 0.7, str(value), ha="center", va="bottom", fontsize=8.5, weight="bold")
+    ax.set_title("Controlled matrix outcome distribution", color=INK, pad=8)
+    for y, value in zip(ys, values):
+        ax.text(value + max(values) * 0.015, y, str(value), va="center",
+                ha="left", fontsize=8.5, weight="bold")
     ax.text(
         0.5,
-        -0.32,
+        -0.34,
         f"{summary['total_rows']} deterministic controlled cases; local metadata and verifier outcomes only.",
         transform=ax.transAxes,
         ha="center",
@@ -284,7 +296,7 @@ def controlled_matrix_outcomes(path: Path, results_root: Path) -> None:
 
 
 def threat_control_mapping(path: Path) -> None:
-    fig, ax = base("Figure 7. Threat-to-control mapping", 3.8)
+    fig, ax = base("Threat-to-control mapping", 3.3)
     headers = [("Threat", 0.6), ("Control", 4.0), ("Claim status", 7.35)]
     for text, x in headers:
         ax.text(x, 5.35, text, weight="bold", ha="left", color=INK, fontsize=9)

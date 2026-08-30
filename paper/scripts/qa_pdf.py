@@ -95,7 +95,7 @@ def main() -> None:
     for group in re.findall(r"\\cite\w*\{([^}]+)\}", source):
         citations.update(item.strip() for item in group.split(","))
     checks = {
-        "page_range_20_36": 20 <= doc.page_count <= 36,
+        "page_range_12_20": 12 <= doc.page_count <= 20,
         "all_authors_present": all(author in text for author in AUTHORS),
         "figures_7": len(figures) == 7,
         "tables_17": len(tables) == 17,

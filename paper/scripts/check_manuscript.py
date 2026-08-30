@@ -64,18 +64,22 @@ def main() -> None:
     for section in EXPECTED_SECTIONS:
         if rf"\input{{sections/{section}}}" not in main_text:
             fail(f"missing modular input: {section}")
+    if r"\documentclass[conference]{IEEEtran}" not in main_text:
+        fail("main manuscript must use IEEEtran conference format")
+    if r"\begin{IEEEkeywords}" not in main_text:
+        fail("main manuscript lacks IEEE keywords")
     affiliation_requirements = (
-        r"Gustavo Venegas\textsuperscript{1}",
-        r"Edison Vazquez\textsuperscript{1}",
-        r"Danilo Naranjo\textsuperscript{2}",
-        r"Benjamin Gonzalez\textsuperscript{1}",
+        r"Gustavo Venegas\IEEEauthorrefmark{1}",
+        r"Edison Vazquez\IEEEauthorrefmark{1}",
+        r"Danilo Naranjo\IEEEauthorrefmark{2}",
+        r"Benjamin Gonzalez\IEEEauthorrefmark{1}",
     )
     for requirement in affiliation_requirements:
         if requirement not in main_text:
             fail(f"missing author affiliation marker: {requirement}")
     if main_text.count("Chilean Chamber of Artificial Intelligence") != 1:
         fail("shared Chamber affiliation must appear exactly once")
-    if main_text.count(r"\textsuperscript{2}Ocular") != 1:
+    if main_text.count(r"\IEEEauthorrefmark{2}Ocular") != 1:
         fail("Ocular affiliation must appear exactly once")
 
     tex_paths = [MAIN, *sorted((ROOT / "sections").glob("*.tex")),

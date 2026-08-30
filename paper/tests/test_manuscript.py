@@ -43,12 +43,14 @@ def test_readme_documents_complete_reproduction_pipeline() -> None:
 def test_title_has_two_affiliations_with_author_markers() -> None:
     paper = Path(__file__).resolve().parents[1]
     main = (paper / "main.tex").read_text(encoding="utf-8")
+    assert r"\documentclass[conference]{IEEEtran}" in main
+    assert r"\begin{IEEEkeywords}" in main
     author_block = main.split(r"\author{", 1)[1].split("\n}\n", 1)[0]
     for name in (
-        r"Gustavo Venegas\textsuperscript{1}",
-        r"Edison Vazquez\textsuperscript{1}",
-        r"Danilo Naranjo\textsuperscript{2}",
-        r"Benjamin Gonzalez\textsuperscript{1}",
+        r"Gustavo Venegas\IEEEauthorrefmark{1}",
+        r"Edison Vazquez\IEEEauthorrefmark{1}",
+        r"Danilo Naranjo\IEEEauthorrefmark{2}",
+        r"Benjamin Gonzalez\IEEEauthorrefmark{1}",
     ):
         assert name in author_block
     assert author_block.count("Chilean Chamber of Artificial Intelligence") == 1

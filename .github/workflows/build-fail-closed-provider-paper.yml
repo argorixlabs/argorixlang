@@ -1,0 +1,45 @@
+name: Build Fail-Closed Provider IEEE Paper
+
+# Compile the IEEEtran paper whenever its sources change.
+on:
+  push:
+    paths:
+      - 'paper/fail-closed-provider-ieee/**'
+      - '.github/workflows/build-fail-closed-provider-paper.yml'
+  pull_request:
+    paths:
+      - 'paper/fail-closed-provider-ieee/**'
+      - '.github/workflows/build-fail-closed-provider-paper.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compile main.tex
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # xu-cheng/latex-action ships a full TeX Live, so IEEEtran, tikz (with
+      # arrows.meta/positioning/fit/backgrounds/shapes.geometric/calc), booktabs,
+      # array, xcolor, listings, url, cite, hyperref, amsmath/amssymb, graphicx,
+      # and bibtex are all available without extra installation.
+      - name: Compile paper with latexmk
+        uses: xu-cheng/latex-action@v3
+        with:
+          working_directory: paper/fail-closed-provider-ieee
+          root_file: main.tex
+          # latexmk runs bibtex automatically for \bibliography and re-runs
+          # pdflatex until cross-references resolve. A non-zero exit (LaTeX
+          # error) fails this step and therefore the workflow.
+          latexmk_use_xelatex: false
+          args: -pdf -file-line-error -halt-on-error -interaction=nonstopmode
+
+      - name: Upload compiled PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: fail-closed-provider-ieee-paper
+          path: paper/fail-closed-provider-ieee/main.pdf
+          if-no-files-found: error
