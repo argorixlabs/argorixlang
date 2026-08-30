@@ -1,0 +1,160 @@
+{
+  "schema_version": 2,
+  "artifact": "../argorixlang-camera-ready.pdf",
+  "artifact_sha256": "892881ec6518bf7314c592111934aca97447fcd4faf579589d5ce0c96005491a",
+  "artifact_bytes": 228576,
+  "source_package": "../argorixlang-camera-ready-source.zip",
+  "source_package_sha256": "5aacd7041adc134a79124a12728ff699eff0a2ec71c33085ca8b46865dfdc6cc",
+  "source_package_bytes": 69969,
+  "source_package_smoke_compile": {
+    "passed": true,
+    "page_count": 7,
+    "citations_and_bibtex_resolved": true,
+    "note": "extracted to a clean directory and built with pdflatex + bibtex"
+  },
+  "format": {
+    "document_class": "IEEEtran conference",
+    "paper_size_points": [
+      612.0,
+      792.0
+    ],
+    "paper_size": "US Letter",
+    "page_count": 7,
+    "official_page_range": "4-8 pages including references"
+  },
+  "content": {
+    "authors_present": true,
+    "figure_count": 2,
+    "table_count": 3,
+    "reference_count": 15,
+    "citations_resolved": true,
+    "unresolved_reference_markers": false,
+    "bibtex_toolkit_issues": 0
+  },
+  "rendering": {
+    "font_objects": 13,
+    "all_fonts_embedded": true,
+    "overfull_boxes": 0,
+    "underfull_boxes": 1,
+    "underfull_note": "one loose line from an unbreakable DOI URL in a narrow column",
+    "visual_inspection_pages": 7,
+    "visual_inspection_passed": true,
+    "visual_inspection_dpi": 144
+  },
+  "executed_evidence": {
+    "source": "evaluation/adversarial (single entrypoint: run.py --clean)",
+    "run_id": "v3",
+    "commit": "59524f664536fa761ca24b03312665e2f62cc6b9",
+    "binary_sha256": {
+      "argorixc": "sha256:e6ad8d51915fdc339632b415e19a587a994436aefcbf82d13a47e686e3295eed",
+      "argorix-vm": "sha256:d9491a8cf7c26ff71259e004a34a8acf50a9f64438f7c2569331adf976d5048a",
+      "argorix-conformance": "sha256:f03c1f09cc1a6892d62a8c23612fc8fcd96ce943d3c87758eb3362f451c3900b",
+      "argorix-sign": "sha256:011943fd0f148ef12a7f654734f3c0fa1d2b08a0a2f1b53bc108cd441053bc9f",
+      "argorix-vm-eval-tripwire": "sha256:5205fdbf2e2692f0e932ab989a7b661a915d0040b0dd752a526c834beb188857"
+    },
+    "rows_total": 231,
+    "rows_scored": 118,
+    "outcome_accuracy": "118/118",
+    "false_allows": "0/118",
+    "false_denies": "0/118",
+    "fail_closed": "16/16",
+    "tamper_detected": "21/22",
+    "containment_before_sink": "21/21",
+    "boundary_rejection": "18/21",
+    "destination_asr": "0/21",
+    "behavioural_fingerprints": 12,
+    "gates": {
+      "harness_validity": "go",
+      "policy_correctness": "go",
+      "side_effects": "go",
+      "tamper_rates": "go",
+      "prompt_injection": "no-go",
+      "reproducibility": "go",
+      "e0_control": "go",
+      "e1_diversity": "go"
+    },
+    "gates_as_designed": true,
+    "reproducibility": "two clean runs produced identical metrics, gates and tables"
+  },
+  "open_findings": [],
+  "resolved_findings": [
+    {
+      "id": "F1",
+      "finding": "A malformed provider payload was not rejected by any boundary.",
+      "resolution": "The bytecode verifier now checks that every tool and model input and output type is declared, gated on the versions whose schema carries a type table."
+    },
+    {
+      "id": "F2",
+      "finding": "Modifying only the source file was undetectable.",
+      "resolution": "`argorixc emit-bytecode` binds the source digest into the bytecode and the bundle records a source_path the verifier checks; a bundle naming a source the bytecode does not bind fails closed."
+    },
+    {
+      "id": "F3",
+      "finding": "Nothing distinguished the original artifact set from a self-consistent replacement.",
+      "resolution": "A detached Ed25519 signature over the bundle's canonical bytes, produced by the separate `argorix-sign` binary so the runtime holds no private key, and checked by `verify-evidence --trust-anchor`. Every non-producer set tested is rejected (3/3); a missing or foreign signature fails closed."
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "B1",
+      "boundary": "Unsigned verification cannot distinguish the original artifact set from a self-consistent replacement. This is what digest verification is, not a defect in it.",
+      "claim_effect": "unsigned verification establishes internal consistency and source binding; `tamper-proof` may not be claimed for it"
+    },
+    {
+      "id": "B2",
+      "boundary": "Signing establishes the producer and nothing else: there is no key storage, rotation, revocation or trusted timestamping.",
+      "claim_effect": "authenticity may be claimed only relative to a supplied trust anchor, never as key governance or provenance over time"
+    },
+    {
+      "id": "B3",
+      "boundary": "The release rebuilds its executable provider on every run, so no adapter can be substituted into it. A separate build with the eval-tripwire feature was used to observe the mediation point; the release itself remains uninstrumentable.",
+      "claim_effect": "observations at the mediation point describe the evaluation build; non-reachability of a real external adapter is untested because no such adapter exists to test"
+    },
+    {
+      "id": "B4",
+      "boundary": "The release ingests no prompt content, so no prompt -> proposal -> mediation path exists to attack.",
+      "claim_effect": "prompt injection was not evaluated"
+    },
+    {
+      "id": "B5",
+      "boundary": "Not every prohibited condition is rejected at a boundary: sandboxed_external_planned. The declared sandboxed operation is accepted and reported as planned without executing, by design.",
+      "claim_effect": "containment before the sink and rejection at a boundary are different proportions; both are reported"
+    }
+  ],
+  "prompt_injection": {
+    "executed": false,
+    "declared_runs": null,
+    "claim": "prompt injection was not evaluated"
+  },
+  "prefix_baseline": {
+    "archived_under": "evaluation/adversarial/baseline/prefix/",
+    "outcome_accuracy": "103/106",
+    "tamper_detected": "20/22",
+    "boundary_rejection": "15/21"
+  },
+  "oracle_amendments": [
+    {
+      "id": "A1",
+      "field": "cases[*].phase",
+      "affects_security_claims": false
+    },
+    {
+      "id": "A2",
+      "field": "cases['E3-21'].outcome",
+      "affects_security_claims": true
+    }
+  ],
+  "reviewer_corrections": {
+    "script_derived_57_row_matrix_removed": true,
+    "expected_and_observed_physically_separated": true,
+    "anticircularity_test_passing": true,
+    "policy_integrity_and_approval_separated": true,
+    "snapshot_homogeneity_disclosed": true,
+    "sovereign_reframed_as_jurisdiction_metadata": true,
+    "prompt_injection_marked_not_evaluated": true,
+    "external_side_effect_absence_not_claimed": true,
+    "atrust_dcpai_removed_from_evidentiary_foundation": true,
+    "controlled_adversarial_experiments_executed": true,
+    "negative_results_published": true
+  }
+}
