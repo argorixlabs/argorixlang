@@ -1,0 +1,379 @@
+{
+  "vm_version": "1.0",
+  "status": "completed",
+  "mode": "reactive-dry-run",
+  "scheduler": "deterministic",
+  "message_contracts": [
+    {
+      "name": "ToolResult",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "Decision",
+      "fields": [
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "injected": {
+    "from": "User",
+    "to": "PolicyJudge",
+    "act": "tell",
+    "message_type": "ToolResult"
+  },
+  "steps": [
+    {
+      "index": 1,
+      "agent": "PolicyJudge",
+      "handled": "ToolResult",
+      "emitted": [],
+      "traced": [
+        "result"
+      ],
+      "halted": false,
+      "intrinsics": [],
+      "tool_calls": [],
+      "model_calls": [
+        "GuardModel"
+      ]
+    }
+  ],
+  "mailboxes": [
+    {
+      "agent": "PolicyJudge",
+      "delivered": 1,
+      "processed": 1
+    }
+  ],
+  "agent_state": [
+    {
+      "agent": "PolicyJudge",
+      "handled_count": 1,
+      "checkpoints": 0,
+      "last_message_type": "ToolResult"
+    }
+  ],
+  "intrinsics": [],
+  "tool_calls": [],
+  "model_calls": [
+    {
+      "agent": "PolicyJudge",
+      "model": "GuardModel",
+      "provider": "simulated",
+      "capability": "model.invoke",
+      "status": "allowed",
+      "mode": "dry-run"
+    }
+  ],
+  "providers": [
+    {
+      "name": "simulated",
+      "kind": "simulated",
+      "enabled": true
+    }
+  ],
+  "provider_contracts": [
+    {
+      "name": "OpenAIProvider",
+      "kind": "external",
+      "enabled": false,
+      "dry_run_only": true,
+      "requires_feature_flag": true,
+      "requires_explicit_approval": true,
+      "allowed_targets": [
+        "GuardModel"
+      ],
+      "allowed_capabilities": [
+        "model.invoke"
+      ]
+    }
+  ],
+  "provider_calls": [
+    {
+      "provider": "simulated",
+      "kind": "model",
+      "target": "GuardModel",
+      "status": "allowed",
+      "simulated": true
+    }
+  ],
+  "policy_report": {
+    "status": "passed",
+    "legacy_assertions": [
+      {
+        "name": "no_unhandled_messages",
+        "argument": null,
+        "status": "passed",
+        "reason": null
+      }
+    ],
+    "policy_blocks": [],
+    "actions": [],
+    "failures": []
+  },
+  "events": [
+    {
+      "index": 1,
+      "event_type": "AgentDeclared",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "mailbox initialized for PolicyJudge"
+    },
+    {
+      "index": 2,
+      "event_type": "CapabilityDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "capability model.invoke declared at level restricted"
+    },
+    {
+      "index": 3,
+      "event_type": "CapabilityDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "capability trace.write declared at level safe"
+    },
+    {
+      "index": 4,
+      "event_type": "AssertionDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "assertion no_unhandled_messages declared"
+    },
+    {
+      "index": 5,
+      "event_type": "ModelDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "model GuardModel declared"
+    },
+    {
+      "index": 6,
+      "event_type": "ModelAuthorized",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "model GuardModel authorized for PolicyJudge"
+    },
+    {
+      "index": 7,
+      "event_type": "ProviderContractDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "declared",
+      "details": "provider contract OpenAIProvider declared"
+    },
+    {
+      "index": 8,
+      "event_type": "ProviderContractValidated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "validated",
+      "details": "provider contract OpenAIProvider validated"
+    },
+    {
+      "index": 9,
+      "event_type": "ProviderRegistered",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "registered",
+      "details": "provider simulated registered as Simulated"
+    },
+    {
+      "index": 10,
+      "event_type": "VmStarted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "reactive deterministic scheduler started"
+    },
+    {
+      "index": 11,
+      "event_type": "MessageScheduled",
+      "from": "User",
+      "to": "PolicyJudge",
+      "act": "tell",
+      "message_type": "ToolResult",
+      "status": "injected",
+      "details": "initial message injected"
+    },
+    {
+      "index": 12,
+      "event_type": "MessageDelivered",
+      "from": "User",
+      "to": "PolicyJudge",
+      "act": "tell",
+      "message_type": "ToolResult",
+      "status": "delivered",
+      "details": "msg_001 delivered to PolicyJudge.mailbox"
+    },
+    {
+      "index": 13,
+      "event_type": "HandlerExecuted",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "handled",
+      "details": "PolicyJudge handled ToolResult"
+    },
+    {
+      "index": 14,
+      "event_type": "ModelCallRequested",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "requested",
+      "details": "PolicyJudge asked model GuardModel"
+    },
+    {
+      "index": 15,
+      "event_type": "ModelCallAllowed",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "allowed",
+      "details": "model GuardModel allowed by capability model.invoke"
+    },
+    {
+      "index": 16,
+      "event_type": "ProviderSelected",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "selected",
+      "details": "provider simulated selected for model GuardModel"
+    },
+    {
+      "index": 17,
+      "event_type": "ProviderRequestCreated",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "created",
+      "details": "provider request model_001 created for model GuardModel"
+    },
+    {
+      "index": 18,
+      "event_type": "ProviderDryRunEnforced",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "enforced",
+      "details": "provider simulated restricted to dry-run"
+    },
+    {
+      "index": 19,
+      "event_type": "ProviderResponseReceived",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "received",
+      "details": "provider response received for model_001"
+    },
+    {
+      "index": 20,
+      "event_type": "ModelCallDryRunResult",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "model GuardModel dry-run result generated"
+    },
+    {
+      "index": 21,
+      "event_type": "ValueTraced",
+      "from": null,
+      "to": "PolicyJudge",
+      "act": null,
+      "message_type": null,
+      "status": "traced",
+      "details": "PolicyJudge traced result"
+    },
+    {
+      "index": 22,
+      "event_type": "MessageProcessed",
+      "from": "User",
+      "to": "PolicyJudge",
+      "act": "tell",
+      "message_type": "ToolResult",
+      "status": "processed",
+      "details": "msg_001 processed by PolicyJudge"
+    },
+    {
+      "index": 23,
+      "event_type": "VmCompleted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "completed",
+      "details": "reactive execution completed with no pending messages"
+    },
+    {
+      "index": 24,
+      "event_type": "AssertionVerified",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "assertion no_unhandled_messages evaluated"
+    },
+    {
+      "index": 25,
+      "event_type": "PolicyReportGenerated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy report generated"
+    }
+  ],
+  "security_checks": "passed"
+}

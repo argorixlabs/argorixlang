@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 25,
+  "checks_passed": 24,
+  "checks_failed": 1,
+  "failures": [
+    "source_digest mismatch"
+  ]
+}

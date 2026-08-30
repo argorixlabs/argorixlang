@@ -1,0 +1,4 @@
+D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E1-05\rep01\case.argx:21:13: error: agent `PolicyJudge` asks model `GuardModel` without declaring it in `models`
+  |
+ 21 |         ask GuardModel with result
+  |             ^^^^^^^^^^

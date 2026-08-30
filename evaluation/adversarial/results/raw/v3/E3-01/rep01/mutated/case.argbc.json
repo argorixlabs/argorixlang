@@ -1,0 +1,125 @@
+{
+  "source_digest": "sha256:7d95c8a5dc63eb6e86df6bc21bc26969419f11397884bad1fb7e69219f8f7415",
+  "bytecode_version": "1.0",
+  "language": "Argorix Lang",
+  "module": "Eval.W06.PolicyPass.tampered",
+  "providers": [],
+  "provider_harnesses": [],
+  "assertions": [
+    {
+      "name": "no_unhandled_messages",
+      "argument": null
+    }
+  ],
+  "policies": [
+    {
+      "name": "RuntimeSafety",
+      "rules": [
+        {
+          "effect": "require",
+          "rule": "no_unhandled_messages"
+        },
+        {
+          "effect": "require",
+          "rule": "runtime_status completed"
+        },
+        {
+          "effect": "deny",
+          "rule": "external_execution"
+        }
+      ],
+      "on_violation": null
+    }
+  ],
+  "types": [
+    {
+      "name": "Ping",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "agents": [
+    {
+      "name": "Worker",
+      "approval": "denied"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    }
+  ],
+  "tools": [],
+  "models": [],
+  "instructions": [
+    {
+      "op": "DeclareAssertion",
+      "name": "no_unhandled_messages",
+      "argument": null
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "Worker",
+      "approval": "denied"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "Worker",
+      "capability": "trace.write"
+    },
+    {
+      "op": "DeclareHandler",
+      "agent": "Worker",
+      "message_type": "Ping",
+      "binding": "ping"
+    },
+    {
+      "op": "TraceValue",
+      "agent": "Worker",
+      "binding": "ping"
+    },
+    {
+      "op": "EndHandler"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "Flow"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "Worker",
+      "act": "tell",
+      "message_type": "Ping"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol Flow completed"
+    },
+    {
+      "op": "VerifyAssertion",
+      "name": "no_unhandled_messages",
+      "argument": null
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}

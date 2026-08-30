@@ -1,0 +1,35 @@
+module Eval.W02.ModelSimulatedAllowed
+
+capability model.invoke { level restricted requires approval }
+capability state.write { level safe }
+capability runtime.guard { level safe }
+
+assert no_unhandled_messages
+assert all_model_calls_traced
+assert runtime_status completed
+
+type ToolResult { content: string }
+type Decision { action: string reason: string }
+
+model GuardModel {
+    provider simulated
+    capability model.invoke
+    input ToolResult
+    output Decision
+}
+
+agent PolicyJudge {
+    security { approval granted }
+    receives ToolResult
+    capabilities { model.invoke state.write runtime.guard }
+    models { GuardModel }
+    on ToolResult as result {
+        marron(result)
+        facu(result)
+        ask GuardModel with result
+    }
+}
+
+protocol Flow {
+    User -> PolicyJudge: tell ToolResult
+}

@@ -1,0 +1,18 @@
+{
+  "bundle_version": "1.1",
+  "language": "Argorix Lang",
+  "module": "Eval.W06.PolicyPass",
+  "bytecode_version": "1.0",
+  "vm_version": "1.0",
+  "report_version": "1.0",
+  "bytecode_digest": "sha256:bcc91d023b2fcb98d39bda0bfca1b47b322d2b795f35618c7b88536bc501112e",
+  "trace_digest": null,
+  "report_digest": "sha256:76e892635b956a0e86241126d71e7001411c7d5bd6938ce535eb525ca1db9436",
+  "ledger_digest": "sha256:40b43a8878f0c9e0dc66b8f60b6d4a9f5e6e57118fddf217f3a0a3b20b5e48fd",
+  "artifacts": {
+    "bytecode_path": "case.argbc.json",
+    "trace_path": null,
+    "security_report_path": "case.security.json",
+    "source_path": "case.argx"
+  }
+}

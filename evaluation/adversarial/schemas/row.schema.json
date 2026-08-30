@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://argorixlang.org/schemas/adversarial-row-1.0.json",
+  "title": "Adversarial campaign raw row",
+  "description": "One recorded execution. Every field is an observation of a process, an artifact or a sensor; no field is derived from oracle.json.",
+  "type": "object",
+  "required": [
+    "run_id",
+    "case_id",
+    "family",
+    "procedure",
+    "repetition",
+    "nonce",
+    "started_utc",
+    "wall_ms",
+    "observed",
+    "stages",
+    "diagnostic_classes"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "case_id": { "type": "string" },
+    "family": { "enum": ["E0", "E1", "E2", "E3", "E4", "E5"] },
+    "behavior_class": { "type": ["string", "null"] },
+    "procedure": { "type": "string" },
+    "repetition": { "type": "integer", "minimum": 1 },
+    "nonce": { "type": "string" },
+    "started_utc": { "type": "string", "format": "date-time" },
+    "wall_ms": { "type": "number" },
+    "harness_error": { "type": ["string", "null"] },
+    "diagnostic_classes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Stable diagnostic classes; messages are never compared verbatim."
+    },
+    "stages": {
+      "type": "object",
+      "description": "One entry per invoked process.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "argv": { "type": "array", "items": { "type": "string" } },
+          "exit_code": { "type": ["integer", "null"] },
+          "timed_out": { "type": "boolean" },
+          "duration_ms": { "type": "number" },
+          "stdout_bytes": { "type": "integer" },
+          "stderr_bytes": { "type": "integer" },
+          "stderr_head": { "type": "string" }
+        }
+      }
+    },
+    "observed": {
+      "type": "object",
+      "required": ["outcome"],
+      "properties": {
+        "outcome": { "type": "string" },
+        "phase_reached": { "type": "string" },
+        "decision_phase": { "type": "string" },
+        "decision_source": { "type": "string" },
+        "independent_digests": {
+          "type": "object",
+          "description": "Digests recomputed in Python, independently of the Rust implementation."
+        },
+        "recorded_digests": { "type": "object" },
+        "digest_agreement": { "type": "object" },
+        "behavioral_fingerprint": {
+          "type": "object",
+          "properties": {
+            "policy": { "type": "string" },
+            "capability": { "type": "string" },
+            "provider": { "type": "string" },
+            "runtime_profile": { "type": "string" },
+            "program_structure": { "type": "string" },
+            "outcome": { "type": "string" }
+          }
+        },
+        "sink_hits": { "type": ["integer", "null"] },
+        "filesystem_hits": { "type": ["integer", "null"] },
+        "secret_hits": { "type": ["integer", "null"] },
+        "positive_controls": { "type": ["object", "null"] },
+        "mutation": { "type": ["object", "null"] },
+        "mutation_class": { "type": ["string", "null"] },
+        "aggregate_contradiction": { "type": ["object", "null"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+module main
+
+import messages.contracts
+import agents.research
+import policies.governance
+import passports.research_agent
+
+protocol EvalFlow {
+    User -> ResearchAgent: tell UserPrompt
+}

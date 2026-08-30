@@ -1,0 +1,62 @@
+{
+  "vm_version": "1.0",
+  "runtime": "ChatbotRuntime",
+  "mode": "sandboxed_external",
+  "status": "planned",
+  "provider": "OpenAIProvider",
+  "adapter": "OpenAISandbox",
+  "operation": "responses.create",
+  "external_execution_enabled": false,
+  "events": [
+    {
+      "index": 1,
+      "event_type": "RuntimeExecutionProfileDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "declared",
+      "details": "runtime_execution_profile ChatbotRuntime selected in sandboxed_external mode"
+    },
+    {
+      "index": 2,
+      "event_type": "RuntimeProfileGuardsValidated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "validated",
+      "details": "runtime_execution_profile ChatbotRuntime is policy, hardening, evidence, governance and fail-closed bound"
+    },
+    {
+      "index": 3,
+      "event_type": "SandboxedProviderAdapterDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "declared",
+      "details": "sandboxed_provider_adapter OpenAISandbox selected for provider OpenAIProvider"
+    },
+    {
+      "index": 4,
+      "event_type": "ProviderReferencesRedacted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "redacted",
+      "details": "sandboxed_provider_adapter OpenAISandbox retains reference names only; values are absent"
+    },
+    {
+      "index": 5,
+      "event_type": "SandboxedExternalCallPlanned",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "planned",
+      "details": "sandboxed external operation responses.create planned; v1.0 core performs no network call"
+    }
+  ]
+}

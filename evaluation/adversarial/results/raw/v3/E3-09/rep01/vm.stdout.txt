@@ -1,0 +1,16 @@
+Argorix VM v1.0
+
+Execution mode: reactive dry-run
+Scheduler: deterministic
+
+Injected: User --tell Ping--> Worker
+
+Step 1: delivered Ping to Worker.mailbox
+Step 1: Worker handled Ping
+Step 1: Worker traced ping
+
+Status: completed
+Trace ledger: generated
+Security report written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E3-09\rep01\clean\case.security.json
+Trace written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E3-09\rep01\clean\case.trace.json
+Evidence bundle written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E3-09\rep01\clean\case.bundle.json

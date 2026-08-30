@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 20,
+  "checks_passed": 19,
+  "checks_failed": 1,
+  "failures": [
+    "bytecode artifact is invalid JSON: key must be a string at line 1 column 3"
+  ]
+}

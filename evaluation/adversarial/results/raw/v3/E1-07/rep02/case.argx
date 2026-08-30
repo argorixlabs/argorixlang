@@ -1,0 +1,18 @@
+module Eval.W07.PolicyDenyBlock
+
+capability trace.write { level safe }
+
+policy StrictEvidence {
+    require evidence_bundle_verified
+    on violation { action block trace required }
+}
+
+type Ping { content: string }
+
+agent Worker {
+    receives Ping
+    capabilities { trace.write }
+    on Ping as ping { trace ping }
+}
+
+protocol Flow { User -> Worker: tell Ping }

@@ -1,0 +1,8 @@
+{
+  "egress_attempted": false,
+  "egress_succeeded": false,
+  "invocations": 0,
+  "model_invocations": 0,
+  "non_dry_run_requests": 0,
+  "tool_invocations": 0
+}

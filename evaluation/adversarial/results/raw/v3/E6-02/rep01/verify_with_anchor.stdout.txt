@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 26,
+  "checks_passed": 25,
+  "checks_failed": 1,
+  "failures": [
+    "signature: signature does not verify against the bundle"
+  ]
+}

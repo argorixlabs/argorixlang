@@ -1,0 +1,4 @@
+D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E1-04\rep01\case.argx:21:14: error: agent `ResearchAgent` calls tool `WebSearch` without declaring it in `tools`
+  |
+ 21 |         call WebSearch with prompt
+  |              ^^^^^^^^^

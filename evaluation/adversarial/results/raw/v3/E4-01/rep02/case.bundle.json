@@ -1,0 +1,18 @@
+{
+  "bundle_version": "1.1",
+  "language": "Argorix Lang",
+  "module": "Eval.W13.ExternalToolContract",
+  "bytecode_version": "1.0",
+  "vm_version": "1.0",
+  "report_version": "1.0",
+  "bytecode_digest": "sha256:07096c0b81b4c6926bbee9444d04a2b670a998748a92623a1327ccd55d2af871",
+  "trace_digest": null,
+  "report_digest": "sha256:2270018472bc082eb019c858e81fccdac0d95efe8680286eb0b399c6389749c4",
+  "ledger_digest": "sha256:c9a8eb28ad39166ba4bcd018ddc8639f4650328d2cb1d47a4da5830cac590e24",
+  "artifacts": {
+    "bytecode_path": "case.argbc.json",
+    "trace_path": null,
+    "security_report_path": "case.security.json",
+    "source_path": "case.argx"
+  }
+}

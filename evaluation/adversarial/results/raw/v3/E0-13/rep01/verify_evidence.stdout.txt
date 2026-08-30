@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "checks_total": 24,
+  "checks_passed": 24,
+  "checks_failed": 0,
+  "failures": []
+}

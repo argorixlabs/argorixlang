@@ -1,0 +1,10 @@
+{
+  "bundle_version": "1.1",
+  "language": "Argorix Lang",
+  "module": "Eval.W06.PolicyPass",
+  "bytecode_version": "1.0",
+  "vm_version": "1.0",
+  "report_version": "1.0",
+  "bytecode_digest": "sha256:bcc91d023b2fcb98d39bda0bfca1b47b322d2b795f35618c7b88536bc501112e",
+  "trace_digest": "sha256:bdb5df3832a1948b9005f7ea00db8710a5a8f6578eca53be297afb83049238d0",
+  "

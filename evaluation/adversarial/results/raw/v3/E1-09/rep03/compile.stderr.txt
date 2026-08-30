@@ -1,0 +1,4 @@
+D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E1-09\rep03\case.argx:6:13: error: unknown policy rule `argorix_future_rule_v99`
+  |
+  6 |     require argorix_future_rule_v99
+  |             ^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,18 @@
+{
+  "bundle_version": "1.1",
+  "language": "Argorix Lang",
+  "module": "Eval.W02.ModelSimulatedAllowed",
+  "bytecode_version": "1.0",
+  "vm_version": "1.0",
+  "report_version": "1.0",
+  "bytecode_digest": "sha256:8ca99862f5f6dbe763b4f7c74bfb0ddcd1bb583821f31f2a0a522536dc5732a4",
+  "trace_digest": "sha256:7d9683ce4548d9a15915cf08c838ae25e0a994dc1da5520494c7d93445a3bde9",
+  "report_digest": "sha256:a95c90fae979f9cba7c9b7590266e72faa64d0d4a4328180396ea127e0f9aaa0",
+  "ledger_digest": "sha256:fb08906c1e37a2fae604cef96881cbeccbc3c89694a544e2b961aee662d0485c",
+  "artifacts": {
+    "bytecode_path": "case.argbc.json",
+    "trace_path": "case.trace.json",
+    "security_report_path": "case.security.json",
+    "source_path": "case.argx"
+  }
+}

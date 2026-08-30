@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 19,
+  "checks_passed": 18,
+  "checks_failed": 1,
+  "failures": [
+    "bytecode artifact `D:\\Proyectos\\ArgorixLang\\evaluation\\adversarial\\results\\outside\\case.argbc.json` is missing: El sistema no puede encontrar la ruta especificada. (os error 3)"
+  ]
+}

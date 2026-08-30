@@ -1,0 +1,16 @@
+Argorix VM v1.0
+
+Execution mode: reactive dry-run
+Scheduler: deterministic
+
+Injected: User --tell UserPrompt--> ResearchAgent
+
+Step 1: delivered UserPrompt to ResearchAgent.mailbox
+Step 1: ResearchAgent handled UserPrompt
+Step 1: ResearchAgent traced prompt
+
+Status: completed
+Trace ledger: generated
+Security report written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E1-12\rep03\case.security.json
+Trace written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E1-12\rep03\case.trace.json
+Evidence bundle written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E1-12\rep03\case.bundle.json

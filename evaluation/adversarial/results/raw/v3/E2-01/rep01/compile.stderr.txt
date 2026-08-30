@@ -1,0 +1,4 @@
+D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E2-01\rep01\case.argx:3:7: error: expected agent name
+  |
+  3 | agent {{{ this is not argorix
+  |       ^

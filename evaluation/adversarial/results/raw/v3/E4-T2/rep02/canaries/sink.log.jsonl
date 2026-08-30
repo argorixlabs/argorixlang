@@ -1,0 +1,1 @@
+{"nonce": "72831d896d34d6df62db5d95", "method": "POST", "path": "/72831d896d34d6df62db5d95/positive-control", "client": "127.0.0.1", "user_agent": "Python-urllib/3.13", "body_bytes": 54, "body_preview": "{\"nonce\": \"72831d896d34d6df62db5d95\", \"control\": true}"}

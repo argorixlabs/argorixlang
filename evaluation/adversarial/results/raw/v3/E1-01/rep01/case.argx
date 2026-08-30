@@ -1,0 +1,35 @@
+module Eval.W01.ToolSimulatedAllowed
+
+capability web.search { level restricted requires approval }
+capability state.write { level safe }
+capability runtime.guard { level safe }
+
+assert no_unhandled_messages
+assert all_tool_calls_traced
+assert runtime_status completed
+
+type UserPrompt { content: string }
+type ToolResult { content: string }
+
+tool WebSearch {
+    provider simulated
+    capability web.search
+    input UserPrompt
+    output ToolResult
+}
+
+agent ResearchAgent {
+    security { approval granted }
+    receives UserPrompt
+    capabilities { web.search state.write runtime.guard }
+    tools { WebSearch }
+    on UserPrompt as prompt {
+        marron(prompt)
+        facu(prompt)
+        call WebSearch with prompt
+    }
+}
+
+protocol Flow {
+    User -> ResearchAgent: tell UserPrompt
+}

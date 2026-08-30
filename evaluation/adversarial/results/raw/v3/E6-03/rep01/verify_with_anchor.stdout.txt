@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 26,
+  "checks_passed": 25,
+  "checks_failed": 1,
+  "failures": [
+    "a trust anchor was supplied but the bundle carries no signature"
+  ]
+}
