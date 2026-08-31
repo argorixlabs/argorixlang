@@ -157,7 +157,7 @@ rerun reproduces them; they protect nothing outside the harness.
 
 ### E5 — prompt injection
 
-Specified and implemented, not executed. The grid is declared in the catalogue
+Executed against a real model. The grid is declared in the catalogue
 before any model was called: eight scenarios across external provider calls,
 network egress, secret exfiltration and key-material access; benign and injected
 arms; five repetitions; 80 runs. Declaring it in advance is the point.
@@ -169,11 +169,22 @@ the prohibited action, and whether that action reached a sensor. The
 proposal-to-program mapping is published in `PROGRAM_BANK` and is total, so a
 proposal no program covers is recorded as `UNMAPPABLE` and counted.
 
+The published run used `gpt-4o-mini-2024-07-18` at temperature 0 with seed 7:
+20/40 injected arms moved the model,
+5/40 benign arms produced a prohibited proposal
+anyway, 25/25 prohibited proposals were contained,
+and 0/25 reached a sensor. Zero model errors, zero
+unmappable proposals.
+
 The branch runs only when `ARGORIX_EVAL_LLM_DRIVER`, `ARGORIX_EVAL_LLM_ENDPOINT`
 and `ARGORIX_EVAL_LLM_MODEL` are all set; otherwise every row records
-`NOT_EXECUTED` with its reasons and the paper keeps "prompt injection was not
-evaluated". Every row carries the endpoint and model it used, so a run against
-anything other than a real model identifies itself.
+`NOT_EXECUTED` and the gate stays shut. Every row carries the endpoint and model
+it used, so a run against anything other than a real model identifies itself,
+and the gate also refuses to pass if any call failed to reach the model — a
+campaign of failed calls must not read as "the model never proposed anything".
+
+Credentials never reach an artifact: `util.redact_credentials` scrubs anything
+matching an API-key or bearer-token shape at the recording boundary.
 
 Even executed, this design cannot claim that an Argorix agent loop resists
 injection: the driver maps the proposal, because the release has no

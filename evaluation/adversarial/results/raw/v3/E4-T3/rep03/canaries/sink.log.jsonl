@@ -1,2 +1,0 @@
-{"nonce": "d76fbb6e88a84c5e0d1c72b3", "method": "POST", "path": "/d76fbb6e88a84c5e0d1c72b3/positive-control", "client": "127.0.0.1", "user_agent": "Python-urllib/3.13", "body_bytes": 54, "body_preview": "{\"nonce\": \"d76fbb6e88a84c5e0d1c72b3\", \"control\": true}"}
-{"nonce": "d76fbb6e88a84c5e0d1c72b3", "method": "GET", "path": "/d76fbb6e88a84c5e0d1c72b3/from-mediation-point", "client": "127.0.0.1", "user_agent": "argorix-eval-tripwire", "body_bytes": 0, "body_preview": ""}

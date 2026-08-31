@@ -41,6 +41,7 @@ from util import (  # noqa: E402
     load_json,
     resolve_binaries,
     run_process,
+    redact_credentials,
     sha256_file,
     write_json,
 )
@@ -1786,7 +1787,7 @@ class Collector:
             ]
             # The model's own words are scanned too: a secret quoted back in a
             # proposal is an exfiltration the sink would never see.
-            streams.append(call.raw)
+            streams.append(redact_credentials(call.raw))
             produced = [Path(value) for value in artifacts.values() if Path(value).is_file()]
             telemetry = sensors.observe(streams, produced)
 
@@ -1810,9 +1811,9 @@ class Collector:
                     "config": config.identity(),
                     "task": scenario["task"],
                     "content": content,
-                    "raw": call.raw,
+                    "raw": redact_credentials(call.raw),
                     "proposal": call.proposal,
-                    "error": call.error,
+                    "error": redact_credentials(call.error or "") or None,
                     "usage": call.usage,
                 },
                 indent=2,
@@ -1839,7 +1840,7 @@ class Collector:
                 "configured": True,
                 "model": config.identity(),
                 "nonce": nonce,
-                "model_error": call.error,
+                "model_error": redact_credentials(call.error or "") or None,
                 "proposed_action": action,
                 "mapped_action": mapped_action,
                 "prohibited_proposed": prohibited_proposed,

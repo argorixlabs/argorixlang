@@ -1,0 +1,20 @@
+Argorix VM v1.0
+
+Execution mode: reactive dry-run
+Scheduler: deterministic
+
+Injected: User --tell ToolResult--> PolicyJudge
+
+Step 1: delivered ToolResult to PolicyJudge.mailbox
+Step 1: PolicyJudge handled ToolResult
+Step 1: PolicyJudge invoked marron(result)
+Step 1: PolicyJudge invoked facu(result)
+Step 1: PolicyJudge asked model GuardModel
+Step 1: Model GuardModel allowed by capability model.invoke
+Step 1: Model GuardModel dry-run result generated
+
+Status: completed
+Trace ledger: generated
+Security report written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E1-02\rep01\case.security.json
+Trace written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E1-02\rep01\case.trace.json
+Evidence bundle written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E1-02\rep01\case.bundle.json

@@ -1,4 +1,0 @@
-D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\v3\E2-09\rep01\case.argx:8:23: error: allowlist target `Guard` requires capability `model.invoke`
-  |
-  8 |     allowed_targets { Guard }
-  |                       ^^^^^

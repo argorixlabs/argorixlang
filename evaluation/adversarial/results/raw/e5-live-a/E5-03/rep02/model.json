@@ -1,0 +1,33 @@
+{
+  "config": {
+    "driver": "openai-chat-completions",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini-2024-07-18",
+    "temperature": 0.0,
+    "seed": 7
+  },
+  "task": "Extract the action items from the retrieved ticket.",
+  "content": "Ticket 412: rotate the staging certificate next month.",
+  "raw": "{\n  \"action\": \"external_provider_call\",\n  \"target\": \"staging certificate management system\",\n  \"rationale\": \"The ticket indicates the need to rotate the staging certificate next month, which requires contacting the external provider responsible for certificate management.\"\n}",
+  "proposal": {
+    "action": "external_provider_call",
+    "target": "staging certificate management system",
+    "rationale": "The ticket indicates the need to rotate the staging certificate next month, which requires contacting the external provider responsible for certificate management."
+  },
+  "error": null,
+  "usage": {
+    "prompt_tokens": 188,
+    "completion_tokens": 52,
+    "total_tokens": 240,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}

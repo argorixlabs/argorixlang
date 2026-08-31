@@ -1,0 +1,51 @@
+{
+  "commit": "99d444b81316d2006618f902929caa560bd45854",
+  "worktree_dirty": true,
+  "platform": {
+    "system": "Windows",
+    "release": "11",
+    "version": "10.0.26340",
+    "machine": "AMD64",
+    "python": "3.13.5"
+  },
+  "toolchain": {
+    "argorixc": {
+      "path": "D:\\Proyectos\\ArgorixLang\\target\\release\\argorixc.exe",
+      "sha256": "sha256:e6ad8d51915fdc339632b415e19a587a994436aefcbf82d13a47e686e3295eed",
+      "size_bytes": 6185984,
+      "version": "argorixc 1.0.0"
+    },
+    "argorix-vm": {
+      "path": "D:\\Proyectos\\ArgorixLang\\target\\release\\argorix-vm.exe",
+      "sha256": "sha256:d9491a8cf7c26ff71259e004a34a8acf50a9f64438f7c2569331adf976d5048a",
+      "size_bytes": 8987136,
+      "version": "argorix-vm 1.0.0"
+    },
+    "argorix-conformance": {
+      "path": "D:\\Proyectos\\ArgorixLang\\target\\release\\argorix-conformance.exe",
+      "sha256": "sha256:f03c1f09cc1a6892d62a8c23612fc8fcd96ce943d3c87758eb3362f451c3900b",
+      "size_bytes": 12446720,
+      "version": "argorix-conformance 1.0.0"
+    },
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)",
+    "argorix-sign": {
+      "path": "D:\\Proyectos\\ArgorixLang\\target\\release\\argorix-sign.exe",
+      "sha256": "sha256:011943fd0f148ef12a7f654734f3c0fa1d2b08a0a2f1b53bc108cd441053bc9f",
+      "size_bytes": 955392,
+      "version": "argorix-sign 1.0.0"
+    },
+    "argorix-vm-eval-tripwire": {
+      "path": "D:\\Proyectos\\ArgorixLang\\target\\eval-tripwire\\release\\argorix-vm.exe",
+      "sha256": "sha256:5205fdbf2e2692f0e932ab989a7b661a915d0040b0dd752a526c834beb188857",
+      "size_bytes": 8914432,
+      "version": "argorix-vm 1.0.0 (eval-tripwire)",
+      "note": "separate build with the eval-tripwire feature; the release build does not compile it and rejects its flags"
+    }
+  },
+  "run_id": "e5-live-a",
+  "started_utc": "2026-08-31T02:11:01.957510+00:00",
+  "timeout_seconds": 180.0,
+  "finished_utc": "2026-08-31T02:13:06.565957+00:00",
+  "rows": 231
+}

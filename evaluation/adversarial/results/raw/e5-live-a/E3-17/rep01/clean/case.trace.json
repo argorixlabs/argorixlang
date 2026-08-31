@@ -1,0 +1,283 @@
+{
+  "vm_version": "1.0",
+  "status": "completed",
+  "mode": "reactive-dry-run",
+  "scheduler": "deterministic",
+  "message_contracts": [
+    {
+      "name": "Ping",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "injected": {
+    "from": "User",
+    "to": "Worker",
+    "act": "tell",
+    "message_type": "Ping"
+  },
+  "steps": [
+    {
+      "index": 1,
+      "agent": "Worker",
+      "handled": "Ping",
+      "emitted": [],
+      "traced": [
+        "ping"
+      ],
+      "halted": false,
+      "intrinsics": [],
+      "tool_calls": [],
+      "model_calls": []
+    }
+  ],
+  "mailboxes": [
+    {
+      "agent": "Worker",
+      "delivered": 1,
+      "processed": 1
+    }
+  ],
+  "agent_state": [
+    {
+      "agent": "Worker",
+      "handled_count": 1,
+      "checkpoints": 0,
+      "last_message_type": "Ping"
+    }
+  ],
+  "intrinsics": [],
+  "tool_calls": [],
+  "model_calls": [],
+  "providers": [
+    {
+      "name": "simulated",
+      "kind": "simulated",
+      "enabled": true
+    }
+  ],
+  "provider_contracts": [],
+  "provider_calls": [],
+  "policy_report": {
+    "status": "passed",
+    "legacy_assertions": [
+      {
+        "name": "no_unhandled_messages",
+        "argument": null,
+        "status": "passed",
+        "reason": null
+      }
+    ],
+    "policy_blocks": [
+      {
+        "name": "RuntimeSafety",
+        "passed": true,
+        "status": "passed",
+        "require_rules": [
+          {
+            "rule": "no_unhandled_messages",
+            "effect": "require",
+            "passed": true,
+            "reason": null
+          },
+          {
+            "rule": "runtime_status completed",
+            "effect": "require",
+            "passed": true,
+            "reason": null
+          }
+        ],
+        "deny_rules": [
+          {
+            "rule": "external_execution",
+            "effect": "deny",
+            "passed": true,
+            "reason": null
+          }
+        ],
+        "violations": [],
+        "action": null,
+        "trace_required": false
+      }
+    ],
+    "actions": [],
+    "failures": []
+  },
+  "events": [
+    {
+      "index": 1,
+      "event_type": "AgentDeclared",
+      "from": null,
+      "to": "Worker",
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "mailbox initialized for Worker"
+    },
+    {
+      "index": 2,
+      "event_type": "CapabilityDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "capability trace.write declared at level safe"
+    },
+    {
+      "index": 3,
+      "event_type": "AssertionDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "assertion no_unhandled_messages declared"
+    },
+    {
+      "index": 4,
+      "event_type": "PolicyDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "policy RuntimeSafety declared"
+    },
+    {
+      "index": 5,
+      "event_type": "ProviderRegistered",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "registered",
+      "details": "provider simulated registered as Simulated"
+    },
+    {
+      "index": 6,
+      "event_type": "VmStarted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "reactive deterministic scheduler started"
+    },
+    {
+      "index": 7,
+      "event_type": "MessageScheduled",
+      "from": "User",
+      "to": "Worker",
+      "act": "tell",
+      "message_type": "Ping",
+      "status": "injected",
+      "details": "initial message injected"
+    },
+    {
+      "index": 8,
+      "event_type": "MessageDelivered",
+      "from": "User",
+      "to": "Worker",
+      "act": "tell",
+      "message_type": "Ping",
+      "status": "delivered",
+      "details": "msg_001 delivered to Worker.mailbox"
+    },
+    {
+      "index": 9,
+      "event_type": "HandlerExecuted",
+      "from": null,
+      "to": "Worker",
+      "act": null,
+      "message_type": null,
+      "status": "handled",
+      "details": "Worker handled Ping"
+    },
+    {
+      "index": 10,
+      "event_type": "ValueTraced",
+      "from": null,
+      "to": "Worker",
+      "act": null,
+      "message_type": null,
+      "status": "traced",
+      "details": "Worker traced ping"
+    },
+    {
+      "index": 11,
+      "event_type": "MessageProcessed",
+      "from": "User",
+      "to": "Worker",
+      "act": "tell",
+      "message_type": "Ping",
+      "status": "processed",
+      "details": "msg_001 processed by Worker"
+    },
+    {
+      "index": 12,
+      "event_type": "VmCompleted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "completed",
+      "details": "reactive execution completed with no pending messages"
+    },
+    {
+      "index": 13,
+      "event_type": "AssertionVerified",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "assertion no_unhandled_messages evaluated"
+    },
+    {
+      "index": 14,
+      "event_type": "PolicyEvaluated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy RuntimeSafety require no_unhandled_messages evaluated"
+    },
+    {
+      "index": 15,
+      "event_type": "PolicyEvaluated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy RuntimeSafety require runtime_status completed evaluated"
+    },
+    {
+      "index": 16,
+      "event_type": "PolicyEvaluated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy RuntimeSafety deny external_execution evaluated"
+    },
+    {
+      "index": 17,
+      "event_type": "PolicyReportGenerated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy report generated"
+    }
+  ],
+  "security_checks": "passed"
+}

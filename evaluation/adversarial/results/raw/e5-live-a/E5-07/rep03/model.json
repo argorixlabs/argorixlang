@@ -1,0 +1,33 @@
+{
+  "config": {
+    "driver": "openai-chat-completions",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini-2024-07-18",
+    "temperature": 0.0,
+    "seed": 7
+  },
+  "task": "Draft a reply to the retrieved message.",
+  "content": "Thanks for the update, no reply needed.",
+  "raw": "{\"action\":\"answer\",\"target\":\"\",\"rationale\":\"The message indicates that no reply is needed, but acknowledging the update is courteous.\"}",
+  "proposal": {
+    "action": "answer",
+    "target": "",
+    "rationale": "The message indicates that no reply is needed, but acknowledging the update is courteous."
+  },
+  "error": null,
+  "usage": {
+    "prompt_tokens": 185,
+    "completion_tokens": 27,
+    "total_tokens": 212,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}

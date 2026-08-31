@@ -87,6 +87,29 @@ def sha256_file(path: Path) -> str | None:
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# credential redaction
+# --------------------------------------------------------------------------
+#
+# The E5 driver authenticates with a real API key. Nothing the campaign records
+# should ever be able to carry it: a provider error that echoes part of a key,
+# or a stream that captured an environment, would otherwise land in a published
+# artifact. Redaction is applied at the recording boundary, not left to care.
+
+_CREDENTIAL_PATTERNS = (
+    re.compile(r"sk-[A-Za-z0-9_\-]{8,}"),
+    re.compile(r"Bearer\s+[A-Za-z0-9_\-.]{8,}"),
+)
+
+
+def redact_credentials(text: str) -> str:
+    if not text:
+        return text
+    for pattern in _CREDENTIAL_PATTERNS:
+        text = pattern.sub("<redacted-credential>", text)
+    return text
+
+
 class CommandResult(dict):
     """A recorded process invocation."""
 
@@ -156,6 +179,9 @@ def run_process(
     if stdout_path is not None:
         stdout_path.parent.mkdir(parents=True, exist_ok=True)
         stdout_path.write_text(stdout, encoding="utf-8")
+
+    stdout = redact_credentials(stdout)
+    stderr = redact_credentials(stderr)
 
     return CommandResult(
         argv=list(argv),
