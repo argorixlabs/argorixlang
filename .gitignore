@@ -7,3 +7,9 @@ reports/*.trace.json
 docs/superpowers/
 .worktrees/
 .superpowers/
+paper/tmp/
+paper/.tools/
+__pycache__/
+
+# LaTeX build intermediates; the published PDF lives at paper/argorixlang-camera-ready.pdf
+paper/camera-ready/build/

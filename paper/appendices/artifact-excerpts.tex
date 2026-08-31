@@ -1,0 +1,65 @@
+\section{Bounded Artifact Excerpts}\label{app:excerpts}
+
+The following excerpts are schematic projections of fields present in the
+normalized data.  Values that identify individual requests are omitted; no
+prompt, secret, endpoint, absolute path, full log, or identifier dump is
+included.
+
+\begin{lstlisting}[float=!ht,caption={Redacted session-level projection.}]
+{
+  "complete": true,
+  "artifact_count": 5,
+  "execution_status": "completed",
+  "security_checks": "passed",
+  "policy_passed": false,
+  "review_required": true,
+  "policy_violation_count": 44,
+  "prompt_content_present": false,
+  "prompt_text": null
+}
+\end{lstlisting}
+
+\begin{lstlisting}[float=!ht,caption={Redacted provider-boundary projection.}]
+{
+  "declarative_contract_names": ["OpenAIProvider"],
+  "executable_providers": ["simulated"],
+  "external_contracts_total": 1,
+  "blocked_attempts": 1,
+  "external_execution_blocked": true
+}
+\end{lstlisting}
+
+\begin{lstlisting}[float=!ht,caption={Bounded verification-result projection.}]
+{
+  "exit_code": 0,
+  "verified": true,
+  "stdout": "Evidence verification: passed",
+  "stderr": ""
+}
+\end{lstlisting}
+
+\section{Reproduction Commands}\label{app:reproduce}
+
+From the root of this paper worktree, the authorized artifact snapshot resides
+in the primary checkout two levels above.  The following commands use only
+root-relative paths and provide every mandatory analyzer argument:
+
+\begin{lstlisting}
+python -m pip install -r paper/requirements.txt
+powershell -NoProfile -ExecutionPolicy Bypass -File paper/scripts/build_paper.ps1 -Target all -InputRoot ../../demo/argorix-chatbot-runtime/generated
+\end{lstlisting}
+
+In a conventional checkout where generated artifacts are directly under the
+repository root, replace each \code{../../demo/} prefix with \code{demo/}.
+The runtime analyzer fails visibly if the input is absent.  The explicit
+\code{-InputRoot} prevents a worktree's tracked but empty
+\code{generated/.gitkeep} directory from being mistaken for the authorized
+snapshot.  To rebuild only the PDF with the pinned, checksum-verified Tectonic
+engine, use:
+
+\begin{lstlisting}
+powershell -NoProfile -ExecutionPolicy Bypass -File paper/scripts/build_paper.ps1 -Target paper
+\end{lstlisting}
+
+The committed normalized data permit manuscript and figure regeneration
+without publishing the original request-directory names or prompt content.

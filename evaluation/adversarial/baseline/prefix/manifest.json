@@ -1,0 +1,38 @@
+{
+  "commit": "59524f664536fa761ca24b03312665e2f62cc6b9",
+  "worktree_dirty": true,
+  "platform": {
+    "system": "Windows",
+    "release": "11",
+    "version": "10.0.26340",
+    "machine": "AMD64",
+    "python": "3.13.5"
+  },
+  "toolchain": {
+    "argorixc": {
+      "path": "D:\\Proyectos\\ArgorixLang\\target\\release\\argorixc.exe",
+      "sha256": "sha256:46906ed12961bbfa318d8c9f64932a344dcdbaab1b27420108462f6f906c83a1",
+      "size_bytes": 6151680,
+      "version": "argorixc 1.0.0"
+    },
+    "argorix-vm": {
+      "path": "D:\\Proyectos\\ArgorixLang\\target\\release\\argorix-vm.exe",
+      "sha256": "sha256:c29c7a0afc8f93b912e84f89a4343a9211afc2242a48207291949deaf0fc547a",
+      "size_bytes": 8833536,
+      "version": "argorix-vm 1.0.0"
+    },
+    "argorix-conformance": {
+      "path": "D:\\Proyectos\\ArgorixLang\\target\\release\\argorix-conformance.exe",
+      "sha256": "sha256:fcc53234b8460551ca5404e51cd46e7d18a27434de7c35106d843077f9c445a2",
+      "size_bytes": 12299776,
+      "version": "argorix-conformance 1.0.0"
+    },
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)"
+  },
+  "run_id": "final",
+  "started_utc": "2026-08-29T05:06:15.145663+00:00",
+  "timeout_seconds": 180.0,
+  "finished_utc": "2026-08-29T05:06:37.485647+00:00",
+  "rows": 139
+}

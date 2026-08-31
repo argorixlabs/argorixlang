@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 26,
+  "checks_passed": 25,
+  "checks_failed": 1,
+  "failures": [
+    "signature: signature was produced by a key that is not the trust anchor"
+  ]
+}

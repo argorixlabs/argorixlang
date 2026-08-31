@@ -1,0 +1,67 @@
+{
+  "schema_version": 2,
+  "input_manifest_sha256": "40a3b6595a38ce5d3019eacbb0374cb33e997195881b47a25afc1c390bb4af9a",
+  "input_manifest_file_count": 59,
+  "input_manifest_algorithm": "sha256(path NUL sha256(file_bytes), sorted by path)",
+  "source_date_epoch": 1782785385,
+  "qa_artifact_note": "Reproducibility is bound to input_manifest_sha256, which excludes this QA file, the final PDF, temporary files, and caches.",
+  "dataset": {
+    "total": 33,
+    "complete": 27,
+    "source_only": 6
+  },
+  "prompt_traces": {
+    "evaluated": 27,
+    "detected": 0
+  },
+  "verification": {
+    "passed": 27,
+    "total": 27
+  },
+  "tests": {
+    "passed": 60,
+    "failed": 0,
+    "total": 60,
+    "status": "passed"
+  },
+  "engine": "Tectonic 0.16.9",
+  "page_count": 16,
+  "figure_count": 7,
+  "table_count": 17,
+  "citation_count": 27,
+  "visual_inspection": {
+    "passed": true,
+    "pages_rendered": 16,
+    "method": "144 dpi Poppler PNGs, contact sheets, flagged-page review"
+  },
+  "inspection_timestamp": "2026-07-03T18:19:31.735609+00:00",
+  "warnings": [
+    "Harmless underfull-box warnings remain in narrow tables and bibliography entries.",
+    "BibTeX reports an empty year for the deliberately undated unpublished ATrust source.",
+    "Fontconfig emits a missing-default-config diagnostic on this Windows host; bundled Latin Modern fonts render and embed."
+  ],
+  "checks": {
+    "page_range_12_20": true,
+    "all_authors_present": true,
+    "figures_7": true,
+    "tables_17": true,
+    "citations_resolved": true,
+    "no_placeholders": true,
+    "fonts_embedded": true,
+    "visual_inspection_passed": true
+  },
+  "pdf_metadata": {
+    "format": "PDF 1.5",
+    "title": "ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence",
+    "author": "Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez",
+    "subject": "Reproducible preprint on ArgorixLang runtime evidence and governance",
+    "keywords": "ArgorixLang, AI agents, governance, runtime evidence, policy",
+    "creator": "LaTeX with hyperref",
+    "producer": "xdvipdfmx (0.1)",
+    "creationDate": "D:20260630020945-00'00'",
+    "modDate": "",
+    "trapped": "",
+    "encryption": null
+  },
+  "pdfinfo": "Title:           ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence\nSubject:         Reproducible preprint on ArgorixLang runtime evidence and governance\nKeywords:        ArgorixLang, AI agents, governance, runtime evidence, policy\nAuthor:          Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez\nCreator:         LaTeX with hyperref\nProducer:        xdvipdfmx (0.1)\nCreationDate:    Mon Jun 29 22:09:45 2026 Hora est. Sudam\u00e9rica Pac\u00edfico\nCustom Metadata: no\nMetadata Stream: no\nTagged:          no\nUserProperties:  no\nSuspects:        no\nForm:            none\nJavaScript:      no\nPages:           16\nEncrypted:       no\nPage size:       612 x 792 pts (letter)\nPage rot:        0\nFile size:       261843 bytes\nOptimized:       no\nPDF version:     1.5\n"
+}

@@ -1,0 +1,18 @@
+\begin{tabularx}{\linewidth}{@{}XXX@{}}
+\toprule
+Case & Expected outcome & Claim status \\
+\midrule
+31 same-country passport cases & PASS; no external side effect & Generated in controlled matrix \\
+six cross-border residency cases & PASS / REVIEW / DENY by profile & Generated in controlled matrix \\
+valid EvidenceBundle & offline verifier passes & Observed for current bundles \\
+valid source digest match & source digest matches fixture source & Generated in controlled matrix \\
+external provider without executable adapter & DENY & Observed as blocked boundary \\
+network attempt under denied profile & DENY & Observed as denied event \\
+plaintext secret or key material attempt & DENY & Observed as denied class \\
+residency mismatch or unknown jurisdiction & REVIEW & Generated in controlled matrix \\
+modified trace / report / bytecode / ledger & VERIFIER\_FAIL & Generated in controlled matrix \\
+source mismatch & VERIFIER\_FAIL & Generated in controlled matrix \\
+unknown policy rule & UNKNOWN\_RULE configuration error & Generated in controlled matrix \\
+malformed policy object & ERROR parse/semantic failure & Generated in controlled matrix \\
+\bottomrule
+\end{tabularx}

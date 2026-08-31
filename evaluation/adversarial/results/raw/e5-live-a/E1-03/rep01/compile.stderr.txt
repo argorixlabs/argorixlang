@@ -1,0 +1,4 @@
+D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E1-03\rep01\case.argx:22:14: error: agent `ResearchAgent` calls tool `WebSearch` without capability `web.search`
+  |
+ 22 |         call WebSearch with prompt
+  |              ^^^^^^^^^

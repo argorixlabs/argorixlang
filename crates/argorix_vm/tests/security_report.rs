@@ -137,6 +137,18 @@ fn passport_report_summarizes_identity_and_trace_preserves_passports() {
 fn provider_harness_report_summarizes_structural_containment() {
     let mut bytecode = fixture();
     bytecode.bytecode_version = "0.20".into();
+    // The v0.13 fixture predates typed messages; declare the payload types the
+    // bumped version's schema requires.
+    bytecode.types = ["UserPrompt", "ToolResult", "Decision"]
+        .into_iter()
+        .map(|name| argorix_bytecode::BytecodeType {
+            name: name.into(),
+            fields: vec![argorix_bytecode::BytecodeTypeField {
+                name: "content".into(),
+                field_type: "string".into(),
+            }],
+        })
+        .collect();
     let provider = bytecode.providers[0].name.clone();
     bytecode.provider_harnesses = vec![BytecodeProviderHarness {
         name: "OpenAIHarness".into(),

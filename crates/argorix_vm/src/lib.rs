@@ -7,6 +7,7 @@ pub mod reactive;
 pub mod runtime;
 pub mod scheduler;
 pub mod security_report;
+pub mod signature;
 pub mod trace;
 pub mod vm;
 
@@ -33,3 +34,6 @@ pub use trace::{
     ProviderSummary, ReactiveExecutionTrace, ReactiveStep, ToolCallSummary, TraceLedger, TraceStep,
 };
 pub use vm::{ExecutionOutcome, RuntimeExecutionRequest, RuntimeExecutionResult, Vm};
+
+#[cfg(feature = "eval-tripwire")]
+pub use argorix_provider::{ProviderRegistry, TripwireLog, TripwireProvider};

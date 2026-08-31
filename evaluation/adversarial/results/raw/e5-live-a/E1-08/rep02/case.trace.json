@@ -1,0 +1,255 @@
+{
+  "vm_version": "1.0",
+  "status": "completed",
+  "mode": "reactive-dry-run",
+  "scheduler": "deterministic",
+  "message_contracts": [
+    {
+      "name": "Ping",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "injected": {
+    "from": "User",
+    "to": "Worker",
+    "act": "tell",
+    "message_type": "Ping"
+  },
+  "steps": [
+    {
+      "index": 1,
+      "agent": "Worker",
+      "handled": "Ping",
+      "emitted": [],
+      "traced": [
+        "ping"
+      ],
+      "halted": false,
+      "intrinsics": [],
+      "tool_calls": [],
+      "model_calls": []
+    }
+  ],
+  "mailboxes": [
+    {
+      "agent": "Worker",
+      "delivered": 1,
+      "processed": 1
+    }
+  ],
+  "agent_state": [
+    {
+      "agent": "Worker",
+      "handled_count": 1,
+      "checkpoints": 0,
+      "last_message_type": "Ping"
+    }
+  ],
+  "intrinsics": [],
+  "tool_calls": [],
+  "model_calls": [],
+  "providers": [
+    {
+      "name": "simulated",
+      "kind": "simulated",
+      "enabled": true
+    }
+  ],
+  "provider_contracts": [],
+  "provider_calls": [],
+  "policy_report": {
+    "status": "review_required",
+    "legacy_assertions": [],
+    "policy_blocks": [
+      {
+        "name": "ReviewEvidence",
+        "passed": false,
+        "status": "review_required",
+        "require_rules": [
+          {
+            "rule": "evidence_bundle_verified",
+            "effect": "require",
+            "passed": false,
+            "reason": "no prior verified evidence bundle was supplied"
+          }
+        ],
+        "deny_rules": [],
+        "violations": [
+          {
+            "rule": "evidence_bundle_verified",
+            "effect": "require",
+            "reason": "no prior verified evidence bundle was supplied"
+          }
+        ],
+        "action": "review",
+        "trace_required": true
+      }
+    ],
+    "actions": [
+      {
+        "policy": "ReviewEvidence",
+        "action": "review",
+        "trace_required": true
+      }
+    ],
+    "failures": []
+  },
+  "events": [
+    {
+      "index": 1,
+      "event_type": "AgentDeclared",
+      "from": null,
+      "to": "Worker",
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "mailbox initialized for Worker"
+    },
+    {
+      "index": 2,
+      "event_type": "CapabilityDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "capability trace.write declared at level safe"
+    },
+    {
+      "index": 3,
+      "event_type": "PolicyDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "policy ReviewEvidence declared"
+    },
+    {
+      "index": 4,
+      "event_type": "ProviderRegistered",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "registered",
+      "details": "provider simulated registered as Simulated"
+    },
+    {
+      "index": 5,
+      "event_type": "VmStarted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "reactive deterministic scheduler started"
+    },
+    {
+      "index": 6,
+      "event_type": "MessageScheduled",
+      "from": "User",
+      "to": "Worker",
+      "act": "tell",
+      "message_type": "Ping",
+      "status": "injected",
+      "details": "initial message injected"
+    },
+    {
+      "index": 7,
+      "event_type": "MessageDelivered",
+      "from": "User",
+      "to": "Worker",
+      "act": "tell",
+      "message_type": "Ping",
+      "status": "delivered",
+      "details": "msg_001 delivered to Worker.mailbox"
+    },
+    {
+      "index": 8,
+      "event_type": "HandlerExecuted",
+      "from": null,
+      "to": "Worker",
+      "act": null,
+      "message_type": null,
+      "status": "handled",
+      "details": "Worker handled Ping"
+    },
+    {
+      "index": 9,
+      "event_type": "ValueTraced",
+      "from": null,
+      "to": "Worker",
+      "act": null,
+      "message_type": null,
+      "status": "traced",
+      "details": "Worker traced ping"
+    },
+    {
+      "index": 10,
+      "event_type": "MessageProcessed",
+      "from": "User",
+      "to": "Worker",
+      "act": "tell",
+      "message_type": "Ping",
+      "status": "processed",
+      "details": "msg_001 processed by Worker"
+    },
+    {
+      "index": 11,
+      "event_type": "VmCompleted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "completed",
+      "details": "reactive execution completed with no pending messages"
+    },
+    {
+      "index": 12,
+      "event_type": "PolicyEvaluated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "failed",
+      "details": "policy ReviewEvidence require evidence_bundle_verified evaluated"
+    },
+    {
+      "index": 13,
+      "event_type": "PolicyViolation",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "violated",
+      "details": "policy ReviewEvidence require evidence_bundle_verified violated: no prior verified evidence bundle was supplied"
+    },
+    {
+      "index": 14,
+      "event_type": "PolicyActionActivated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "active",
+      "details": "policy ReviewEvidence action review activated trace_required=true"
+    },
+    {
+      "index": 15,
+      "event_type": "PolicyReportGenerated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "review_required",
+      "details": "policy report generated"
+    }
+  ],
+  "security_checks": "passed"
+}

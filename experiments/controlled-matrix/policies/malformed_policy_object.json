@@ -1,0 +1,14 @@
+{
+  "case": "malformed_policy_object",
+  "country": "CL",
+  "data_class": "internal",
+  "expected": "ERROR",
+  "expected_policy": "ERROR: malformed_policy_object",
+  "group": "policies",
+  "note": "",
+  "policy_rule": "malformed_policy_object",
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "CL",
+  "tamper_target": null
+}

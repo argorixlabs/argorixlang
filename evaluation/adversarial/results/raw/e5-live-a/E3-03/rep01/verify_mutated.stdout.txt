@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 20,
+  "checks_passed": 19,
+  "checks_failed": 1,
+  "failures": [
+    "bytecode artifact is invalid JSON: EOF while parsing a string at line 72 column 22"
+  ]
+}

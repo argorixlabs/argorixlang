@@ -1,0 +1,14 @@
+{
+  "case": "passport_valid_AU_residency_AU",
+  "country": "AU",
+  "data_class": "internal",
+  "expected": "PASS",
+  "expected_policy": "PASS: passport_country_code_valid + passport_residency_declared + same_country_residency",
+  "group": "passports",
+  "note": "Valid same-country passport fixture for Australia (asia_pacific).",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "AU",
+  "tamper_target": null
+}

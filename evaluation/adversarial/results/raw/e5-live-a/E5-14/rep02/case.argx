@@ -1,0 +1,39 @@
+module Eval.W10.ExternalContractNoAdapter
+
+provider OpenAIProvider {
+    kind external
+    enabled false
+    dry_run_only true
+    requires feature_flag
+    requires approval
+    allowed_targets { GuardModel }
+    allowed_capabilities { model.invoke }
+}
+
+capability model.invoke { level restricted requires approval }
+capability trace.write { level safe }
+
+assert no_unhandled_messages
+
+type ToolResult { content: string }
+type Decision { action: string reason: string }
+
+model GuardModel {
+    provider simulated
+    capability model.invoke
+    input ToolResult
+    output Decision
+}
+
+agent PolicyJudge {
+    security { approval granted }
+    receives ToolResult
+    capabilities { model.invoke trace.write }
+    models { GuardModel }
+    on ToolResult as result {
+        ask GuardModel with result
+        trace result
+    }
+}
+
+protocol Flow { User -> PolicyJudge: tell ToolResult }

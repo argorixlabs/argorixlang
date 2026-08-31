@@ -1,0 +1,14 @@
+{
+  "case": "passport_unknown_XX",
+  "country": "XX",
+  "data_class": "internal",
+  "expected": "REVIEW",
+  "expected_policy": "REVIEW: unknown_jurisdiction",
+  "group": "passports",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "XX",
+  "tamper_target": null
+}

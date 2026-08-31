@@ -181,6 +181,7 @@ pub fn lower_ir(ir: &IrProgram) -> BytecodeProgram {
     instructions.push(Instruction::End);
 
     BytecodeProgram {
+        source_digest: None,
         bytecode_version: "1.0".to_owned(),
         language: ir.language.clone(),
         module: ir.module.clone(),

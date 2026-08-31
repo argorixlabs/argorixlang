@@ -1,0 +1,14 @@
+{
+  "case": "valid_simulated_provider",
+  "country": "CL",
+  "data_class": "internal",
+  "expected": "PASS",
+  "expected_policy": "PASS: provider_executable_allowlist",
+  "group": "providers",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "CL",
+  "tamper_target": null
+}

@@ -1,0 +1,59 @@
+\section{Governed, Fail-Closed Runtime}\label{sec:runtime}
+
+The runtime evaluates a validated program rather than accepting unrestricted
+provider calls.  Its decision inputs include the requesting agent, capability,
+target, policy, runtime profile, and executable-provider registry.  Denial is
+the default when a reference is unknown, an approval is absent, a capability
+is incompatible, or a provider is not executable.  Runtime state is retained
+in an outcome object even when execution fails, allowing a report to describe
+the denial without converting it into success.
+
+The provider boundary has two registries.  Declarative contracts state
+capabilities, limits, and allowed operations for an external provider.
+Executable providers contain callable implementations.  A contract's presence
+does not enroll it for execution.  The evaluated chatbot artifacts name an
+\code{OpenAIProvider} contract and an \code{OpenAISandbox} descriptor, but the
+only executable provider is \code{simulated}.  Each complete trace records one
+blocked external-provider attempt.
+
+\begin{table}[t]
+\centering
+\caption{Runtime controls observed in the evaluated profile. These controls
+describe application-level behavior, not operating-system sandbox proof.}
+\label{tab:runtime-controls}
+\input{tables/runtime-controls}
+\end{table}
+
+\Cref{tab:runtime-controls} records the four controls actually observed, while
+leaving operating-system containment and live-provider behavior outside the
+table's scope.
+
+Runtime profiles require audit, evidence, security reports, sandbox metadata,
+and deny network, plaintext secrets, key material, tools, agent execution, and
+external execution for the demonstrated path.  Governance and threat-model
+declarations are likewise runtime-disabled.  These choices make the corpus
+suitable for studying compilation and evidence without contacting an external
+service.
+
+\Cref{fig:request-sequence} also clarifies the meaning of \emph{fail closed}.
+It is a control-flow property of the implemented VM: missing authorization
+does not fall through to a provider call.  It is not a claim that every
+host-language, dependency, operating-system, or deployment path is isolated.
+A production assessment would need process, filesystem, network, secret-store,
+and adapter testing beyond the present study.
+
+Policies can activate actions, emit violations, and require human review.
+Coarse status fields are not authoritative when a detailed policy object is
+available.  This rule becomes consequential in \cref{sec:results}: the corpus
+contains a favorable top-level label alongside uniformly unfavorable detailed
+policy results.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{policy-lattice-flow.pdf}
+\caption{The v0.2 lattice separates policy approval, denial, review,
+configuration errors, and malformed policies. UNKNOWN\_RULE is not treated as
+an ordinary violation, and the figure does not imply legal or operational
+approval outside the local controlled matrix.}
+\label{fig:policy-lattice-flow}
+\end{figure}

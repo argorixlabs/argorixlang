@@ -1,0 +1,10 @@
+{
+  "passed": false,
+  "checks_total": 25,
+  "checks_passed": 23,
+  "checks_failed": 2,
+  "failures": [
+    "bytecode_digest mismatch",
+    "bytecode module mismatch"
+  ]
+}

@@ -8,7 +8,12 @@ publish = false
 [dependencies]
 argorix_bytecode.workspace = true
 argorix_provider.workspace = true
+ed25519-dalek.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+
+[features]
+# Evaluation-only. Never enabled by the release build.
+eval-tripwire = ["argorix_provider/eval-tripwire"]

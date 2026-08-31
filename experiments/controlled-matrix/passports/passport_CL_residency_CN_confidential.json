@@ -1,0 +1,14 @@
+{
+  "case": "passport_CL_residency_CN_confidential",
+  "country": "CL",
+  "data_class": "confidential",
+  "expected": "DENY",
+  "expected_policy": "DENY: disallowed_residency",
+  "group": "passports",
+  "note": "",
+  "policy_rule": null,
+  "profile": "cl_block_cn",
+  "provider": "simulated",
+  "residency": "CN",
+  "tamper_target": null
+}

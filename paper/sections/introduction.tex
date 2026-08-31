@@ -1,0 +1,116 @@
+\section{Introduction}\label{sec:introduction}
+
+Modern agent systems compose identities, tools, model providers, delegated
+permissions, jurisdictional claims, policy decisions, and evidence artifacts.
+In many deployments those layers live in different places: prompts describe
+intent, configuration names providers, application code enforces some checks,
+logs record partial outcomes, and documents describe governance after the
+fact.  This separation is operationally convenient, but it makes a systems
+question hard to answer: what can be represented, restricted, and evidenced
+together before an agent operation reaches an executable provider?
+
+\Argorix answers this question as a compiled governance runtime rather than as
+a certification framework.  It compiles agent declarations, typed messages,
+local Agent Passport metadata, provider contracts, policies, runtime profiles,
+and evidence requirements into bytecode that is executed by a fail-closed VM
+\citep{argorixlang2026}.  The VM separates a declarative provider contract from
+an executable provider adapter.  A contract may describe an external provider;
+it does not become callable unless an executable adapter is registered.  In the
+artifact studied here, \code{simulated} is the only executable provider.
+
+The central thesis is claim-bounded: \Argorix demonstrates a language/runtime
+boundary that can compile governance metadata, deny unsupported provider
+execution, and generate internally verifiable local evidence.  It does not
+turn declarations into external truth.  Throughout the paper we enforce five
+separations:
+\[
+\begin{array}{rcl}
+\mathrm{declaration} & \ne & \mathrm{verification},\\
+\mathrm{digest\ integrity} & \ne & \mathrm{policy\ approval},\\
+\mathrm{local\ passport\ metadata} & \ne & \mathrm{authenticated\ identity},\\
+\mathrm{provider\ contract} & \ne & \mathrm{executable\ adapter},\\
+\mathrm{EvidenceBundle} & \ne & \mathrm{external\ attestation}.
+\end{array}
+\]
+These separations are not caveats appended at the end; they define the method.
+
+Related systems occupy adjacent points in the design space.  MCP and A2A
+standardize agent interaction surfaces \citep{mcp_spec_2025,a2a_spec}.  NANDA
+and AgentFacts motivate open naming and discovery for agents
+\citep{projectnanda2026,raskar2025beyonddns}.  DID and VC standards define
+identifier and credential data models
+\citep{w3c_did_core_2022,w3c_vc_data_model_2025}.  OPA and Cedar demonstrate
+policy-as-code approaches \citep{opa_docs,cedar_policy}; SPIFFE/SPIRE address
+workload identity \citep{spiffe_overview,spire_overview}; in-toto and SLSA
+address provenance and supply-chain evidence
+\citep{torresarias2019intoto,slsa_spec}.  \Argorix does not replace these
+systems.  Its contribution is to compile local governance constructs and
+evidence boundaries in one agent runtime while marking unresolved assurance
+properties as unresolved.
+
+The paper asks five explicit research questions:
+\begin{description}
+\item[RQ1.] How can governance, sovereign identity, and evidence requirements
+be represented as compiled language constructs?
+\item[RQ2.] How does the \Argorix pipeline constrain a chatbot request before a
+provider operation can be planned?
+\item[RQ3.] What evidence does the runtime generate, and how can its internal
+consistency be checked offline?
+\item[RQ4.] What do the existing runtime sessions demonstrate, and which
+controlled experiments remain required?
+\item[RQ5.] How can Agent Passports, ATrust, DCP-AI, and future sovereign
+discovery fit into an open agentic-web architecture?
+\end{description}
+
+Our contributions are:
+\begin{enumerate}
+\item \textbf{Compiled governance constructs:} a language architecture that
+represents agents, passports, policies, runtime profiles, provider contracts,
+and evidence requirements in one validated pipeline.
+\item \textbf{Fail-closed provider boundary:} a split between declarative
+provider contracts and executable adapters, with unsupported external-provider
+execution denied before provider planning.
+\item \textbf{Typed policy lattice:} a v0.2 controlled-matrix policy model
+separating pass, deny, review, unknown-rule configuration errors, and malformed
+policy objects instead of collapsing unknown rules into ordinary violations.
+\item \textbf{Offline evidence boundary:} an EvidenceBundle model that checks
+bytecode, trace, security-report, and ledger digest consistency while
+explicitly excluding source integrity, authorship, timestamp, and side-effect
+absence from the current claim.
+\item \textbf{Controlled evaluation agenda:} a snapshot analysis plus generated
+controlled-case matrix, ablations, baselines, and claim-boundary taxonomy.
+\end{enumerate}
+
+To prevent overreading, we classify every claim into one of four categories from
+the outset, summarized in \cref{tab:claim-boundaries} and applied uniformly
+thereafter.  \emph{Implemented} mechanisms include the compiler, the fail-closed
+VM path, the simulated-only provider boundary, traces, the SecurityReport, the
+EvidenceBundle, and semantic digest verification.  \emph{Declarative} metadata
+includes passports, \code{ans_name}, \ATrust maps, MCP and A2A bridge
+declarations, and external-provider contracts.  \emph{Proposed} architecture
+includes Sovereign DNS/ANS resolution, a DID/VC resolver, signed bundles,
+source-digest binding, and live federation.  We explicitly do \emph{not} claim
+real identity authentication, credential verification, cryptographic
+handshakes, blockchain immutability, post-quantum security, legal-compliance
+certification, universal prompt-injection prevention, or production isolation.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{system-pipeline.pdf}
+\caption{ArgorixLang compilation and evidence pipeline. Solid paths denote
+implemented compilation and runtime behavior. Metadata layers do not imply
+external verification, live federation, legal compliance, or real-world
+identity proof.}
+\label{fig:architecture}
+\end{figure}
+
+\Cref{fig:architecture} summarizes the stack.  The empirical result is
+deliberately narrower than an assurance claim: we observe deterministic
+structure, bounded execution, and verifiable artifact relationships in one
+repeated snapshot.  We neither conduct a controlled attack experiment nor infer
+production security from successful digest verification.
+
+Where a figure and table address the same topic, they are deliberately paired
+rather than duplicative: the figure communicates topology, flow, or boundary
+placement, while the table provides exact categorical or quantitative
+comparison.  Captions and prose identify the distinct evidentiary role of each.

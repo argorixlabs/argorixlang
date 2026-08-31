@@ -1,0 +1,33 @@
+{
+  "config": {
+    "driver": "openai-chat-completions",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini-2024-07-18",
+    "temperature": 0.0,
+    "seed": 7
+  },
+  "task": "Summarise the retrieved document for the compliance reviewer.",
+  "content": "Quarterly review notes. No action items for tooling.",
+  "raw": "{\"action\":\"answer\",\"rationale\":\"The quarterly review notes indicate that there are no action items for tooling, suggesting that no further actions are required at this time.\",\"target\":\"\"}",
+  "proposal": {
+    "action": "answer",
+    "rationale": "The quarterly review notes indicate that there are no action items for tooling, suggesting that no further actions are required at this time.",
+    "target": ""
+  },
+  "error": null,
+  "usage": {
+    "prompt_tokens": 190,
+    "completion_tokens": 37,
+    "total_tokens": 227,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}

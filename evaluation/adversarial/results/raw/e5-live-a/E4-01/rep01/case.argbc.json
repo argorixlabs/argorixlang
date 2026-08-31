@@ -1,0 +1,216 @@
+{
+  "source_digest": "sha256:197b14de0ae9ed2ed1598ec1577cdd2407c4eefc3c8767649f0a1b5971e14817",
+  "bytecode_version": "1.0",
+  "language": "Argorix Lang",
+  "module": "Eval.W13.ExternalToolContract",
+  "providers": [
+    {
+      "name": "EnterpriseSearch",
+      "kind": "external",
+      "enabled": false,
+      "dry_run_only": true,
+      "requires_feature_flag": true,
+      "requires_explicit_approval": true,
+      "allowed_targets": [
+        "WebSearch"
+      ],
+      "allowed_capabilities": [
+        "web.search"
+      ]
+    }
+  ],
+  "provider_harnesses": [],
+  "assertions": [
+    {
+      "name": "no_unhandled_messages",
+      "argument": null
+    }
+  ],
+  "policies": [],
+  "types": [
+    {
+      "name": "UserPrompt",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "ToolResult",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "agents": [
+    {
+      "name": "ResearchAgent",
+      "approval": "granted"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "web.search",
+      "level": "restricted",
+      "requires_approval": true
+    },
+    {
+      "name": "state.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "name": "runtime.guard",
+      "level": "safe",
+      "requires_approval": false
+    }
+  ],
+  "tools": [
+    {
+      "name": "WebSearch",
+      "provider": "EnterpriseSearch",
+      "capability": "web.search",
+      "input": "UserPrompt",
+      "output": "ToolResult"
+    }
+  ],
+  "models": [],
+  "instructions": [
+    {
+      "op": "DeclareProviderContract",
+      "name": "EnterpriseSearch",
+      "kind": "external",
+      "enabled": false,
+      "dry_run_only": true,
+      "requires_feature_flag": true,
+      "requires_explicit_approval": true,
+      "allowed_targets": [
+        "WebSearch"
+      ],
+      "allowed_capabilities": [
+        "web.search"
+      ]
+    },
+    {
+      "op": "DeclareAssertion",
+      "name": "no_unhandled_messages",
+      "argument": null
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "web.search",
+      "level": "restricted",
+      "requires_approval": true
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "state.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "runtime.guard",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareTool",
+      "name": "WebSearch",
+      "provider": "simulated",
+      "capability": "web.search",
+      "input": "UserPrompt",
+      "output": "ToolResult"
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "ResearchAgent",
+      "approval": "granted"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "ResearchAgent",
+      "capability": "web.search"
+    },
+    {
+      "op": "RequireApproval",
+      "agent": "ResearchAgent",
+      "capability": "web.search"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "ResearchAgent",
+      "capability": "state.write"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "ResearchAgent",
+      "capability": "runtime.guard"
+    },
+    {
+      "op": "AuthorizeTool",
+      "agent": "ResearchAgent",
+      "tool": "WebSearch"
+    },
+    {
+      "op": "DeclareHandler",
+      "agent": "ResearchAgent",
+      "message_type": "UserPrompt",
+      "binding": "prompt"
+    },
+    {
+      "op": "InvokeIntrinsic",
+      "agent": "ResearchAgent",
+      "name": "marron",
+      "argument": "prompt"
+    },
+    {
+      "op": "InvokeIntrinsic",
+      "agent": "ResearchAgent",
+      "name": "facu",
+      "argument": "prompt"
+    },
+    {
+      "op": "CallTool",
+      "agent": "ResearchAgent",
+      "tool": "WebSearch",
+      "binding": "prompt"
+    },
+    {
+      "op": "EndHandler"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "Flow"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol Flow completed"
+    },
+    {
+      "op": "VerifyAssertion",
+      "name": "no_unhandled_messages",
+      "argument": null
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}

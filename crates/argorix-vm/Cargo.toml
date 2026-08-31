@@ -16,3 +16,7 @@ argorix_vm.workspace = true
 clap.workspace = true
 serde_json.workspace = true
 serde.workspace = true
+
+[features]
+# Evaluation-only. Never enabled by the release build.
+eval-tripwire = ["argorix_vm/eval-tripwire"]

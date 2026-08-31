@@ -1,0 +1,32 @@
+\section{Sovereign Identity Metadata}\label{sec:sovereign}
+
+An Agent Passport collects locally asserted identity and governance context:
+passport name, subject agent, country, jurisdiction, permitted data residency,
+capabilities, policy bindings, and an \code{ans_name}.  Semantic validation
+ensures that references resolve and that enumerated relationships are
+well-formed.  Runtime traces can therefore identify which passport and
+residency constraints accompanied an operation.
+
+The term \emph{sovereign} refers here to explicit jurisdictional and residency
+metadata controlled by the program, not state recognition or legal status.
+The observed complete sessions each contain two passports, jurisdiction
+\code{CL}, country \code{CL}, and residency values \code{CL} and \code{EU}.
+These values are declarations.  No external registry validates them.
+
+\code{ans_name} is implemented as a declarative passport identifier.  It
+survives parsing, semantic validation, lowering, and artifact generation.  It
+is not an operational Agent Naming Service: no DNS query, DID resolution,
+registry lookup, ownership challenge, or remote authentication occurs.
+The implemented relation is local: the name is bound to a passport and agent
+within the compiled program.
+
+This separation avoids a common category error.  A resolvable name answers
+``where is the record?''; an authenticated identity answers ``who controls the
+relevant key or account?''; a credential answers a scoped assertion; and a
+policy decision answers whether an operation is permitted in context.  A
+future architecture may connect these functions, but one cannot substitute
+for another.
+
+The operational cut is immediately after local compilation: federation, DID
+resolution, and remote proof of control are future components and cannot be
+inferred from a validated \code{ans_name}.

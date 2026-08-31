@@ -1,0 +1,6 @@
+Case,Country,Residency,Data Class,Expected,Observed,Policy,Provider,Evidence,Source,Trace Events,Side Effect,Outcome
+external_provider_without_adapter,CL,CL,internal,DENY,DENY,DENY: external_provider_without_adapter,external_blocked_no_adapter,bundle_verified,source_digest_match,3,no,correct_deny
+key_material_attempt,CL,CL,internal,DENY,DENY,DENY: key_material_denied,no_provider_planned,bundle_verified,source_digest_match,3,no,correct_deny
+network_denied_profile,CL,CL,internal,DENY,DENY,DENY: runtime_network_denied,no_network_call,bundle_verified,source_digest_match,3,no,correct_deny
+plaintext_secret_attempt,CL,CL,internal,DENY,DENY,DENY: secrets_denied,no_provider_planned,bundle_verified,source_digest_match,3,no,correct_deny
+valid_simulated_provider,CL,CL,internal,PASS,PASS,PASS: passport_country_code_valid + passport_residency_declared + same_country_residency,simulated_allowed,bundle_verified,source_digest_match,3,no,correct_pass

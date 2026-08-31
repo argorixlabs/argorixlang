@@ -88,10 +88,11 @@ fn bundle_preserves_metadata_digests_and_relative_paths() {
         Some(&bytecode_path),
         Some(&trace_path),
         Some(&report_path),
+        None,
     )
     .unwrap();
 
-    assert!(matches!(bundle.bundle_version.as_str(), "1.0"));
+    assert!(matches!(bundle.bundle_version.as_str(), "1.1"));
     assert_eq!(bundle.language, bytecode.language);
     assert_eq!(bundle.module, bytecode.module);
     assert_eq!(bundle.bytecode_version, bytecode.bytecode_version);
@@ -131,6 +132,7 @@ fn failed_outcome_without_trace_uses_null_trace_evidence() {
         Some(&bytecode_path),
         None,
         Some(&report_path),
+        None,
     )
     .unwrap();
 
@@ -160,6 +162,7 @@ fn absolute_artifact_outside_portable_tree_is_rejected() {
         Some(&external),
         None,
         None,
+        None,
     )
     .unwrap_err();
 
@@ -183,6 +186,7 @@ fn nested_bundle_can_reference_project_sibling_artifacts() {
         &report,
         &bundle_path,
         Some(&bytecode_path),
+        None,
         None,
         None,
     )
@@ -213,6 +217,7 @@ fn offline_verification_passes_intact_semantic_artifacts() {
         Some(&bytecode_path),
         Some(&trace_path),
         Some(&report_path),
+        None,
     )
     .unwrap();
     write_json(&bytecode_path, &bytecode);
@@ -245,6 +250,7 @@ fn offline_verification_reports_tampering_missing_artifacts_and_bad_ledger() {
         Some(&bytecode_path),
         None,
         Some(&report_path),
+        None,
     )
     .unwrap();
     let mut changed = bytecode.clone();
@@ -295,6 +301,7 @@ fn offline_verification_accepts_v014_bundle_and_report() {
         Some(&bytecode_path),
         Some(&trace_path),
         Some(&report_path),
+        None,
     )
     .unwrap();
     bundle.bundle_version = "0.14".into();
@@ -331,6 +338,7 @@ fn offline_verification_accepts_v034_bundle_and_report() {
         Some(&bytecode_path),
         Some(&trace_path),
         Some(&report_path),
+        None,
     )
     .unwrap();
     bundle.bundle_version = "0.34".into();
@@ -365,6 +373,7 @@ fn offline_verification_accepts_v035_bundle_and_report() {
         Some(&bytecode_path),
         Some(&trace_path),
         Some(&report_path),
+        None,
     )
     .unwrap();
     bundle.bundle_version = "0.35".into();
@@ -399,6 +408,7 @@ fn offline_verification_accepts_v036_bundle_and_report() {
         Some(&bytecode_path),
         Some(&trace_path),
         Some(&report_path),
+        None,
     )
     .unwrap();
     bundle.bundle_version = "0.36".into();
@@ -433,6 +443,7 @@ fn offline_verification_accepts_v019_bundle_without_harness_summary_field() {
         Some(&bytecode_path),
         Some(&trace_path),
         Some(&report_path),
+        None,
     )
     .unwrap();
     bundle.bundle_version = "0.19".into();
@@ -471,6 +482,7 @@ fn offline_verification_rejects_unsupported_bundle_version() {
         Some(&bytecode_path),
         Some(&trace_path),
         Some(&report_path),
+        None,
     )
     .unwrap();
     bundle.bundle_version = "0.13".into();
@@ -486,5 +498,103 @@ fn offline_verification_rejects_unsupported_bundle_version() {
         .failures
         .iter()
         .any(|failure| failure.contains("unsupported bundle_version")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn source_bound_bundle(root: &Path, source_text: &str) -> (PathBuf, BytecodeProgram) {
+    let bundle_path = root.join("reports/run.bundle.json");
+    let bytecode_path = root.join("examples/program.argbc.json");
+    let trace_path = root.join("reports/run.trace.json");
+    let report_path = root.join("reports/run.security.json");
+    let source_path = root.join("examples/program.argx");
+
+    let mut bytecode = fixture();
+    bytecode.source_digest = Some(argorix_bytecode::source_digest(source_text.as_bytes()));
+    let outcome = Vm::new().run_reactive_outcome(&bytecode, injection());
+    let trace = outcome.result.as_ref().unwrap();
+    let report = SecurityReport::from_outcome(&bytecode, &outcome);
+    let bundle = EvidenceBundle::from_outcome(
+        &bytecode,
+        &outcome,
+        &report,
+        &bundle_path,
+        Some(&bytecode_path),
+        Some(&trace_path),
+        Some(&report_path),
+        Some(&source_path),
+    )
+    .unwrap();
+
+    fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    fs::write(&source_path, source_text).unwrap();
+    write_json(&bytecode_path, &bytecode);
+    write_json(&trace_path, trace);
+    write_json(&report_path, &report);
+    write_json(&bundle_path, &bundle);
+    (bundle_path, bytecode)
+}
+
+#[test]
+fn source_bound_bundle_verifies_and_records_a_relative_source_path() {
+    let root = temp_root("source-pass");
+    let (bundle_path, _) = source_bound_bundle(&root, "module Bound\n");
+
+    let bundle: Value = serde_json::from_str(&fs::read_to_string(&bundle_path).unwrap()).unwrap();
+    assert_eq!(
+        bundle["artifacts"]["source_path"],
+        Value::from("../examples/program.argx")
+    );
+
+    let result = verify_evidence(&bundle_path).unwrap();
+
+    assert!(result.passed, "{:?}", result.failures);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn editing_only_the_source_after_generation_is_detected() {
+    let root = temp_root("source-tamper");
+    let (bundle_path, _) = source_bound_bundle(&root, "module Bound\n");
+    let source_path = root.join("examples/program.argx");
+
+    // Nothing else changes: the bytecode, trace, report and bundle are intact.
+    fs::write(&source_path, "module Bound\n// tampered\n").unwrap();
+
+    let result = verify_evidence(&bundle_path).unwrap();
+
+    assert!(!result.passed);
+    assert!(result
+        .failures
+        .iter()
+        .any(|failure| failure == "source_digest mismatch"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn bundle_naming_a_source_the_bytecode_does_not_bind_fails_closed() {
+    let root = temp_root("source-unbound");
+    let (bundle_path, mut bytecode) = source_bound_bundle(&root, "module Bound\n");
+    let bytecode_path = root.join("examples/program.argbc.json");
+
+    // Strip the binding from the bytecode and restore the digest the bundle
+    // recorded, so only the source claim is left dangling.
+    bytecode.source_digest = None;
+    let mut bundle: Value =
+        serde_json::from_str(&fs::read_to_string(&bundle_path).unwrap()).unwrap();
+    bundle["bytecode_digest"] = Value::from(canonical_digest(&bytecode).unwrap());
+    write_json(&bytecode_path, &bytecode);
+    fs::write(
+        &bundle_path,
+        format!("{}\n", serde_json::to_string_pretty(&bundle).unwrap()),
+    )
+    .unwrap();
+
+    let result = verify_evidence(&bundle_path).unwrap();
+
+    assert!(!result.passed);
+    assert!(result
+        .failures
+        .iter()
+        .any(|failure| failure == "bundle names a source but the bytecode binds none"));
     fs::remove_dir_all(root).unwrap();
 }

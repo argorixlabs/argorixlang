@@ -1,0 +1,1 @@
+mailbox for internal agent `GhostAgent` does not exist

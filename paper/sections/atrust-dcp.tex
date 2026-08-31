@@ -1,0 +1,42 @@
+\section{ATrust and DCP-AI}\label{sec:atrust}
+
+\ATrust is attributed to Edison Vazquez as an unpublished conceptual protocol
+\citep{vazquez_atrust}.  In the conceptual model, an agent identity relates to
+credential descriptions, handshake requirements, trust-ledger entries, and an
+evidence map.  \Argorix implements syntax, semantic relationships, bytecode
+representations, and trace events for these concepts.  It does not implement
+real credential issuance or verification, cryptographic challenge--response,
+remote DID resolution, or live attestation.
+
+Identity declarations associate agents with identifier methods and
+boundaries.  Credential contracts describe issuer/subject/type relationships.
+Handshake declarations describe participants and required evidence.  A trust
+ledger is a local, hash-linked declarative structure whose entries reference
+subjects and evidence.  Evidence maps require named declarations to be covered
+by artifact links.  Validation rejects dangling references and prohibited
+claims.  The word \emph{handshake} therefore denotes a checked contract, not an
+executed cryptographic exchange; \emph{ledger} denotes a local evidence data
+structure, not blockchain consensus or immutable storage.
+
+\DCPAI, attributed to Danilo Naranjo Emparanza, proposes a Digital Citizenship
+Protocol for Autonomous AI and a control-plane framing for agents
+\citep{naranjo_dcpai}.  It complements ATrust's trust relationships and
+\Argorix's compiled enforcement boundary, but the three are not conflated.
+DCP-AI is a published conceptual proposal; ATrust is unpublished conceptual
+work; \Argorix is the software artifact evaluated here.
+
+The relationship can be stated operationally.  DCP-AI motivates questions of
+agent standing and governance; ATrust supplies a vocabulary for identity,
+credentials, handshakes, ledgers, and evidence; \Argorix checks local
+declarations and emits evidence about their handling.  None of these local
+checks demonstrates that a remote party is genuine.
+
+The evidence scope figure in \cref{fig:evidence-chain} distinguishes the
+unverified source input from bundle-verified JSON artifacts.  Its scope does
+not extend to an issuer, credential authority, or remote agent.
+
+MCP and A2A bridges follow the same principle.  They bind agents, passports,
+identities, message contracts, and boundaries while requiring network and
+execution denial in the studied profile.  The declarations can support future
+protocol adapters \citep{mcp_spec_2025,a2a_spec}; today they are declarative
+boundaries and auditable negative controls.

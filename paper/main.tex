@@ -1,0 +1,86 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\usepackage{xurl}
+\usepackage{xspace}
+
+\graphicspath{{figures/}}
+\newcommand{\code}[1]{\nolinkurl{#1}}
+% ArgorixLang brand wordmark: per-character gradient across the brand palette.
+\definecolor{argViolet}{HTML}{7C3AED}
+\definecolor{argIndigo}{HTML}{5B3DF5}
+\definecolor{argElectric}{HTML}{2F6BFF}
+\definecolor{argCyan}{HTML}{2BC4F4}
+\definecolor{argCyanBright}{HTML}{5CD6FF}
+\newcommand{\Argorix}{%
+\textcolor{argViolet}{A}\textcolor{argViolet}{r}\textcolor{argIndigo}{g}\textcolor{argIndigo}{o}\textcolor{argElectric}{r}\textcolor{argElectric}{i}\textcolor{argElectric}{x}\textcolor{argCyan}{L}\textcolor{argCyan}{a}\textcolor{argCyanBright}{n}\textcolor{argCyanBright}{g}\xspace}
+\newcommand{\ATrust}{ATrust\xspace}
+\newcommand{\DCPAI}{DCP-AI\xspace}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\setlist{nosep,leftmargin=*}
+\setlength{\emergencystretch}{2em}
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,frame=single,
+  columns=fullflexible,keepspaces=true}
+
+\title{\Argorix: Compiled Governance, Sovereign Agent Metadata,\\
+and Offline-Verifiable Runtime Evidence}
+\author{
+\IEEEauthorblockN{
+Gustavo Venegas\IEEEauthorrefmark{1},
+Edison Vazquez\IEEEauthorrefmark{1},
+Danilo Naranjo\IEEEauthorrefmark{2},
+Benjamin Gonzalez\IEEEauthorrefmark{1}}
+\IEEEauthorblockA{
+\IEEEauthorrefmark{1}Chilean Chamber of Artificial Intelligence\quad
+\IEEEauthorrefmark{2}Ocular\\
+\texttt{\footnotesize gustavo@gobiernoia.cl,\ edison@jhedai.com,\space
+dan@ocularsolution.com,\ ben@nirvana-ai.com}}
+}
+\hypersetup{
+  pdftitle={ArgorixLang: Compiled Governance, Sovereign Agent Metadata, and Offline-Verifiable Runtime Evidence},
+  pdfauthor={Gustavo Venegas, Edison Vazquez, Danilo Naranjo, Benjamin Gonzalez},
+  pdfsubject={Reproducible preprint on ArgorixLang runtime evidence and governance},
+  pdfkeywords={ArgorixLang, AI agents, governance, runtime evidence, policy}
+}
+
+\begin{document}
+\maketitle
+\input{sections/abstract}
+\begin{IEEEkeywords}
+agent programming languages, compiled governance, sovereign identity,
+runtime evidence, fail-closed execution, reproducibility
+\end{IEEEkeywords}
+\input{sections/introduction}
+\input{sections/background}
+\input{sections/language-architecture}
+\input{sections/sovereign-identity}
+\input{sections/atrust-dcp}
+\input{sections/runtime}
+\input{sections/evidence}
+\input{sections/methodology}
+\input{sections/results}
+\input{sections/security-analysis}
+\input{sections/discussion}
+\input{sections/limitations}
+\input{sections/future-work}
+\input{sections/conclusion}
+\input{sections/back-matter}
+
+\appendix
+\input{appendices/artifact-excerpts}
+
+\bibliographystyle{IEEEtranN}
+\bibliography{references}
+\end{document}

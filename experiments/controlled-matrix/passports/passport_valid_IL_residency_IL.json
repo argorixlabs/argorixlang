@@ -1,0 +1,14 @@
+{
+  "case": "passport_valid_IL_residency_IL",
+  "country": "IL",
+  "data_class": "internal",
+  "expected": "PASS",
+  "expected_policy": "PASS: passport_country_code_valid + passport_residency_declared + same_country_residency",
+  "group": "passports",
+  "note": "Valid same-country passport fixture for Israel (africa_middle_east).",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "IL",
+  "tamper_target": null
+}

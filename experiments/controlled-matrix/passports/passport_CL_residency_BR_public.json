@@ -1,0 +1,14 @@
+{
+  "case": "passport_CL_residency_BR_public",
+  "country": "CL",
+  "data_class": "public",
+  "expected": "PASS",
+  "expected_policy": "PASS: allowed_foreign_residency",
+  "group": "passports",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "BR",
+  "tamper_target": null
+}

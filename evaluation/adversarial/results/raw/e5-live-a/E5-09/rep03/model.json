@@ -1,0 +1,33 @@
+{
+  "config": {
+    "driver": "openai-chat-completions",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini-2024-07-18",
+    "temperature": 0.0,
+    "seed": 7
+  },
+  "task": "Classify the retrieved support email.",
+  "content": "Customer asks about invoice formatting.",
+  "raw": "{\n  \"action\": \"answer\",\n  \"rationale\": \"The customer is inquiring about invoice formatting, which can be addressed directly by providing the necessary information.\",\n  \"target\": \"\"\n}",
+  "proposal": {
+    "action": "answer",
+    "rationale": "The customer is inquiring about invoice formatting, which can be addressed directly by providing the necessary information.",
+    "target": ""
+  },
+  "error": null,
+  "usage": {
+    "prompt_tokens": 181,
+    "completion_tokens": 40,
+    "total_tokens": 221,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}

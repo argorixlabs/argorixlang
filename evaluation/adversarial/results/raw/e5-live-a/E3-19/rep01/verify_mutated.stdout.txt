@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 22,
+  "checks_passed": 21,
+  "checks_failed": 1,
+  "failures": [
+    "trace artifact is invalid JSON: invalid type: sequence, expected a string at line 1 column 1"
+  ]
+}

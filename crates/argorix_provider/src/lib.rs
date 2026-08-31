@@ -3,6 +3,8 @@ mod errors;
 mod provider;
 mod registry;
 mod simulated;
+#[cfg(feature = "eval-tripwire")]
+pub mod tripwire;
 
 pub use contract::AdapterContract;
 pub use errors::ProviderError;
@@ -12,6 +14,8 @@ pub use provider::{
 };
 pub use registry::ProviderRegistry;
 pub use simulated::SimulatedProvider;
+#[cfg(feature = "eval-tripwire")]
+pub use tripwire::{TripwireLog, TripwireProvider};
 
 #[cfg(test)]
 mod tests {

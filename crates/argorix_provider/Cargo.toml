@@ -8,3 +8,7 @@ publish = false
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
+
+[features]
+# Evaluation-only. Never enabled by the release build.
+eval-tripwire = []

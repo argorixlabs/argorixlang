@@ -1,0 +1,14 @@
+{
+  "case": "passport_missing_residency_CL",
+  "country": "CL",
+  "data_class": "internal",
+  "expected": "REVIEW",
+  "expected_policy": "REVIEW: passport_residency_missing",
+  "group": "passports",
+  "note": "",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": null,
+  "tamper_target": null
+}

@@ -1,0 +1,18 @@
+{
+  "bundle_version": "1.1",
+  "language": "Argorix Lang",
+  "module": "Eval.W10.ExternalContractNoAdapter",
+  "bytecode_version": "1.0",
+  "vm_version": "1.0",
+  "report_version": "1.0",
+  "bytecode_digest": "sha256:5ebd27d1742f8cd931239609d14837cb57914dc02a437bd8d313a1c81d63d703",
+  "trace_digest": "sha256:223b596e811060ae25cd9a9a8cddae3e07db2332e319aab4b0bb6d4ba95f8b2a",
+  "report_digest": "sha256:389e57daea4493fae6cdb2c352115d9eed1587dc3bf0193ef944a0531aafee4f",
+  "ledger_digest": "sha256:155cb234c742f0665c5bdcc4057f373bb4d99f0b8ff61e62e0d954e0ddb5af3c",
+  "artifacts": {
+    "bytecode_path": "case.argbc.json",
+    "trace_path": "case.trace.json",
+    "security_report_path": "case.security.json",
+    "source_path": "case.argx"
+  }
+}

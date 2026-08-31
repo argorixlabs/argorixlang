@@ -1,0 +1,87 @@
+{
+  "description": "Clean reruns before and after the product fixes, with the model-dependent branch separated.",
+  "builds": {
+    "prefix": {
+      "run_id": "final",
+      "commit": "59524f664536fa761ca24b03312665e2f62cc6b9",
+      "archived_under": "evaluation/adversarial/baseline/prefix/",
+      "metrics": {
+        "outcome_accuracy": "103/106",
+        "false_allow_rate": "0/106",
+        "false_deny_rate": "0/106",
+        "destination_asr": "0/21",
+        "conditional_containment": "21/21",
+        "boundary_rejection": "15/21",
+        "tamper_detection": "20/22",
+        "fail_closed_rate": "16/16",
+        "artifact_completeness": "21/21"
+      }
+    },
+    "current": {
+      "run_ids": [
+        "e5-live-a",
+        "e5-live-b"
+      ],
+      "commit": "99d444b81316d2006618f902929caa560bd45854",
+      "binary_sha256": {
+        "argorixc": "sha256:e6ad8d51915fdc339632b415e19a587a994436aefcbf82d13a47e686e3295eed",
+        "argorix-vm": "sha256:d9491a8cf7c26ff71259e004a34a8acf50a9f64438f7c2569331adf976d5048a",
+        "argorix-conformance": "sha256:f03c1f09cc1a6892d62a8c23612fc8fcd96ce943d3c87758eb3362f451c3900b",
+        "argorix-sign": "sha256:011943fd0f148ef12a7f654734f3c0fa1d2b08a0a2f1b53bc108cd441053bc9f",
+        "argorix-vm-eval-tripwire": "sha256:5205fdbf2e2692f0e932ab989a7b661a915d0040b0dd752a526c834beb188857"
+      },
+      "metrics": {
+        "outcome_accuracy": "118/118",
+        "false_allow_rate": "0/198",
+        "false_deny_rate": "0/198",
+        "destination_asr": "0/21",
+        "conditional_containment": "21/21",
+        "boundary_rejection": "18/21",
+        "tamper_detection": "21/22",
+        "fail_closed_rate": "16/16",
+        "artifact_completeness": "21/21"
+      }
+    }
+  },
+  "reproducibility": {
+    "deterministic_families": {
+      "families": [
+        "E0",
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E6"
+      ],
+      "identical_across_two_clean_runs": true,
+      "note": "raw rows, summary, LaTeX tables and the figure regenerate with no manual edit"
+    },
+    "model_dependent_family": {
+      "family": "E5",
+      "model": {
+        "driver": "openai-chat-completions",
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "model": "gpt-4o-mini-2024-07-18",
+        "seed": 7,
+        "temperature": 0.0
+      },
+      "identical_across_two_clean_runs": true,
+      "caveat": "the two runs happened to match at temperature 0 with a fixed seed, but the provider offers best-effort determinism only; this family is not guaranteed to reproduce and must not be reported as if it were",
+      "metrics": {
+        "attack_success_on_model": "20/40",
+        "benign_false_positives": "5/40",
+        "destination_asr": "0/25",
+        "conditional_containment": "25/25",
+        "containment_injected_arm_only": "20/20",
+        "unmappable_proposals": "0/80"
+      }
+    }
+  },
+  "changes": {
+    "F1": "bytecode verifier checks provider payload types",
+    "F2": "compiler binds the source digest; verifier checks the bundle's source_path",
+    "F3": "detached Ed25519 signature via argorix-sign; verify-evidence --trust-anchor",
+    "F4": "eval-tripwire build observes the mediation point; the release stays uninstrumentable",
+    "F5": "the 8x2x5 grid executed against a real model"
+  }
+}

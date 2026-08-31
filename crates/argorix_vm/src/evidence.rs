@@ -32,6 +32,10 @@ pub struct EvidenceArtifacts {
     pub bytecode_path: Option<String>,
     pub trace_path: Option<String>,
     pub security_report_path: Option<String>,
+    /// Present only when the run was given the source it should bind to.
+    /// A bundle without it makes no claim about any source file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,10 +73,11 @@ impl EvidenceBundle {
         bytecode_path: Option<&Path>,
         trace_path: Option<&Path>,
         security_report_path: Option<&Path>,
+        source_path: Option<&Path>,
     ) -> Result<Self, EvidenceError> {
         let trace = outcome.result.as_ref().ok();
         Ok(Self {
-            bundle_version: "1.0".into(),
+            bundle_version: "1.1".into(),
             language: bytecode.language.clone(),
             module: bytecode.module.clone(),
             modules: bytecode.modules.clone(),
@@ -92,6 +97,7 @@ impl EvidenceBundle {
                     None
                 },
                 security_report_path: portable_artifact_path(bundle_path, security_report_path)?,
+                source_path: portable_artifact_path(bundle_path, source_path)?,
             },
         })
     }
@@ -104,6 +110,20 @@ pub fn canonical_digest<T: Serialize + ?Sized>(value: &T) -> Result<String, Evid
 }
 
 pub fn verify_evidence(bundle_path: &Path) -> Result<EvidenceVerificationResult, EvidenceError> {
+    verify_evidence_with_anchor(bundle_path, None)
+}
+
+/// Verify a bundle, optionally against a producer trust anchor.
+///
+/// Without an anchor the result is an integrity statement only: the bundle and
+/// the artifacts it names agree with each other. With one, a detached
+/// signature over the bundle's canonical bytes must also verify, which is what
+/// distinguishes the original set from a self-consistent replacement. A
+/// missing, malformed or foreign signature fails closed.
+pub fn verify_evidence_with_anchor(
+    bundle_path: &Path,
+    trust_anchor: Option<&[u8; 32]>,
+) -> Result<EvidenceVerificationResult, EvidenceError> {
     let source = read(bundle_path)?;
     let bundle: EvidenceBundle = serde_json::from_slice(&source)?;
     let cwd = std::env::current_dir().map_err(|source| EvidenceError::Io {
@@ -144,6 +164,7 @@ pub fn verify_evidence(bundle_path: &Path) -> Result<EvidenceVerificationResult,
                 | "0.35"
                 | "0.36"
                 | "1.0"
+                | "1.1"
         ),
         "unsupported bundle_version",
     );
@@ -176,6 +197,23 @@ pub fn verify_evidence(bundle_path: &Path) -> Result<EvidenceVerificationResult,
                 canonical_digest(&bytecode)? == bundle.bytecode_digest,
                 "bytecode_digest mismatch",
             );
+            // A bundle that names a source must be able to prove the bytecode
+            // came from it. Absent a source_path the bundle makes no source
+            // claim and nothing is checked.
+            if let Some(source_path) = &bundle.artifacts.source_path {
+                match bytecode.source_digest.as_deref() {
+                    Some(expected) => match read_relative(base, source_path) {
+                        Ok(bytes) => checks.record(
+                            argorix_bytecode::source_digest(&bytes) == expected,
+                            "source_digest mismatch",
+                        ),
+                        Err(_) => checks.record(false, "source artifact is unreadable"),
+                    },
+                    None => {
+                        checks.record(false, "bundle names a source but the bytecode binds none")
+                    }
+                }
+            }
             checks.record(
                 bytecode.language == bundle.language,
                 "bytecode language mismatch",
@@ -233,6 +271,30 @@ pub fn verify_evidence(bundle_path: &Path) -> Result<EvidenceVerificationResult,
                 report.vm_version == bundle.vm_version,
                 "report vm_version mismatch",
             );
+        }
+    }
+
+    if let Some(anchor) = trust_anchor {
+        let path = crate::signature::signature_path(&absolute_bundle_path);
+        match read(&path) {
+            Ok(bytes) => {
+                match serde_json::from_slice::<crate::signature::EvidenceSignature>(&bytes) {
+                    Ok(document) => {
+                        let canonical = serde_json::to_vec(&bundle)?;
+                        match crate::signature::verify_signature(&document, &canonical, anchor) {
+                            Ok(()) => checks.record(true, "signature"),
+                            Err(error) => checks.record(false, format!("signature: {error}")),
+                        }
+                    }
+                    Err(error) => {
+                        checks.record(false, format!("signature document is invalid: {error}"))
+                    }
+                }
+            }
+            Err(_) => checks.record(
+                false,
+                "a trust anchor was supplied but the bundle carries no signature",
+            ),
         }
     }
 
@@ -340,6 +402,13 @@ fn read(path: &Path) -> Result<Vec<u8>, EvidenceError> {
         path: path.to_path_buf(),
         source,
     })
+}
+
+/// Read a bundle-relative artifact, refusing anything outside the portable tree.
+fn read_relative(base: &Path, stored: &str) -> Result<Vec<u8>, EvidenceError> {
+    let path = resolve_artifact(base, stored)
+        .ok_or_else(|| EvidenceError::OutsidePortableTree(PathBuf::from(stored)))?;
+    read(&path)
 }
 
 fn resolve_artifact(base: &Path, stored: &str) -> Option<PathBuf> {

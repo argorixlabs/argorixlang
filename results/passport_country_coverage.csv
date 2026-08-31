@@ -1,0 +1,32 @@
+country_code,country_name,region_group,valid_same_country_case,observed,source
+CL,Chile,home,true,PASS,source_digest_match
+AR,Argentina,latin_america,true,PASS,source_digest_match
+BR,Brazil,latin_america,true,PASS,source_digest_match
+UY,Uruguay,latin_america,true,PASS,source_digest_match
+PE,Peru,latin_america,true,PASS,source_digest_match
+CO,Colombia,latin_america,true,PASS,source_digest_match
+MX,Mexico,latin_america,true,PASS,source_digest_match
+US,United States,north_america,true,PASS,source_digest_match
+CA,Canada,north_america,true,PASS,source_digest_match
+ES,Spain,europe,true,PASS,source_digest_match
+FR,France,europe,true,PASS,source_digest_match
+DE,Germany,europe,true,PASS,source_digest_match
+IT,Italy,europe,true,PASS,source_digest_match
+NL,Netherlands,europe,true,PASS,source_digest_match
+SE,Sweden,europe,true,PASS,source_digest_match
+NO,Norway,europe,true,PASS,source_digest_match
+GB,United Kingdom,europe,true,PASS,source_digest_match
+PT,Portugal,europe,true,PASS,source_digest_match
+IE,Ireland,europe,true,PASS,source_digest_match
+JP,Japan,asia_pacific,true,PASS,source_digest_match
+KR,South Korea,asia_pacific,true,PASS,source_digest_match
+SG,Singapore,asia_pacific,true,PASS,source_digest_match
+IN,India,asia_pacific,true,PASS,source_digest_match
+CN,China,asia_pacific,true,PASS,source_digest_match
+AU,Australia,asia_pacific,true,PASS,source_digest_match
+NZ,New Zealand,asia_pacific,true,PASS,source_digest_match
+ZA,South Africa,africa_middle_east,true,PASS,source_digest_match
+NG,Nigeria,africa_middle_east,true,PASS,source_digest_match
+KE,Kenya,africa_middle_east,true,PASS,source_digest_match
+AE,United Arab Emirates,africa_middle_east,true,PASS,source_digest_match
+IL,Israel,africa_middle_east,true,PASS,source_digest_match

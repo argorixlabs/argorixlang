@@ -1,0 +1,12 @@
+Argorix Lang compiler v1.0
+
+File: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E4-03\rep01\case.argx
+Status: OK
+
+Module: Eval.W10.ExternalContractNoAdapter
+Capabilities: 2
+Types: 2
+Enums: 0
+Agents: 1
+Protocols: 1
+Semantic checks: passed

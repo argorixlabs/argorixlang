@@ -1,0 +1,32 @@
+\begin{abstract}
+Agent runtimes mix identity metadata, provider permissions, policy decisions,
+and audit evidence, but these layers are often distributed across prompts,
+configuration, application code, and logs.  This paper presents \Argorix as a
+systems artifact for \emph{compiled governance}: a language/runtime boundary in
+which agent declarations, passports, provider contracts, executable-provider
+permissions, runtime controls, and evidence artifacts are compiled and checked
+together.  The paper deliberately separates declaration from verification,
+digest integrity from approval, local passport metadata from authenticated
+identity, provider contracts from executable adapters, and EvidenceBundles from
+external attestation.  We evaluate the current artifact through a reproducible
+snapshot of 33 generated request directories.  Twenty-seven directories contain
+complete bytecode, trace, security-report, and EvidenceBundle artifacts; six
+contain source only.  The 27 complete bundles pass offline internal-consistency
+verification for bytecode, trace, security report, and a ledger digest
+recomputed from trace events.  The snapshot is structurally repeated, so its
+7,155 event records and 1,188 detailed policy findings are evidence of
+deterministic artifact production rather than workload diversity.  A negative
+finding is central: all complete v0.1 policy reports require review and encode
+their detailed findings as ``unknown policy rule,'' showing that digest success
+does not imply policy approval.  We therefore evaluate a controlled v0.2
+extension: a typed policy decision lattice with pass, deny, review,
+unknown-rule, and malformed-policy outcomes, plus source-digest binding in a
+controlled local matrix.  The generated matrix covers 31 national country codes
+and EU as a regional residency zone, producing 57 deterministic cases for
+passport metadata, residency conflicts, provider boundaries, tamper detection,
+and policy diagnostics.  These cases test local metadata handling and evidence
+consistency only.  The current paper claims a compiled governance and offline
+evidence boundary; it does not claim security certification, real identity
+verification, live ANS/DNS, cryptographic attestation, production sandboxing,
+legal compliance, physical data residency, or large-scale empirical coverage.
+\end{abstract}

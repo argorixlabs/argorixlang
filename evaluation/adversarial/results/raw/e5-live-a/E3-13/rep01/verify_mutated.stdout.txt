@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "checks_total": 24,
+  "checks_passed": 23,
+  "checks_failed": 1,
+  "failures": [
+    "trace_path and trace_digest are inconsistent"
+  ]
+}

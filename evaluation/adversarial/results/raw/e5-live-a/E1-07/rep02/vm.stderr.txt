@@ -1,0 +1,1 @@
+policy `StrictEvidence` activated block action

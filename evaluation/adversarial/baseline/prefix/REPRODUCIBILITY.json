@@ -1,0 +1,81 @@
+{
+  "description": "Independent reruns of the full campaign from a clean results directory, via the single entrypoint.",
+  "runs": [
+    {
+      "run_id": "run-b",
+      "results_dir": "(temporary clean directory)",
+      "rows": 139,
+      "commit": "59524f664536fa761ca24b03312665e2f62cc6b9"
+    },
+    {
+      "run_id": "final",
+      "results_dir": "evaluation/adversarial/results",
+      "rows": 139,
+      "commit": "59524f664536fa761ca24b03312665e2f62cc6b9",
+      "binary_sha256": {
+        "argorixc": "sha256:46906ed12961bbfa318d8c9f64932a344dcdbaab1b27420108462f6f906c83a1",
+        "argorix-vm": "sha256:c29c7a0afc8f93b912e84f89a4343a9211afc2242a48207291949deaf0fc547a",
+        "argorix-conformance": "sha256:fcc53234b8460551ca5404e51cd46e7d18a27434de7c35106d843077f9c445a2"
+      }
+    }
+  ],
+  "compared_fields": [
+    "E0",
+    "fingerprints",
+    "gates",
+    "mismatches",
+    "primary",
+    "tamper_by_class"
+  ],
+  "identical": true,
+  "values": {
+    "primary": {
+      "outcome_accuracy": "103/106",
+      "false_allow_rate": "0/106",
+      "false_deny_rate": "0/106",
+      "destination_asr": "0/21",
+      "conditional_containment": "21/21",
+      "boundary_rejection": "15/21",
+      "tamper_detection": "20/22",
+      "fail_closed_rate": "16/16",
+      "artifact_completeness": "21/21"
+    },
+    "gates": {
+      "harness_validity": "go",
+      "policy_correctness": "go",
+      "side_effects": "go",
+      "tamper_rates": "go",
+      "prompt_injection": "no-go",
+      "reproducibility": "go",
+      "e0_control": "go",
+      "e1_diversity": "go"
+    },
+    "E0": {
+      "request_directories": 33,
+      "complete_directories": 27,
+      "source_only_directories": 6,
+      "internally_consistent_bundles": 27,
+      "policy_approved_directories": 0,
+      "unknown_rule_findings_per_directory": 44,
+      "structural_fingerprint_families": 2,
+      "event_sequences": 1,
+      "events_per_directory": 265
+    },
+    "fingerprints": 12,
+    "mismatches": [
+      "E4-07"
+    ],
+    "tamper_by_class": {
+      "authenticity": "0/1",
+      "bundle": "5/5",
+      "bytecode": "3/3",
+      "invalid_json": "2/2",
+      "missing_artifact": "3/3",
+      "portable_tree": "1/1",
+      "report": "3/3",
+      "source_binding": "0/1",
+      "trace": "3/3"
+    }
+  },
+  "note": "Both runs regenerate raw rows, summary, LaTeX tables and the figure with no manual edit."
+}

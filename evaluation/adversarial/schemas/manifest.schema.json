@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://argorixlang.org/schemas/adversarial-manifest-1.0.json",
+  "title": "Adversarial campaign run manifest",
+  "type": "object",
+  "required": ["run_id", "commit", "platform", "toolchain", "started_utc"],
+  "properties": {
+    "run_id": { "type": "string" },
+    "commit": { "type": ["string", "null"] },
+    "worktree_dirty": { "type": ["boolean", "null"] },
+    "started_utc": { "type": "string", "format": "date-time" },
+    "finished_utc": { "type": "string", "format": "date-time" },
+    "rows": { "type": "integer" },
+    "timeout_seconds": { "type": "number" },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "system": { "type": "string" },
+        "release": { "type": "string" },
+        "version": { "type": "string" },
+        "machine": { "type": "string" },
+        "python": { "type": "string" }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "description": "SHA-256 and reported version of every production binary the campaign executed.",
+      "properties": {
+        "argorixc": { "$ref": "#/$defs/binary" },
+        "argorix-vm": { "$ref": "#/$defs/binary" },
+        "argorix-conformance": { "$ref": "#/$defs/binary" },
+        "rustc": { "type": ["string", "null"] },
+        "cargo": { "type": ["string", "null"] }
+      }
+    }
+  },
+  "$defs": {
+    "binary": {
+      "type": "object",
+      "required": ["path", "sha256", "size_bytes"],
+      "properties": {
+        "path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "size_bytes": { "type": "integer" },
+        "version": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

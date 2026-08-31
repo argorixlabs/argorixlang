@@ -2,7 +2,7 @@ pub mod bytecode;
 pub mod lower;
 
 pub use bytecode::{
-    verify_bytecode, BytecodeA2ABridgeContract, BytecodeATrustBoundary,
+    source_digest, verify_bytecode, BytecodeA2ABridgeContract, BytecodeATrustBoundary,
     BytecodeATrustCredentialContract, BytecodeATrustEvidenceMap, BytecodeATrustHandshake,
     BytecodeATrustIdentity, BytecodeAdapter, BytecodeAdapterProfile, BytecodeAgent,
     BytecodeAssertion, BytecodeCapability, BytecodeCompatibilityMatrixEntry, BytecodeCrypto,

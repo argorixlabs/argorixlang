@@ -1,0 +1,349 @@
+{
+  "vm_version": "1.0",
+  "status": "completed",
+  "mode": "reactive-dry-run",
+  "scheduler": "deterministic",
+  "modules": [
+    {
+      "name": "agents.research",
+      "path": "src/agents/research.argx"
+    },
+    {
+      "name": "main",
+      "path": "src/main.argx"
+    },
+    {
+      "name": "messages.contracts",
+      "path": "src/messages/contracts.argx"
+    },
+    {
+      "name": "passports.research_agent",
+      "path": "src/passports/research_agent.argx"
+    },
+    {
+      "name": "policies.governance",
+      "path": "src/policies/governance.argx"
+    }
+  ],
+  "imports": [
+    {
+      "from": "main",
+      "to": "agents.research"
+    },
+    {
+      "from": "main",
+      "to": "messages.contracts"
+    },
+    {
+      "from": "main",
+      "to": "passports.research_agent"
+    },
+    {
+      "from": "main",
+      "to": "policies.governance"
+    }
+  ],
+  "message_contracts": [
+    {
+      "name": "UserPrompt",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        },
+        {
+          "name": "risk_level",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "passports": [
+    {
+      "name": "ResearchAgentPassport",
+      "agent": "ResearchAgent",
+      "agent_name": "Eval Research Agent",
+      "global_id": "argx:agent:01EVALRESEARCHAGENT",
+      "identity": "did:argorix:eval-research-agent-v1",
+      "provider": "Argorix",
+      "version": "1.0.0",
+      "country": "CL",
+      "jurisdiction": "CL",
+      "data_residency": [
+        "CL",
+        "EU"
+      ],
+      "model": "frontier-compatible",
+      "risk_level": "medium",
+      "data_scope": [
+        "internal"
+      ],
+      "intent": "evaluation",
+      "intended_use": [
+        "policy-review"
+      ],
+      "prohibited_use": [
+        "external-execution",
+        "credential-access"
+      ],
+      "attestations": [
+        "policy-check",
+        "evidence-bundle"
+      ]
+    }
+  ],
+  "injected": {
+    "from": "User",
+    "to": "ResearchAgent",
+    "act": "tell",
+    "message_type": "UserPrompt"
+  },
+  "steps": [
+    {
+      "index": 1,
+      "agent": "ResearchAgent",
+      "handled": "UserPrompt",
+      "emitted": [],
+      "traced": [
+        "prompt"
+      ],
+      "halted": false,
+      "intrinsics": [],
+      "tool_calls": [],
+      "model_calls": []
+    }
+  ],
+  "mailboxes": [
+    {
+      "agent": "ResearchAgent",
+      "delivered": 1,
+      "processed": 1
+    }
+  ],
+  "agent_state": [
+    {
+      "agent": "ResearchAgent",
+      "handled_count": 1,
+      "checkpoints": 0,
+      "last_message_type": "UserPrompt"
+    }
+  ],
+  "intrinsics": [],
+  "tool_calls": [],
+  "model_calls": [],
+  "providers": [
+    {
+      "name": "simulated",
+      "kind": "simulated",
+      "enabled": true
+    }
+  ],
+  "provider_contracts": [],
+  "provider_calls": [],
+  "policy_report": {
+    "status": "passed",
+    "legacy_assertions": [],
+    "policy_blocks": [
+      {
+        "name": "PassportGovernance",
+        "passed": true,
+        "status": "passed",
+        "require_rules": [
+          {
+            "rule": "agent_passport_declared",
+            "effect": "require",
+            "passed": true,
+            "reason": null
+          },
+          {
+            "rule": "agent_identity_declared",
+            "effect": "require",
+            "passed": true,
+            "reason": null
+          },
+          {
+            "rule": "agent_data_residency_declared",
+            "effect": "require",
+            "passed": true,
+            "reason": null
+          },
+          {
+            "rule": "agent_passport_attested",
+            "effect": "require",
+            "passed": true,
+            "reason": null
+          }
+        ],
+        "deny_rules": [],
+        "violations": [],
+        "action": null,
+        "trace_required": true
+      }
+    ],
+    "actions": [],
+    "failures": []
+  },
+  "events": [
+    {
+      "index": 1,
+      "event_type": "AgentDeclared",
+      "from": null,
+      "to": "ResearchAgent",
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "mailbox initialized for ResearchAgent"
+    },
+    {
+      "index": 2,
+      "event_type": "CapabilityDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "capability trace.write declared at level safe"
+    },
+    {
+      "index": 3,
+      "event_type": "PolicyDeclared",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "policy PassportGovernance declared"
+    },
+    {
+      "index": 4,
+      "event_type": "ProviderRegistered",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "registered",
+      "details": "provider simulated registered as Simulated"
+    },
+    {
+      "index": 5,
+      "event_type": "VmStarted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "ok",
+      "details": "reactive deterministic scheduler started"
+    },
+    {
+      "index": 6,
+      "event_type": "MessageScheduled",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt",
+      "status": "injected",
+      "details": "initial message injected"
+    },
+    {
+      "index": 7,
+      "event_type": "MessageDelivered",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt",
+      "status": "delivered",
+      "details": "msg_001 delivered to ResearchAgent.mailbox"
+    },
+    {
+      "index": 8,
+      "event_type": "HandlerExecuted",
+      "from": null,
+      "to": "ResearchAgent",
+      "act": null,
+      "message_type": null,
+      "status": "handled",
+      "details": "ResearchAgent handled UserPrompt"
+    },
+    {
+      "index": 9,
+      "event_type": "ValueTraced",
+      "from": null,
+      "to": "ResearchAgent",
+      "act": null,
+      "message_type": null,
+      "status": "traced",
+      "details": "ResearchAgent traced prompt"
+    },
+    {
+      "index": 10,
+      "event_type": "MessageProcessed",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt",
+      "status": "processed",
+      "details": "msg_001 processed by ResearchAgent"
+    },
+    {
+      "index": 11,
+      "event_type": "VmCompleted",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "completed",
+      "details": "reactive execution completed with no pending messages"
+    },
+    {
+      "index": 12,
+      "event_type": "PolicyEvaluated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy PassportGovernance require agent_passport_declared evaluated"
+    },
+    {
+      "index": 13,
+      "event_type": "PolicyEvaluated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy PassportGovernance require agent_identity_declared evaluated"
+    },
+    {
+      "index": 14,
+      "event_type": "PolicyEvaluated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy PassportGovernance require agent_data_residency_declared evaluated"
+    },
+    {
+      "index": 15,
+      "event_type": "PolicyEvaluated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy PassportGovernance require agent_passport_attested evaluated"
+    },
+    {
+      "index": 16,
+      "event_type": "PolicyReportGenerated",
+      "from": null,
+      "to": null,
+      "act": null,
+      "message_type": null,
+      "status": "passed",
+      "details": "policy report generated"
+    }
+  ],
+  "security_checks": "passed"
+}

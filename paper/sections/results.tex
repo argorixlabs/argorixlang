@@ -1,0 +1,139 @@
+\section{Results}\label{sec:results}
+
+\subsection{Snapshot completeness}
+Of 33 request directories, 27 (81.8\%) contain all expected artifacts and six
+(18.2\%) contain source only.  All 27 complete sessions report execution status
+\code{completed}; execution status is unavailable for the six incomplete
+sessions.  The distinction matters: the study cannot determine whether those
+six requests failed during compilation, were interrupted, or were retained
+before downstream artifacts were written.
+
+\begin{table*}[t]
+\centering
+\caption{Empirical totals derived from the normalized snapshot. These totals
+are descriptive, not broad workload evidence.}
+\label{tab:empirical}
+\input{tables/empirical-results}
+\end{table*}
+
+\Cref{tab:empirical} keeps the six source-only directories in view and reports
+aggregate totals only where normalized values exist; this prevents
+complete-case counts from becoming a 33-session success claim.
+
+\subsection{Deterministic artifact production, limited behavioral diversity}
+The 27 complete traces contain 7,155 counted ledger events, exactly 265 per
+complete session.  Thus the repeated snapshot shows deterministic artifact
+production but limited behavioral diversity.  It does not show how the system
+responds to varied prompts, providers, jurisdictions, policy sets, or attacks.
+The event total is useful for reproducibility checks and evidence-size
+accounting; it is not evidence of scale in the empirical-security sense.
+
+Each complete trace includes the following denial events:
+\code{ExternalProviderExecutionBlocked}, \code{RuntimeNetworkDenied}, and
+\code{RuntimeSecretsDenied}.  It also records declaration events for agents,
+policies, passports, governance, threat, release, ATrust, MCP, and A2A
+metadata.  These observations support the implemented provider-boundary and
+runtime-denial claims in \cref{tab:runtime-controls}; they do not prove
+operating-system containment.
+
+\subsection{Policy diagnostics}
+Each of the 27 complete sessions has \code{security_checks=passed} at the top
+level.  Nevertheless, each detailed policy object has
+\code{policy_passed=false}, \code{review_required=true}, and 44 findings whose
+reason is ``unknown policy rule.''  The total is therefore 1,188 detailed
+policy findings.
+
+We treat this as a diagnostic failure of the v0.1 policy-reporting model, not
+as a normal policy-deny experiment.  The correct paper claim is that the
+current evidence preserves a negative policy state and exposes an aggregation
+inconsistency.  The controlled v0.2 matrix uses the typed policy decision
+lattice in \cref{tab:policy-lattice}, where unknown rules become configuration
+errors and known rules can produce pass, deny, or review outcomes.
+
+\subsection{Offline bundle verification}
+All 27 complete bundles pass the repository's offline verifier (27/27).  Their
+bytecode, trace, security-report, and trace-event-ledger digest fields are
+syntactically valid SHA-256 identifiers.  The successful result answers RQ3
+narrowly: given each bundle and its relative artifact paths, the verifier can
+reproduce the semantic digests, recompute the ledger digest from trace events,
+check the SecurityReport LedgerSummary's stored digest against it, and validate
+cross-artifact linkage without network access.  The verifier does not digest
+or verify \code{session.argx}; Source integrity is outside EvidenceBundle
+verification.
+
+It does not answer whether policy approved the request; the detailed policy
+result is negative.  It does not authenticate the producer, prove absence of
+side effects, establish trusted time, or establish semantic correctness of
+every event.  Integrity and approval are orthogonal axes.
+
+\subsection{Controlled v0.2 matrix}
+The generated controlled matrix contains 57 rows: 31 valid same-country
+passport fixtures, six cross-border residency fixtures, invalid and unknown
+jurisdiction fixtures, five provider-boundary fixtures, five tamper/source
+fixtures, and two unknown/error policy fixtures.  All 31 national country codes
+produce same-country PASS outcomes.  Unknown syntactically valid country codes
+produce REVIEW, malformed country values produce ERROR, and missing residency
+with a valid country produces REVIEW.  The matrix also records EU only as a
+regional residency zone, not as a country.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{controlled-matrix-outcomes.pdf}
+\caption{Controlled v0.2 matrix outcome distribution across 57 deterministic
+cases. The matrix exercises local metadata validation, policy typing, provider
+denial, source-digest checks, and tamper detection; it does not evaluate legal
+compliance, physical residency, or broad workload prevalence.}
+\label{fig:controlled-matrix-outcomes}
+\end{figure}
+
+\begin{table*}[t]
+\centering
+\caption{Observed typed policy outcomes in the controlled matrix.}
+\label{tab:policy-lattice-outcomes}
+\input{tables/policy-lattice-outcomes}
+\end{table*}
+
+\Cref{fig:controlled-matrix-outcomes} and \cref{tab:policy-lattice-outcomes}
+show that PASS, DENY, REVIEW,
+UNKNOWN\_RULE, ERROR, and VERIFIER\_FAIL outcomes are all represented as typed
+results.  The counts are generated from deterministic fixtures and should not
+be interpreted as prevalence estimates.
+
+\begin{table*}[t]
+\centering
+\caption{Tamper and source-mismatch controls in the controlled matrix.}
+\label{tab:matrix-tamper}
+\input{tables/matrix-tamper-results}
+\end{table*}
+
+\Cref{tab:matrix-tamper} reports verifier failures for modified trace, report,
+bytecode, ledger events, and source mismatch.  Source mismatch is checked in
+the controlled v0.2 fixtures; it does not retroactively add source checking to
+the historical runtime EvidenceBundles.
+
+\begin{table*}[t]
+\centering
+\caption{Provider-boundary controls in the controlled matrix.}
+\label{tab:matrix-provider}
+\input{tables/matrix-provider-boundary}
+\end{table*}
+
+\Cref{tab:matrix-provider} shows the provider-boundary controls: simulated
+provider execution is allowed, while external provider without an executable
+adapter, network attempts, plaintext secret attempts, and key-material attempts
+are denied with no side effect.  The external-provider false-allow count is
+zero in this controlled matrix.
+
+\subsection{Passports and prompts}
+Every complete session reports two passports, Chile as country and
+jurisdiction, and Chilean and European Union residency declarations.  These
+values show that sovereign metadata survives to runtime evidence.  They do not
+show that data was physically stored in either region or that an external
+authority authenticated the passport.
+
+The bounded \code{injected.content} field is present in 0 of the 27 complete,
+valid traces.  The six source-only directories have no trace and are not
+assessable.  This presence metric is independent of the publication allowlist:
+\code{prompt_text} remains null unless explicitly allowlisted even when content
+is present.  In this snapshot no qualitative prompt themes, quotations,
+injection labels, or attack success rates can be reported.

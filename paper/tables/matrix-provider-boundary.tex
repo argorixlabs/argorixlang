@@ -1,0 +1,11 @@
+\begin{tabularx}{\textwidth}{@{}XXXX@{}}
+\toprule
+Case & Observed & Provider & Side effect \\
+\midrule
+external provider without adapter & DENY & external blocked no adapter & no \\
+key material attempt & DENY & no provider planned & no \\
+network denied profile & DENY & no network call & no \\
+plaintext secret attempt & DENY & no provider planned & no \\
+valid simulated provider & PASS & simulated allowed & no \\
+\bottomrule
+\end{tabularx}

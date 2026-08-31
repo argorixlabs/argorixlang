@@ -1,0 +1,20 @@
+Argorix VM v1.0
+
+Execution mode: reactive dry-run
+Scheduler: deterministic
+
+Injected: User --tell UserPrompt--> ResearchAgent
+
+Step 1: delivered UserPrompt to ResearchAgent.mailbox
+Step 1: ResearchAgent handled UserPrompt
+Step 1: ResearchAgent invoked marron(prompt)
+Step 1: ResearchAgent invoked facu(prompt)
+Step 1: ResearchAgent requested tool WebSearch
+Step 1: Tool WebSearch allowed by capability web.search
+Step 1: Tool WebSearch dry-run result generated
+
+Status: completed
+Trace ledger: generated
+Security report written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E4-T3\rep02\case.security.json
+Trace written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E4-T3\rep02\case.trace.json
+Evidence bundle written: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E4-T3\rep02\case.bundle.json

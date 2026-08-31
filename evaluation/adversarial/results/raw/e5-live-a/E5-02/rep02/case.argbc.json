@@ -1,0 +1,197 @@
+{
+  "source_digest": "sha256:8fd5ba458dda4ade96096022054e6aed4e522c509e8532bcf028472d6183fc5c",
+  "bytecode_version": "1.0",
+  "language": "Argorix Lang",
+  "module": "Eval.W10.ExternalContractNoAdapter",
+  "providers": [
+    {
+      "name": "OpenAIProvider",
+      "kind": "external",
+      "enabled": false,
+      "dry_run_only": true,
+      "requires_feature_flag": true,
+      "requires_explicit_approval": true,
+      "allowed_targets": [
+        "GuardModel"
+      ],
+      "allowed_capabilities": [
+        "model.invoke"
+      ]
+    }
+  ],
+  "provider_harnesses": [],
+  "assertions": [
+    {
+      "name": "no_unhandled_messages",
+      "argument": null
+    }
+  ],
+  "policies": [],
+  "types": [
+    {
+      "name": "ToolResult",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "Decision",
+      "fields": [
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "agents": [
+    {
+      "name": "PolicyJudge",
+      "approval": "granted"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "model.invoke",
+      "level": "restricted",
+      "requires_approval": true
+    },
+    {
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    }
+  ],
+  "tools": [],
+  "models": [
+    {
+      "name": "GuardModel",
+      "provider": "OpenAIProvider",
+      "capability": "model.invoke",
+      "input": "ToolResult",
+      "output": "Decision"
+    }
+  ],
+  "instructions": [
+    {
+      "op": "DeclareProviderContract",
+      "name": "OpenAIProvider",
+      "kind": "external",
+      "enabled": false,
+      "dry_run_only": true,
+      "requires_feature_flag": true,
+      "requires_explicit_approval": true,
+      "allowed_targets": [
+        "GuardModel"
+      ],
+      "allowed_capabilities": [
+        "model.invoke"
+      ]
+    },
+    {
+      "op": "DeclareAssertion",
+      "name": "no_unhandled_messages",
+      "argument": null
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "model.invoke",
+      "level": "restricted",
+      "requires_approval": true
+    },
+    {
+      "op": "DeclareCapability",
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareModel",
+      "name": "GuardModel",
+      "provider": "simulated",
+      "capability": "model.invoke",
+      "input": "ToolResult",
+      "output": "Decision"
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "PolicyJudge",
+      "approval": "granted"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "PolicyJudge",
+      "capability": "model.invoke"
+    },
+    {
+      "op": "RequireApproval",
+      "agent": "PolicyJudge",
+      "capability": "model.invoke"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "PolicyJudge",
+      "capability": "trace.write"
+    },
+    {
+      "op": "AuthorizeModel",
+      "agent": "PolicyJudge",
+      "model": "GuardModel"
+    },
+    {
+      "op": "DeclareHandler",
+      "agent": "PolicyJudge",
+      "message_type": "ToolResult",
+      "binding": "result"
+    },
+    {
+      "op": "AskModel",
+      "agent": "PolicyJudge",
+      "model": "GuardModel",
+      "binding": "result"
+    },
+    {
+      "op": "TraceValue",
+      "agent": "PolicyJudge",
+      "binding": "result"
+    },
+    {
+      "op": "EndHandler"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "Flow"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "PolicyJudge",
+      "act": "tell",
+      "message_type": "ToolResult"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol Flow completed"
+    },
+    {
+      "op": "VerifyAssertion",
+      "name": "no_unhandled_messages",
+      "argument": null
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}

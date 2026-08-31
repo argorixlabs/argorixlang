@@ -1,0 +1,82 @@
+\section{Trace, Report, and Evidence Model}\label{sec:evidence}
+
+Each complete request directory contains five artifacts:
+\code{session.argx}, compiled \code{session.argbc.json},
+\code{session.trace.json}, \code{session.security.json}, and
+\code{session.evidence.json}.  Source is an upstream compiler input, not an
+EvidenceBundle member.  The trace is an ordered ledger of compiler/VM
+and policy events.  The SecurityReport is a structured interpretation of
+runtime evidence, including execution status, policy results, review state,
+provider boundary, and declared controls.  The EvidenceBundle records four
+semantic SHA-256 values: \code{bytecode_digest}, \code{trace_digest},
+\code{report_digest} for the security report, and \code{ledger_digest}, which
+is the canonical digest of \code{trace.events}.  Its artifact map contains
+\code{bytecode_path}, \code{trace_path}, and
+\code{security_report_path}; there is no source path or source digest, and
+there is no standalone ledger path.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{evidence-scope.pdf}
+\caption{Offline evidence scope for historical v0.1 bundles and source-digest
+extension in the controlled v0.2 matrix. v0.1 verifies internal consistency
+among bytecode, trace, report, and ledger digest; v0.2 controlled fixtures
+additionally test source-digest matching and source-mismatch detection. The
+figure does not establish authorship, trusted time, external attestation, or
+absence of side effects.}
+\label{fig:evidence-chain}
+\end{figure}
+
+A semantic digest is computed over canonical JSON derived from a deserialized
+value, avoiding dependence on whitespace or object-key formatting.  The three
+artifact paths resolve relative to the bundle directory.  Offline verification
+loads bytecode, trace, and the security report and recomputes their three
+semantic digests.  It separately computes \code{ledger_digest} from
+\code{trace.events}.  Finally, it checks that the \code{ledger_digest} stored
+in the SecurityReport's LedgerSummary equals the bundle's
+\code{ledger_digest}; the report stores this summary digest, not ledger events.
+It requires neither network access nor provider credentials.  This verifies
+the relationships encoded by the bundle.  Source integrity is outside
+EvidenceBundle verification.
+
+\Cref{fig:evidence-chain} exposes this asymmetry: a complete request directory
+contains source, but the bundle verifier starts at compiled bytecode and never
+asserts that \code{session.argx} produced it.
+
+Three distinctions are essential.  First, a valid digest detects content
+change relative to the bundle but does not prove who created the bundle.
+Second, a linked trace does not prove that events outside the instrumented
+runtime did not occur.  Third, artifact integrity does not turn a failing
+policy result into approval.  No signature, trusted timestamp, transparency
+service, hardware root, or independent witness is evaluated here.
+
+The local trust ledger is similarly bounded.  Hash-linked entries and validated
+references can expose accidental or adversarial modification when the verifier
+has an expected root or bundle.  They do not provide distributed consensus,
+blockchain immutability, or non-repudiation.  The declarations explicitly deny
+such security claims.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{claim-boundaries.pdf}
+\caption{Claim-boundary taxonomy for interpreting every result. It separates
+implemented mechanisms, declarative metadata, proposed/not implemented
+architecture, and properties not claimed; digest success is not upgraded into
+approval, attestation, certification, or real-world identity.}
+\label{fig:claim-boundaries}
+\end{figure}
+
+\Cref{fig:claim-boundaries} is the interpretive key for the remainder of the
+paper: each result is assigned to an implemented, declarative, proposed, or
+not-claimed region before it is discussed.
+
+\begin{table*}[t]
+\centering
+\caption{Interpretive boundaries applied to every result in this study.}
+\label{tab:claim-boundaries}
+\input{tables/claim-boundaries}
+\end{table*}
+
+\Cref{tab:claim-boundaries} applies the same distinction to concrete system
+concepts, preventing digest success from being promoted to live attestation or
+certification.

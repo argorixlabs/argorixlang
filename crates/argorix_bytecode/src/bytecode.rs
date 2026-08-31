@@ -1,11 +1,36 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use thiserror::Error;
 
+/// SHA-256 over the raw bytes of an Argorix source file, in the same
+/// `sha256:<hex>` form the evidence artifacts use.
+pub fn source_digest(source: &[u8]) -> String {
+    let digest = Sha256::digest(source);
+    format!("sha256:{digest:x}")
+}
+
 const EXTERNAL_ENTITIES: [&str; 5] = ["User", "System", "Runtime", "Memory", "Tool"];
+
+/// Bytecode versions whose schema carries a declared type table.  Programs
+/// emitted before typed messages (v0.18) legitimately have none, so the
+/// provider payload type check does not apply to them.  Extend this list
+/// whenever the bytecode version is bumped.
+const TYPED_PAYLOAD_VERSIONS: [&str; 20] = [
+    "0.18", "0.19", "0.20", "0.21", "0.22", "0.23", "0.24", "0.25", "0.26", "0.27", "0.28", "0.29",
+    "0.30", "0.31", "0.32", "0.33", "0.34", "0.35", "0.36", "1.0",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BytecodeProgram {
+    /// SHA-256 of the source text this program was compiled from.
+    ///
+    /// Set by `argorixc emit-bytecode` for single-file sources. Lowering alone
+    /// cannot set it, because the IR carries no file identity; a program built
+    /// straight from `lower_ir` therefore leaves it absent and makes no source
+    /// claim. Multi-file packages are not source-bound in this version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_digest: Option<String>,
     pub bytecode_version: String,
     pub language: String,
     pub module: String,
@@ -1103,10 +1128,22 @@ pub enum BytecodeError {
     UnknownToolCapability { tool: String, capability: String },
     #[error("unsupported tool provider `{0}`")]
     UnknownToolProvider(String),
+    #[error("bytecode tool `{tool}` declares unknown {slot} type `{type_name}`")]
+    UnknownToolType {
+        tool: String,
+        slot: &'static str,
+        type_name: String,
+    },
     #[error("bytecode model `{0}` is not declared or has invalid capability")]
     UnknownModel(String),
     #[error("unsupported model provider `{0}`")]
     UnknownModelProvider(String),
+    #[error("bytecode model `{model}` declares unknown {slot} type `{type_name}`")]
+    UnknownModelType {
+        model: String,
+        slot: &'static str,
+        type_name: String,
+    },
     #[error("provider contracts require bytecode version 0.11 through 0.15")]
     ContractsRequireV011,
     #[error("duplicate provider contract `{0}`")]
@@ -1625,6 +1662,16 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         .iter()
         .map(|model| model.name.as_str())
         .collect();
+    // A provider payload is only well-formed if the types it names exist in the
+    // program. Without this check a tool or model can declare an input or
+    // output type that was never declared and still reach execution.
+    let check_payload_types = TYPED_PAYLOAD_VERSIONS.contains(&program.bytecode_version.as_str());
+    let declared_types: HashSet<&str> = program
+        .types
+        .iter()
+        .map(|declared| declared.name.as_str())
+        .chain(program.enums.iter().map(String::as_str))
+        .collect();
     for tool in &program.tools {
         if tool.provider != "simulated" {
             errors.push(BytecodeError::UnknownToolProvider(tool.provider.clone()));
@@ -1635,6 +1682,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
                 capability: tool.capability.clone(),
             });
         }
+        if check_payload_types {
+            for (slot, type_name) in [("input", &tool.input), ("output", &tool.output)] {
+                if !declared_types.contains(type_name.as_str()) {
+                    errors.push(BytecodeError::UnknownToolType {
+                        tool: tool.name.clone(),
+                        slot,
+                        type_name: type_name.clone(),
+                    });
+                }
+            }
+        }
     }
     for model in &program.models {
         if model.provider != "simulated" {
@@ -1642,6 +1700,17 @@ pub fn verify_bytecode(program: &BytecodeProgram) -> Result<(), Vec<BytecodeErro
         }
         if !capabilities.contains(model.capability.as_str()) {
             errors.push(BytecodeError::UnknownModel(model.name.clone()));
+        }
+        if check_payload_types {
+            for (slot, type_name) in [("input", &model.input), ("output", &model.output)] {
+                if !declared_types.contains(type_name.as_str()) {
+                    errors.push(BytecodeError::UnknownModelType {
+                        model: model.name.clone(),
+                        slot,
+                        type_name: type_name.clone(),
+                    });
+                }
+            }
         }
     }
     validate_contract_allowlists(program, &capabilities, &mut errors);
@@ -4592,6 +4661,7 @@ mod tests {
 
     fn valid_program() -> BytecodeProgram {
         BytecodeProgram {
+            source_digest: None,
             bytecode_version: "0.3".into(),
             language: "Argorix Lang".into(),
             module: "Test".into(),
@@ -4832,6 +4902,65 @@ mod tests {
             to: "agents.worker".into(),
         }];
         verify_bytecode(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_provider_payload_types_that_are_not_declared() {
+        let mut program = valid_program();
+        program.bytecode_version = "1.0".into();
+        program.capabilities.push(super::BytecodeCapability {
+            name: "web.search".into(),
+            level: "safe".into(),
+            requires_approval: false,
+        });
+        program.types = vec![super::BytecodeType {
+            name: "UserPrompt".into(),
+            fields: vec![],
+        }];
+        program.tools = vec![super::BytecodeTool {
+            name: "WebSearch".into(),
+            provider: "simulated".into(),
+            capability: "web.search".into(),
+            input: "UserPrompt".into(),
+            output: "NoSuchType".into(),
+        }];
+
+        let errors = verify_bytecode(&program).unwrap_err();
+
+        assert!(errors.contains(&BytecodeError::UnknownToolType {
+            tool: "WebSearch".into(),
+            slot: "output",
+            type_name: "NoSuchType".into(),
+        }));
+        assert!(!errors
+            .iter()
+            .any(|error| matches!(error, BytecodeError::UnknownToolType { slot: "input", .. })));
+    }
+
+    #[test]
+    fn accepts_provider_payload_types_before_typed_messages() {
+        // Bytecode emitted before v0.18 carries no type table; the payload
+        // check must not retroactively reject it.
+        let mut program = valid_program();
+        program.bytecode_version = "0.14".into();
+        program.capabilities.push(super::BytecodeCapability {
+            name: "web.search".into(),
+            level: "safe".into(),
+            requires_approval: false,
+        });
+        program.tools = vec![super::BytecodeTool {
+            name: "WebSearch".into(),
+            provider: "simulated".into(),
+            capability: "web.search".into(),
+            input: "UserPrompt".into(),
+            output: "ToolResult".into(),
+        }];
+
+        let errors = verify_bytecode(&program).err().unwrap_or_default();
+
+        assert!(!errors
+            .iter()
+            .any(|error| matches!(error, BytecodeError::UnknownToolType { .. })));
     }
 
     #[test]

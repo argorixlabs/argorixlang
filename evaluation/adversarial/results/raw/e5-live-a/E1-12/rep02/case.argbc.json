@@ -1,0 +1,194 @@
+{
+  "bytecode_version": "1.0",
+  "language": "Argorix Lang",
+  "module": "main",
+  "modules": [
+    {
+      "name": "agents.research",
+      "path": "src/agents/research.argx"
+    },
+    {
+      "name": "main",
+      "path": "src/main.argx"
+    },
+    {
+      "name": "messages.contracts",
+      "path": "src/messages/contracts.argx"
+    },
+    {
+      "name": "passports.research_agent",
+      "path": "src/passports/research_agent.argx"
+    },
+    {
+      "name": "policies.governance",
+      "path": "src/policies/governance.argx"
+    }
+  ],
+  "imports": [
+    {
+      "from": "main",
+      "to": "agents.research"
+    },
+    {
+      "from": "main",
+      "to": "messages.contracts"
+    },
+    {
+      "from": "main",
+      "to": "passports.research_agent"
+    },
+    {
+      "from": "main",
+      "to": "policies.governance"
+    }
+  ],
+  "providers": [],
+  "provider_harnesses": [],
+  "assertions": [],
+  "policies": [
+    {
+      "name": "PassportGovernance",
+      "rules": [
+        {
+          "effect": "require",
+          "rule": "agent_passport_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "agent_identity_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "agent_data_residency_declared"
+        },
+        {
+          "effect": "require",
+          "rule": "agent_passport_attested"
+        }
+      ],
+      "on_violation": {
+        "action": "review",
+        "trace_required": true
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "UserPrompt",
+      "fields": [
+        {
+          "name": "content",
+          "type": "string"
+        },
+        {
+          "name": "risk_level",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "enums": [],
+  "failures": [],
+  "passports": [
+    {
+      "name": "ResearchAgentPassport",
+      "agent": "ResearchAgent",
+      "agent_name": "Eval Research Agent",
+      "global_id": "argx:agent:01EVALRESEARCHAGENT",
+      "identity": "did:argorix:eval-research-agent-v1",
+      "provider": "Argorix",
+      "version": "1.0.0",
+      "country": "CL",
+      "jurisdiction": "CL",
+      "data_residency": [
+        "CL",
+        "EU"
+      ],
+      "model": "frontier-compatible",
+      "risk_level": "medium",
+      "data_scope": [
+        "internal"
+      ],
+      "intent": "evaluation",
+      "intended_use": [
+        "policy-review"
+      ],
+      "prohibited_use": [
+        "external-execution",
+        "credential-access"
+      ],
+      "attestations": [
+        "policy-check",
+        "evidence-bundle"
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "name": "ResearchAgent",
+      "approval": "denied"
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    }
+  ],
+  "tools": [],
+  "models": [],
+  "instructions": [
+    {
+      "op": "DeclareCapability",
+      "name": "trace.write",
+      "level": "safe",
+      "requires_approval": false
+    },
+    {
+      "op": "DeclareAgent",
+      "name": "ResearchAgent",
+      "approval": "denied"
+    },
+    {
+      "op": "RequireCapability",
+      "agent": "ResearchAgent",
+      "capability": "trace.write"
+    },
+    {
+      "op": "DeclareHandler",
+      "agent": "ResearchAgent",
+      "message_type": "UserPrompt",
+      "binding": "prompt"
+    },
+    {
+      "op": "TraceValue",
+      "agent": "ResearchAgent",
+      "binding": "prompt"
+    },
+    {
+      "op": "EndHandler"
+    },
+    {
+      "op": "DeclareProtocol",
+      "name": "EvalFlow"
+    },
+    {
+      "op": "SendMessage",
+      "from": "User",
+      "to": "ResearchAgent",
+      "act": "tell",
+      "message_type": "UserPrompt"
+    },
+    {
+      "op": "Trace",
+      "message": "protocol EvalFlow completed"
+    },
+    {
+      "op": "PolicyReport"
+    },
+    {
+      "op": "End"
+    }
+  ]
+}

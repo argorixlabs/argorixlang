@@ -1,0 +1,59 @@
+\section{Future Work: Sovereign Discovery}\label{sec:future}
+
+The proposed Sovereign DNS/Agent Naming Service would resolve an \code{ans_name}
+to a versioned agent record containing endpoints, passport references,
+supported protocols, jurisdictional metadata, and evidence locations.  It
+would draw on DNS lessons concerning hierarchical delegation
+\citep{mockapetris1987dnsconcepts,mockapetris1987dnsimplementation}, NANDA's
+agent-index direction \citep{raskar2025beyonddns}, and DID/VC representations
+\citep{w3c_did_core_2022,w3c_vc_data_model_2025}.  This is proposed
+architecture, not implemented resolution.
+
+A credible implementation requires more than a lookup API.  It needs namespace
+governance, proof of control, authenticated record updates, revocation, key
+rotation, replay protection, privacy-preserving queries, caching semantics,
+conflict handling, auditability, and resilience to compromised registries.
+Jurisdiction and residency assertions need issuer and evidence policies rather
+than self-assertion alone.
+
+ATrust contracts could define which identity methods, credential types, and
+handshake evidence a caller requires.  DCP-AI could inform citizenship and
+control-plane semantics.  \Argorix could compile these requirements and reject
+a discovered record before an adapter is planned.  An executable resolver,
+credential verifier, and cryptographic handshake engine would nevertheless be
+new trusted components, requiring independent threat models and tests.
+
+Empirically, future work should generate a controlled matrix: valid and invalid
+records, stale keys, revoked credentials, cross-jurisdiction residency
+conflicts, unavailable registries, malicious adapters, altered artifacts, and
+summary/detail contradictions.  Outcome measures should include denial
+correctness, false acceptance, false rejection, verification latency, evidence
+size, and recovery behavior.  Prompt robustness should be studied only with an
+explicitly collected, privacy-reviewed corpus.
+
+For evidence, signed bundles and append-only transparency publication could
+provide producer authentication and replacement detection, subject to key
+governance and availability analysis.  This direction should not be described
+as blockchain immutability unless an actual consensus/storage system is
+implemented and evaluated.
+
+\subsection{Staged roadmap}
+We sequence the proposed work as a claim-bounded roadmap, in which each stage
+adds a single trust property and its own evaluation rather than bundling
+assurance claims.  The version labels are planning milestones, not released
+guarantees.
+
+\begin{description}
+\item[v0.1] Compiled governance with offline-verifiable EvidenceBundles
+(the configuration evaluated here).
+\item[v0.2] Include a source digest in the EvidenceBundle so that compiled
+bytecode can be tied back to its source.
+\item[v0.3] Signed bundles and an append-only transparency log for producer
+authentication and replacement detection.
+\item[v0.4] A live provider adapter executed under explicit sandbox
+constraints, with host-level telemetry.
+\item[v0.5] A DID/VC resolver and credential verification, introducing the
+associated trust anchors and revocation paths.
+\item[v1.0] Independent, production-oriented evaluation against controlled
+workloads and pre-registered outcome definitions.
+\end{description}

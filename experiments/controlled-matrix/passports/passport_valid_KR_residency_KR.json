@@ -1,0 +1,14 @@
+{
+  "case": "passport_valid_KR_residency_KR",
+  "country": "KR",
+  "data_class": "internal",
+  "expected": "PASS",
+  "expected_policy": "PASS: passport_country_code_valid + passport_residency_declared + same_country_residency",
+  "group": "passports",
+  "note": "Valid same-country passport fixture for South Korea (asia_pacific).",
+  "policy_rule": null,
+  "profile": "default",
+  "provider": "simulated",
+  "residency": "KR",
+  "tamper_target": null
+}

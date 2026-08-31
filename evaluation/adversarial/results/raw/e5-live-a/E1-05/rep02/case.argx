@@ -1,0 +1,27 @@
+module Eval.W05.ModelUnauthorized
+
+capability model.invoke { level restricted requires approval }
+capability state.write { level safe }
+
+type ToolResult { content: string }
+type Decision { action: string reason: string }
+
+model GuardModel {
+    provider simulated
+    capability model.invoke
+    input ToolResult
+    output Decision
+}
+
+agent PolicyJudge {
+    security { approval granted }
+    receives ToolResult
+    capabilities { model.invoke state.write }
+    on ToolResult as result {
+        ask GuardModel with result
+    }
+}
+
+protocol Flow {
+    User -> PolicyJudge: tell ToolResult
+}

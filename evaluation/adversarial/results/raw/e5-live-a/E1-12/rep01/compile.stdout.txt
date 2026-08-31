@@ -1,0 +1,8 @@
+Argorix Lang compiler v1.0
+
+Package entry: main
+Modules: 5
+Imports: 4
+Agents: 1
+Protocols: 1
+Semantic checks: passed

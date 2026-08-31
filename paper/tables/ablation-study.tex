@@ -1,0 +1,14 @@
+\begin{tabularx}{\linewidth}{@{}XXX@{}}
+\toprule
+Variant & Removed boundary & Do not claim until measured \\
+\midrule
+Full ArgorixLang v0.2 & none & false allow, false deny, review accuracy, tamper rate, latency \\
+w/o typed policy lattice & typed outcomes & unknown-rule collapse and aggregation errors \\
+w/o executable-provider allowlist & adapter gate & external-provider false allows \\
+w/o source digest & source binding & source mismatch detection \\
+w/o ledger digest & trace-event ledger binding & ledger tamper detection \\
+w/o report cross-check & report-to-bundle linkage & summary/detail inconsistency detection \\
+w/o fail-closed default & default denial & missing-authorization false allows \\
+JSON audit logs only baseline & cross-artifact verification & tamper and linkage gaps \\
+\bottomrule
+\end{tabularx}

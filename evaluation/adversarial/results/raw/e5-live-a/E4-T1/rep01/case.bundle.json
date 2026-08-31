@@ -1,0 +1,18 @@
+{
+  "bundle_version": "1.1",
+  "language": "Argorix Lang",
+  "module": "Eval.W01.ToolSimulatedAllowed",
+  "bytecode_version": "1.0",
+  "vm_version": "1.0",
+  "report_version": "1.0",
+  "bytecode_digest": "sha256:0a9af0e2b34d6a9b59571c9c5cc976e08ee651abbbb516f308f164470e891a53",
+  "trace_digest": "sha256:7b838e5627824cc80b4c9869e65f8507ad7ff67c1c24bae6a733552baf405c10",
+  "report_digest": "sha256:4babcb89542291412535bd1b2c8cd3e232535b75a8402601b2a7b1cc94ca59bc",
+  "ledger_digest": "sha256:cbb1b2d3391b3f72ca428e3fca4747f6dac43202bfa4ff125e3911a18f897fa0",
+  "artifacts": {
+    "bytecode_path": "case.argbc.json",
+    "trace_path": "case.trace.json",
+    "security_report_path": "case.security.json",
+    "source_path": "case.argx"
+  }
+}

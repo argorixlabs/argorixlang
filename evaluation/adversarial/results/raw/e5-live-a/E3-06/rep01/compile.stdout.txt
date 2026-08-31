@@ -1,0 +1,12 @@
+Argorix Lang compiler v1.0
+
+File: D:\Proyectos\ArgorixLang\evaluation\adversarial\results\raw\e5-live-a\E3-06\rep01\clean\case.argx
+Status: OK
+
+Module: Eval.W06.PolicyPass
+Capabilities: 1
+Types: 1
+Enums: 0
+Agents: 1
+Protocols: 1
+Semantic checks: passed

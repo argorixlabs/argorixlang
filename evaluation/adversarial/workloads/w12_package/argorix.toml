@@ -1,0 +1,6 @@
+[package]
+name = "eval-w12-package"
+version = "1.0.0"
+
+[entry]
+main = "src/main.argx"

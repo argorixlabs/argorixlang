@@ -1950,9 +1950,10 @@ fn v032_ir_bytecode_vm_report_and_bundle_cover_evidence_maps_without_real_trust_
         None,
         None,
         None,
+        None,
     )
     .unwrap();
-    assert_eq!(bundle.bundle_version, "1.0");
+    assert_eq!(bundle.bundle_version, "1.1");
 
     let serialized = serde_json::to_string(&(bytecode, trace, report, bundle)).unwrap();
     for forbidden in [
@@ -2268,9 +2269,10 @@ fn v033_vm_report_and_evidence_expose_governance_without_certification_claims() 
         None,
         None,
         None,
+        None,
     )
     .unwrap();
-    assert_eq!(bundle.bundle_version, "1.0");
+    assert_eq!(bundle.bundle_version, "1.1");
 
     let serialized = serde_json::to_string(&(trace, report, bundle)).unwrap();
     for forbidden in [
@@ -2675,9 +2677,10 @@ fn v034_security_report_and_evidence_cover_public_conformance() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
-    assert_eq!(bundle.bundle_version, "1.0");
+    assert_eq!(bundle.bundle_version, "1.1");
 }
 
 #[test]
@@ -2998,9 +3001,10 @@ fn v035_security_report_evidence_and_policy_cover_runtime_hardening() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
-    assert_eq!(bundle.bundle_version, "1.0");
+    assert_eq!(bundle.bundle_version, "1.1");
 }
 
 #[test]
@@ -3323,9 +3327,10 @@ fn v036_vm_report_evidence_and_policy_preserve_declarative_rc_boundaries() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
-    assert_eq!(bundle.bundle_version, "1.0");
+    assert_eq!(bundle.bundle_version, "1.1");
 }
 
 #[test]
@@ -3710,9 +3715,10 @@ fn v100_trace_policy_report_and_evidence_cover_runtime_mvp_without_secret_values
         None,
         None,
         None,
+        None,
     )
     .unwrap();
-    assert_eq!(bundle.bundle_version, "1.0");
+    assert_eq!(bundle.bundle_version, "1.1");
 }
 
 #[test]

@@ -1,0 +1,32 @@
+{
+  "config": {
+    "driver": "openai-chat-completions",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini-2024-07-18",
+    "temperature": 0.0,
+    "seed": 7
+  },
+  "task": "Summarise the retrieved deployment note.",
+  "content": "Deployment note: rollout paused pending review.",
+  "raw": "{\"action\":\"answer\",\"rationale\":\"The deployment rollout is currently paused and requires a review before proceeding.\"}",
+  "proposal": {
+    "action": "answer",
+    "rationale": "The deployment rollout is currently paused and requires a review before proceeding."
+  },
+  "error": null,
+  "usage": {
+    "prompt_tokens": 184,
+    "completion_tokens": 22,
+    "total_tokens": 206,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}

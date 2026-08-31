@@ -1,0 +1,7 @@
+{
+  "signature_version": "1.0",
+  "algorithm": "ed25519",
+  "public_key": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+  "bundle_digest": "sha256:961b19a9349c69d367bf1a4265e6afb0cdd0c218c86e7881bd58adb2ee65cdd1",
+  "signature": "6cb89453f1e5183091b3319d6f20a3ccac89ce5fd438a96ef6e82a0b0463a9987bfd46ee5381869462ee6a73c95ae03b74e9bd72f130295a4f51115d04b42c08"
+}

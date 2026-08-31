@@ -1,0 +1,18 @@
+{
+  "bundle_version": "1.1",
+  "language": "Argorix Lang",
+  "module": "Eval.W08.PolicyReview",
+  "bytecode_version": "1.0",
+  "vm_version": "1.0",
+  "report_version": "1.0",
+  "bytecode_digest": "sha256:82d965f71977d9d6cb13ecf5b86e0fa9a87c820ecc369a37623a95516f95ed16",
+  "trace_digest": "sha256:c6471e459d84b8037858ad80d744e83866d4d20df7323c8b53dc40d5df348a51",
+  "report_digest": "sha256:5fdb5ccb729033f61314a159a9a71077301a415f8fa2873335adc854ff4f6fe7",
+  "ledger_digest": "sha256:c0f24625c5039b4eaf7c371fe6cae603f310ee4f6653a14ed8a952daefac39fc",
+  "artifacts": {
+    "bytecode_path": "case.argbc.json",
+    "trace_path": "case.trace.json",
+    "security_report_path": "case.security.json",
+    "source_path": "case.argx"
+  }
+}
