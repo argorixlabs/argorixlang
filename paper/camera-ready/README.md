@@ -66,11 +66,11 @@ The submission package includes `figures/system-pipeline.pdf`,
 | Target | State |
 | --- | --- |
 | IEEEtran conference class, US Letter, two columns | met |
-| No more than eight pages including references | 7 pages |
+| No more than eight pages including references | 8 pages (at the limit) |
 | All citations and cross-references resolved | 0 undefined |
 | No overfull boxes | 0 (1 underfull: an unbreakable DOI URL) |
 | Embedded fonts | 13 font objects, all embedded |
-| Visual inspection of every rendered page | all 7 inspected at 144 dpi |
+| Visual inspection of every rendered page | all 8 inspected at 144 dpi |
 | Campaign reproduces from clean without manual edits | two identical runs |
 | Workspace tests, fmt and clippy | 382 passing, both clean |
 
@@ -78,7 +78,9 @@ The submission package includes `figures/system-pipeline.pdf`,
 
 The paper reports proportions as `n/N` with Wilson 95% intervals and gives a
 rule-of-three upper bound wherever a numerator is zero. It states plainly that
-prompt injection was not evaluated, that a coordinated unsigned replacement of
+the prompt-injection result is containment of a proposal made by a model outside
+the system rather than resistance of an Argorix agent loop, that a coordinated
+unsigned replacement of
 the artifact set is not detected, that the declared sandboxed operation is not
 rejected at a boundary, and that non-reachability of a real external adapter is
 out of scope because the provider registry admits no instrumentable

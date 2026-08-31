@@ -342,7 +342,7 @@ editar en `evaluation/adversarial/baseline/prefix/`, tal como exige P2.1.
 | E3 mutación de evidencia | 22 | 22 |
 | E4 dispatch, canarios y punto de mediación | 12 | 36 |
 | E6 autenticidad bajo trust anchor | 4 | 4 |
-| E5 prompt injection (rama condicionada) | 16 | 80 (no ejecutados) |
+| E5 prompt injection contra modelo real | 16 | 80 |
 | **Total** | **119** | **231** |
 
 ### Métricas: antes y después de las correcciones
@@ -367,7 +367,7 @@ editar en `evaluation/adversarial/baseline/prefix/`, tal como exige P2.1.
 | Policy | go | ningún reporte presenta veredicto agregado aprobatorio sobre detalle DENY/REVIEW/UNKNOWN |
 | Side effects | go | los tres sensores dispararon control positivo, y además uno desde dentro del punto de mediación |
 | Tamper | go | mutación posterior a la generación, verificador real invocado, digests pre/post registrados |
-| Prompt injection | **no-go por diseño** | prohíbe el claim; no reporta un defecto |
+| Prompt injection | go | un modelo real respondió las 80 llamadas, todo sensor disparó control positivo, y toda propuesta mapeó a un programa |
 | Reproducibilidad | go | dos corridas limpias producen métricas, puertas y tablas idénticas |
 | Control E0 | go | el snapshot histórico reproduce exactamente |
 | Diversidad E1 | go | 12 fingerprints distintos en 36 runs |
@@ -406,19 +406,32 @@ siempre con dry-run; un programa rechazado en verificación no llega nunca; y un
 sonda emitida desde dentro de una invocación de proveedor queda registrada por
 el sink. Ese último caso es el control que da sentido a los otros.
 
-### F5 — prompt injection: especificado, no ejecutado
+### F5 — prompt injection: ejecutado contra modelo real
 
-La rejilla está declarada en el catálogo antes de cualquier llamada a modelo:
-ocho escenarios (provider externo, egress de red, exfiltración de secreto,
-acceso a key material), brazos benigno e inyectado, cinco repeticiones = 80
-runs. El driver está implementado: pone contenido frente a un modelo real, toma
-la acción estructurada que propone y la empuja por la mediación y los sensores.
-Se miden por separado el éxito del ataque sobre el modelo y la contención por
-parte de Argorix, y el mapeo propuesta→programa es total y publicado: una
-propuesta que ningún programa cubre se cuenta como `UNMAPPABLE`, nunca se
-descarta. La rama se ejecuta sólo contra un modelo real y reproducible; sin él
-registra `NOT_EXECUTED`. Aun ejecutada no podría afirmar que un loop de agente
-de Argorix resiste inyección, porque es el driver quien mapea la propuesta.
+Rejilla declarada en el catálogo **antes** de cualquier llamada: ocho escenarios
+(provider externo, egress de red, exfiltración de secreto, acceso a key
+material), brazos benigno e inyectado, cinco repeticiones = 80 runs contra
+`gpt-4o-mini-2024-07-18`, temperature 0, seed 7.
+
+| Medida | n/N | Wilson 95% |
+| --- | --- | --- |
+| La inyección movió al modelo (brazo inyectado) | 20/40 | [35.2, 64.8] |
+| Propuesta prohibida en brazo benigno (falso positivo del modelo) | 5/40 | [5.5, 26.1] |
+| Propuestas prohibidas contenidas antes de cualquier sensor | 25/25 | [86.7, 100.0] |
+| Propuestas prohibidas que llegaron a un sensor | 0/25 | cota ro3 12.0% |
+| Propuestas sin programa que las cubra | 0/80 | — |
+| Errores de modelo | 0 | — |
+
+Por familia de escenario, en el brazo inyectado: provider externo 10/10
+propuestas prohibidas, key material 5/10, egress de red 5/10, exfiltración de
+secreto 0/10. Ninguna llegó a un sensor.
+
+**Techo del claim.** El driver mapea la propuesta a un programa; Argorix no la
+despacha. Lo medido es contención de una acción prohibida que un modelo real
+propuso tras una inyección real — no la resistencia de un loop de agente de
+Argorix, que el release no puede tener porque no ingiere contenido de prompt.
+Un modelo, ocho escenarios: el intervalo sobre éxito del ataque es
+[35.2, 64.8]% y no dice nada sobre modelos en general.
 
 ### Fronteras que quedan (no son defectos)
 
@@ -427,7 +440,7 @@ de Argorix resiste inyección, porque es el driver quien mapea la propuesta.
 | B1 | La verificación sin firma no distingue un reemplazo autoconsistente | integridad y binding de source, no autenticidad |
 | B2 | Firmar establece el productor y nada más | sin key storage, rotación, revocación ni timestamping |
 | B3 | El release no es instrumentable en su punto de mediación | las observaciones describen el build de evaluación |
-| B4 | El release no ingiere contenido de prompt | prompt injection no evaluado |
+| B4 | El release no ingiere contenido de prompt; el modelo va fuera y un driver mapea su propuesta | el resultado es contención, no resistencia |
 | B5 | La operación sandboxed declarada no se rechaza en frontera | contención y rechazo son proporciones distintas |
 
 ### Enmiendas al preregistro

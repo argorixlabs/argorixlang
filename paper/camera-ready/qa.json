@@ -1,14 +1,14 @@
 {
   "schema_version": 2,
   "artifact": "../argorixlang-camera-ready.pdf",
-  "artifact_sha256": "892881ec6518bf7314c592111934aca97447fcd4faf579589d5ce0c96005491a",
-  "artifact_bytes": 228576,
+  "artifact_sha256": "d91f83575f6299b3a394459bc985760f3d6ff945f62627a2a29750a3a76997b0",
+  "artifact_bytes": 228897,
   "source_package": "../argorixlang-camera-ready-source.zip",
-  "source_package_sha256": "5aacd7041adc134a79124a12728ff699eff0a2ec71c33085ca8b46865dfdc6cc",
-  "source_package_bytes": 69969,
+  "source_package_sha256": "e612272f8b0933340e53f7d9cfbc75b6ebace11ab6ed4ae1a0dac7a072d4e1ab",
+  "source_package_bytes": 70938,
   "source_package_smoke_compile": {
     "passed": true,
-    "page_count": 7,
+    "page_count": 8,
     "citations_and_bibtex_resolved": true,
     "note": "extracted to a clean directory and built with pdflatex + bibtex"
   },
@@ -19,7 +19,7 @@
       792.0
     ],
     "paper_size": "US Letter",
-    "page_count": 7,
+    "page_count": 8,
     "official_page_range": "4-8 pages including references"
   },
   "content": {
@@ -35,16 +35,16 @@
     "font_objects": 13,
     "all_fonts_embedded": true,
     "overfull_boxes": 0,
-    "underfull_boxes": 1,
+    "underfull_boxes": 2,
     "underfull_note": "one loose line from an unbreakable DOI URL in a narrow column",
-    "visual_inspection_pages": 7,
+    "visual_inspection_pages": 8,
     "visual_inspection_passed": true,
     "visual_inspection_dpi": 144
   },
   "executed_evidence": {
     "source": "evaluation/adversarial (single entrypoint: run.py --clean)",
-    "run_id": "v3",
-    "commit": "59524f664536fa761ca24b03312665e2f62cc6b9",
+    "run_id": "e5-live-a",
+    "commit": "99d444b81316d2006618f902929caa560bd45854",
     "binary_sha256": {
       "argorixc": "sha256:e6ad8d51915fdc339632b415e19a587a994436aefcbf82d13a47e686e3295eed",
       "argorix-vm": "sha256:d9491a8cf7c26ff71259e004a34a8acf50a9f64438f7c2569331adf976d5048a",
@@ -53,10 +53,10 @@
       "argorix-vm-eval-tripwire": "sha256:5205fdbf2e2692f0e932ab989a7b661a915d0040b0dd752a526c834beb188857"
     },
     "rows_total": 231,
-    "rows_scored": 118,
+    "rows_scored": 198,
     "outcome_accuracy": "118/118",
-    "false_allows": "0/118",
-    "false_denies": "0/118",
+    "false_allows": "0/198",
+    "false_denies": "0/198",
     "fail_closed": "16/16",
     "tamper_detected": "21/22",
     "containment_before_sink": "21/21",
@@ -68,7 +68,7 @@
       "policy_correctness": "go",
       "side_effects": "go",
       "tamper_rates": "go",
-      "prompt_injection": "no-go",
+      "prompt_injection": "go",
       "reproducibility": "go",
       "e0_control": "go",
       "e1_diversity": "go"
@@ -122,9 +122,24 @@
     }
   ],
   "prompt_injection": {
-    "executed": false,
-    "declared_runs": null,
-    "claim": "prompt injection was not evaluated"
+    "executed": true,
+    "runs": 80,
+    "model": [
+      {
+        "driver": "openai-chat-completions",
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "model": "gpt-4o-mini-2024-07-18",
+        "seed": 7,
+        "temperature": 0.0
+      }
+    ],
+    "attack_success_on_model": "20/40",
+    "benign_false_positives": "5/40",
+    "conditional_containment": "25/25",
+    "destination_asr": "0/25",
+    "unmappable_proposals": "0/80",
+    "model_errors": 0,
+    "claim": "the proposal is mapped to a program by the driver, not dispatched by Argorix, so this measures containment of a real model's prohibited proposal and not the resistance of an Argorix agent loop"
   },
   "prefix_baseline": {
     "archived_under": "evaluation/adversarial/baseline/prefix/",

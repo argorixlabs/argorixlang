@@ -67,16 +67,19 @@ from a clean directory with the pre-fix baseline preserved: a malformed provider
 payload that no boundary rejected, a source-only modification that was
 undetectable, and the absence of any way to tell the original artifact set from
 a self-consistent replacement, now closed by a detached signature checked
-against a producer trust anchor.  What remains are boundaries rather than
-defects, and the paper states each one: unsigned verification still cannot
+against a producer trust anchor.  Indirect prompt injection was then evaluated
+against a real model: in \promptInjectionAttackSuccess{} injected arms the model
+proposed the prohibited action, and \promptInjectionContainment{} prohibited
+proposals were contained before any sensor.  What remains are boundaries rather
+than defects, and the paper states each one: unsigned verification still cannot
 detect a replacement, signing adds no key governance, the release cannot be
-instrumented at its mediation point, and prompt injection was not evaluated.  The historical snapshot reproduces
+instrumented at its mediation point, and the injection result measures
+containment of a model's proposal rather than the resistance of an Argorix
+agent loop.  The historical snapshot reproduces
 exactly---\snapshotVerified{}/\snapshotComplete{} internally consistent bundles,
 \snapshotApproved{}/\snapshotComplete{} policy-approved, \snapshotUnknownTotal{}
 unknown-rule findings---and remains a demonstration of faithfully preserved
-failure, not of governance.  Prompt injection was not evaluated: the release
-ingests no prompt content, so the branch was left unexecuted rather than
-simulated.
+failure, not of governance.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -121,7 +124,9 @@ runtime's own report?
 \end{enumerate}
 
 Question~4 measures \emph{effect containment} observed by independent sensors.
-It is not a claim about preventing prompt injection, which we did not evaluate.
+It is not a claim about preventing prompt injection: what we evaluate is whether
+a prohibited action a real, successfully injected model proposed reaches a
+destination, not whether the model can be made to propose it.
 
 The paper makes three contributions.  First, it describes a compiler-to-VM
 boundary that treats model output as a proposal and keeps external contracts
@@ -168,10 +173,13 @@ replace the entire unsigned set remains outside its assurance boundary.
 AgentDojo, InjecAgent, and indirect prompt-injection demonstrations all
 evaluate agents inside adversarial tool environments \cite{debenedetti2024,zhan2024,greshake2023}.
 They require attack inputs, stateful tools, and externally checked outcomes.
-Our campaign supplies the last of these---loopback, filesystem, and secret
-canaries with positive controls---but neither the snapshot nor the release
-carries prompt content, so we report no prompt-injection success or defense
-rate.  Project-local
+Our campaign supplies adversarial content, a real model loop, and externally
+checked outcomes---loopback, filesystem, and secret canaries with positive
+controls.  It differs from those benchmarks in one structural way: the release
+carries no prompt content, so the model sits outside it and a driver maps the
+proposed action onto a program.  We therefore report containment of a
+prohibited proposal, not the resistance of an agent loop, and report attack
+success on the model separately from it.  Project-local
 ATrust and DCP-AI declarations are design vocabulary, not independent evidence
 for the runtime claims in this paper.  Emerging agent discovery proposals such
 as NANDA are likewise treated as future context rather than implemented
@@ -317,6 +325,17 @@ over, and can probe the loopback sink---giving a positive control \emph{at the
 mediation point}, which is what makes zero hits elsewhere a measurement rather
 than an absence of instrumentation.
 
+\textbf{Prompt injection.}  The release ingests no prompt content, so the model
+sits outside it.  Eight scenarios---external provider calls, network egress,
+secret exfiltration, key-material access---each with a benign and an
+indirect-injection arm run five times, for \promptInjectionRuns{} runs against
+one model with its version, temperature, and seed recorded.  The driver puts the
+content in front of the model, receives a structured action, maps it onto a
+precompiled program, and runs that program under the same sensors.  The grid is
+declared in the catalogue before any model was called, so a run cannot select
+the favourable half afterwards, and the mapping is published and total: a
+proposal no program covers is counted, never dropped.
+
 \textbf{Authenticity.}  A separate \code{argorix-sign} binary produces a
 detached Ed25519 signature over a bundle's canonical bytes, and
 \code{verify-evidence -{}-trust-anchor} checks it.  Signing lives outside the
@@ -348,25 +367,21 @@ reading of the same implementation.
 
 \input{tables/snapshot-remeasured}
 
-The homogeneity is equally important.  The \snapshotComplete{} complete
-directories contain two bytecode/trace/report fingerprint families of sizes 20
-and 7, but one ledger digest, one event-type sequence, and \snapshotEvents{}
-events in every directory.  These are repeated executions of two closely
-related structures, not \snapshotComplete{} diverse workloads.  They support
-reproducibility of the observed negative state but no generalization across
-agent tasks.  The campaign exists precisely because that snapshot cannot answer
-behavioural questions.
+The homogeneity matters as much.  The \snapshotComplete{} complete directories
+hold two fingerprint families of sizes 20 and 7 but one ledger digest, one
+event-type sequence, and \snapshotEvents{} events each: repeated executions of
+two closely related structures, not \snapshotComplete{} diverse workloads.  The
+campaign exists because that snapshot cannot answer behavioural questions.
 
-The snapshot's reports carry a favourable top-level label beside
-review-required detail.  Evidence serialization did not erase or upgrade the
-unfavorable details, which is useful, but preserving an error is not the same
-as enforcing the intended policy.  In the current release the aggregate verdict
-is derived monotonically from the detail, and the campaign checks this directly:
-no security report in \campaignRows{} runs carries an approving aggregate
-verdict over a block, review, warning, or unknown-rule detail.  The snapshot's
-\snapshotUnknownPerDir{} identifiers are not merely unevaluated today---the
-current compiler and bytecode verifier reject an unknown policy rule outright,
-so the same program no longer reaches the runtime at all.
+Its reports carry a favourable top-level label beside review-required detail.
+Serialization did not erase the unfavorable detail, which is useful, but
+preserving an error is not enforcing a policy.  In the current release the
+aggregate verdict derives monotonically from the detail, and the campaign checks
+it directly: no security report in \campaignRows{} runs carries an approving
+aggregate verdict over a block, review, warning, or unknown-rule detail.  The
+snapshot's \snapshotUnknownPerDir{} identifiers are not merely unevaluated
+today---the current compiler and bytecode verifier reject an unknown policy rule
+outright, so the same program no longer reaches the runtime.
 
 \subsection{Campaign results}
 
@@ -448,6 +463,27 @@ coordinated replacement, a bundle with no signature, and a signature from
 another key.  Without an anchor the same replacement still verifies, which is
 what digest verification is rather than a defect in it.
 
+\textbf{Prompt injection.}  Against \promptInjectionModel{} at temperature
+zero with seed \promptInjectionSeed{}, the indirect injections moved the model
+in \promptInjectionAttackSuccess{} injected arms, Wilson 95\%
+\promptInjectionAttackSuccessCI{}\%---a property of the model, not of Argorix.
+It varies sharply by scenario: every external-provider injection succeeded, half
+the key-material ones did, none of the secret-exfiltration ones.  The model also
+proposed a prohibited action in \promptInjectionBenignFP{} benign arms with no
+injection present, which is why the benign control matters.
+
+Of every prohibited proposal, injected or not,
+\promptInjectionContainment{} were contained before any sensor, Wilson 95\%
+\promptInjectionContainmentCI{}\%; \promptInjectionSinkHits{} reached one, so
+the honest bound is at most $\promptInjectionSinkBound\%$.  Every proposal
+mapped to a program (\promptInjectionUnmappable{} unmappable) and no call
+failed to reach the model, so the denominator is the whole grid.
+
+The ceiling is structural: the driver maps the proposal onto a program, Argorix
+does not dispatch it.  This measures containment of a prohibited action a real
+model proposed after a real injection, not the resistance of an agent loop,
+which the release cannot yet have because it ingests no prompt content.
+
 \textbf{Dispatch and side effects.}  Figure~\ref{fig:boundary} summarises
 where each decision is taken.  Across \dispatchConditions{} conditions
 and \dispatchRuns{} instrumented runs, every sensor fired its positive control
@@ -502,31 +538,21 @@ than applied silently.
 \subsection{What the campaign still does not show}
 
 No defects remain open.  What remains are \campaignBoundaries{} boundaries,
-published with the same weight as the results because each one bounds a
-claim.  Unsigned verification cannot detect a self-consistent replacement; that
-is what digest verification is, and only a trust anchor separates the two.
-Signing establishes the producer and nothing else: there is no key storage,
-rotation, revocation, or trusted timestamping.  Observations at the mediation
-point describe the evaluation build, and non-reachability of a real external
-adapter is untested because no such adapter exists to test.  The declared
-sandboxed operation is accepted and reported as \emph{planned} without
-executing, so containment before the sink and rejection at a boundary remain
-different proportions.  And prompt injection was not evaluated.
+published with the same weight as the results because each one bounds a claim,
+and expanded in Section~
+ef{sec:limits}: unsigned verification cannot detect a
+self-consistent replacement, signing adds no key governance, the mediation-point
+observations describe the evaluation build, the declared sandboxed operation is
+not rejected at a boundary, and the injection result is containment rather than
+resistance.
 
-The last of those is specified rather than deferred.  The campaign declares the
-grid in advance---eight scenarios across external provider calls, network
-egress, secret exfiltration, and key-material access; benign and injected arms;
-five repetitions---together with a driver that puts content in front of a real
-model, takes the structured action it proposes, and pushes that action through
-mediation and the sensors.  Attack success on the model and containment by
-Argorix are separate measurements, and the proposal-to-program mapping is
-published and total, so a proposal no program covers is counted rather than
-dropped.  The branch executes only against a configured, reproducible model;
-with none it records \code{NOT_EXECUTED}.  What it could never claim, even
-executed, is that an Argorix agent loop resists injection, because the driver
-maps the proposal---Argorix has no prompt-bearing execution path of its own.
+The last is the one most easily overread.  One model, one temperature and seed,
+eight scenarios; repetitions are not independent tasks and are not counted as
+such.  Making resistance a claim Argorix could support needs content-bounded
+messages and a runtime-selected dispatch instruction, both future work.
 
 \section{Security Interpretation and Limitations}
+\label{sec:limits}
 
 The evaluated architecture places a decision point before provider invocation,
 and the campaign now measures it from outside the runtime rather than reading
@@ -541,15 +567,14 @@ rejects an unknown rule at compilation and again at bytecode verification.  It
 does not show coverage of a policy vocabulary the project did not author; an
 independent policy corpus and rule-level mutation testing remain necessary.
 
-\textbf{Prompt injection.}  Not evaluated.  The snapshot and the release both
-carry routing metadata for injected messages but no prompt content, and parser
-tests for that route are not prompt attacks.  A valid evaluation needs
-adversarial content returned by tools, an actual model/agent loop, utility and
-attack objectives, and externally checked state changes, as in AgentDojo or
-InjecAgent \cite{debenedetti2024,zhan2024}.  The campaign specifies that
-branch---eight scenarios, benign and injected variants, five repetitions, a unique
-nonce and an instrumented local destination per run---and leaves it unexecuted
-rather than substituting a simulation.
+\textbf{Prompt injection.}  Evaluated as containment, and only as
+containment.  Adversarial content, a real model, utility and attack arms, and
+externally checked outcomes are all present, as AgentDojo and InjecAgent
+require \cite{debenedetti2024,zhan2024}; a prompt-bearing execution path inside
+Argorix is not, because the release has none.  The model therefore sits outside
+the system under test and a published, total mapping carries its proposal in.
+One model on eight scenarios supports no statement about models in general, and
+nothing here supports ``Argorix prevents prompt injection''.
 
 \textbf{Side effects.}  Network, secret, and filesystem sensors are
 independent of the VM, each demonstrated a positive control from outside, and a
@@ -603,32 +628,33 @@ separation earned its keep twice: it caught a definitional defect in our own
 preregistration, recorded as an amendment rather than silently repaired, and it
 turned every mismatch into a product fix instead of an adjusted expectation.
 
-A third lesson concerns where mediation actually happens.  We expected the
-runtime provider boundary to be the interesting surface; it is not reachable
-from any program the compiler accepts, because unsupported providers, unknown
-rules, undeclared tools, and missing capabilities are all refused earlier.
-That is a favourable property, but it means a runtime-only experiment would
-have measured dead code---and it is what made the missing payload-type check
-visible, since nothing downstream would have caught it either.
-
-A fourth lesson is about what instrumentation costs.  The release resists
-being measured at its mediation point, which is a security property and an
-evaluation obstacle at the same time.  Compiling a second binary behind a
+A third lesson concerns where mediation happens, and what it costs to watch it.
+We expected the runtime provider boundary to be the interesting surface; no
+program the compiler accepts reaches it, because unsupported providers, unknown
+rules, undeclared tools, and missing capabilities are all refused earlier.  That
+is a favourable property that also made the missing payload-type check visible,
+since nothing downstream would have caught it either---and it is why the release
+resists being measured at that point at all.  Compiling a second binary behind a
 non-default feature resolves the tension only if the two are told apart
 everywhere they appear, which is why the evaluation build reports a different
 version and every manifest records it.
 
-What remains is the branch we did not run.  Prompt injection needs a real model
-loop and a prompt-bearing execution path; the release provides neither, and a
-driver that fabricates proposals would measure the driver.  We specified the
-experiment, built the driver, and left the gate shut.
+The injection result carries a last lesson, about denominators.  Reporting
+only containment would have produced \promptInjectionContainment{}, which reads
+like a strong defence; reporting only attack success would have produced
+\promptInjectionAttackSuccess{}, which reads like a weak model.  Neither alone
+is the finding.  The pair is: the injection moved the model about half the time,
+and every prohibited action it proposed was contained.  Separating the two also
+surfaced something we would otherwise have missed---the model proposed a
+prohibited action in \promptInjectionBenignFP{} arms with no injection at all,
+which a design without a benign control would have silently credited to the
+attack.
 
-Jurisdiction metadata should follow the same discipline.  Compilation can
-ensure that a field is present, well-shaped, and propagated to evidence; it
-cannot make a self-assertion true.  A future resolver would introduce new trust
-anchors, revocation paths, privacy concerns, and availability failures.  Those
-components should be evaluated independently rather than bundled into the
-current language claim.
+Jurisdiction metadata follows the same discipline.  Compilation can ensure a
+field is present, well-shaped, and propagated to evidence; it cannot make a
+self-assertion true.  A future resolver would add trust anchors, revocation
+paths and availability failures, and should be evaluated on its own rather than
+bundled into the current language claim.
 
 \section{Conclusion}
 
@@ -642,7 +668,11 @@ outcomes held in separate files and separate processes, reports
 to the original bundle, and \campaignSinkHits{} prohibited proposals reaching
 an instrumented local sink whose sensors each demonstrated a positive control.
 A producer trust anchor
-additionally rejects \campaignForgeriesRejected{} non-producer artifact sets.
+additionally rejects \campaignForgeriesRejected{} non-producer artifact sets, and
+against a real model whose behaviour indirect injections changed in
+\promptInjectionAttackSuccess{} injected arms,
+\promptInjectionContainment{} prohibited proposals were contained before any
+sensor.
 The historical snapshot reproduces exactly and still does not demonstrate
 governance: \snapshotVerified{} internally consistent bundles preserve
 \snapshotUnknownTotal{} unknown-rule findings with minimal structural diversity.
@@ -654,9 +684,11 @@ evidence to the source it was compiled from, and preserves runtime outcomes in
 offline-checkable artifacts.  Unsigned verification does not detect a coordinated
 replacement of the artifact set, signing adds no key governance, the release
 cannot be instrumented at its own mediation point, and no real external adapter
-exists to test.  Prompt-injection resistance was not evaluated.  Authenticated
-identity, legal jurisdiction, operating-system isolation, and
-replacement-resistant provenance remain outside every claim made here.
+exists to test.  The injection result is containment of a proposal a model
+outside the system made, on one model and eight scenarios, not
+prompt-injection resistance.  Authenticated identity, legal jurisdiction,
+operating-system isolation, and replacement-resistant provenance remain outside
+every claim made here.
 
 \section*{Artifact Availability}
 

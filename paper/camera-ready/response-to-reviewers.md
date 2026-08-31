@@ -7,7 +7,7 @@ We thank Reviewers 1 and 6 for the detailed, constructive evaluations. Since
 the previous revision we executed the end-to-end and adversarial campaign that
 the reviews asked for. It runs the release binaries, keeps expected and
 observed outcomes in separate files and separate processes, and publishes every
-row. The camera-ready is seven IEEEtran pages, within the official JCC 2026
+row. The camera-ready is eight IEEEtran pages, within the official JCC 2026
 four-to-eight-page limit, with two figures, three compact tables, no listings,
 and no appendix.
 
@@ -47,7 +47,7 @@ injection.
 | Circular 57-row matrix | removed, replaced by the project's own conformance suite | replaced by an executed campaign of 139 runs with an oracle the collector cannot read |
 | No behavioural diversity | acknowledged | 12 workloads × 3 repetitions producing 12 distinct fingerprints over 6 dimensions |
 | No controlled adversarial experiments | future-work sketch | 20 fault conditions, 22 post-generation mutations, 8 dispatch conditions with three instrumented sensors |
-| Prompt injection simulated | stated as not evaluated | still not evaluated, and now a gated branch that refuses to run without a real model driver |
+| Prompt injection simulated | stated as not evaluated | evaluated against a real model: 20/40 injections moved it, 25/25 prohibited proposals contained |
 | Integrity vs. approval conflated | separated in prose | separated and checked mechanically in all 139 runs |
 
 ## Reviewer 1
@@ -220,35 +220,45 @@ bound instead of a “0%” claim.
 
 ### 2. Prompt-injection resistance was simulated rather than evaluated
 
-Agreed, and the camera-ready still states that prompt injection was **not
-evaluated**. It is now specified, implemented and gated rather than described.
+Agreed, and it is now evaluated rather than described.
 
-The grid is declared in the case catalogue before any model was called: eight
-scenarios across external provider calls, network egress, secret exfiltration
-and key-material access; benign and indirect-injection arms; five repetitions;
-a unique nonce and an instrumented local destination per run. Declaring it in
-advance is the point, so a later run cannot quietly select the favourable half.
+The grid was declared in the case catalogue **before any model was called**:
+eight scenarios across external provider calls, network egress, secret
+exfiltration and key-material access; benign and indirect-injection arms; five
+repetitions; a unique nonce and an instrumented local destination per run.
+Declaring it in advance is the point, so a later run cannot quietly select the
+favourable half.
 
-The driver is implemented. It puts content in front of a real model, takes the
-structured action the model proposes, and pushes that action through Argorix's
-mediation and the sensors. Attack success on the model and containment by
-Argorix are separate measurements — conflating them would be the whole mistake
-— and the proposal-to-program mapping is published and total, so a proposal no
-program covers is recorded as `UNMAPPABLE` and counted rather than dropped.
+We ran all 80 against `gpt-4o-mini-2024-07-18` at temperature 0 with seed 7. Two
+measurements, kept apart because conflating them would be the whole mistake:
 
-It executes only against a configured, reproducible model; with none it records
-`NOT_EXECUTED`, which is what the published run does. We did not substitute a
-simulation. And we are explicit about the ceiling: even executed, this design
-could not claim that an Argorix agent loop resists injection, because the
-driver maps the proposal. The release ingests no prompt content — an injected
-message carries a structured route and nothing else — so Argorix has no
-prompt-bearing execution path of its own to attack. Giving it one means
-content-bounded messages and a runtime-selected dispatch instruction; both are
-named as future work rather than claimed.
+| Measure | n/N | Wilson 95% |
+| --- | --- | --- |
+| Injections that moved the model | 20/40 | [35.2, 64.8] |
+| Prohibited proposals in the benign arm | 5/40 | [5.5, 26.1] |
+| Prohibited proposals contained before any sensor | 25/25 | [86.7, 100.0] |
+| Prohibited proposals reaching a sensor | 0/25 | at most 12.0% |
+
+Zero model errors and zero unmappable proposals, so the denominator is the
+whole grid. Attack success varies sharply by scenario: every external-provider
+injection succeeded, half the key-material ones did, none of the
+secret-exfiltration ones. The benign control earned its place — the model
+proposed a prohibited action in 5/40 arms with no
+injection present, which a design without that control would have credited to
+the attack.
+
+We are explicit about the ceiling. The driver maps the proposal onto a program;
+Argorix does not dispatch it. This measures containment of a prohibited action
+a real model proposed after a real injection — not the resistance of an Argorix
+agent loop, which the release cannot have because it ingests no prompt content.
+One model on eight scenarios supports no statement about models in general, and
+nothing here supports "Argorix prevents prompt injection". Making resistance a
+claim Argorix could support needs content-bounded messages and a
+runtime-selected dispatch instruction; both are named as future work.
 
 ### 3. Excess pages, tables, code, and repeated “not claimed” material
 
-Addressed structurally and preserved. The camera-ready is seven IEEE pages: two
+Addressed structurally and preserved. The camera-ready is eight IEEE pages: two
 vector figures (the compilation pipeline and the measured adversarial
 boundary), three compact tables (the re-measured snapshot, the campaign, and
 tamper detection by class), no code listings, and no appendix. Claim boundaries
@@ -283,11 +293,13 @@ two), which lands on exactly twenty cases. No condition was dropped.
 ## Verification performed for the camera-ready
 
 - `IEEEtran` conference class, 10 pt, US Letter, two columns.
-- Seven pages including references (official range: four to eight).
+- Eight pages including references (official range: four to eight). The plan
+  targeted six or seven; reporting an executed injection experiment used the
+  remaining margin, and we chose to keep the result over the margin.
 - Zero overfull or underfull boxes; zero undefined citations or references.
 - Bibliography: 15 entries, all resolved; twelve embedded font objects; no `?`
   markers in the extracted text.
-- Visual inspection: all seven rendered pages inspected at 144 dpi; both
+- Visual inspection: all eight rendered pages inspected at 144 dpi; both
   figures, all three tables, the title block, columns, and references are
   legible with no clipping.
 - Campaign: 231 rows (118 scored, 80
