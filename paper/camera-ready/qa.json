@@ -1,14 +1,14 @@
 {
   "schema_version": 2,
   "artifact": "../argorixlang-camera-ready.pdf",
-  "artifact_sha256": "d91f83575f6299b3a394459bc985760f3d6ff945f62627a2a29750a3a76997b0",
-  "artifact_bytes": 228897,
+  "artifact_sha256": "54f90218c5975bf4ea529cdd9cd1acbac53dd4774147062eb0b1a526a5f888da",
+  "artifact_bytes": 227879,
   "source_package": "../argorixlang-camera-ready-source.zip",
-  "source_package_sha256": "e612272f8b0933340e53f7d9cfbc75b6ebace11ab6ed4ae1a0dac7a072d4e1ab",
-  "source_package_bytes": 70938,
+  "source_package_sha256": "4a03670eb1437a1703b4b6fb51effd936fe11367dd409c0a899a75291fc79012",
+  "source_package_bytes": 70975,
   "source_package_smoke_compile": {
     "passed": true,
-    "page_count": 8,
+    "page_count": 7,
     "citations_and_bibtex_resolved": true,
     "note": "extracted to a clean directory and built with pdflatex + bibtex"
   },
@@ -19,7 +19,7 @@
       792.0
     ],
     "paper_size": "US Letter",
-    "page_count": 8,
+    "page_count": 7,
     "official_page_range": "4-8 pages including references"
   },
   "content": {
@@ -35,9 +35,9 @@
     "font_objects": 13,
     "all_fonts_embedded": true,
     "overfull_boxes": 0,
-    "underfull_boxes": 2,
+    "underfull_boxes": 1,
     "underfull_note": "one loose line from an unbreakable DOI URL in a narrow column",
-    "visual_inspection_pages": 8,
+    "visual_inspection_pages": 7,
     "visual_inspection_passed": true,
     "visual_inspection_dpi": 144
   },

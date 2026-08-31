@@ -66,11 +66,11 @@ The submission package includes `figures/system-pipeline.pdf`,
 | Target | State |
 | --- | --- |
 | IEEEtran conference class, US Letter, two columns | met |
-| No more than eight pages including references | 8 pages (at the limit) |
+| No more than eight pages including references | 7 pages, one in reserve |
 | All citations and cross-references resolved | 0 undefined |
 | No overfull boxes | 0 (1 underfull: an unbreakable DOI URL) |
 | Embedded fonts | 13 font objects, all embedded |
-| Visual inspection of every rendered page | all 8 inspected at 144 dpi |
+| Visual inspection of every rendered page | all 7 inspected at 144 dpi |
 | Campaign reproduces from clean without manual edits | two identical runs |
 | Workspace tests, fmt and clippy | 382 passing, both clean |
 

@@ -91,20 +91,11 @@ def campaign_table(summary: dict[str, Any]) -> str:
             f"{label} & {entry['numerator']}/{entry['denominator']}{suffix} "
             f"& [{lower:.1f}, {upper:.1f}] \\\\"
         )
-    lines.extend(
-        [
-            r"\midrule",
-            f"Behavioural fingerprints & {e1['distinct_behavioral_fingerprints']}"
-            f"/{e1['runs']} runs & -- \\\\",
-            f"Documented non-detections & {len(e3['documented_non_detections'])}"
-            f"/{e3['mutations_executed']} & -- \\\\",
-            f"Sensor positive controls & "
-            f"{'all fired' if e4['sensor_controls']['all_fired'] else 'FAILED'} & -- \\\\",
-            r"\bottomrule",
-            r"\end{tabular}",
-            r"\end{table}",
-        ]
-    )
+    # Behavioural fingerprints, documented non-detections and the sensor
+    # controls are reported in the prose that cites this table; repeating them
+    # here only costs lines. All three remain in results/summary.json.
+    _ = (e1, e3, e4)
+    lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}"])
     return "\n".join(lines) + "\n"
 
 
@@ -227,6 +218,10 @@ def facts_macros(summary: dict[str, Any]) -> str:
         macro("campaignScoredRows", summary["rows_scored"]),
         macro("campaignAccuracy", accuracy["text"]),
         macro("campaignFalseAllows", metrics["false_allow_rate"]["text"]),
+        macro(
+            "campaignFalseAllowBound",
+            f"{(metrics['false_allow_rate'].get('rule_of_three_upper') or 0) * 100:.1f}",
+        ),
         macro("campaignFalseDenies", metrics["false_deny_rate"]["text"]),
         macro("campaignFailClosed", failclosed["text"]),
         macro(
