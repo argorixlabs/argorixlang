@@ -7,7 +7,7 @@ We thank Reviewers 1 and 6 for the detailed, constructive evaluations. Since
 the previous revision we executed the end-to-end and adversarial campaign that
 the reviews asked for. It runs the release binaries, keeps expected and
 observed outcomes in separate files and separate processes, and publishes every
-row. The camera-ready is eight IEEEtran pages, within the official JCC 2026
+row. The camera-ready is seven IEEEtran pages, one inside the official JCC 2026
 four-to-eight-page limit, with two figures, three compact tables, no listings,
 and no appendix.
 
@@ -258,7 +258,7 @@ runtime-selected dispatch instruction; both are named as future work.
 
 ### 3. Excess pages, tables, code, and repeated “not claimed” material
 
-Addressed structurally and preserved. The camera-ready is eight IEEE pages: two
+Addressed structurally and preserved. The camera-ready is seven IEEE pages: two
 vector figures (the compilation pipeline and the measured adversarial
 boundary), three compact tables (the re-measured snapshot, the campaign, and
 tamper detection by class), no code listings, and no appendix. Claim boundaries
@@ -293,13 +293,18 @@ two), which lands on exactly twenty cases. No condition was dropped.
 ## Verification performed for the camera-ready
 
 - `IEEEtran` conference class, 10 pt, US Letter, two columns.
-- Eight pages including references (official range: four to eight). The plan
-  targeted six or seven; reporting an executed injection experiment used the
-  remaining margin, and we chose to keep the result over the margin.
+- Seven pages including references (official range: four to eight), leaving a
+  page in reserve as the plan intended. Reporting the executed injection
+  experiment first pushed the paper to eight; prose was tightened across the
+  snapshot results, method, discussion and boundaries, three redundant
+  reference URLs were dropped where the venue citation already locates the
+  work, and three summary rows repeated in prose were removed from Table II.
+  No measured result was dropped: all three tables, both figures and every
+  reported proportion remain.
 - Zero overfull or underfull boxes; zero undefined citations or references.
 - Bibliography: 15 entries, all resolved; twelve embedded font objects; no `?`
   markers in the extracted text.
-- Visual inspection: all eight rendered pages inspected at 144 dpi; both
+- Visual inspection: all seven rendered pages inspected at 144 dpi; both
   figures, all three tables, the title block, columns, and references are
   legible with no clipping.
 - Campaign: 231 rows (118 scored, 80

@@ -390,8 +390,8 @@ Table~\ref{tab:campaign} reports the executed campaign.  Across
 \campaignAccuracy{} scored rows, with \campaignFalseAllows{} false allows and
 \campaignFalseDenies{} false denies.  Because the numerator is zero we report
 the rule-of-three bound rather than a zero rate: false allows are at most
-$2.8\%$ at 95\% confidence, which is a weak bound on \campaignRows{} runs and
-should be read as such.
+$\campaignFalseAllowBound\%$ at 95\% confidence, which is a weak bound on
+\campaignScoredRows{} scored rows and should be read as such.
 
 The first campaign scored \baselineAccuracy{} and every mismatch was a real
 defect, not an oracle error.  Section~\ref{sec:fixed} reports the defects, the
@@ -692,19 +692,18 @@ every claim made here.
 
 \section*{Artifact Availability}
 
-Source, the campaign harness, cases, oracle, row-level results, checksums, and
-the camera-ready source are available at
-\url{https://github.com/argorixlabs/argorixlang}; the evaluated release is
-archived at \url{https://doi.org/10.5281/zenodo.21007563}.  The campaign
-reproduces from a clean directory with one command,
+Harness, cases, oracle, row-level results, checksums, and the camera-ready
+source are at \url{https://github.com/argorixlabs/argorixlang}; the evaluated
+release is archived at \url{https://doi.org/10.5281/zenodo.21007563}.  The
+campaign reproduces from a clean directory with
 \texttt{python evaluation/adversarial/run.py -{}-clean}, which runs the
-anti-circularity test, collection, scoring, and table generation in that order;
-two independent clean runs produced identical metrics, gates, and tables.  Every
-number in this paper is generated into \texttt{tables/} by that pipeline and
-\verb|\input| here, so no figure is transcribed by hand.  Canary
-values are synthetic and no real credential, endpoint, or prompt is published.
-The authors are affiliated with organizations developing ArgorixLang and
-disclose that relationship as a potential competing interest.
+anti-circularity test, collection, scoring, and table generation in order; two
+clean runs produced identical metrics, gates, and tables for every family
+except the model-dependent one.  Each number here is generated into
+\texttt{tables/} and \verb|\input|, never transcribed.  Canary values are
+synthetic and no real credential, endpoint, or prompt is published.  The
+authors are affiliated with organizations developing ArgorixLang and disclose
+that as a potential competing interest.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
