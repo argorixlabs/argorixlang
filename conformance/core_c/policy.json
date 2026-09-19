@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "task": "ESP-008.R",
+  "description": "What a transitional Core C executable may depend on. Applied to Linux ELF binaries produced by conformance/core_c/run.py.",
+  "allowed_needed_libraries": ["libc.so.6"],
+  "forbidden_library_patterns": ["rust", "libstd-", "libcore-", "\\.rlib$"],
+  "forbidden_symbol_patterns": [
+    "^_*rust_",
+    "^_ZN.*17h[0-9a-f]{16}E$",
+    "^_R[A-Z][A-Za-z0-9_]*$"
+  ],
+  "forbidden_imports": [
+    "system", "popen",
+    "execl", "execle", "execlp", "execv", "execve", "execvp", "execvpe", "fexecve",
+    "posix_spawn", "posix_spawnp", "fork", "vfork", "clone", "clone3",
+    "dlopen", "dlmopen"
+  ],
+  "forbidden_byte_markers": ["/.cargo/", "/.rustup/", "/rustc/", "RUST_BACKTRACE"],
+  "execution_timeout_seconds": 10
+}
