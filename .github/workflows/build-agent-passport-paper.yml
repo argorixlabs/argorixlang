@@ -27,7 +27,7 @@ jobs:
       # array, xcolor, listings, url, cite, hyperref, amsmath/amssymb, graphicx,
       # and bibtex are all available without extra installation.
       - name: Compile paper with latexmk
-        uses: xu-cheng/latex-action@v3
+        uses: xu-cheng/latex-action@v4
         with:
           working_directory: paper/agent-passport-ieee
           root_file: main.tex
