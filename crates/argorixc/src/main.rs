@@ -1,6 +1,8 @@
 use anyhow::{bail, Context, Result};
 use argorix_bytecode::{lower_ir, source_digest, verify_bytecode, BytecodeProgram, Instruction};
-use argorix_ir::{lower_core_program, verify_core_ir, CoreIrProgram, IrProgram};
+use argorix_ir::{
+    lower_core_program, verify_core_ir, CoreCBackend, CoreIrBackend, CoreIrProgram, IrProgram,
+};
 use argorix_module::{check_package, package_ir, resolve_package, ModuleGraph, ResolvedPackage};
 use argorix_parser::{
     core::{parse_core_source, CoreDiagnostic, CoreItemKind, CoreProgram},
@@ -38,6 +40,13 @@ enum Command {
     CoreEmitIr { file: PathBuf },
     /// Verify serialized Argorix Core IR JSON.
     CoreVerifyIr { file: PathBuf },
+    /// Lower checked Argorix Core 0.1 source into transitional C11.
+    CoreEmitC {
+        file: PathBuf,
+        /// Write generated C to a file instead of standard output.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
     /// Compile source into Argorix IR JSON.
     EmitIr { file: PathBuf },
     /// Print protocol communication graphs.
@@ -135,6 +144,29 @@ fn run() -> Result<()> {
             println!("Items: {}", ir.items.len());
             println!("Effects: {}", ir.effect_policy.len());
             println!("Semantic fingerprint: {}", verified.semantic_fingerprint());
+        }
+        Command::CoreEmitC { file, output } => {
+            let compiled = compile_core(&file)?;
+            let checked = verify_core_program(
+                &compiled.program,
+                &CoreCheckOptions {
+                    available_modules: compiled.available_modules,
+                },
+            )
+            .map_err(|diagnostics| {
+                core_diagnostics_error(&diagnostics, &file.display().to_string(), &compiled.source)
+            })?;
+            let ir = lower_core_program(checked);
+            let verified = verify_core_ir(&ir).map_err(core_ir_errors)?;
+            let generated = CoreCBackend
+                .emit(verified)
+                .map_err(|error| anyhow::anyhow!(error))?;
+            if let Some(path) = output {
+                fs::write(&path, generated.source)
+                    .with_context(|| format!("failed to write `{}`", path.display()))?;
+            } else {
+                print!("{}", generated.source);
+            }
         }
         Command::EmitIr { file } => {
             let compiled = compile(&file, options)?;
@@ -480,6 +512,14 @@ mod tests {
         let verify =
             Cli::try_parse_from(["argorixc", "core-verify-ir", "lexer.coreir.json"]).unwrap();
         assert!(matches!(verify.command, Command::CoreVerifyIr { .. }));
+
+        let emit_c = Cli::try_parse_from([
+            "argorixc",
+            "core-emit-c",
+            "tests/selfhost/runtime/scalar_success.argx",
+        ])
+        .unwrap();
+        assert!(matches!(emit_c.command, Command::CoreEmitC { .. }));
     }
 
     #[test]

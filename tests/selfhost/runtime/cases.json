@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "core_version": "0.1",
+  "cases": [
+    {
+      "id": "scalar_success",
+      "file": "scalar_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "overflow_trap",
+      "file": "overflow_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:INTEGER_OVERFLOW"
+    },
+    {
+      "id": "division_trap",
+      "file": "division_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:DIVISION_BY_ZERO"
+    }
+  ]
+}

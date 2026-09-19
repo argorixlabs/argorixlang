@@ -37,5 +37,14 @@ the resulting programs do not link a Rust runtime.
   `DIVISION_BY_ZERO`, and `STEP_LIMIT` traps. Windows `wsl.exe` maps the Linux
   trap exit status to its own process status, so native exit-code evidence will
   be collected inside the conformance runner.
-- Next: implement `CoreIrBackend` C emission with sequenced temporaries, then
-  compile and execute Core fixtures against this runtime.
+- Initial next step was `CoreIrBackend` C emission with sequenced temporaries
+  and executable Core fixtures; the following entry records that milestone.
+- 2026-09-19: added the verified scalar C emitter and `argorixc core-emit-c`.
+  Recursive calls, checked arithmetic, assignments, `while`, value `if`, and
+  boolean short-circuiting lower through deterministic temporaries.
+- Added three executable Core fixtures: normal result 42, unsigned overflow,
+  and division by zero. Rust-side deterministic emission tests pass; C-enabled
+  CI is responsible for compile/execute evidence on a clean native host.
+- Remaining before closure: aggregates/enums/arrays/slices, bounds/handle
+  checks, resource-profile plumbing, conformance report, dependency inspection,
+  and full workspace regression.
