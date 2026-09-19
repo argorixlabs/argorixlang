@@ -529,15 +529,15 @@ impl<'a> Checker<'a> {
             if let Some(ty) = self.constants.get(&path[0]) {
                 return ty.clone();
             }
-        } else if path.len() == 2 {
-            if self.enums.get(&path[0]).is_some_and(|value| {
+        } else if path.len() == 2
+            && self.enums.get(&path[0]).is_some_and(|value| {
                 value
                     .variants
                     .get(&path[1])
                     .is_some_and(|variant| variant.fields.is_empty())
-            }) {
-                return Ty::Named(path[0].clone());
-            }
+            })
+        {
+            return Ty::Named(path[0].clone());
         }
         self.error(
             "ImmutableAssignmentOrUnknownName",
