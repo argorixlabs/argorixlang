@@ -6,6 +6,30 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define ARGORIX_ARENA_REGISTRY_LIMIT 64U
+
+typedef struct argorix_runtime_slot {
+    void *data;
+    uint32_t generation;
+    bool active;
+} argorix_runtime_slot;
+
+struct argorix_arena_state {
+    uint64_t arena_id;
+    uint64_t epoch;
+    uint64_t element_size;
+    uint64_t byte_limit;
+    uint64_t used_bytes;
+    uint32_t type_id;
+    uint32_t slot_limit;
+    uint32_t slot_count;
+    bool active;
+    argorix_runtime_slot *slots;
+};
+
+static argorix_arena_state *argorix_arena_registry[ARGORIX_ARENA_REGISTRY_LIMIT];
+static uint64_t argorix_next_arena_id = 1U;
+
 _Noreturn void argorix_trap(const char *code) {
     (void)fprintf(stderr, "ARGORIX_TRAP:%s\n", code);
     exit(ARGORIX_TRAP_EXIT);
@@ -125,6 +149,160 @@ void argorix_buffer_drop(argorix_buffer *buffer) {
     buffer->data = NULL;
     buffer->length = 0U;
     buffer->capacity = 0U;
+}
+
+static argorix_arena_state *argorix_find_arena(uint64_t arena_id) {
+    for (size_t index = 0U; index < ARGORIX_ARENA_REGISTRY_LIMIT; index += 1U) {
+        argorix_arena_state *state = argorix_arena_registry[index];
+        if (state != NULL && state->arena_id == arena_id) {
+            return state;
+        }
+    }
+    return NULL;
+}
+
+argorix_arena argorix_arena_new(
+    uint64_t element_size,
+    uint32_t type_id,
+    uint64_t byte_limit,
+    uint32_t slot_limit
+) {
+    if (element_size == 0U || element_size > (uint64_t)SIZE_MAX || type_id == 0U ||
+        slot_limit == 0U || (uint64_t)slot_limit > (uint64_t)SIZE_MAX / sizeof(argorix_runtime_slot)) {
+        argorix_trap("INVALID_MEMORY");
+    }
+    size_t registry_index = ARGORIX_ARENA_REGISTRY_LIMIT;
+    for (size_t index = 0U; index < ARGORIX_ARENA_REGISTRY_LIMIT; index += 1U) {
+        if (argorix_arena_registry[index] == NULL) {
+            registry_index = index;
+            break;
+        }
+    }
+    if (registry_index == ARGORIX_ARENA_REGISTRY_LIMIT || argorix_next_arena_id == UINT64_MAX) {
+        argorix_trap("RESOURCE_LIMIT");
+    }
+    argorix_arena_state *state = calloc(1U, sizeof(*state));
+    argorix_runtime_slot *slots = calloc((size_t)slot_limit, sizeof(*slots));
+    if (state == NULL || slots == NULL) {
+        free(state);
+        free(slots);
+        argorix_trap("OUT_OF_MEMORY");
+    }
+    state->arena_id = argorix_next_arena_id;
+    argorix_next_arena_id += 1U;
+    state->epoch = 1U;
+    state->element_size = element_size;
+    state->byte_limit = byte_limit;
+    state->type_id = type_id;
+    state->slot_limit = slot_limit;
+    state->active = true;
+    state->slots = slots;
+    argorix_arena_registry[registry_index] = state;
+    argorix_arena result = {state};
+    return result;
+}
+
+argorix_handle argorix_arena_alloc(argorix_arena *arena, const void *value) {
+    if (arena == NULL || arena->state == NULL || value == NULL) {
+        argorix_trap("INVALID_HANDLE");
+    }
+    argorix_arena_state *state = arena->state;
+    if (!state->active) {
+        argorix_trap("ARENA_RELEASED");
+    }
+    if (state->slot_count >= state->slot_limit) {
+        argorix_trap("RESOURCE_LIMIT");
+    }
+    if (state->used_bytes > state->byte_limit ||
+        state->element_size > state->byte_limit - state->used_bytes) {
+        argorix_trap("RESOURCE_LIMIT");
+    }
+    void *data = malloc((size_t)state->element_size);
+    if (data == NULL) {
+        argorix_trap("OUT_OF_MEMORY");
+    }
+    (void)memcpy(data, value, (size_t)state->element_size);
+    uint32_t slot_index = state->slot_count;
+    argorix_runtime_slot *slot = &state->slots[slot_index];
+    slot->data = data;
+    slot->generation = 1U;
+    slot->active = true;
+    state->slot_count += 1U;
+    state->used_bytes += state->element_size;
+    argorix_handle handle = {
+        state->arena_id, state->epoch, slot_index, slot->generation,
+        0U, 1U, state->type_id, ARGORIX_PERMISSION_READ_WRITE, {0U, 0U, 0U}
+    };
+    return handle;
+}
+
+void *argorix_handle_get(
+    argorix_handle handle,
+    uint32_t expected_type_id,
+    uint64_t expected_element_size,
+    bool require_write
+) {
+    argorix_arena_state *state = argorix_find_arena(handle.arena_id);
+    if (state == NULL) {
+        if (handle.arena_id > 0U && handle.arena_id < argorix_next_arena_id) {
+            argorix_trap("ARENA_RELEASED");
+        }
+        argorix_trap("INVALID_HANDLE");
+    }
+    if (expected_element_size == 0U || expected_element_size > (uint64_t)SIZE_MAX) {
+        argorix_trap("INVALID_HANDLE");
+    }
+    if (!state->active || handle.arena_epoch != state->epoch) {
+        argorix_trap("ARENA_RELEASED");
+    }
+    if (handle.slot >= state->slot_count) {
+        argorix_trap("INVALID_HANDLE");
+    }
+    argorix_runtime_slot *slot = &state->slots[handle.slot];
+    argorix_slot view_slot = {
+        slot->generation, state->type_id, 1U, slot->active
+    };
+    argorix_arena_view view = {
+        state->arena_id, state->epoch, &view_slot, 1U, state->active
+    };
+    argorix_handle local = handle;
+    local.slot = 0U;
+    argorix_validate_handle(&view, local, expected_type_id, require_write);
+    if (state->element_size != expected_element_size) {
+        argorix_trap("TYPE_MISMATCH");
+    }
+    return slot->data;
+}
+
+void argorix_arena_release(argorix_arena *arena) {
+    if (arena == NULL || arena->state == NULL) {
+        argorix_trap("INVALID_HANDLE");
+    }
+    argorix_arena_state *state = arena->state;
+    if (!state->active) {
+        argorix_trap("ARENA_RELEASED");
+    }
+    if (state->epoch == UINT64_MAX) {
+        argorix_trap("INTEGER_OVERFLOW");
+    }
+    for (uint32_t index = 0U; index < state->slot_count; index += 1U) {
+        free(state->slots[index].data);
+        state->slots[index].data = NULL;
+        state->slots[index].active = false;
+    }
+    state->used_bytes = 0U;
+    state->active = false;
+    state->epoch += 1U;
+    for (size_t index = 0U; index < ARGORIX_ARENA_REGISTRY_LIMIT; index += 1U) {
+        if (argorix_arena_registry[index] == state) {
+            argorix_arena_registry[index] = NULL;
+            break;
+        }
+    }
+    free(state->slots);
+    state->slots = NULL;
+    free(state);
+    arena->state = NULL;
 }
 
 void argorix_validate_handle(

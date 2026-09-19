@@ -80,6 +80,16 @@ fn buffers_use_bounded_c1_storage_and_checked_indexes() {
 }
 
 #[test]
+fn arenas_allocate_canonical_handles_and_validate_lifetime() {
+    let source = emit("arena_success.argx");
+    assert!(source.contains("argorix_arena_new"));
+    assert!(source.contains("argorix_arena_alloc"));
+    assert!(source.contains("argorix_handle_get"));
+    assert!(source.contains("argorix_arena_release"));
+    assert!(source.contains("ARGORIX_ARENA_SLOT_LIMIT"));
+}
+
+#[test]
 fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
@@ -117,6 +127,19 @@ fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
         ("buffer_success.argx", 0, "ARGORIX_RESULT:42", ""),
         (
             "buffer_limit_trap.argx",
+            70,
+            "",
+            "ARGORIX_TRAP:RESOURCE_LIMIT",
+        ),
+        ("arena_success.argx", 0, "ARGORIX_RESULT:42", ""),
+        (
+            "arena_released_trap.argx",
+            70,
+            "",
+            "ARGORIX_TRAP:ARENA_RELEASED",
+        ),
+        (
+            "arena_limit_trap.argx",
             70,
             "",
             "ARGORIX_TRAP:RESOURCE_LIMIT",

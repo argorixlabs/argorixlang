@@ -102,3 +102,11 @@ the resulting programs do not link a Rust runtime.
 - Added source-level success and resource-limit fixtures to the native Core C
   manifest. Rust emission tests pass locally; native gcc/clang execution is
   pending CI on PR #26.
+- Implemented the next executable vertical: bounded `Arena<T>` allocation,
+  canonical pointer-free `Handle<T>` creation, registry lookup, validated
+  struct-field reads, release, and registry-slot reclamation. Stale handles
+  preserve deterministic `ARENA_RELEASED` behavior after the arena state is
+  freed.
+- Added arena success, released-handle, and slot-limit fixtures. Native C
+  execution is pending CI; handle mutation/free/slot reuse and borrow tokens
+  remain before the arena API is complete.

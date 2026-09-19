@@ -64,6 +64,12 @@ typedef struct argorix_arena_view {
     bool active;
 } argorix_arena_view;
 
+typedef struct argorix_arena_state argorix_arena_state;
+
+typedef struct argorix_arena {
+    argorix_arena_state *state;
+} argorix_arena;
+
 _Noreturn void argorix_trap(const char *code);
 void argorix_step(argorix_budget *budget);
 size_t argorix_bounds(uint64_t index, uint64_t length);
@@ -71,6 +77,20 @@ argorix_string argorix_decode_utf8(argorix_bytes value);
 argorix_buffer argorix_buffer_new(uint64_t element_size, uint64_t byte_limit);
 void argorix_buffer_push(argorix_buffer *buffer, const void *value);
 void argorix_buffer_drop(argorix_buffer *buffer);
+argorix_arena argorix_arena_new(
+    uint64_t element_size,
+    uint32_t type_id,
+    uint64_t byte_limit,
+    uint32_t slot_limit
+);
+argorix_handle argorix_arena_alloc(argorix_arena *arena, const void *value);
+void *argorix_handle_get(
+    argorix_handle handle,
+    uint32_t expected_type_id,
+    uint64_t expected_element_size,
+    bool require_write
+);
+void argorix_arena_release(argorix_arena *arena);
 void argorix_validate_handle(
     const argorix_arena_view *arena,
     argorix_handle handle,

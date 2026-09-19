@@ -1,0 +1,14 @@
+core 0.1;
+module runtime.arena_limit_trap;
+
+struct Node { value: u64, }
+
+pub fn argorix_main() -> u64 {
+    let mut nodes: Arena<Node> = Arena::new();
+    let mut count: u64 = 0u64;
+    while count < 1025u64 {
+        let node: Handle<Node> = nodes.alloc(Node { value: count });
+        count = node.value + 1u64;
+    }
+    count
+}

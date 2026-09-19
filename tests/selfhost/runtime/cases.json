@@ -85,6 +85,27 @@
       "expected_exit": 70,
       "expected_stdout": "",
       "expected_stderr": "ARGORIX_TRAP:RESOURCE_LIMIT"
+    },
+    {
+      "id": "arena_success",
+      "file": "arena_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "arena_released_trap",
+      "file": "arena_released_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:ARENA_RELEASED"
+    },
+    {
+      "id": "arena_limit_trap",
+      "file": "arena_limit_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:RESOURCE_LIMIT"
     }
   ]
 }

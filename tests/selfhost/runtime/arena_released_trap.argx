@@ -1,0 +1,11 @@
+core 0.1;
+module runtime.arena_released_trap;
+
+struct Node { value: u32, }
+
+pub fn argorix_main() -> u32 {
+    let mut nodes: Arena<Node> = Arena::new();
+    let node: Handle<Node> = nodes.alloc(Node { value: 42u32 });
+    nodes.release();
+    node.value
+}
