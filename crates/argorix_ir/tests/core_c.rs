@@ -38,6 +38,14 @@ fn scalar_emission_is_deterministic_and_sequenced() {
 }
 
 #[test]
+fn fixed_arrays_use_value_wrappers_and_checked_indexes() {
+    let source = emit("array_success.argx");
+    assert!(source.contains("typedef struct { uint32_t data[3]; } argorix_array_u32_3;"));
+    assert!(source.contains("argorix_bounds"));
+    assert!(source.contains(".data["));
+}
+
+#[test]
 fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
@@ -59,6 +67,13 @@ fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
             70,
             "",
             "ARGORIX_TRAP:DIVISION_BY_ZERO",
+        ),
+        ("array_success.argx", 0, "ARGORIX_RESULT:42", ""),
+        (
+            "bounds_trap.argx",
+            70,
+            "",
+            "ARGORIX_TRAP:INDEX_OUT_OF_BOUNDS",
         ),
     ];
     let temporary = std::env::temp_dir().join(format!("argorix-core-c-{}", std::process::id()));

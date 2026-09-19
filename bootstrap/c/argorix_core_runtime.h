@@ -14,6 +14,7 @@ typedef struct argorix_budget {
 
 _Noreturn void argorix_trap(const char *code);
 void argorix_step(argorix_budget *budget);
+size_t argorix_bounds(uint64_t index, uint64_t length);
 
 uint8_t argorix_u8_add(uint8_t left, uint8_t right);
 uint8_t argorix_u8_sub(uint8_t left, uint8_t right);

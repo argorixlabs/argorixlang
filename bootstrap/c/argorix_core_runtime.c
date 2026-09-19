@@ -17,6 +17,13 @@ void argorix_step(argorix_budget *budget) {
     budget->remaining_steps -= 1U;
 }
 
+size_t argorix_bounds(uint64_t index, uint64_t length) {
+    if (index >= length || index > (uint64_t)SIZE_MAX) {
+        argorix_trap("INDEX_OUT_OF_BOUNDS");
+    }
+    return (size_t)index;
+}
+
 #define DEFINE_UNSIGNED_CHECKED(width, type, maximum)                         \
     type argorix_u##width##_add(type left, type right) {                      \
         if (right > (type)((maximum) - left)) {                               \

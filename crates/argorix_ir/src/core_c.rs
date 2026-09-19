@@ -63,42 +63,66 @@ enum ScalarType {
     Unit,
     Bool,
     Integer(String),
+    Array {
+        element: Box<ScalarType>,
+        length: u64,
+    },
 }
 
 impl ScalarType {
     fn from_ir(value: &CoreIrType) -> Result<Self, CoreCError> {
-        let CoreIrType::Named { name } = value else {
-            return Err(CoreCError::unsupported(format!(
-                "container type `{value:?}` is not lowered by the scalar C profile"
-            )));
-        };
-        match name.as_str() {
-            "unit" => Ok(Self::Unit),
-            "bool" => Ok(Self::Bool),
-            "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" => {
-                Ok(Self::Integer(name.clone()))
-            }
-            _ => Err(CoreCError::unsupported(format!(
-                "named type `{name}` is not lowered by the scalar C profile"
+        match value {
+            CoreIrType::Named { name } => match name.as_str() {
+                "unit" => Ok(Self::Unit),
+                "bool" => Ok(Self::Bool),
+                "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" => {
+                    Ok(Self::Integer(name.clone()))
+                }
+                _ => Err(CoreCError::unsupported(format!(
+                    "named type `{name}` is not lowered by this C profile"
+                ))),
+            },
+            CoreIrType::Container {
+                name,
+                element,
+                array_length: Some(length),
+            } if name == "Array" => Ok(Self::Array {
+                element: Box::new(Self::from_ir(element)?),
+                length: *length,
+            }),
+            CoreIrType::Container { .. } => Err(CoreCError::unsupported(format!(
+                "container type `{value:?}` is not lowered by this C profile"
             ))),
         }
     }
 
-    fn c_name(&self) -> &'static str {
+    fn c_name(&self) -> String {
         match self {
-            Self::Unit => "void",
-            Self::Bool => "bool",
+            Self::Unit => "void".into(),
+            Self::Bool => "bool".into(),
             Self::Integer(name) => match name.as_str() {
-                "u8" => "uint8_t",
-                "u16" => "uint16_t",
-                "u32" => "uint32_t",
-                "u64" => "uint64_t",
-                "i8" => "int8_t",
-                "i16" => "int16_t",
-                "i32" => "int32_t",
-                "i64" => "int64_t",
+                "u8" => "uint8_t".into(),
+                "u16" => "uint16_t".into(),
+                "u32" => "uint32_t".into(),
+                "u64" => "uint64_t".into(),
+                "i8" => "int8_t".into(),
+                "i16" => "int16_t".into(),
+                "i32" => "int32_t".into(),
+                "i64" => "int64_t".into(),
                 _ => unreachable!("validated scalar integer"),
             },
+            Self::Array { element, length } => {
+                format!("argorix_array_{}_{}", element.mangle(), length)
+            }
+        }
+    }
+
+    fn mangle(&self) -> String {
+        match self {
+            Self::Unit => "unit".into(),
+            Self::Bool => "bool".into(),
+            Self::Integer(name) => name.clone(),
+            Self::Array { element, length } => format!("array_{}_{}", element.mangle(), length),
         }
     }
 
@@ -151,7 +175,9 @@ impl<'a> Emitter<'a> {
             .signatures
             .get("argorix_main")
             .ok_or_else(|| CoreCError::unsupported("module must define `argorix_main`"))?;
-        if !entry.parameters.is_empty() || entry.result == ScalarType::Unit {
+        if !entry.parameters.is_empty()
+            || !matches!(entry.result, ScalarType::Bool | ScalarType::Integer(_))
+        {
             return Err(CoreCError::unsupported(
                 "`argorix_main` must take no parameters and return a scalar",
             ));
@@ -166,6 +192,34 @@ impl<'a> Emitter<'a> {
              #include <stdint.h>\n\
              #include <stdio.h>\n\n",
         );
+        let mut arrays = BTreeMap::new();
+        for signature in self.signatures.values() {
+            for parameter in &signature.parameters {
+                collect_array_type(parameter, &mut arrays);
+            }
+            collect_array_type(&signature.result, &mut arrays);
+        }
+        for item in &program.items {
+            if let CoreIrItemKind::Function(function) = &item.kind {
+                collect_block_array_types(&function.body, &mut arrays)?;
+            }
+        }
+        for ty in arrays.values() {
+            let ScalarType::Array { element, length } = ty else {
+                unreachable!();
+            };
+            writeln!(
+                source,
+                "typedef struct {{ {} data[{}]; }} {};",
+                element.c_name(),
+                length,
+                ty.c_name()
+            )
+            .unwrap();
+        }
+        if !arrays.is_empty() {
+            source.push('\n');
+        }
         for item in &program.items {
             let CoreIrItemKind::Function(function) = &item.kind else {
                 unreachable!();
@@ -230,7 +284,7 @@ impl<'a> Emitter<'a> {
                     "    (void)printf(\"ARGORIX_RESULT:%\" PRId64 \"\\n\", (int64_t)result);\n",
                 );
             }
-            ScalarType::Unit => unreachable!(),
+            ScalarType::Unit | ScalarType::Array { .. } => unreachable!(),
         }
         source.push_str("    return 0;\n}\n");
         Ok(())
@@ -422,6 +476,54 @@ impl<'a> FunctionEmitter<'a> {
                     CoreCError::unsupported(format!("path `{name}` is not a scalar local"))
                 })?;
                 Ok((format!("argorix_v_{name}"), ty))
+            }
+            CoreIrExpr::Array { values } => {
+                let ty = expected.cloned().ok_or_else(|| {
+                    CoreCError::unsupported("array literal needs an expected array type")
+                })?;
+                let ScalarType::Array { element, length } = &ty else {
+                    return Err(CoreCError::unsupported(
+                        "array literal has a non-array expected type",
+                    ));
+                };
+                if values.len() as u64 != *length {
+                    return Err(CoreCError::unsupported("array literal length mismatch"));
+                }
+                let temp = self.next_temp();
+                line(source, indent, &format!("{} {temp};", ty.c_name()));
+                for (index, value) in values.iter().enumerate() {
+                    let value = self.emit_expr(value, Some(element), indent, source)?;
+                    line(
+                        source,
+                        indent,
+                        &format!("{temp}.data[{index}] = {};", value.0),
+                    );
+                }
+                Ok((temp, ty))
+            }
+            CoreIrExpr::Index { value, index } => {
+                let value = self.emit_expr(value, None, indent, source)?;
+                let ScalarType::Array { element, length } = &value.1 else {
+                    return Err(CoreCError::unsupported(
+                        "indexing currently requires a fixed Array value",
+                    ));
+                };
+                let element = (**element).clone();
+                let index = self.emit_expr(
+                    index,
+                    Some(&ScalarType::Integer("u64".into())),
+                    indent,
+                    source,
+                )?;
+                self.bind_temp(
+                    format!(
+                        "{}.data[argorix_bounds((uint64_t){}, {}U)]",
+                        value.0, index.0, length
+                    ),
+                    element,
+                    indent,
+                    source,
+                )
             }
             CoreIrExpr::Unary { operator, value } => {
                 let value = self.emit_expr(value, expected, indent, source)?;
@@ -616,6 +718,30 @@ impl<'a> FunctionEmitter<'a> {
 
 fn line(source: &mut String, indent: usize, value: &str) {
     let _ = writeln!(source, "{}{value}", "    ".repeat(indent));
+}
+
+fn collect_array_type(value: &ScalarType, arrays: &mut BTreeMap<String, ScalarType>) {
+    if let ScalarType::Array { element, .. } = value {
+        collect_array_type(element, arrays);
+        arrays.insert(value.c_name(), value.clone());
+    }
+}
+
+fn collect_block_array_types(
+    block: &CoreIrBlock,
+    arrays: &mut BTreeMap<String, ScalarType>,
+) -> Result<(), CoreCError> {
+    for statement in &block.statements {
+        match statement {
+            CoreIrStatement::Let {
+                annotation: Some(annotation),
+                ..
+            } => collect_array_type(&ScalarType::from_ir(annotation)?, arrays),
+            CoreIrStatement::While { body, .. } => collect_block_array_types(body, arrays)?,
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn single_path(segments: &[String]) -> Result<&str, CoreCError> {

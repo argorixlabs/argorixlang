@@ -22,6 +22,20 @@
       "expected_exit": 70,
       "expected_stdout": "",
       "expected_stderr": "ARGORIX_TRAP:DIVISION_BY_ZERO"
+    },
+    {
+      "id": "array_success",
+      "file": "array_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "bounds_trap",
+      "file": "bounds_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:INDEX_OUT_OF_BOUNDS"
     }
   ]
 }
