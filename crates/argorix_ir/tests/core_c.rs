@@ -46,6 +46,14 @@ fn fixed_arrays_use_value_wrappers_and_checked_indexes() {
 }
 
 #[test]
+fn structs_lower_to_typed_c_values() {
+    let source = emit("struct_success.argx");
+    assert!(source.contains("typedef struct argorix_type_Pair"));
+    assert!(source.contains(".first"));
+    assert!(source.contains(".second"));
+}
+
+#[test]
 fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
@@ -75,6 +83,7 @@ fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
             "",
             "ARGORIX_TRAP:INDEX_OUT_OF_BOUNDS",
         ),
+        ("struct_success.argx", 0, "ARGORIX_RESULT:42", ""),
     ];
     let temporary = std::env::temp_dir().join(format!("argorix-core-c-{}", std::process::id()));
     fs::create_dir_all(&temporary).unwrap();

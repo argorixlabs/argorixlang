@@ -5,7 +5,7 @@
 
 use crate::core::{
     CoreIrAssignOp, CoreIrBackend, CoreIrBinaryOp, CoreIrBlock, CoreIrExpr, CoreIrFunction,
-    CoreIrItemKind, CoreIrStatement, CoreIrType, CoreIrUnaryOp, VerifiedCoreIr,
+    CoreIrItemKind, CoreIrStatement, CoreIrStruct, CoreIrType, CoreIrUnaryOp, VerifiedCoreIr,
 };
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -58,11 +58,17 @@ struct Signature {
     result: ScalarType,
 }
 
+#[derive(Debug, Clone)]
+struct StructLayout {
+    fields: BTreeMap<String, ScalarType>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ScalarType {
     Unit,
     Bool,
     Integer(String),
+    User(String),
     Array {
         element: Box<ScalarType>,
         length: u64,
@@ -78,9 +84,7 @@ impl ScalarType {
                 "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" => {
                     Ok(Self::Integer(name.clone()))
                 }
-                _ => Err(CoreCError::unsupported(format!(
-                    "named type `{name}` is not lowered by this C profile"
-                ))),
+                _ => Ok(Self::User(name.clone())),
             },
             CoreIrType::Container {
                 name,
@@ -111,6 +115,7 @@ impl ScalarType {
                 "i64" => "int64_t".into(),
                 _ => unreachable!("validated scalar integer"),
             },
+            Self::User(name) => format!("argorix_type_{name}"),
             Self::Array { element, length } => {
                 format!("argorix_array_{}_{}", element.mangle(), length)
             }
@@ -122,6 +127,7 @@ impl ScalarType {
             Self::Unit => "unit".into(),
             Self::Bool => "bool".into(),
             Self::Integer(name) => name.clone(),
+            Self::User(name) => format!("type_{name}"),
             Self::Array { element, length } => format!("array_{}_{}", element.mangle(), length),
         }
     }
@@ -139,6 +145,7 @@ impl ScalarType {
 struct Emitter<'a> {
     verified: VerifiedCoreIr<'a>,
     signatures: BTreeMap<String, Signature>,
+    structs: BTreeMap<String, StructLayout>,
 }
 
 impl<'a> Emitter<'a> {
@@ -146,29 +153,42 @@ impl<'a> Emitter<'a> {
         Self {
             verified,
             signatures: BTreeMap::new(),
+            structs: BTreeMap::new(),
         }
     }
 
     fn emit(mut self) -> Result<CoreCOutput, CoreCError> {
         let program = self.verified.program();
         for item in &program.items {
-            if let CoreIrItemKind::Function(function) = &item.kind {
-                let parameters = function
-                    .parameters
-                    .iter()
-                    .map(|parameter| ScalarType::from_ir(&parameter.ty))
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.signatures.insert(
-                    function.name.clone(),
-                    Signature {
-                        parameters,
-                        result: ScalarType::from_ir(&function.return_type)?,
-                    },
-                );
-            } else {
-                return Err(CoreCError::unsupported(
-                    "the scalar C profile currently accepts function-only modules",
-                ));
+            match &item.kind {
+                CoreIrItemKind::Function(function) => {
+                    let parameters = function
+                        .parameters
+                        .iter()
+                        .map(|parameter| ScalarType::from_ir(&parameter.ty))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    self.signatures.insert(
+                        function.name.clone(),
+                        Signature {
+                            parameters,
+                            result: ScalarType::from_ir(&function.return_type)?,
+                        },
+                    );
+                }
+                CoreIrItemKind::Struct(value) => {
+                    self.structs
+                        .insert(value.name.clone(), struct_layout(value)?);
+                }
+                CoreIrItemKind::Enum(_) => {
+                    return Err(CoreCError::unsupported(
+                        "enum lowering is not implemented yet",
+                    ));
+                }
+                CoreIrItemKind::Const(_) => {
+                    return Err(CoreCError::unsupported(
+                        "constant lowering is not implemented yet",
+                    ));
+                }
             }
         }
         let entry = self
@@ -199,6 +219,11 @@ impl<'a> Emitter<'a> {
             }
             collect_array_type(&signature.result, &mut arrays);
         }
+        for layout in self.structs.values() {
+            for field in layout.fields.values() {
+                collect_array_type(field, &mut arrays);
+            }
+        }
         for item in &program.items {
             if let CoreIrItemKind::Function(function) = &item.kind {
                 collect_block_array_types(&function.body, &mut arrays)?;
@@ -220,18 +245,24 @@ impl<'a> Emitter<'a> {
         if !arrays.is_empty() {
             source.push('\n');
         }
+        for (name, layout) in &self.structs {
+            writeln!(source, "typedef struct argorix_type_{name} {{").unwrap();
+            for (field, ty) in &layout.fields {
+                writeln!(source, "    {} {field};", ty.c_name()).unwrap();
+            }
+            writeln!(source, "}} argorix_type_{name};\n").unwrap();
+        }
         for item in &program.items {
-            let CoreIrItemKind::Function(function) = &item.kind else {
-                unreachable!();
-            };
-            self.emit_prototype(function, &mut source)?;
+            if let CoreIrItemKind::Function(function) = &item.kind {
+                self.emit_prototype(function, &mut source)?;
+            }
         }
         source.push('\n');
         for item in &program.items {
-            let CoreIrItemKind::Function(function) = &item.kind else {
-                unreachable!();
-            };
-            FunctionEmitter::new(&self.signatures, function).emit(&mut source)?;
+            if let CoreIrItemKind::Function(function) = &item.kind {
+                FunctionEmitter::new(&self.signatures, &self.structs, function)
+                    .emit(&mut source)?;
+            }
         }
         self.emit_main(entry, &mut source)?;
         Ok(CoreCOutput {
@@ -284,7 +315,7 @@ impl<'a> Emitter<'a> {
                     "    (void)printf(\"ARGORIX_RESULT:%\" PRId64 \"\\n\", (int64_t)result);\n",
                 );
             }
-            ScalarType::Unit | ScalarType::Array { .. } => unreachable!(),
+            ScalarType::Unit | ScalarType::User(_) | ScalarType::Array { .. } => unreachable!(),
         }
         source.push_str("    return 0;\n}\n");
         Ok(())
@@ -293,13 +324,18 @@ impl<'a> Emitter<'a> {
 
 struct FunctionEmitter<'a> {
     signatures: &'a BTreeMap<String, Signature>,
+    structs: &'a BTreeMap<String, StructLayout>,
     function: &'a CoreIrFunction,
     locals: BTreeMap<String, ScalarType>,
     temporary: usize,
 }
 
 impl<'a> FunctionEmitter<'a> {
-    fn new(signatures: &'a BTreeMap<String, Signature>, function: &'a CoreIrFunction) -> Self {
+    fn new(
+        signatures: &'a BTreeMap<String, Signature>,
+        structs: &'a BTreeMap<String, StructLayout>,
+        function: &'a CoreIrFunction,
+    ) -> Self {
         let locals = function
             .parameters
             .iter()
@@ -312,6 +348,7 @@ impl<'a> FunctionEmitter<'a> {
             .collect();
         Self {
             signatures,
+            structs,
             function,
             locals,
             temporary: 0,
@@ -477,6 +514,37 @@ impl<'a> FunctionEmitter<'a> {
                 })?;
                 Ok((format!("argorix_v_{name}"), ty))
             }
+            CoreIrExpr::Aggregate { path, fields } => {
+                let name = single_path(path)?;
+                let ty = expected
+                    .cloned()
+                    .unwrap_or_else(|| ScalarType::User(name.into()));
+                if ty != ScalarType::User(name.into()) {
+                    return Err(CoreCError::unsupported(
+                        "aggregate path does not match its expected type",
+                    ));
+                }
+                let layout = self.structs.get(name).cloned().ok_or_else(|| {
+                    CoreCError::unsupported(format!("`{name}` is not a lowered struct"))
+                })?;
+                let temp = self.next_temp();
+                line(source, indent, &format!("{} {temp};", ty.c_name()));
+                for field in fields {
+                    let field_ty = layout.fields.get(&field.name).ok_or_else(|| {
+                        CoreCError::unsupported(format!(
+                            "unknown field `{}` on `{name}`",
+                            field.name
+                        ))
+                    })?;
+                    let value = self.emit_expr(&field.value, Some(field_ty), indent, source)?;
+                    line(
+                        source,
+                        indent,
+                        &format!("{temp}.{} = {};", field.name, value.0),
+                    );
+                }
+                Ok((temp, ty))
+            }
             CoreIrExpr::Array { values } => {
                 let ty = expected.cloned().ok_or_else(|| {
                     CoreCError::unsupported("array literal needs an expected array type")
@@ -524,6 +592,23 @@ impl<'a> FunctionEmitter<'a> {
                     indent,
                     source,
                 )
+            }
+            CoreIrExpr::Field { value, name } => {
+                let value = self.emit_expr(value, None, indent, source)?;
+                let ScalarType::User(type_name) = &value.1 else {
+                    return Err(CoreCError::unsupported(
+                        "field access currently requires a struct value",
+                    ));
+                };
+                let field_ty = self
+                    .structs
+                    .get(type_name)
+                    .and_then(|layout| layout.fields.get(name))
+                    .cloned()
+                    .ok_or_else(|| {
+                        CoreCError::unsupported(format!("unknown field `{name}` on `{type_name}`"))
+                    })?;
+                self.bind_temp(format!("{}.{}", value.0, name), field_ty, indent, source)
             }
             CoreIrExpr::Unary { operator, value } => {
                 let value = self.emit_expr(value, expected, indent, source)?;
@@ -725,6 +810,15 @@ fn collect_array_type(value: &ScalarType, arrays: &mut BTreeMap<String, ScalarTy
         collect_array_type(element, arrays);
         arrays.insert(value.c_name(), value.clone());
     }
+}
+
+fn struct_layout(value: &CoreIrStruct) -> Result<StructLayout, CoreCError> {
+    let fields = value
+        .fields
+        .iter()
+        .map(|field| Ok((field.name.clone(), ScalarType::from_ir(&field.ty)?)))
+        .collect::<Result<BTreeMap<_, _>, CoreCError>>()?;
+    Ok(StructLayout { fields })
 }
 
 fn collect_block_array_types(
