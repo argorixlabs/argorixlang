@@ -39,6 +39,11 @@ budget is explicit state, not a process-global hidden counter.
 
 The runtime may use the C standard library types and I/O needed by this
 profile. It must not link Rust libraries, load Cargo artifacts, or invoke Rust.
+Its canonical `argorix_handle` is 48 bytes and is checked against an explicit
+arena view before access: arena identity and epoch, slot and generation, type,
+range, permission, and reserved bytes all fail closed. C1 does not yet provide
+the collection allocator or public `Arena<T>`/`Buffer<T>` construction API;
+those belong to ESP-009.
 
 ## Evidence required to close ESP-008
 

@@ -44,6 +44,12 @@
       "file": "tasks/espada/ESP-007.md",
       "evidence": "bootstrap/ESP-007-validation.json",
       "scope": "IR Core 0.1 verificado en Rust stage0; no ejecucion, backend C, self-hosting ni independencia"
+    },
+    "ESP-008": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-008.md",
+      "evidence": "bootstrap/ESP-008-validation.json",
+      "scope": "Ejecucion Core mediante backend C transitorio y runtime C1; no self-hosting, backend nativo ni independencia completa"
     }
   },
   "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad.",

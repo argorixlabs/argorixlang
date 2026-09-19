@@ -3,7 +3,7 @@
 ## Current claim
 
 - Task: ESP-008 — transitional C backend and minimal runtime.
-- State: IN PROGRESS.
+- State: DONE.
 - Branch: `codex/c-backend-esp008`.
 - Base: `13069ff02b3dcd6583e1fd75f1ab5ab2165e8d46`.
 - Started: 2026-09-19.
@@ -83,5 +83,8 @@ the resulting programs do not link a Rust runtime.
   collection APIs belong to ESP-009. ESP-008 proves the minimal C1 runtime
   checks and representative executable Core profile, not the full standard
   library, self-hosting, or the future native backend.
-- Remaining before closure: CI for the new handle checks, full workspace
-  regression, versioned validation evidence, and shared closeout files.
+- 2026-09-19 closeout: all GitHub checks passed, including gcc, clang,
+  Rust-free Debian, Linux beta/stable, macOS, Windows, DCO, conformance, and
+  dependency scanning. Local formatting/Clippy passed and 418 workspace tests
+  passed with zero failures. Versioned evidence is in
+  `bootstrap/ESP-008-validation.json`; PR #23 is ready for review/merge.
