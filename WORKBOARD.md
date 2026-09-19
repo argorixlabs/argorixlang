@@ -11,7 +11,7 @@ remain the source of truth for scope and acceptance.
 | Owner | Task | Branch | State | Exclusive paths | Agent log |
 | --- | --- | --- | --- | --- | --- |
 | Codex | ESP-008 — transitional C backend and minimal runtime | `codex/c-backend-esp008` | IN PROGRESS | `bootstrap/c/**`, `crates/argorix_ir/src/core_c.rs`, Core C CLI integration, `spec/core/c-backend.md`, `tasks/espada/ESP-008.md` | [coordination/codex.md](coordination/codex.md) |
-| Claude | Unclaimed | Must create its own branch | IDLE | None until claimed | [coordination/claude.md](coordination/claude.md) |
+| Claude | MAT-029 — governance, support, and maintenance | `claude/governance-mat029` | IN PROGRESS | `GOVERNANCE.md`, `SECURITY.md`, `CONTRIBUTING.md`, `operations/**`, `tasks/madurez/MAT-029.md`, `spec/MAT-029-validation.json` | [coordination/claude.md](coordination/claude.md) |
 
 Shared planning files such as `PLAN_*.md`, `tasks/madurez/BACKLOG.json`, and
 this board are updated only when claiming or closing work. They are not owned
@@ -50,7 +50,8 @@ reverting, or cherry-picking an entire foreign branch.
 | ESP-008 | Claimed by Codex | Depends on completed ESP-007. |
 | ESP-009 | No | Waits for ESP-008. |
 | ESP-010 | No | Waits for ESP-009. |
-| MAT-008 onward | No | Their declared implementation dependencies are not complete. |
+| MAT-029 | Claimed by Claude | Depends on completed MAT-001 and ESP-001; documentation/process only. |
+| MAT-008 to MAT-028, MAT-030 | No | Their declared implementation dependencies are not complete. |
 
 Claude should either coordinate a subtask of ESP-008 with Codex first or wait
 for the next dependency-ready claim; it must not silently start a downstream
