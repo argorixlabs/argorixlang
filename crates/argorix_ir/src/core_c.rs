@@ -73,8 +73,11 @@ struct EnumLayout {
 enum ScalarType {
     Unit,
     Bool,
+    Bytes,
+    String,
     Integer(String),
     User(String),
+    Slice(Box<ScalarType>),
     Array {
         element: Box<ScalarType>,
         length: u64,
@@ -87,6 +90,8 @@ impl ScalarType {
             CoreIrType::Named { name } => match name.as_str() {
                 "unit" => Ok(Self::Unit),
                 "bool" => Ok(Self::Bool),
+                "bytes" => Ok(Self::Bytes),
+                "string" => Ok(Self::String),
                 "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" => {
                     Ok(Self::Integer(name.clone()))
                 }
@@ -100,6 +105,11 @@ impl ScalarType {
                 element: Box::new(Self::from_ir(element)?),
                 length: *length,
             }),
+            CoreIrType::Container {
+                name,
+                element,
+                array_length: None,
+            } if name == "Slice" => Ok(Self::Slice(Box::new(Self::from_ir(element)?))),
             CoreIrType::Container { .. } => Err(CoreCError::unsupported(format!(
                 "container type `{value:?}` is not lowered by this C profile"
             ))),
@@ -110,6 +120,8 @@ impl ScalarType {
         match self {
             Self::Unit => "void".into(),
             Self::Bool => "bool".into(),
+            Self::Bytes => "argorix_bytes".into(),
+            Self::String => "argorix_string".into(),
             Self::Integer(name) => match name.as_str() {
                 "u8" => "uint8_t".into(),
                 "u16" => "uint16_t".into(),
@@ -122,6 +134,7 @@ impl ScalarType {
                 _ => unreachable!("validated scalar integer"),
             },
             Self::User(name) => format!("argorix_type_{name}"),
+            Self::Slice(element) => format!("argorix_slice_{}", element.mangle()),
             Self::Array { element, length } => {
                 format!("argorix_array_{}_{}", element.mangle(), length)
             }
@@ -132,8 +145,11 @@ impl ScalarType {
         match self {
             Self::Unit => "unit".into(),
             Self::Bool => "bool".into(),
+            Self::Bytes => "bytes".into(),
+            Self::String => "string".into(),
             Self::Integer(name) => name.clone(),
             Self::User(name) => format!("type_{name}"),
+            Self::Slice(element) => format!("slice_{}", element.mangle()),
             Self::Array { element, length } => format!("array_{}_{}", element.mangle(), length),
         }
     }
@@ -253,17 +269,28 @@ impl<'a> Emitter<'a> {
             source.push('\n');
         }
         for ty in arrays.values() {
-            let ScalarType::Array { element, length } = ty else {
-                unreachable!();
-            };
-            writeln!(
-                source,
-                "typedef struct {{ {} data[{}]; }} {};",
-                element.c_name(),
-                length,
-                ty.c_name()
-            )
-            .unwrap();
+            match ty {
+                ScalarType::Array { element, length } => {
+                    writeln!(
+                        source,
+                        "typedef struct {{ {} data[{}]; }} {};",
+                        element.c_name(),
+                        length,
+                        ty.c_name()
+                    )
+                    .unwrap();
+                }
+                ScalarType::Slice(element) => {
+                    writeln!(
+                        source,
+                        "typedef struct {{ const {} *data; uint64_t length; }} {};",
+                        element.c_name(),
+                        ty.c_name()
+                    )
+                    .unwrap();
+                }
+                _ => unreachable!(),
+            }
         }
         if !arrays.is_empty() {
             source.push('\n');
@@ -360,7 +387,12 @@ impl<'a> Emitter<'a> {
                     "    (void)printf(\"ARGORIX_RESULT:%\" PRId64 \"\\n\", (int64_t)result);\n",
                 );
             }
-            ScalarType::Unit | ScalarType::User(_) | ScalarType::Array { .. } => unreachable!(),
+            ScalarType::Unit
+            | ScalarType::Bytes
+            | ScalarType::String
+            | ScalarType::User(_)
+            | ScalarType::Slice(_)
+            | ScalarType::Array { .. } => unreachable!(),
         }
         source.push_str("    return 0;\n}\n");
         Ok(())
@@ -686,12 +718,23 @@ impl<'a> FunctionEmitter<'a> {
             }
             CoreIrExpr::Index { value, index } => {
                 let value = self.emit_expr(value, None, indent, source)?;
-                let ScalarType::Array { element, length } = &value.1 else {
-                    return Err(CoreCError::unsupported(
-                        "indexing currently requires a fixed Array value",
-                    ));
+                let (element, length) = match &value.1 {
+                    ScalarType::Array { element, length } => {
+                        ((**element).clone(), format!("{}U", length))
+                    }
+                    ScalarType::Slice(element) => {
+                        ((**element).clone(), format!("{}.length", value.0))
+                    }
+                    ScalarType::Bytes => (
+                        ScalarType::Integer("u8".into()),
+                        format!("{}.length", value.0),
+                    ),
+                    _ => {
+                        return Err(CoreCError::unsupported(
+                            "indexing requires Array, Slice, or bytes",
+                        ));
+                    }
                 };
-                let element = (**element).clone();
                 let index = self.emit_expr(
                     index,
                     Some(&ScalarType::Integer("u64".into())),
@@ -700,7 +743,7 @@ impl<'a> FunctionEmitter<'a> {
                 )?;
                 self.bind_temp(
                     format!(
-                        "{}.data[argorix_bounds((uint64_t){}, {}U)]",
+                        "{}.data[argorix_bounds((uint64_t){}, {})]",
                         value.0, index.0, length
                     ),
                     element,
@@ -743,6 +786,51 @@ impl<'a> FunctionEmitter<'a> {
                 right,
             } => self.emit_binary(left, *operator, right, expected, indent, source),
             CoreIrExpr::Call { callee, arguments } => {
+                if let CoreIrExpr::Field { value, name } = callee.as_ref() {
+                    if !arguments.is_empty() {
+                        return Err(CoreCError::unsupported(format!(
+                            "intrinsic `{name}` does not accept arguments"
+                        )));
+                    }
+                    let receiver = self.emit_expr(value, None, indent, source)?;
+                    return match (name.as_str(), &receiver.1) {
+                        ("length", ScalarType::Array { length, .. }) => self.bind_temp(
+                            format!("{length}U"),
+                            ScalarType::Integer("u64".into()),
+                            indent,
+                            source,
+                        ),
+                        (
+                            "length",
+                            ScalarType::Slice(_) | ScalarType::Bytes | ScalarType::String,
+                        ) => self.bind_temp(
+                            format!("{}.length", receiver.0),
+                            ScalarType::Integer("u64".into()),
+                            indent,
+                            source,
+                        ),
+                        ("as_bytes", ScalarType::Array { element, length })
+                            if **element == ScalarType::Integer("u8".into()) =>
+                        {
+                            self.bind_temp(
+                                format!("(argorix_bytes){{{}.data, {}U}}", receiver.0, length),
+                                ScalarType::Bytes,
+                                indent,
+                                source,
+                            )
+                        }
+                        ("decode_utf8_or_trap", ScalarType::Bytes) => self.bind_temp(
+                            format!("argorix_decode_utf8({})", receiver.0),
+                            ScalarType::String,
+                            indent,
+                            source,
+                        ),
+                        _ => Err(CoreCError::unsupported(format!(
+                            "intrinsic `{name}` is not defined for {:?}",
+                            receiver.1
+                        ))),
+                    };
+                }
                 let CoreIrExpr::Path { segments } = callee.as_ref() else {
                     return Err(CoreCError::unsupported(
                         "scalar C profile supports direct function calls only",
@@ -1043,9 +1131,12 @@ fn line(source: &mut String, indent: usize, value: &str) {
 }
 
 fn collect_array_type(value: &ScalarType, arrays: &mut BTreeMap<String, ScalarType>) {
-    if let ScalarType::Array { element, .. } = value {
-        collect_array_type(element, arrays);
-        arrays.insert(value.c_name(), value.clone());
+    match value {
+        ScalarType::Array { element, .. } | ScalarType::Slice(element) => {
+            collect_array_type(element, arrays);
+            arrays.insert(value.c_name(), value.clone());
+        }
+        _ => {}
     }
 }
 

@@ -63,6 +63,14 @@ fn enums_lower_to_tagged_unions_and_exhaustive_match() {
 }
 
 #[test]
+fn byte_views_and_utf8_decode_use_runtime_checks() {
+    let source = emit("utf8_success.argx");
+    assert!(source.contains("argorix_bytes"));
+    assert!(source.contains("argorix_decode_utf8"));
+    assert!(source.contains(".length"));
+}
+
+#[test]
 fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
@@ -94,6 +102,8 @@ fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
         ),
         ("struct_success.argx", 0, "ARGORIX_RESULT:42", ""),
         ("enum_match_success.argx", 0, "ARGORIX_RESULT:42", ""),
+        ("utf8_success.argx", 0, "ARGORIX_RESULT:42", ""),
+        ("utf8_trap.argx", 70, "", "ARGORIX_TRAP:UTF8_INVALID"),
     ];
     let temporary = std::env::temp_dir().join(format!("argorix-core-c-{}", std::process::id()));
     fs::create_dir_all(&temporary).unwrap();

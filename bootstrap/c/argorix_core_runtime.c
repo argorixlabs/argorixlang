@@ -24,6 +24,57 @@ size_t argorix_bounds(uint64_t index, uint64_t length) {
     return (size_t)index;
 }
 
+static bool argorix_continuation(uint8_t value) {
+    return value >= 0x80U && value <= 0xBFU;
+}
+
+argorix_string argorix_decode_utf8(argorix_bytes value) {
+    uint64_t index = 0U;
+    while (index < value.length) {
+        uint8_t first = value.data[argorix_bounds(index, value.length)];
+        if (first <= 0x7FU) {
+            index += 1U;
+            continue;
+        }
+        if (first >= 0xC2U && first <= 0xDFU && index + 1U < value.length &&
+            argorix_continuation(value.data[index + 1U])) {
+            index += 2U;
+            continue;
+        }
+        if (index + 2U < value.length) {
+            uint8_t second = value.data[index + 1U];
+            uint8_t third = value.data[index + 2U];
+            bool valid_three =
+                ((first == 0xE0U && second >= 0xA0U && second <= 0xBFU) ||
+                 ((first >= 0xE1U && first <= 0xECU) && argorix_continuation(second)) ||
+                 (first == 0xEDU && second >= 0x80U && second <= 0x9FU) ||
+                 ((first >= 0xEEU && first <= 0xEFU) && argorix_continuation(second))) &&
+                argorix_continuation(third);
+            if (valid_three) {
+                index += 3U;
+                continue;
+            }
+        }
+        if (index + 3U < value.length) {
+            uint8_t second = value.data[index + 1U];
+            uint8_t third = value.data[index + 2U];
+            uint8_t fourth = value.data[index + 3U];
+            bool valid_four =
+                ((first == 0xF0U && second >= 0x90U && second <= 0xBFU) ||
+                 ((first >= 0xF1U && first <= 0xF3U) && argorix_continuation(second)) ||
+                 (first == 0xF4U && second >= 0x80U && second <= 0x8FU)) &&
+                argorix_continuation(third) && argorix_continuation(fourth);
+            if (valid_four) {
+                index += 4U;
+                continue;
+            }
+        }
+        argorix_trap("UTF8_INVALID");
+    }
+    argorix_string result = {value.data, value.length};
+    return result;
+}
+
 #define DEFINE_UNSIGNED_CHECKED(width, type, maximum)                         \
     type argorix_u##width##_add(type left, type right) {                      \
         if (right > (type)((maximum) - left)) {                               \

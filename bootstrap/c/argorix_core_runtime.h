@@ -12,9 +12,20 @@ typedef struct argorix_budget {
     uint64_t remaining_steps;
 } argorix_budget;
 
+typedef struct argorix_bytes {
+    const uint8_t *data;
+    uint64_t length;
+} argorix_bytes;
+
+typedef struct argorix_string {
+    const uint8_t *data;
+    uint64_t length;
+} argorix_string;
+
 _Noreturn void argorix_trap(const char *code);
 void argorix_step(argorix_budget *budget);
 size_t argorix_bounds(uint64_t index, uint64_t length);
+argorix_string argorix_decode_utf8(argorix_bytes value);
 
 uint8_t argorix_u8_add(uint8_t left, uint8_t right);
 uint8_t argorix_u8_sub(uint8_t left, uint8_t right);

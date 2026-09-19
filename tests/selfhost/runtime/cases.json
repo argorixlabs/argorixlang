@@ -50,6 +50,20 @@
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:42",
       "expected_stderr": ""
+    },
+    {
+      "id": "utf8_success",
+      "file": "utf8_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "utf8_trap",
+      "file": "utf8_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:UTF8_INVALID"
     }
   ]
 }
