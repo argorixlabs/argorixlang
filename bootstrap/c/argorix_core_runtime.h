@@ -22,10 +22,50 @@ typedef struct argorix_string {
     uint64_t length;
 } argorix_string;
 
+enum {
+    ARGORIX_PERMISSION_READ = 1,
+    ARGORIX_PERMISSION_READ_WRITE = 2
+};
+
+typedef struct argorix_handle {
+    uint64_t arena_id;
+    uint64_t arena_epoch;
+    uint32_t slot;
+    uint32_t allocation_generation;
+    uint64_t offset;
+    uint64_t length;
+    uint32_t type_id;
+    uint8_t permission;
+    uint8_t reserved[3];
+} argorix_handle;
+
+_Static_assert(sizeof(argorix_handle) == 48U, "CoreHandleV1 must remain 48 bytes");
+
+typedef struct argorix_slot {
+    uint32_t generation;
+    uint32_t type_id;
+    uint64_t length;
+    bool active;
+} argorix_slot;
+
+typedef struct argorix_arena_view {
+    uint64_t arena_id;
+    uint64_t epoch;
+    const argorix_slot *slots;
+    uint64_t slot_count;
+    bool active;
+} argorix_arena_view;
+
 _Noreturn void argorix_trap(const char *code);
 void argorix_step(argorix_budget *budget);
 size_t argorix_bounds(uint64_t index, uint64_t length);
 argorix_string argorix_decode_utf8(argorix_bytes value);
+void argorix_validate_handle(
+    const argorix_arena_view *arena,
+    argorix_handle handle,
+    uint32_t expected_type_id,
+    bool require_write
+);
 
 uint8_t argorix_u8_add(uint8_t left, uint8_t right);
 uint8_t argorix_u8_sub(uint8_t left, uint8_t right);

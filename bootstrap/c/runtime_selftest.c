@@ -29,5 +29,23 @@ int main(int argc, char **argv) {
         argorix_step(&budget);
         return 3;
     }
+    if (strcmp(argv[1], "handle-ok") == 0 ||
+        strcmp(argv[1], "handle-generation") == 0 ||
+        strcmp(argv[1], "arena-released") == 0) {
+        argorix_slot slots[1] = {{7U, 42U, 8U, true}};
+        argorix_arena_view arena = {11U, 3U, slots, 1U, true};
+        argorix_handle handle = {
+            11U, 3U, 0U, 7U, 2U, 4U, 42U,
+            ARGORIX_PERMISSION_READ_WRITE, {0U, 0U, 0U}
+        };
+        if (strcmp(argv[1], "handle-generation") == 0) {
+            handle.allocation_generation = 6U;
+        } else if (strcmp(argv[1], "arena-released") == 0) {
+            arena.active = false;
+        }
+        argorix_validate_handle(&arena, handle, 42U, true);
+        (void)printf("ARGORIX_RESULT:HANDLE_OK\n");
+        return 0;
+    }
     return 2;
 }

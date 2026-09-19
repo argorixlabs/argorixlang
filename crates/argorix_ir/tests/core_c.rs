@@ -134,3 +134,45 @@ fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
     }
     fs::remove_dir_all(temporary).unwrap();
 }
+
+#[test]
+fn c1_runtime_validates_handle_generation_and_arena_lifetime_when_cc_is_available() {
+    let compiler = ["cc", "clang", "gcc"]
+        .into_iter()
+        .find(|name| Command::new(name).arg("--version").output().is_ok());
+    let Some(compiler) = compiler else {
+        eprintln!("C compiler unavailable; runtime validation is covered by C-enabled CI");
+        return;
+    };
+    let temporary =
+        std::env::temp_dir().join(format!("argorix-core-c-runtime-{}", std::process::id()));
+    fs::create_dir_all(&temporary).unwrap();
+    let executable = temporary.join("runtime-selftest");
+    let compile = Command::new(compiler)
+        .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic"])
+        .arg("-I")
+        .arg(root().join("bootstrap/c"))
+        .arg(root().join("bootstrap/c/argorix_core_runtime.c"))
+        .arg(root().join("bootstrap/c/runtime_selftest.c"))
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        compile.status.success(),
+        "C1 runtime compile failed: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let cases = [
+        ("handle-ok", 0, "ARGORIX_RESULT:HANDLE_OK", ""),
+        ("handle-generation", 70, "", "ARGORIX_TRAP:USE_AFTER_FREE"),
+        ("arena-released", 70, "", "ARGORIX_TRAP:ARENA_RELEASED"),
+    ];
+    for (case, exit, stdout, stderr) in cases {
+        let run = Command::new(&executable).arg(case).output().unwrap();
+        assert_eq!(run.status.code(), Some(exit), "wrong exit for {case}");
+        assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), stdout);
+        assert_eq!(String::from_utf8_lossy(&run.stderr).trim(), stderr);
+    }
+    fs::remove_dir_all(temporary).unwrap();
+}

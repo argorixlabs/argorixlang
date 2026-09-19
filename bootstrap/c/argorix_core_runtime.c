@@ -78,6 +78,41 @@ argorix_string argorix_decode_utf8(argorix_bytes value) {
     return result;
 }
 
+void argorix_validate_handle(
+    const argorix_arena_view *arena,
+    argorix_handle handle,
+    uint32_t expected_type_id,
+    bool require_write
+) {
+    if (arena == NULL || handle.arena_id == 0U || handle.type_id == 0U ||
+        handle.reserved[0] != 0U || handle.reserved[1] != 0U ||
+        handle.reserved[2] != 0U ||
+        (handle.permission != ARGORIX_PERMISSION_READ &&
+         handle.permission != ARGORIX_PERMISSION_READ_WRITE)) {
+        argorix_trap("INVALID_HANDLE");
+    }
+    if (!arena->active || handle.arena_id != arena->arena_id ||
+        handle.arena_epoch != arena->epoch) {
+        argorix_trap("ARENA_RELEASED");
+    }
+    if (handle.slot >= arena->slot_count || arena->slots == NULL) {
+        argorix_trap("INVALID_HANDLE");
+    }
+    const argorix_slot *slot = &arena->slots[handle.slot];
+    if (!slot->active || handle.allocation_generation != slot->generation) {
+        argorix_trap("USE_AFTER_FREE");
+    }
+    if (handle.type_id != expected_type_id || handle.type_id != slot->type_id) {
+        argorix_trap("TYPE_MISMATCH");
+    }
+    if (handle.offset > slot->length || handle.length > slot->length - handle.offset) {
+        argorix_trap("INDEX_OUT_OF_BOUNDS");
+    }
+    if (require_write && handle.permission != ARGORIX_PERMISSION_READ_WRITE) {
+        argorix_trap("PERMISSION_DENIED");
+    }
+}
+
 #define DEFINE_UNSIGNED_CHECKED(width, type, maximum)                         \
     type argorix_u##width##_add(type left, type right) {                      \
         if (right > (type)((maximum) - left)) {                               \

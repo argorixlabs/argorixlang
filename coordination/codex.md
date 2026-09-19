@@ -69,3 +69,19 @@ the resulting programs do not link a Rust runtime.
 - Remaining before closure: aggregates/enums/arrays/slices, bounds/handle
   checks, resource-profile plumbing, conformance report, dependency inspection,
   and full workspace regression.
+- 2026-09-19: completed fixed-array/bounds, struct, tagged-enum/match,
+  bytes/UTF-8, and explicit step-limit execution cases. The manifest now
+  contains ten Core fixtures with exact stdout, stderr, and exit-code oracles.
+- Claude's ESP-008.R landed on `main` through PR #25 and was merged into this
+  branch. Its gcc, clang, and Rust-free Debian execution jobs passed all ten
+  cases, including ELF dependency/process-spawn inspection.
+- Added the canonical 48-byte C1 handle representation and fail-closed runtime
+  validation for arena identity/lifetime, slot, generation, type, range, and
+  write permission. Native runtime self-tests cover a valid handle, stale
+  generation (`USE_AFTER_FREE`), and released arena (`ARENA_RELEASED`).
+- The C emitter still does not construct `Arena<T>` or `Buffer<T>` values; those
+  collection APIs belong to ESP-009. ESP-008 proves the minimal C1 runtime
+  checks and representative executable Core profile, not the full standard
+  library, self-hosting, or the future native backend.
+- Remaining before closure: CI for the new handle checks, full workspace
+  regression, versioned validation evidence, and shared closeout files.
