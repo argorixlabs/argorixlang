@@ -71,6 +71,20 @@
       "expected_exit": 70,
       "expected_stdout": "",
       "expected_stderr": "ARGORIX_TRAP:STEP_LIMIT"
+    },
+    {
+      "id": "buffer_success",
+      "file": "buffer_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "buffer_limit_trap",
+      "file": "buffer_limit_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:RESOURCE_LIMIT"
     }
   ]
 }

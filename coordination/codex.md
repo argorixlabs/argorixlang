@@ -89,3 +89,16 @@ the resulting programs do not link a Rust runtime.
   dependency scanning. Local formatting/Clippy passed and 418 workspace tests
   passed with zero failures. Versioned evidence is in
   `bootstrap/ESP-008-validation.json`; PR #23 is ready for review/merge.
+
+## ESP-009 progress
+
+- 2026-09-19: froze the S1 API/boundary in `spec/core/stdlib.md`, including
+  deterministic ordering, resource ceilings, specialized bootstrap types, and
+  the typed compiler-host path boundary.
+- Implemented the first executable vertical: bounded `Buffer<T>` C1 storage
+  with checked geometric growth, atomic push, typed indexing, stable
+  `INTEGER_OVERFLOW`/`RESOURCE_LIMIT`/`OUT_OF_MEMORY` traps, and C backend
+  lowering for `Buffer::new`, `push`, `length`, and index.
+- Added source-level success and resource-limit fixtures to the native Core C
+  manifest. Rust emission tests pass locally; native gcc/clang execution is
+  pending CI on PR #26.

@@ -22,6 +22,14 @@ typedef struct argorix_string {
     uint64_t length;
 } argorix_string;
 
+typedef struct argorix_buffer {
+    uint8_t *data;
+    uint64_t length;
+    uint64_t capacity;
+    uint64_t element_size;
+    uint64_t byte_limit;
+} argorix_buffer;
+
 enum {
     ARGORIX_PERMISSION_READ = 1,
     ARGORIX_PERMISSION_READ_WRITE = 2
@@ -60,6 +68,9 @@ _Noreturn void argorix_trap(const char *code);
 void argorix_step(argorix_budget *budget);
 size_t argorix_bounds(uint64_t index, uint64_t length);
 argorix_string argorix_decode_utf8(argorix_bytes value);
+argorix_buffer argorix_buffer_new(uint64_t element_size, uint64_t byte_limit);
+void argorix_buffer_push(argorix_buffer *buffer, const void *value);
+void argorix_buffer_drop(argorix_buffer *buffer);
 void argorix_validate_handle(
     const argorix_arena_view *arena,
     argorix_handle handle,

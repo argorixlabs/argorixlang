@@ -71,6 +71,15 @@ fn byte_views_and_utf8_decode_use_runtime_checks() {
 }
 
 #[test]
+fn buffers_use_bounded_c1_storage_and_checked_indexes() {
+    let source = emit("buffer_success.argx");
+    assert!(source.contains("argorix_buffer_new"));
+    assert!(source.contains("argorix_buffer_push"));
+    assert!(source.contains("ARGORIX_BUFFER_LIMIT_BYTES"));
+    assert!(source.contains("argorix_bounds"));
+}
+
+#[test]
 fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
@@ -105,6 +114,13 @@ fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
         ("utf8_success.argx", 0, "ARGORIX_RESULT:42", ""),
         ("utf8_trap.argx", 70, "", "ARGORIX_TRAP:UTF8_INVALID"),
         ("step_limit_trap.argx", 70, "", "ARGORIX_TRAP:STEP_LIMIT"),
+        ("buffer_success.argx", 0, "ARGORIX_RESULT:42", ""),
+        (
+            "buffer_limit_trap.argx",
+            70,
+            "",
+            "ARGORIX_TRAP:RESOURCE_LIMIT",
+        ),
     ];
     let temporary = std::env::temp_dir().join(format!("argorix-core-c-{}", std::process::id()));
     fs::create_dir_all(&temporary).unwrap();

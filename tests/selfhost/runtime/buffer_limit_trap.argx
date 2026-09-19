@@ -1,0 +1,12 @@
+core 0.1;
+module runtime.buffer_limit_trap;
+
+pub fn argorix_main() -> u64 {
+    let mut values: Buffer<u64> = Buffer::new();
+    let mut count: u64 = 0u64;
+    while true {
+        values.push(count);
+        count += 1u64;
+    }
+    count
+}

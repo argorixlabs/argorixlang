@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 _Noreturn void argorix_trap(const char *code) {
     (void)fprintf(stderr, "ARGORIX_TRAP:%s\n", code);
@@ -76,6 +77,54 @@ argorix_string argorix_decode_utf8(argorix_bytes value) {
     }
     argorix_string result = {value.data, value.length};
     return result;
+}
+
+argorix_buffer argorix_buffer_new(uint64_t element_size, uint64_t byte_limit) {
+    if (element_size == 0U || element_size > (uint64_t)SIZE_MAX) {
+        argorix_trap("INVALID_MEMORY");
+    }
+    argorix_buffer result = {NULL, 0U, 0U, element_size, byte_limit};
+    return result;
+}
+
+void argorix_buffer_push(argorix_buffer *buffer, const void *value) {
+    if (buffer == NULL || value == NULL || buffer->element_size == 0U ||
+        buffer->element_size > (uint64_t)SIZE_MAX) {
+        argorix_trap("INVALID_MEMORY");
+    }
+    if (buffer->length == UINT64_MAX) {
+        argorix_trap("INTEGER_OVERFLOW");
+    }
+    if (buffer->length == buffer->capacity) {
+        uint64_t next_capacity = buffer->capacity == 0U ? 4U : buffer->capacity * 2U;
+        if (next_capacity < buffer->capacity ||
+            next_capacity > UINT64_MAX / buffer->element_size) {
+            argorix_trap("INTEGER_OVERFLOW");
+        }
+        uint64_t next_bytes = next_capacity * buffer->element_size;
+        if (next_bytes > buffer->byte_limit || next_bytes > (uint64_t)SIZE_MAX) {
+            argorix_trap("RESOURCE_LIMIT");
+        }
+        void *next = realloc(buffer->data, (size_t)next_bytes);
+        if (next == NULL) {
+            argorix_trap("OUT_OF_MEMORY");
+        }
+        buffer->data = next;
+        buffer->capacity = next_capacity;
+    }
+    size_t offset = (size_t)(buffer->length * buffer->element_size);
+    (void)memcpy(&buffer->data[offset], value, (size_t)buffer->element_size);
+    buffer->length += 1U;
+}
+
+void argorix_buffer_drop(argorix_buffer *buffer) {
+    if (buffer == NULL) {
+        return;
+    }
+    free(buffer->data);
+    buffer->data = NULL;
+    buffer->length = 0U;
+    buffer->capacity = 0U;
 }
 
 void argorix_validate_handle(
