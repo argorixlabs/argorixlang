@@ -1,0 +1,16 @@
+core 0.1;
+module runtime.enum_match_success;
+
+enum Choice { Value { value: i32, }, Empty, }
+
+fn select(choice: Choice) -> i32 {
+    match choice {
+        Choice::Value { value } => value,
+        Choice::Empty => 0i32,
+    }
+}
+
+pub fn argorix_main() -> i32 {
+    let choice: Choice = Choice::Value { value: 42i32 };
+    select(choice)
+}

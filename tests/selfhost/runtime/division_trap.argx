@@ -1,0 +1,8 @@
+core 0.1;
+module runtime.division_trap;
+
+pub fn argorix_main() -> i32 {
+    let numerator: i32 = 7i32;
+    let denominator: i32 = 0i32;
+    numerator / denominator
+}

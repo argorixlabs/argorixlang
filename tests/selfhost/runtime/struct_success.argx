@@ -1,0 +1,9 @@
+core 0.1;
+module runtime.struct_success;
+
+struct Pair { first: i32, second: i32, }
+
+pub fn argorix_main() -> i32 {
+    let pair: Pair = Pair { first: 19i32, second: 23i32 };
+    pair.first + pair.second
+}

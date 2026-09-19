@@ -1,0 +1,8 @@
+core 0.1;
+module runtime.overflow_trap;
+
+pub fn argorix_main() -> u8 {
+    let maximum: u8 = 255u8;
+    let one: u8 = 1u8;
+    maximum + one
+}
