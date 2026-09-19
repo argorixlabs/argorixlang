@@ -1,0 +1,130 @@
+name: Core C execution
+
+# ESP-008.R: execute Argorix Core runtime cases through the transitional C
+# backend and inspect the executables for Rust dependencies. See
+# conformance/core_c/README.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: core-c-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  runner-unit:
+    name: Core C runner unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Unit tests (no C compiler needed)
+        run: python3 -m unittest discover -s conformance/core_c -p "test_*.py" -v
+
+  emit:
+    name: Emit Core C bundle
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.detect.outputs.available }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build argorixc
+        run: cargo build -p argorixc --locked
+      - name: Detect ESP-008 emitter and runtime cases
+        id: detect
+        # Execution is skipped only while BOTH the emitter and the case manifest
+        # are absent (main before ESP-008 lands). One without the other fails.
+        run: |
+          cases=tests/selfhost/runtime/cases.json
+          if ./target/debug/argorixc --help | grep -q 'core-emit-c'; then emitter=yes; else emitter=no; fi
+          if [ -f "$cases" ]; then present=yes; else present=no; fi
+          echo "emitter=$emitter cases=$present"
+          if [ "$emitter" = yes ] && [ "$present" = yes ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [ "$emitter" = no ] && [ "$present" = no ]; then
+            echo "::notice title=Core C execution not run::This revision has neither 'argorixc core-emit-c' nor $cases. No execution evidence was produced."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Inconsistent ESP-008 state: emitter=$emitter, cases=$present"
+            exit 1
+          fi
+      - name: Emit C for every case
+        if: steps.detect.outputs.available == 'true'
+        run: python3 conformance/core_c/run.py emit --argorixc target/debug/argorixc --bundle target/core-c/bundle
+      - uses: actions/upload-artifact@v7
+        if: steps.detect.outputs.available == 'true'
+        with:
+          name: core-c-bundle
+          path: target/core-c/bundle/
+          if-no-files-found: error
+
+  execute:
+    name: Execute (${{ matrix.compiler }})
+    needs: emit
+    if: needs.emit.outputs.available == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: core-c-bundle
+          path: target/core-c/bundle
+      - name: Compile, execute, and inspect
+        run: >-
+          python3 conformance/core_c/run.py run
+          --bundle target/core-c/bundle
+          --cc ${{ matrix.compiler }}
+          --report target/core-c/report-${{ matrix.compiler }}.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: core-c-report-${{ matrix.compiler }}
+          path: target/core-c/report-${{ matrix.compiler }}.json
+          if-no-files-found: ignore
+
+  execute-rust-free:
+    name: Execute on a host without Rust
+    needs: emit
+    if: needs.emit.outputs.available == 'true'
+    runs-on: ubuntu-latest
+    # GitHub's ubuntu images ship rustup; a clean container does not.
+    container: debian:stable-slim
+    steps:
+      - name: Install C toolchain only
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gcc libc6-dev binutils python3 git ca-certificates
+      - uses: actions/checkout@v7
+      - name: Trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/download-artifact@v8
+        with:
+          name: core-c-bundle
+          path: target/core-c/bundle
+      - name: Compile, execute, and inspect (fails if rustc/cargo/rustup exist)
+        run: >-
+          python3 conformance/core_c/run.py run
+          --bundle target/core-c/bundle
+          --cc gcc
+          --require-rust-free-host
+          --report target/core-c/report-rust-free.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: core-c-report-rust-free
+          path: target/core-c/report-rust-free.json
+          if-no-files-found: ignore
