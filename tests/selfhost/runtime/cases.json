@@ -64,6 +64,13 @@
       "expected_exit": 70,
       "expected_stdout": "",
       "expected_stderr": "ARGORIX_TRAP:UTF8_INVALID"
+    },
+    {
+      "id": "step_limit_trap",
+      "file": "step_limit_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:STEP_LIMIT"
     }
   ]
 }

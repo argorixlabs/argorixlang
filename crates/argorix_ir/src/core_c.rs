@@ -232,7 +232,10 @@ impl<'a> Emitter<'a> {
              #include <inttypes.h>\n\
              #include <stdbool.h>\n\
              #include <stdint.h>\n\
-             #include <stdio.h>\n\n",
+             #include <stdio.h>\n\
+             #ifndef ARGORIX_STEP_LIMIT\n\
+             #define ARGORIX_STEP_LIMIT 1000000U\n\
+             #endif\n\n",
         );
         let mut arrays = BTreeMap::new();
         for signature in self.signatures.values() {
@@ -364,7 +367,7 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_main(&self, entry: &Signature, source: &mut String) -> Result<(), CoreCError> {
-        source.push_str("int main(void) {\n    argorix_budget budget = {1000000U};\n");
+        source.push_str("int main(void) {\n    argorix_budget budget = {ARGORIX_STEP_LIMIT};\n");
         writeln!(
             source,
             "    {} result = argorix_fn_argorix_main(&budget);",
@@ -1008,6 +1011,14 @@ impl<'a> FunctionEmitter<'a> {
                 line(source, indent, &format!("{} {temp};", ty.c_name()));
                 self.emit_block_assignment(body, &temp, &ty, indent, source)?;
                 Ok((temp, ty))
+            }
+            CoreIrExpr::Loop { body } => {
+                line(source, indent, "while (true) {");
+                line(source, indent + 1, "argorix_step(budget);");
+                self.emit_block(body, indent + 1, None, source)?;
+                line(source, indent, "}");
+                let ty = expected.cloned().unwrap_or(ScalarType::Unit);
+                Ok(("0".into(), ty))
             }
             CoreIrExpr::Unit => Ok(("0".into(), ScalarType::Unit)),
             _ => Err(CoreCError::unsupported(format!(

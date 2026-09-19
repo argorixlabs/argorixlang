@@ -104,6 +104,7 @@ fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
         ("enum_match_success.argx", 0, "ARGORIX_RESULT:42", ""),
         ("utf8_success.argx", 0, "ARGORIX_RESULT:42", ""),
         ("utf8_trap.argx", 70, "", "ARGORIX_TRAP:UTF8_INVALID"),
+        ("step_limit_trap.argx", 70, "", "ARGORIX_TRAP:STEP_LIMIT"),
     ];
     let temporary = std::env::temp_dir().join(format!("argorix-core-c-{}", std::process::id()));
     fs::create_dir_all(&temporary).unwrap();

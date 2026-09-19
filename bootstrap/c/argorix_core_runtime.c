@@ -29,6 +29,9 @@ static bool argorix_continuation(uint8_t value) {
 }
 
 argorix_string argorix_decode_utf8(argorix_bytes value) {
+    if (value.length > 0U && value.data == NULL) {
+        argorix_trap("INVALID_MEMORY");
+    }
     uint64_t index = 0U;
     while (index < value.length) {
         uint8_t first = value.data[argorix_bounds(index, value.length)];
@@ -36,12 +39,12 @@ argorix_string argorix_decode_utf8(argorix_bytes value) {
             index += 1U;
             continue;
         }
-        if (first >= 0xC2U && first <= 0xDFU && index + 1U < value.length &&
+        if (first >= 0xC2U && first <= 0xDFU && value.length - index >= 2U &&
             argorix_continuation(value.data[index + 1U])) {
             index += 2U;
             continue;
         }
-        if (index + 2U < value.length) {
+        if (value.length - index >= 3U) {
             uint8_t second = value.data[index + 1U];
             uint8_t third = value.data[index + 2U];
             bool valid_three =
@@ -55,7 +58,7 @@ argorix_string argorix_decode_utf8(argorix_bytes value) {
                 continue;
             }
         }
-        if (index + 3U < value.length) {
+        if (value.length - index >= 4U) {
             uint8_t second = value.data[index + 1U];
             uint8_t third = value.data[index + 2U];
             uint8_t fourth = value.data[index + 3U];
