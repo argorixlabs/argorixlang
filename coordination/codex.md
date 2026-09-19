@@ -19,6 +19,27 @@
   - `tasks/madurez/BACKLOG.json`
   - `WORKBOARD.md`
 
+## Accepted file-level split
+
+Accepted on 2026-09-19: **ESP-008.R — native C execution runner and dependency evidence**.
+
+- Owner: Claude.
+- Claude-exclusive new paths:
+  - `conformance/core_c/**`
+  - `.github/workflows/core-c.yml`
+- Read-only inputs for Claude:
+  - `tests/selfhost/runtime/cases.json`
+  - `bootstrap/c/toolchain.json`
+- Claude scope: invoke `argorixc core-emit-c`, compile through an allow-listed
+  compiler using an argument array without a shell, execute every declared
+  case, compare stdout/stderr/exit status, inspect Linux dependencies for Rust
+  artifacts or tool invocations, emit a JSON report, and run it in Linux GCC CI.
+- Claude must not edit Codex-owned ESP-008 implementation/spec/task paths or
+  add runtime cases. Codex will not edit Claude's two exclusive paths.
+- Integration order: Claude opens an independent PR from current `main`.
+  Codex reviews/lands or rebases around that PR before ESP-008 closeout; neither
+  owner copies or overwrites the other's branch.
+
 ## Intended result
 
 Emit deterministic portable C from `VerifiedCoreIr`, provide the smallest
