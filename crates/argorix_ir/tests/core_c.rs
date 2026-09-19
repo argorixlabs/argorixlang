@@ -54,6 +54,15 @@ fn structs_lower_to_typed_c_values() {
 }
 
 #[test]
+fn enums_lower_to_tagged_unions_and_exhaustive_match() {
+    let source = emit("enum_match_success.argx");
+    assert!(source.contains("typedef enum argorix_tag_Choice"));
+    assert!(source.contains("union"));
+    assert!(source.contains("argorix_tag_Choice_Value"));
+    assert!(source.contains("NON_EXHAUSTIVE_MATCH"));
+}
+
+#[test]
 fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
@@ -84,6 +93,7 @@ fn emitted_programs_compile_and_observe_results_when_cc_is_available() {
             "ARGORIX_TRAP:INDEX_OUT_OF_BOUNDS",
         ),
         ("struct_success.argx", 0, "ARGORIX_RESULT:42", ""),
+        ("enum_match_success.argx", 0, "ARGORIX_RESULT:42", ""),
     ];
     let temporary = std::env::temp_dir().join(format!("argorix-core-c-{}", std::process::id()));
     fs::create_dir_all(&temporary).unwrap();

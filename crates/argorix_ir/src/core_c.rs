@@ -4,8 +4,9 @@
 //! proof wrapper created by the Core IR verifier.
 
 use crate::core::{
-    CoreIrAssignOp, CoreIrBackend, CoreIrBinaryOp, CoreIrBlock, CoreIrExpr, CoreIrFunction,
-    CoreIrItemKind, CoreIrStatement, CoreIrStruct, CoreIrType, CoreIrUnaryOp, VerifiedCoreIr,
+    CoreIrAssignOp, CoreIrBackend, CoreIrBinaryOp, CoreIrBlock, CoreIrEnum, CoreIrExpr,
+    CoreIrFunction, CoreIrItemKind, CoreIrPattern, CoreIrStatement, CoreIrStruct, CoreIrType,
+    CoreIrUnaryOp, VerifiedCoreIr,
 };
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -61,6 +62,11 @@ struct Signature {
 #[derive(Debug, Clone)]
 struct StructLayout {
     fields: BTreeMap<String, ScalarType>,
+}
+
+#[derive(Debug, Clone)]
+struct EnumLayout {
+    variants: BTreeMap<String, BTreeMap<String, ScalarType>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +152,7 @@ struct Emitter<'a> {
     verified: VerifiedCoreIr<'a>,
     signatures: BTreeMap<String, Signature>,
     structs: BTreeMap<String, StructLayout>,
+    enums: BTreeMap<String, EnumLayout>,
 }
 
 impl<'a> Emitter<'a> {
@@ -154,6 +161,7 @@ impl<'a> Emitter<'a> {
             verified,
             signatures: BTreeMap::new(),
             structs: BTreeMap::new(),
+            enums: BTreeMap::new(),
         }
     }
 
@@ -179,10 +187,8 @@ impl<'a> Emitter<'a> {
                     self.structs
                         .insert(value.name.clone(), struct_layout(value)?);
                 }
-                CoreIrItemKind::Enum(_) => {
-                    return Err(CoreCError::unsupported(
-                        "enum lowering is not implemented yet",
-                    ));
+                CoreIrItemKind::Enum(value) => {
+                    self.enums.insert(value.name.clone(), enum_layout(value)?);
                 }
                 CoreIrItemKind::Const(_) => {
                     return Err(CoreCError::unsupported(
@@ -224,10 +230,27 @@ impl<'a> Emitter<'a> {
                 collect_array_type(field, &mut arrays);
             }
         }
+        for layout in self.enums.values() {
+            for fields in layout.variants.values() {
+                for field in fields.values() {
+                    collect_array_type(field, &mut arrays);
+                }
+            }
+        }
         for item in &program.items {
             if let CoreIrItemKind::Function(function) = &item.kind {
                 collect_block_array_types(&function.body, &mut arrays)?;
             }
+        }
+        for name in self.structs.keys().chain(self.enums.keys()) {
+            writeln!(
+                source,
+                "typedef struct argorix_type_{name} argorix_type_{name};"
+            )
+            .unwrap();
+        }
+        if !self.structs.is_empty() || !self.enums.is_empty() {
+            source.push('\n');
         }
         for ty in arrays.values() {
             let ScalarType::Array { element, length } = ty else {
@@ -246,11 +269,33 @@ impl<'a> Emitter<'a> {
             source.push('\n');
         }
         for (name, layout) in &self.structs {
-            writeln!(source, "typedef struct argorix_type_{name} {{").unwrap();
+            writeln!(source, "struct argorix_type_{name} {{").unwrap();
             for (field, ty) in &layout.fields {
                 writeln!(source, "    {} {field};", ty.c_name()).unwrap();
             }
-            writeln!(source, "}} argorix_type_{name};\n").unwrap();
+            source.push_str("};\n\n");
+        }
+        for (name, layout) in &self.enums {
+            writeln!(source, "typedef enum argorix_tag_{name} {{").unwrap();
+            for variant in layout.variants.keys() {
+                writeln!(source, "    argorix_tag_{name}_{variant},").unwrap();
+            }
+            writeln!(source, "}} argorix_tag_{name};").unwrap();
+            writeln!(source, "struct argorix_type_{name} {{").unwrap();
+            writeln!(source, "    argorix_tag_{name} tag;").unwrap();
+            source.push_str("    union {\n");
+            for (variant, fields) in &layout.variants {
+                source.push_str("        struct {\n");
+                if fields.is_empty() {
+                    source.push_str("            uint8_t _unit;\n");
+                } else {
+                    for (field, ty) in fields {
+                        writeln!(source, "            {} {field};", ty.c_name()).unwrap();
+                    }
+                }
+                writeln!(source, "        }} {variant};").unwrap();
+            }
+            source.push_str("    } data;\n};\n\n");
         }
         for item in &program.items {
             if let CoreIrItemKind::Function(function) = &item.kind {
@@ -260,7 +305,7 @@ impl<'a> Emitter<'a> {
         source.push('\n');
         for item in &program.items {
             if let CoreIrItemKind::Function(function) = &item.kind {
-                FunctionEmitter::new(&self.signatures, &self.structs, function)
+                FunctionEmitter::new(&self.signatures, &self.structs, &self.enums, function)
                     .emit(&mut source)?;
             }
         }
@@ -325,6 +370,7 @@ impl<'a> Emitter<'a> {
 struct FunctionEmitter<'a> {
     signatures: &'a BTreeMap<String, Signature>,
     structs: &'a BTreeMap<String, StructLayout>,
+    enums: &'a BTreeMap<String, EnumLayout>,
     function: &'a CoreIrFunction,
     locals: BTreeMap<String, ScalarType>,
     temporary: usize,
@@ -334,6 +380,7 @@ impl<'a> FunctionEmitter<'a> {
     fn new(
         signatures: &'a BTreeMap<String, Signature>,
         structs: &'a BTreeMap<String, StructLayout>,
+        enums: &'a BTreeMap<String, EnumLayout>,
         function: &'a CoreIrFunction,
     ) -> Self {
         let locals = function
@@ -349,6 +396,7 @@ impl<'a> FunctionEmitter<'a> {
         Self {
             signatures,
             structs,
+            enums,
             function,
             locals,
             temporary: 0,
@@ -508,6 +556,36 @@ impl<'a> FunctionEmitter<'a> {
             }
             CoreIrExpr::Bool { value } => Ok((value.to_string(), ScalarType::Bool)),
             CoreIrExpr::Path { segments } => {
+                if let [name, variant] = segments.as_slice() {
+                    let fields = self
+                        .enums
+                        .get(name)
+                        .and_then(|layout| layout.variants.get(variant))
+                        .ok_or_else(|| {
+                            CoreCError::unsupported(format!(
+                                "unknown enum variant `{name}::{variant}`"
+                            ))
+                        })?;
+                    if !fields.is_empty() {
+                        return Err(CoreCError::unsupported(format!(
+                            "variant `{name}::{variant}` requires fields"
+                        )));
+                    }
+                    let ty = ScalarType::User(name.clone());
+                    let temp = self.next_temp();
+                    line(source, indent, &format!("{} {temp};", ty.c_name()));
+                    line(
+                        source,
+                        indent,
+                        &format!("{temp}.tag = argorix_tag_{name}_{variant};"),
+                    );
+                    line(
+                        source,
+                        indent,
+                        &format!("{temp}.data.{variant}._unit = 0U;"),
+                    );
+                    return Ok((temp, ty));
+                }
                 let name = single_path(segments)?;
                 let ty = self.locals.get(name).cloned().ok_or_else(|| {
                     CoreCError::unsupported(format!("path `{name}` is not a scalar local"))
@@ -515,7 +593,16 @@ impl<'a> FunctionEmitter<'a> {
                 Ok((format!("argorix_v_{name}"), ty))
             }
             CoreIrExpr::Aggregate { path, fields } => {
-                let name = single_path(path)?;
+                let (name, variant) = match path.as_slice() {
+                    [name] => (name.as_str(), None),
+                    [name, variant] => (name.as_str(), Some(variant.as_str())),
+                    _ => {
+                        return Err(CoreCError::unsupported(format!(
+                            "aggregate path `{}` is not supported",
+                            path.join("::")
+                        )));
+                    }
+                };
                 let ty = expected
                     .cloned()
                     .unwrap_or_else(|| ScalarType::User(name.into()));
@@ -524,24 +611,52 @@ impl<'a> FunctionEmitter<'a> {
                         "aggregate path does not match its expected type",
                     ));
                 }
-                let layout = self.structs.get(name).cloned().ok_or_else(|| {
-                    CoreCError::unsupported(format!("`{name}` is not a lowered struct"))
-                })?;
                 let temp = self.next_temp();
                 line(source, indent, &format!("{} {temp};", ty.c_name()));
+                let layout = if let Some(variant) = variant {
+                    let layout = self
+                        .enums
+                        .get(name)
+                        .and_then(|layout| layout.variants.get(variant))
+                        .cloned()
+                        .ok_or_else(|| {
+                            CoreCError::unsupported(format!(
+                                "unknown enum variant `{name}::{variant}`"
+                            ))
+                        })?;
+                    line(
+                        source,
+                        indent,
+                        &format!("{temp}.tag = argorix_tag_{name}_{variant};"),
+                    );
+                    if layout.is_empty() {
+                        line(
+                            source,
+                            indent,
+                            &format!("{temp}.data.{variant}._unit = 0U;"),
+                        );
+                    }
+                    layout
+                } else {
+                    self.structs
+                        .get(name)
+                        .map(|layout| layout.fields.clone())
+                        .ok_or_else(|| {
+                            CoreCError::unsupported(format!("`{name}` is not a lowered struct"))
+                        })?
+                };
                 for field in fields {
-                    let field_ty = layout.fields.get(&field.name).ok_or_else(|| {
+                    let field_ty = layout.get(&field.name).ok_or_else(|| {
                         CoreCError::unsupported(format!(
                             "unknown field `{}` on `{name}`",
                             field.name
                         ))
                     })?;
                     let value = self.emit_expr(&field.value, Some(field_ty), indent, source)?;
-                    line(
-                        source,
-                        indent,
-                        &format!("{temp}.{} = {};", field.name, value.0),
-                    );
+                    let access = variant
+                        .map(|variant| format!("data.{variant}.{}", field.name))
+                        .unwrap_or_else(|| field.name.clone());
+                    line(source, indent, &format!("{temp}.{access} = {};", value.0));
                 }
                 Ok((temp, ty))
             }
@@ -651,6 +766,128 @@ impl<'a> FunctionEmitter<'a> {
                         .collect::<String>()
                 );
                 self.bind_temp(call, signature.result, indent, source)
+            }
+            CoreIrExpr::Match { value, arms } => {
+                let result_ty = expected.cloned().ok_or_else(|| {
+                    CoreCError::unsupported("match expression needs an expected result type")
+                })?;
+                let scrutinee = self.emit_expr(value, None, indent, source)?;
+                let ScalarType::User(enum_name) = &scrutinee.1 else {
+                    return Err(CoreCError::unsupported(
+                        "this C profile currently matches enum values only",
+                    ));
+                };
+                let enum_name = enum_name.clone();
+                let layout = self.enums.get(&enum_name).cloned().ok_or_else(|| {
+                    CoreCError::unsupported(format!("`{enum_name}` is not a lowered enum"))
+                })?;
+                let result = self.next_temp();
+                let matched = self.next_temp();
+                line(source, indent, &format!("{} {result};", result_ty.c_name()));
+                line(source, indent, &format!("bool {matched} = false;"));
+                for arm in arms {
+                    if arm.guard.is_some() {
+                        return Err(CoreCError::unsupported(
+                            "match guards are not implemented in the C profile yet",
+                        ));
+                    }
+                    let (condition, variant, fields) = match &arm.pattern {
+                        CoreIrPattern::Variant { path, fields } => {
+                            let [pattern_enum, variant] = path.as_slice() else {
+                                return Err(CoreCError::unsupported(
+                                    "variant match path must contain enum and variant",
+                                ));
+                            };
+                            if pattern_enum != &enum_name {
+                                return Err(CoreCError::unsupported(
+                                    "variant pattern enum does not match scrutinee",
+                                ));
+                            }
+                            if !layout.variants.contains_key(variant) {
+                                return Err(CoreCError::unsupported(format!(
+                                    "unknown variant `{enum_name}::{variant}`"
+                                )));
+                            }
+                            (
+                                format!(
+                                    "{}.tag == argorix_tag_{}_{}",
+                                    scrutinee.0, enum_name, variant
+                                ),
+                                Some(variant.as_str()),
+                                fields.as_slice(),
+                            )
+                        }
+                        CoreIrPattern::Wildcard => ("true".into(), None, &[][..]),
+                        _ => {
+                            return Err(CoreCError::unsupported(
+                                "this C profile supports variant and wildcard match arms",
+                            ));
+                        }
+                    };
+                    line(
+                        source,
+                        indent,
+                        &format!("if (!{matched} && ({condition})) {{"),
+                    );
+                    let mut previous = Vec::new();
+                    if let Some(variant) = variant {
+                        let variant_layout = &layout.variants[variant];
+                        for field in fields {
+                            let field_ty =
+                                variant_layout.get(&field.name).cloned().ok_or_else(|| {
+                                    CoreCError::unsupported(format!(
+                                        "unknown pattern field `{}`",
+                                        field.name
+                                    ))
+                                })?;
+                            let binding = match field.nested.as_deref() {
+                                None => Some(field.name.as_str()),
+                                Some(CoreIrPattern::Binding { name }) => Some(name.as_str()),
+                                Some(CoreIrPattern::Wildcard) => None,
+                                Some(_) => {
+                                    return Err(CoreCError::unsupported(
+                                        "nested non-binding patterns are not implemented yet",
+                                    ));
+                                }
+                            };
+                            if let Some(binding) = binding {
+                                previous.push((
+                                    binding.to_string(),
+                                    self.locals.insert(binding.to_string(), field_ty.clone()),
+                                ));
+                                line(
+                                    source,
+                                    indent + 1,
+                                    &format!(
+                                        "{} argorix_v_{} = {}.data.{}.{};",
+                                        field_ty.c_name(),
+                                        binding,
+                                        scrutinee.0,
+                                        variant,
+                                        field.name
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    let value = self.emit_expr(&arm.value, Some(&result_ty), indent + 1, source)?;
+                    line(source, indent + 1, &format!("{result} = {};", value.0));
+                    line(source, indent + 1, &format!("{matched} = true;"));
+                    line(source, indent, "}");
+                    for (name, old) in previous {
+                        if let Some(old) = old {
+                            self.locals.insert(name, old);
+                        } else {
+                            self.locals.remove(&name);
+                        }
+                    }
+                }
+                line(
+                    source,
+                    indent,
+                    &format!("if (!{matched}) {{ argorix_trap(\"NON_EXHAUSTIVE_MATCH\"); }}"),
+                );
+                Ok((result, result_ty))
             }
             CoreIrExpr::If {
                 condition,
@@ -819,6 +1056,22 @@ fn struct_layout(value: &CoreIrStruct) -> Result<StructLayout, CoreCError> {
         .map(|field| Ok((field.name.clone(), ScalarType::from_ir(&field.ty)?)))
         .collect::<Result<BTreeMap<_, _>, CoreCError>>()?;
     Ok(StructLayout { fields })
+}
+
+fn enum_layout(value: &CoreIrEnum) -> Result<EnumLayout, CoreCError> {
+    let variants = value
+        .variants
+        .iter()
+        .map(|variant| {
+            let fields = variant
+                .fields
+                .iter()
+                .map(|field| Ok((field.name.clone(), ScalarType::from_ir(&field.ty)?)))
+                .collect::<Result<BTreeMap<_, _>, CoreCError>>()?;
+            Ok((variant.name.clone(), fields))
+        })
+        .collect::<Result<BTreeMap<_, _>, CoreCError>>()?;
+    Ok(EnumLayout { variants })
 }
 
 fn collect_block_array_types(
