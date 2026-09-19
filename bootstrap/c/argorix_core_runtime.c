@@ -167,8 +167,9 @@ argorix_arena argorix_arena_new(
     uint64_t byte_limit,
     uint32_t slot_limit
 ) {
+    uint64_t slot_bytes = (uint64_t)slot_limit * (uint64_t)sizeof(argorix_runtime_slot);
     if (element_size == 0U || element_size > (uint64_t)SIZE_MAX || type_id == 0U ||
-        slot_limit == 0U || (uint64_t)slot_limit > (uint64_t)SIZE_MAX / sizeof(argorix_runtime_slot)) {
+        slot_limit == 0U || slot_bytes > (uint64_t)SIZE_MAX) {
         argorix_trap("INVALID_MEMORY");
     }
     size_t registry_index = ARGORIX_ARENA_REGISTRY_LIMIT;
