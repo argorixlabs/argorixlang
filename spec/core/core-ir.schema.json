@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://argorix.dev/spec/core/core-ir-0.1.schema.json",
+  "title": "Argorix Core IR 0.1",
+  "type": "object",
+  "required": ["ir_version", "core_version", "module", "items"],
+  "properties": {
+    "ir_version": { "const": "0.1" },
+    "core_version": { "const": "0.1" },
+    "module": { "type": "string", "minLength": 1 },
+    "imports": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/import" },
+      "default": []
+    },
+    "locked_modules": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "effect_policy": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/effect" },
+      "uniqueItems": true,
+      "default": []
+    },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/item" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "import": {
+      "type": "object",
+      "required": ["path", "alias"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "alias": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "effect": {
+      "oneOf": [
+        { "type": "object", "required": ["effect"], "properties": { "effect": { "enum": ["memory_read", "memory_write", "allocate", "trap"] } }, "additionalProperties": false },
+        { "type": "object", "required": ["effect", "detail"], "properties": { "effect": { "const": "host" }, "detail": { "type": "string", "minLength": 1 } }, "additionalProperties": false }
+      ]
+    },
+    "item": {
+      "type": "object",
+      "required": ["public", "item"],
+      "properties": {
+        "public": { "type": "boolean" },
+        "item": { "enum": ["function", "struct", "enum", "const"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 > Plan rector: [Plan maestro de ArgorixLang](PLAN_MAESTRO_ARGORIXLANG.md). Este documento desarrolla la entrega R1 de independencia; no acredita por sí solo la madurez final. Aplicar las dependencias cruzadas del maestro. ESP-026 queda sustituida por fichas MAT independientes.
 
-Estado: EN EJECUCIÓN. ESP-001–006 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI y frontend Rust stage0; IR y runtime Core siguen pendientes.
+Estado: EN EJECUCIÓN. ESP-001–007 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0 e IR Core verificado; ejecución y runtime Core siguen pendientes.
 Fecha: 2026-09-17. Base inspeccionada: `5d73d66`, workspace `1.0.0`.
 Este plan reemplazó la prioridad del backlog AL: self-hosting deja de estar diferido. El plan maestro vigente añade funcionalidad completa y producción como entregas obligatorias posteriores.
 
@@ -84,7 +84,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-006 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI y frontend Core stage0, con evidencia en `tasks/espada/`; ESP-007 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-007 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0 e IR verificado, con evidencia en `tasks/espada/`; ESP-008 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 | ID | Entregable | Depende de | Estado |
 | --- | --- | --- | --- |
@@ -94,7 +94,7 @@ ESP-001 a ESP-006 están HECHAS como inventario, baseline histórico, arquitectu
 | ESP-004 | Especificación ejecutable de Argorix Core | 002, 003 | HECHA |
 | ESP-005 | Memoria, efectos y ABI del host | 004 | HECHA |
 | ESP-006 | Frontend Core temporal en stage0 | 004, 005 | HECHA |
-| ESP-007 | IR ejecutable y verificador Core | 006 | PENDIENTE |
+| ESP-007 | IR ejecutable y verificador Core | 006 | HECHA |
 | ESP-008 | Backend C temporal y runtime mínimo | 007 | PENDIENTE |
 | ESP-009 | Biblioteca estándar mínima | 008 | PENDIENTE |
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | PENDIENTE |
@@ -193,6 +193,8 @@ ESP-001 a ESP-006 están HECHAS como inventario, baseline histórico, arquitectu
 **Pasos:** definir funciones, bloques, operaciones tipadas, ramas, llamadas, memoria y efectos; elegir forma de IR explícitamente; implementar lowering y verificación; versionar serialización y mantener distinto el bytecode de agentes cuando corresponda; probar archivos malformados directamente.
 **Entregables:** IR documentado, verificador y snapshots semánticos.
 **Aceptación:** rechaza tipos inconsistentes, referencias inexistentes, control de flujo inválido y efectos no autorizados. Backend nunca recibe IR no verificado. Roundtrip conserva semántica, no solo sintaxis JSON.
+
+**Ejecución:** [ficha ESP-007](tasks/espada/ESP-007.md), [contrato IR](spec/core/ir.md), esquema JSON, lowering/verificador `argorix_ir::core`, comandos `core-emit-ir`/`core-verify-ir` y [validación](bootstrap/ESP-007-validation.json). Los 4 módulos válidos verifican y conservan huella; 5/5 mutaciones malformadas se rechazan. Sigue siendo Rust stage0 y no ejecuta Core; ESP-008 es la siguiente puerta.
 
 ### ESP-008 — Backend C temporal y runtime mínimo
 

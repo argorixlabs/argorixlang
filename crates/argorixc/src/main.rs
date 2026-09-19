@@ -1,13 +1,14 @@
 use anyhow::{bail, Context, Result};
 use argorix_bytecode::{lower_ir, source_digest, verify_bytecode, BytecodeProgram, Instruction};
-use argorix_ir::IrProgram;
+use argorix_ir::{lower_core_program, verify_core_ir, CoreIrProgram, IrProgram};
 use argorix_module::{check_package, package_ir, resolve_package, ModuleGraph, ResolvedPackage};
 use argorix_parser::{
     core::{parse_core_source, CoreDiagnostic, CoreItemKind, CoreProgram},
     parse_source, Diagnostic, Program,
 };
 use argorix_semantics::{
-    check_core_program, check_program_with_options, CheckOptions, CoreCheckOptions,
+    check_core_program, check_program_with_options, verify_core_program, CheckOptions,
+    CoreCheckOptions,
 };
 use clap::{Parser, Subcommand};
 use std::collections::BTreeSet;
@@ -33,6 +34,10 @@ enum Command {
     Check { file: PathBuf },
     /// Validate an explicitly versioned Argorix Core 0.1 source file (stage0).
     CoreCheck { file: PathBuf },
+    /// Lower checked Argorix Core 0.1 source into versioned Core IR JSON.
+    CoreEmitIr { file: PathBuf },
+    /// Verify serialized Argorix Core IR JSON.
+    CoreVerifyIr { file: PathBuf },
     /// Compile source into Argorix IR JSON.
     EmitIr { file: PathBuf },
     /// Print protocol communication graphs.
@@ -99,7 +104,37 @@ fn run() -> Result<()> {
             println!("Types/constants: {types}");
             println!("Functions: {functions}");
             println!("Semantic checks: passed");
-            println!("Execution: unavailable until ESP-007/008");
+            println!("Core IR: available through core-emit-ir");
+            println!("Execution: unavailable until ESP-008");
+        }
+        Command::CoreEmitIr { file } => {
+            let compiled = compile_core(&file)?;
+            let verified = verify_core_program(
+                &compiled.program,
+                &CoreCheckOptions {
+                    available_modules: compiled.available_modules,
+                },
+            )
+            .map_err(|diagnostics| {
+                core_diagnostics_error(&diagnostics, &file.display().to_string(), &compiled.source)
+            })?;
+            let ir = lower_core_program(verified);
+            verify_core_ir(&ir).map_err(core_ir_errors)?;
+            println!("{}", serde_json::to_string_pretty(&ir)?);
+        }
+        Command::CoreVerifyIr { file } => {
+            let source = fs::read_to_string(&file)
+                .with_context(|| format!("failed to read `{}`", file.display()))?;
+            let ir: CoreIrProgram = serde_json::from_str(&source)
+                .with_context(|| format!("invalid Argorix Core IR JSON in `{}`", file.display()))?;
+            let verified = verify_core_ir(&ir).map_err(core_ir_errors)?;
+            println!("Argorix Core IR verifier v{}\n", ir.ir_version);
+            println!("File: {}", file.display());
+            println!("Status: OK\n");
+            println!("Module: {}", ir.module);
+            println!("Items: {}", ir.items.len());
+            println!("Effects: {}", ir.effect_policy.len());
+            println!("Semantic fingerprint: {}", verified.semantic_fingerprint());
         }
         Command::EmitIr { file } => {
             let compiled = compile(&file, options)?;
@@ -286,6 +321,8 @@ fn compile(path: &Path, options: CheckOptions) -> Result<CompiledSource> {
 
 struct CheckedCoreSource {
     program: CoreProgram,
+    source: String,
+    available_modules: BTreeSet<String>,
 }
 
 fn compile_core(path: &Path) -> Result<CheckedCoreSource> {
@@ -318,9 +355,29 @@ fn compile_core(path: &Path) -> Result<CheckedCoreSource> {
             }
         }
     }
-    check_core_program(&program, &CoreCheckOptions { available_modules })
-        .map_err(|diagnostics| core_diagnostics_error(&diagnostics, &file, &source))?;
-    Ok(CheckedCoreSource { program })
+    check_core_program(
+        &program,
+        &CoreCheckOptions {
+            available_modules: available_modules.clone(),
+        },
+    )
+    .map_err(|diagnostics| core_diagnostics_error(&diagnostics, &file, &source))?;
+    Ok(CheckedCoreSource {
+        program,
+        source,
+        available_modules,
+    })
+}
+
+fn core_ir_errors(errors: Vec<argorix_ir::CoreIrDiagnostic>) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{}",
+        errors
+            .into_iter()
+            .map(|error| format!("{}: {}", error.code, error.message))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
 }
 
 fn diagnostics_error(diagnostics: &[Diagnostic], file: &str, source: &str) -> anyhow::Error {
@@ -408,6 +465,21 @@ mod tests {
         ])
         .unwrap();
         assert!(matches!(cli.command, Command::CoreCheck { .. }));
+    }
+
+    #[test]
+    fn core_ir_commands_are_explicitly_isolated() {
+        let emit = Cli::try_parse_from([
+            "argorixc",
+            "core-emit-ir",
+            "tests/selfhost/spec/valid/lexer.argx",
+        ])
+        .unwrap();
+        assert!(matches!(emit.command, Command::CoreEmitIr { .. }));
+
+        let verify =
+            Cli::try_parse_from(["argorixc", "core-verify-ir", "lexer.coreir.json"]).unwrap();
+        assert!(matches!(verify.command, Command::CoreVerifyIr { .. }));
     }
 
     #[test]
