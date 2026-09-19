@@ -128,7 +128,10 @@ name = "argorix_ir"
 version = "1.0.0"
 dependencies = [
  "argorix_parser",
+ "argorix_semantics",
  "serde",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

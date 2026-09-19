@@ -12,6 +12,21 @@ pub struct CoreCheckOptions {
     pub available_modules: BTreeSet<String>,
 }
 
+/// Proof object produced only after the complete Core semantic checker passes.
+///
+/// Stage0 lowering accepts this wrapper instead of a raw AST so future Core
+/// backends cannot accidentally consume unchecked source.
+#[derive(Debug, Clone, Copy)]
+pub struct VerifiedCoreProgram<'a> {
+    program: &'a CoreProgram,
+}
+
+impl<'a> VerifiedCoreProgram<'a> {
+    pub fn program(self) -> &'a CoreProgram {
+        self.program
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Ty {
     Unit,
@@ -98,6 +113,13 @@ pub fn check_core_program(
     program: &CoreProgram,
     options: &CoreCheckOptions,
 ) -> Result<(), Vec<CoreDiagnostic>> {
+    verify_core_program(program, options).map(|_| ())
+}
+
+pub fn verify_core_program<'a>(
+    program: &'a CoreProgram,
+    options: &CoreCheckOptions,
+) -> Result<VerifiedCoreProgram<'a>, Vec<CoreDiagnostic>> {
     let mut checker = Checker::new(program, options);
     checker.collect_declarations();
     checker.check_imports();
@@ -105,7 +127,7 @@ pub fn check_core_program(
     checker.check_constants();
     checker.check_functions();
     if checker.diagnostics.is_empty() {
-        Ok(())
+        Ok(VerifiedCoreProgram { program })
     } else {
         Err(checker.diagnostics)
     }
