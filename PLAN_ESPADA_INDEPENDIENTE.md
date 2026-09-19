@@ -2,7 +2,7 @@
 
 > Plan rector: [Plan maestro de ArgorixLang](PLAN_MAESTRO_ARGORIXLANG.md). Este documento desarrolla la entrega R1 de independencia; no acredita por sí solo la madurez final. Aplicar las dependencias cruzadas del maestro. ESP-026 queda sustituida por fichas MAT independientes.
 
-Estado: EN EJECUCIÓN. ESP-001–007 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0 e IR Core verificado; ejecución y runtime Core siguen pendientes.
+Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. Self-hosting e independencia completa siguen pendientes.
 Fecha: 2026-09-17. Base inspeccionada: `5d73d66`, workspace `1.0.0`.
 Este plan reemplazó la prioridad del backlog AL: self-hosting deja de estar diferido. El plan maestro vigente añade funcionalidad completa y producción como entregas obligatorias posteriores.
 
@@ -84,7 +84,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-007 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0 e IR verificado, con evidencia en `tasks/espada/`; ESP-008 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`; ESP-009 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 | ID | Entregable | Depende de | Estado |
 | --- | --- | --- | --- |
@@ -95,7 +95,7 @@ ESP-001 a ESP-007 están HECHAS como inventario, baseline histórico, arquitectu
 | ESP-005 | Memoria, efectos y ABI del host | 004 | HECHA |
 | ESP-006 | Frontend Core temporal en stage0 | 004, 005 | HECHA |
 | ESP-007 | IR ejecutable y verificador Core | 006 | HECHA |
-| ESP-008 | Backend C temporal y runtime mínimo | 007 | PENDIENTE |
+| ESP-008 | Backend C temporal y runtime mínimo | 007 | HECHA |
 | ESP-009 | Biblioteca estándar mínima | 008 | PENDIENTE |
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | PENDIENTE |
 | ESP-011 | Parser y AST en Argorix | 010 | PENDIENTE |
@@ -203,6 +203,8 @@ ESP-001 a ESP-007 están HECHAS como inventario, baseline histórico, arquitectu
 **Pasos:** mapear IR a C con aritmética, evaluación y memoria explícitas; no depender de overflow firmado ni orden indefinido de C; implementar ABI mínima; compilar con toolchain C declarada no Rust; impedir invocaciones de shell construidas con texto del programa.
 **Entregables:** programas Core ejecutables, backend transitorio y manifiesto de dependencias enlazadas.
 **Aceptación:** corpus Core produce resultados esperados, incluidos fallos; ejecutables no enlazan runtime Rust ni invocan Rust. Esta tarea prueba ejecución independiente, no self-hosting ni backend nativo propio.
+
+**Ejecución:** [ficha ESP-008](tasks/espada/ESP-008.md), backend `argorix_ir::CoreCBackend`, runtime C1 en `bootstrap/c/`, 10 fixtures ejecutables, runner nativo en `conformance/core_c/` y [validación](bootstrap/ESP-008-validation.json). gcc, clang y un host Debian sin herramientas Rust ejecutaron 10/10 casos; inspección ELF no encontró dependencias Rust. El emisor sigue siendo Rust stage0 y C sigue siendo transitorio: no acredita self-hosting, backend nativo ni independencia completa.
 
 ### ESP-009 — Biblioteca estándar mínima
 

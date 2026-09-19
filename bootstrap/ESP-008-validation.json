@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "task": "ESP-008",
+  "baseline_commit": "13069ff02b3dcd6583e1fd75f1ab5ab2165e8d46",
+  "implementation_head": "f5e27440cb5e793ed2d7840c24b6c35c247b4390",
+  "ci_merge_commit": "67cb7821bbff0139d3df942657fbb61cff800469",
+  "scope": "Transitional Rust stage0 emission of verified Core 0.1 IR to C11 plus the minimal C1 runtime",
+  "runtime_cases": {
+    "manifest_sha256": "8018d16bddb40782a636199ea9fcf402075005e924e4283c33be08a4eed23cda",
+    "declared": 10,
+    "gcc_passed": 10,
+    "clang_passed": 10,
+    "rust_free_host_passed": 10,
+    "deterministic_emission": true,
+    "expected_results_and_traps_matched": true
+  },
+  "c1_handle_checks": {
+    "canonical_size_bytes": 48,
+    "valid_handle_passed": true,
+    "stale_generation_trap": "USE_AFTER_FREE",
+    "released_arena_trap": "ARENA_RELEASED",
+    "validated_fields": [
+      "arena identity",
+      "arena epoch",
+      "slot",
+      "allocation generation",
+      "type",
+      "range",
+      "permission",
+      "reserved bytes"
+    ]
+  },
+  "execution_evidence": {
+    "github_actions_run": "https://github.com/argorixlabs/argorixlang/actions/runs/35464061063",
+    "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "clang": "passed in the same GitHub Actions run",
+    "rust_free_gcc": "gcc (Debian 14.2.0-19) 14.2.0",
+    "rust_free_tools": {
+      "rustc": null,
+      "cargo": null,
+      "rustup": null
+    },
+    "linked_libraries": [
+      "libc.so.6"
+    ],
+    "dependency_violations": 0,
+    "negative_controls_detected": 4,
+    "compiler_invocation_uses_argument_arrays": true,
+    "shell_invocation_paths": 0
+  },
+  "regression": {
+    "local_workspace_tests_passed": 418,
+    "local_workspace_tests_failed": 0,
+    "format_passed": true,
+    "clippy_warnings": 0,
+    "github_required_checks_passed": true,
+    "github_actions_ci_run": "https://github.com/argorixlabs/argorixlang/actions/runs/35464061102"
+  },
+  "input_sha256": {
+    "core_c_emitter": "d63f254c8387ebfd16f3dd535c4f27948e6950de9339cd1a92d554aa87324275",
+    "argorixc_cli": "1fc48652d9c8267e52cc55924da2a7961ac42f7246967b20e82612970e7b4fea",
+    "c_runtime": "990eb0fdc2d033e85ed1a11ac182d1e2017595b3bf7f9e92d013cb1f6b1d026d",
+    "c_runtime_header": "5b62d5b553636d810102d96ab0b044473f5a5de6139122fa4aa6a1ee08cdbefd",
+    "runner": "234be4193ea0e58779b602a6b9607435189fef8489174d32ea5e627b2e43ca8d"
+  },
+  "overall_pass": true,
+  "not_proven": [
+    "a compiler written in ArgorixLang",
+    "self-hosting or stage2/stage3 reproducibility",
+    "a native backend that does not emit C",
+    "a complete standard library or Arena/Buffer allocator",
+    "independence of the complete toolchain from Rust",
+    "production security or performance"
+  ]
+}

@@ -1,0 +1,16 @@
+core 0.1;
+module runtime.scalar_success;
+
+fn fibonacci(value: u32) -> u32 {
+    if value < 2u32 { value } else { fibonacci(value - 1u32) + fibonacci(value - 2u32) }
+}
+
+pub fn argorix_main() -> u32 {
+    let mut total: u32 = 0u32;
+    let mut index: u32 = 0u32;
+    while index < 6u32 {
+        total += fibonacci(index);
+        index += 1u32;
+    }
+    if total == 12u32 { 42u32 } else { 0u32 }
+}

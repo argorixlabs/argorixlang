@@ -1,0 +1,9 @@
+core 0.1;
+module runtime.utf8_success;
+
+pub fn argorix_main() -> u64 {
+    let fixed: Array<u8, 3> = [65u8, 66u8, 67u8];
+    let raw: bytes = fixed.as_bytes();
+    let text: string = raw.decode_utf8_or_trap();
+    text.length() + 39u64
+}

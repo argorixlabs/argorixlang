@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "core_version": "0.1",
+  "cases": [
+    {
+      "id": "scalar_success",
+      "file": "scalar_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "overflow_trap",
+      "file": "overflow_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:INTEGER_OVERFLOW"
+    },
+    {
+      "id": "division_trap",
+      "file": "division_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:DIVISION_BY_ZERO"
+    },
+    {
+      "id": "array_success",
+      "file": "array_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "bounds_trap",
+      "file": "bounds_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:INDEX_OUT_OF_BOUNDS"
+    },
+    {
+      "id": "struct_success",
+      "file": "struct_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "enum_match_success",
+      "file": "enum_match_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "utf8_success",
+      "file": "utf8_success.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "utf8_trap",
+      "file": "utf8_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:UTF8_INVALID"
+    },
+    {
+      "id": "step_limit_trap",
+      "file": "step_limit_trap.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:STEP_LIMIT"
+    }
+  ]
+}
