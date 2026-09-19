@@ -38,7 +38,7 @@ jobs:
           args: -pdf -file-line-error -halt-on-error -interaction=nonstopmode
 
       - name: Upload compiled PDF
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agent-passport-ieee-paper
           path: paper/agent-passport-ieee/main.pdf
