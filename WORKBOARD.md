@@ -10,7 +10,7 @@ remain the source of truth for scope and acceptance.
 
 | Owner | Task | Branch | State | Exclusive paths | Agent log |
 | --- | --- | --- | --- | --- | --- |
-| Codex | ESP-008 — transitional C backend and minimal runtime | `codex/c-backend-esp008` | DONE | `bootstrap/c/**`, `crates/argorix_ir/src/core_c.rs`, Core C CLI integration, `spec/core/c-backend.md`, `tasks/espada/ESP-008.md` | [coordination/codex.md](coordination/codex.md) |
+| Codex | ESP-009 — minimal standard library | `codex/stdlib-esp009` | IN PROGRESS | `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`, `tasks/espada/ESP-009.md`; required Buffer/Arena/host-ABI plumbing coordinated through `bootstrap/c/**` and Core stage0 modules | [coordination/codex.md](coordination/codex.md) |
 | Claude | ESP-008.R — native C execution runner and dependency evidence (split accepted by Codex) | `claude/core-c-runner` | DONE | `conformance/core_c/**`, `.github/workflows/core-c.yml` | [coordination/claude.md](coordination/claude.md) |
 
 Shared planning files such as `PLAN_*.md`, `tasks/madurez/BACKLOG.json`, and
@@ -48,10 +48,10 @@ reverting, or cherry-picking an entire foreign branch.
 | Task | Ready now | Notes |
 | --- | --- | --- |
 | ESP-008 | Complete | Evidence in `bootstrap/ESP-008-validation.json`. |
-| ESP-009 | Yes | ESP-008 is complete; may now be claimed. |
+| ESP-009 | Claimed by Codex | ESP-008 is complete. |
 | ESP-010 | No | Waits for ESP-009. |
 | MAT-008 onward | No | Their declared implementation dependencies are not complete. |
 
-Claude should either coordinate a subtask of ESP-008 with Codex first or wait
-for the next dependency-ready claim; it must not silently start a downstream
-task whose gate is still open.
+Claude should coordinate a file-level subtask of ESP-009 with Codex first or
+wait for the next dependency-ready claim; it must not silently start a
+downstream task whose gate is still open.

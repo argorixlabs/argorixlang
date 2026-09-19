@@ -2,17 +2,18 @@
 
 ## Current claim
 
-- Task: ESP-008 — transitional C backend and minimal runtime.
-- State: DONE.
-- Branch: `codex/c-backend-esp008`.
-- Base: `13069ff02b3dcd6583e1fd75f1ab5ab2165e8d46`.
+- Task: ESP-009 — minimal standard library.
+- State: IN PROGRESS.
+- Branch: `codex/stdlib-esp009`.
+- Base: `4b0705a7fc162ceb57eaf604890eb16b98fb4a0c`.
 - Started: 2026-09-19.
 - Exclusive paths:
-  - `bootstrap/c/**`
-  - `crates/argorix_ir/src/core_c.rs`
-  - Core C CLI integration in `crates/argorixc/src/main.rs`
-  - `spec/core/c-backend.md`
-  - `tasks/espada/ESP-008.md`
+  - `stdlib/**`
+  - `spec/core/stdlib.md`
+  - `tests/selfhost/stdlib/**`
+  - `tasks/espada/ESP-009.md`
+  - ESP-009 Buffer/Arena/host-ABI additions in `bootstrap/c/**` and the Core
+    parser/semantics/IR/C-backend modules
 - Shared closeout paths, edited only at task closure:
   - `PLAN_ESPADA_INDEPENDIENTE.md`
   - `PLAN_MAESTRO_ARGORIXLANG.md`
