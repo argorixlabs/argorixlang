@@ -2,9 +2,15 @@ use anyhow::{bail, Context, Result};
 use argorix_bytecode::{lower_ir, source_digest, verify_bytecode, BytecodeProgram, Instruction};
 use argorix_ir::IrProgram;
 use argorix_module::{check_package, package_ir, resolve_package, ModuleGraph, ResolvedPackage};
-use argorix_parser::{parse_source, Diagnostic, Program};
-use argorix_semantics::{check_program_with_options, CheckOptions};
+use argorix_parser::{
+    core::{parse_core_source, CoreDiagnostic, CoreItemKind, CoreProgram},
+    parse_source, Diagnostic, Program,
+};
+use argorix_semantics::{
+    check_core_program, check_program_with_options, CheckOptions, CoreCheckOptions,
+};
 use clap::{Parser, Subcommand};
+use std::collections::BTreeSet;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -25,6 +31,8 @@ struct Cli {
 enum Command {
     /// Validate syntax and semantics.
     Check { file: PathBuf },
+    /// Validate an explicitly versioned Argorix Core 0.1 source file (stage0).
+    CoreCheck { file: PathBuf },
     /// Compile source into Argorix IR JSON.
     EmitIr { file: PathBuf },
     /// Print protocol communication graphs.
@@ -70,6 +78,28 @@ fn run() -> Result<()> {
             println!("Agents: {}", compiled.program.agents.len());
             println!("Protocols: {}", compiled.program.protocols.len());
             println!("Semantic checks: passed");
+        }
+        Command::CoreCheck { file } => {
+            let compiled = compile_core(&file)?;
+            let functions = compiled
+                .program
+                .items
+                .iter()
+                .filter(|item| matches!(item.kind, CoreItemKind::Function(_)))
+                .count();
+            let types = compiled.program.items.len() - functions;
+            println!(
+                "Argorix Core stage0 frontend v{}\n",
+                compiled.program.version.value
+            );
+            println!("File: {}", file.display());
+            println!("Status: OK\n");
+            println!("Module: {}", compiled.program.module.value);
+            println!("Imports: {}", compiled.program.imports.len());
+            println!("Types/constants: {types}");
+            println!("Functions: {functions}");
+            println!("Semantic checks: passed");
+            println!("Execution: unavailable until ESP-007/008");
         }
         Command::EmitIr { file } => {
             let compiled = compile(&file, options)?;
@@ -239,6 +269,12 @@ fn compile(path: &Path, options: CheckOptions) -> Result<CompiledSource> {
 
     let source =
         fs::read_to_string(path).with_context(|| format!("failed to read `{}`", path.display()))?;
+    if source.trim_start().starts_with("core ") {
+        bail!(
+            "Core sources are isolated from the historical compiler; use `argorixc core-check {}` (IR and execution arrive in ESP-007/008)",
+            path.display()
+        );
+    }
     let file = path.display().to_string();
     let program = parse_source(&source)
         .map_err(|diagnostics| diagnostics_error(&diagnostics, &file, &source))?;
@@ -246,6 +282,45 @@ fn compile(path: &Path, options: CheckOptions) -> Result<CompiledSource> {
         .map_err(|diagnostics| diagnostics_error(&diagnostics, &file, &source))?;
 
     Ok(CompiledSource { program, source })
+}
+
+struct CheckedCoreSource {
+    program: CoreProgram,
+}
+
+fn compile_core(path: &Path) -> Result<CheckedCoreSource> {
+    if path.extension().and_then(|extension| extension.to_str()) != Some("argx") {
+        bail!("Argorix source files must use the `.argx` extension");
+    }
+    let source =
+        fs::read_to_string(path).with_context(|| format!("failed to read `{}`", path.display()))?;
+    let file = path.display().to_string();
+    let program = parse_core_source(&source)
+        .map_err(|diagnostics| core_diagnostics_error(&diagnostics, &file, &source))?;
+    let mut available_modules = BTreeSet::from([program.module.value.clone()]);
+    if let Some(directory) = path.parent() {
+        for entry in fs::read_dir(directory)
+            .with_context(|| format!("failed to enumerate `{}`", directory.display()))?
+        {
+            let candidate = entry?.path();
+            if candidate == path
+                || candidate
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    != Some("argx")
+            {
+                continue;
+            }
+            if let Ok(candidate_source) = fs::read_to_string(&candidate) {
+                if let Ok(candidate_program) = parse_core_source(&candidate_source) {
+                    available_modules.insert(candidate_program.module.value);
+                }
+            }
+        }
+    }
+    check_core_program(&program, &CoreCheckOptions { available_modules })
+        .map_err(|diagnostics| core_diagnostics_error(&diagnostics, &file, &source))?;
+    Ok(CheckedCoreSource { program })
 }
 
 fn diagnostics_error(diagnostics: &[Diagnostic], file: &str, source: &str) -> anyhow::Error {
@@ -257,9 +332,22 @@ fn diagnostics_error(diagnostics: &[Diagnostic], file: &str, source: &str) -> an
     anyhow::anyhow!("{rendered}")
 }
 
+fn core_diagnostics_error(
+    diagnostics: &[CoreDiagnostic],
+    file: &str,
+    source: &str,
+) -> anyhow::Error {
+    let rendered = diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.render(file, source))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    anyhow::anyhow!("{rendered}")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{load_bytecode_for_verification, Cli, Command};
+    use super::{compile, load_bytecode_for_verification, Cli, Command};
     use argorix_bytecode::{lower_ir, verify_bytecode};
     use argorix_ir::IrProgram;
     use argorix_parser::parse_source;
@@ -309,5 +397,27 @@ mod tests {
         assert_eq!(bytecode.bytecode_version, "0.20");
         assert_eq!(bytecode.provider_harnesses[0].name, "OpenAIHarness");
         verify_bytecode(&bytecode).unwrap();
+    }
+
+    #[test]
+    fn core_check_command_is_explicitly_isolated() {
+        let cli = Cli::try_parse_from([
+            "argorixc",
+            "core-check",
+            "tests/selfhost/spec/valid/lexer.argx",
+        ])
+        .unwrap();
+        assert!(matches!(cli.command, Command::CoreCheck { .. }));
+    }
+
+    #[test]
+    fn historical_compiler_refuses_core_source() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/selfhost/spec/valid/lexer.argx");
+        let error = match compile(&fixture, Default::default()) {
+            Ok(_) => panic!("historical compiler accepted Core source"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("core-check"));
     }
 }

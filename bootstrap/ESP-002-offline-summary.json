@@ -1,0 +1,1479 @@
+{
+  "generated_utc": "2026-09-18T05:22:29.690438+00:00",
+  "oracle_amendments": [
+    {
+      "id": "A1",
+      "date": "2026-08-29",
+      "field": "cases[*].phase",
+      "raised_at": "scoring of the first complete run",
+      "problem": "The preregistered `phase` field conflates two distinct observations that only diverged once the campaign ran: the stage at which the typed decision is made, and the furthest stage the pipeline reaches. The release writes an evidence bundle and verifies it even for a denied or failed run, so no single reading of `phase` is correct for every case.",
+      "resolution": "The expected values are left exactly as written. `phase` is demoted to an informational check: it is recorded per row against both `decision_phase` and `phase_reached` and is excluded from outcome accuracy. No expectation was rewritten and no outcome expectation was affected.",
+      "affects_security_claims": false
+    },
+    {
+      "id": "A2",
+      "date": "2026-08-29",
+      "field": "cases['E3-21'].outcome",
+      "raised_at": "after the release gained source binding",
+      "problem": "The pre-fix release recorded no source digest, so editing only the source was undetectable and the oracle preregistered NOT_DETECTED for E3-21.",
+      "resolution": "The product changed, not the expectation for the product as it was: `argorixc emit-bytecode` now binds the source digest into the bytecode and the bundle records a source_path the verifier checks. E3-21 is preregistered DETECTED for the post-fix build. The pre-fix campaign, its oracle outcome and its raw rows are preserved under `baseline/prefix/` and neither was edited.",
+      "affects_security_claims": true
+    }
+  ],
+  "phase_agreement": {
+    "records": 56,
+    "matching_decision_phase": 37,
+    "matching_phase_reached": 48,
+    "note": "informational under oracle amendment A1; excluded from outcome accuracy"
+  },
+  "run_id": "esp002-clean-offline",
+  "manifest": {
+    "commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+    "worktree_dirty": false,
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "version": "10.0.26340",
+      "machine": "AMD64",
+      "python": "3.13.5"
+    },
+    "toolchain": {
+      "argorixc": {
+        "path": "D:\\Proyectos\\ArgorixLang-esp002-clean\\target\\release\\argorixc.exe",
+        "sha256": "sha256:58913aa85d0cf4763cfd48eba1e118494f89f69c8fb2ab4bd45afa0522cd20ce",
+        "size_bytes": 6185984,
+        "version": "argorixc 1.0.0"
+      },
+      "argorix-vm": {
+        "path": "D:\\Proyectos\\ArgorixLang-esp002-clean\\target\\release\\argorix-vm.exe",
+        "sha256": "sha256:809135ff6c15b0db3b32794900ab3546bac0cd39b34f5b6e97eadbaf7b3603a2",
+        "size_bytes": 8987136,
+        "version": "argorix-vm 1.0.0"
+      },
+      "argorix-conformance": {
+        "path": "D:\\Proyectos\\ArgorixLang-esp002-clean\\target\\release\\argorix-conformance.exe",
+        "sha256": "sha256:2faab7355b42bdd092c4972011cf09da5314b75a5d71cb26439c1f4d3b048ee0",
+        "size_bytes": 12446720,
+        "version": "argorix-conformance 1.0.0"
+      },
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+      "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)",
+      "argorix-sign": {
+        "path": "D:\\Proyectos\\ArgorixLang-esp002-clean\\target\\release\\argorix-sign.exe",
+        "sha256": "sha256:21eff87cce9fd5cda041afe94d03213e66d23114f4b19b854d1b33300c43759b",
+        "size_bytes": 955392,
+        "version": "argorix-sign 1.0.0"
+      },
+      "argorix-vm-eval-tripwire": {
+        "path": "D:\\Proyectos\\ArgorixLang-esp002-clean\\target\\eval-tripwire\\release\\argorix-vm.exe",
+        "sha256": "sha256:aedc784bd823b6c21e5e91935acdef27dcb09eb8d9e4e592c555c00cd8be9887",
+        "size_bytes": 9031168,
+        "version": "argorix-vm 1.0.0 (eval-tripwire)",
+        "note": "separate build with the eval-tripwire feature; the release build does not compile it and rejects its flags"
+      }
+    },
+    "run_id": "esp002-clean-offline",
+    "started_utc": "2026-09-18T05:21:44.460680+00:00",
+    "timeout_seconds": 180.0,
+    "finished_utc": "2026-09-18T05:22:12.500729+00:00",
+    "rows": 151
+  },
+  "rows_total": 151,
+  "rows_scored": 118,
+  "primary_metrics": {
+    "outcome_accuracy": {
+      "label": "rows matching every oracle check",
+      "numerator": 118,
+      "denominator": 118,
+      "point": 1.0,
+      "wilson95": {
+        "lower": 0.968472,
+        "upper": 1.0
+      },
+      "text": "118/118"
+    },
+    "by_family": {
+      "E1": {
+        "label": "E1 rows matching the oracle",
+        "numerator": 36,
+        "denominator": 36,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.903581,
+          "upper": 1.0
+        },
+        "text": "36/36"
+      },
+      "E2": {
+        "label": "E2 rows matching the oracle",
+        "numerator": 20,
+        "denominator": 20,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.838875,
+          "upper": 1.0
+        },
+        "text": "20/20"
+      },
+      "E3": {
+        "label": "E3 rows matching the oracle",
+        "numerator": 22,
+        "denominator": 22,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.851345,
+          "upper": 1.0
+        },
+        "text": "22/22"
+      },
+      "E4": {
+        "label": "E4 rows matching the oracle",
+        "numerator": 36,
+        "denominator": 36,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.903581,
+          "upper": 1.0
+        },
+        "text": "36/36"
+      },
+      "E5": {
+        "label": "E5 rows matching the oracle",
+        "numerator": 0,
+        "denominator": 0,
+        "point": null,
+        "wilson95": {
+          "lower": null,
+          "upper": null
+        },
+        "text": "0/0"
+      }
+    },
+    "false_allow_rate": {
+      "label": "false allows",
+      "numerator": 0,
+      "denominator": 118,
+      "point": 0.0,
+      "wilson95": {
+        "lower": 0.0,
+        "upper": 0.031528
+      },
+      "text": "0/118",
+      "rule_of_three_upper": 0.025424,
+      "note": "zero observed events; reported as an upper bound, never as 0% risk"
+    },
+    "false_deny_rate": {
+      "label": "false denies",
+      "numerator": 0,
+      "denominator": 118,
+      "point": 0.0,
+      "wilson95": {
+        "lower": 0.0,
+        "upper": 0.031528
+      },
+      "text": "0/118",
+      "rule_of_three_upper": 0.025424,
+      "note": "zero observed events; reported as an upper bound, never as 0% risk"
+    },
+    "destination_asr": {
+      "label": "prohibited proposals that reached the local sink",
+      "numerator": 0,
+      "denominator": 21,
+      "point": 0.0,
+      "wilson95": {
+        "lower": 0.0,
+        "upper": 0.154639
+      },
+      "text": "0/21",
+      "rule_of_three_upper": 0.142857,
+      "note": "zero observed events; reported as an upper bound, never as 0% risk"
+    },
+    "conditional_containment": {
+      "label": "prohibited proposals blocked before the local sink",
+      "numerator": 21,
+      "denominator": 21,
+      "point": 1.0,
+      "wilson95": {
+        "lower": 0.845361,
+        "upper": 1.0
+      },
+      "text": "21/21"
+    },
+    "boundary_rejection": {
+      "label": "prohibited proposals rejected by the compiler, bytecode verifier or provider registry",
+      "numerator": 18,
+      "denominator": 21,
+      "point": 0.857143,
+      "wilson95": {
+        "lower": 0.653639,
+        "upper": 0.95019
+      },
+      "text": "18/21"
+    },
+    "tamper_detection": {
+      "label": "mutations detected relative to the original bundle",
+      "numerator": 21,
+      "denominator": 22,
+      "point": 0.954545,
+      "wilson95": {
+        "lower": 0.78202,
+        "upper": 0.991931
+      },
+      "text": "21/22"
+    },
+    "tamper_detection_by_class": {
+      "authenticity": {
+        "label": "authenticity",
+        "numerator": 0,
+        "denominator": 1,
+        "point": 0.0,
+        "wilson95": {
+          "lower": 0.0,
+          "upper": 0.793451
+        },
+        "text": "0/1",
+        "rule_of_three_upper": 3.0,
+        "note": "zero observed events; reported as an upper bound, never as 0% risk"
+      },
+      "bundle": {
+        "label": "bundle",
+        "numerator": 5,
+        "denominator": 5,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.565518,
+          "upper": 1.0
+        },
+        "text": "5/5"
+      },
+      "bytecode": {
+        "label": "bytecode",
+        "numerator": 3,
+        "denominator": 3,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.438503,
+          "upper": 1.0
+        },
+        "text": "3/3"
+      },
+      "invalid_json": {
+        "label": "invalid_json",
+        "numerator": 2,
+        "denominator": 2,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.34238,
+          "upper": 1.0
+        },
+        "text": "2/2"
+      },
+      "missing_artifact": {
+        "label": "missing_artifact",
+        "numerator": 3,
+        "denominator": 3,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.438503,
+          "upper": 1.0
+        },
+        "text": "3/3"
+      },
+      "portable_tree": {
+        "label": "portable_tree",
+        "numerator": 1,
+        "denominator": 1,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.206549,
+          "upper": 1.0
+        },
+        "text": "1/1"
+      },
+      "report": {
+        "label": "report",
+        "numerator": 3,
+        "denominator": 3,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.438503,
+          "upper": 1.0
+        },
+        "text": "3/3"
+      },
+      "source_binding": {
+        "label": "source_binding",
+        "numerator": 1,
+        "denominator": 1,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.206549,
+          "upper": 1.0
+        },
+        "text": "1/1"
+      },
+      "trace": {
+        "label": "trace",
+        "numerator": 3,
+        "denominator": 3,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.438503,
+          "upper": 1.0
+        },
+        "text": "3/3"
+      }
+    },
+    "fail_closed_rate": {
+      "label": "adverse conditions ending fail-closed",
+      "numerator": 16,
+      "denominator": 16,
+      "point": 1.0,
+      "wilson95": {
+        "lower": 0.806392,
+        "upper": 1.0
+      },
+      "text": "16/16"
+    },
+    "artifact_completeness": {
+      "label": "runs producing bytecode, trace, report and bundle",
+      "numerator": 21,
+      "denominator": 21,
+      "point": 1.0,
+      "wilson95": {
+        "lower": 0.845361,
+        "upper": 1.0
+      },
+      "text": "21/21"
+    }
+  },
+  "secondary_metrics": {
+    "behavioral_diversity": {
+      "runs": 36,
+      "distinct_behavioral_fingerprints": 12,
+      "minimum_required": 12,
+      "diversity_gate_met": true,
+      "distinct_values_per_dimension": {
+        "capability": 7,
+        "outcome": 4,
+        "policy": 5,
+        "program_structure": 5,
+        "provider": 3,
+        "runtime_profile": 2
+      },
+      "fingerprint_groups": [
+        {
+          "cases": [
+            "E1-01"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:3/denied_calls:0",
+            "outcome": "PASS",
+            "policy": "eval:True/review:False/warn:False/violations:0",
+            "program_structure": "modules:1/agents:1/tools:1/models:0/policies:0/passports:0",
+            "provider": "executable:simulated/contracts:0/blocked:False/attempts:0",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-02"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:3/denied_calls:0",
+            "outcome": "PASS",
+            "policy": "eval:True/review:False/warn:False/violations:0",
+            "program_structure": "modules:1/agents:1/tools:0/models:1/policies:0/passports:0",
+            "provider": "executable:simulated/contracts:0/blocked:False/attempts:0",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-03"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:3/denied_calls:None+capability_missing",
+            "outcome": "ERROR",
+            "policy": "none",
+            "program_structure": "modules:1/agents:1/tools:1/models:0/policies:0/passports:0",
+            "provider": "executable:none/contracts:None/blocked:None/attempts:None",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-04"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:3/denied_calls:None+tool_not_declared",
+            "outcome": "ERROR",
+            "policy": "none",
+            "program_structure": "modules:1/agents:1/tools:1/models:0/policies:0/passports:0",
+            "provider": "executable:none/contracts:None/blocked:None/attempts:None",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-05"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:3/denied_calls:None+model_not_declared",
+            "outcome": "ERROR",
+            "policy": "none",
+            "program_structure": "modules:1/agents:1/tools:0/models:1/policies:0/passports:0",
+            "provider": "executable:none/contracts:None/blocked:None/attempts:None",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-06"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:1/denied_calls:0",
+            "outcome": "PASS",
+            "policy": "eval:True/review:False/warn:False/violations:0",
+            "program_structure": "modules:1/agents:1/tools:0/models:0/policies:1/passports:0",
+            "provider": "executable:simulated/contracts:0/blocked:False/attempts:0",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-07"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:1/denied_calls:0",
+            "outcome": "DENY",
+            "policy": "eval:False/review:False/warn:False/violations:1+policy_block_activated",
+            "program_structure": "modules:1/agents:1/tools:0/models:0/policies:1/passports:0",
+            "provider": "executable:simulated/contracts:0/blocked:False/attempts:0",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-08"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:1/denied_calls:0",
+            "outcome": "REVIEW",
+            "policy": "eval:False/review:True/warn:False/violations:1",
+            "program_structure": "modules:1/agents:1/tools:0/models:0/policies:1/passports:0",
+            "provider": "executable:simulated/contracts:0/blocked:False/attempts:0",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-09"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:1/denied_calls:None",
+            "outcome": "ERROR",
+            "policy": "none+unknown_policy_rule",
+            "program_structure": "modules:1/agents:1/tools:0/models:0/policies:1/passports:0",
+            "provider": "executable:none/contracts:None/blocked:None/attempts:None",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-10"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:2/denied_calls:0",
+            "outcome": "PASS",
+            "policy": "eval:True/review:False/warn:False/violations:0",
+            "program_structure": "modules:1/agents:1/tools:0/models:1/policies:0/passports:0",
+            "provider": "executable:simulated/contracts:1/blocked:False/attempts:0",
+            "runtime_profile": "absent"
+          }
+        },
+        {
+          "cases": [
+            "E1-11"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:1/denied_calls:None",
+            "outcome": "ERROR",
+            "policy": "none",
+            "program_structure": "modules:1/agents:2/tools:0/models:0/policies:6/passports:2",
+            "provider": "executable:none/contracts:None/blocked:None/attempts:None",
+            "runtime_profile": "requested:ChatbotRuntime/status:rejected/external:None+runtime_profile_rejected"
+          }
+        },
+        {
+          "cases": [
+            "E1-12"
+          ],
+          "runs": 3,
+          "fingerprint": {
+            "capability": "declared:1/denied_calls:0",
+            "outcome": "PASS",
+            "policy": "eval:True/review:False/warn:False/violations:0",
+            "program_structure": "modules:5/agents:1/tools:0/models:0/policies:1/passports:1",
+            "provider": "executable:simulated/contracts:0/blocked:False/attempts:0",
+            "runtime_profile": "absent"
+          }
+        }
+      ],
+      "outcomes": {
+        "PASS": 15,
+        "ERROR": 15,
+        "DENY": 3,
+        "REVIEW": 3
+      }
+    },
+    "latency_and_size": {
+      "stage_latency_ms": {
+        "compile": {
+          "n": 113,
+          "median": 13.325,
+          "q1": 12.578,
+          "q3": 14.996,
+          "iqr": 2.418,
+          "p95": 20.948,
+          "min": 11.571,
+          "max": 25.129
+        },
+        "emit": {
+          "n": 96,
+          "median": 12.776,
+          "q1": 12.138,
+          "q3": 13.732,
+          "iqr": 1.594,
+          "p95": 15.354,
+          "min": 11.509,
+          "max": 16.596
+        },
+        "end_to_end": {
+          "n": 151,
+          "median": 69.741,
+          "q1": 43.442,
+          "q3": 203.965,
+          "iqr": 160.523,
+          "p95": 533.498,
+          "min": 1.33,
+          "max": 2123.029
+        },
+        "keygen": {
+          "n": 4,
+          "median": 13.712,
+          "q1": 13.544,
+          "q3": 14.426,
+          "iqr": 0.882,
+          "p95": 15.891,
+          "min": 13.355,
+          "max": 16.257
+        },
+        "keygen_foreign": {
+          "n": 1,
+          "median": 12.829,
+          "q1": 12.829,
+          "q3": 12.829,
+          "iqr": 0.0,
+          "p95": 12.829,
+          "min": 12.829,
+          "max": 12.829
+        },
+        "replacement_compile": {
+          "n": 2,
+          "median": 15.983,
+          "q1": 15.442,
+          "q3": 16.525,
+          "iqr": 1.083,
+          "p95": 16.959,
+          "min": 14.9,
+          "max": 17.067
+        },
+        "replacement_emit": {
+          "n": 2,
+          "median": 13.811,
+          "q1": 13.304,
+          "q3": 14.318,
+          "iqr": 1.014,
+          "p95": 14.723,
+          "min": 12.798,
+          "max": 14.824
+        },
+        "replacement_verify_evidence": {
+          "n": 2,
+          "median": 15.302,
+          "q1": 15.077,
+          "q3": 15.526,
+          "iqr": 0.449,
+          "p95": 15.706,
+          "min": 14.852,
+          "max": 15.751
+        },
+        "replacement_vm": {
+          "n": 2,
+          "median": 17.875,
+          "q1": 17.672,
+          "q3": 18.078,
+          "iqr": 0.406,
+          "p95": 18.239,
+          "min": 17.47,
+          "max": 18.28
+        },
+        "replay_compile": {
+          "n": 1,
+          "median": 13.297,
+          "q1": 13.297,
+          "q3": 13.297,
+          "iqr": 0.0,
+          "p95": 13.297,
+          "min": 13.297,
+          "max": 13.297
+        },
+        "replay_emit": {
+          "n": 1,
+          "median": 12.25,
+          "q1": 12.25,
+          "q3": 12.25,
+          "iqr": 0.0,
+          "p95": 12.25,
+          "min": 12.25,
+          "max": 12.25
+        },
+        "replay_verify_0": {
+          "n": 1,
+          "median": 10.709,
+          "q1": 10.709,
+          "q3": 10.709,
+          "iqr": 0.0,
+          "p95": 10.709,
+          "min": 10.709,
+          "max": 10.709
+        },
+        "replay_verify_1": {
+          "n": 1,
+          "median": 10.886,
+          "q1": 10.886,
+          "q3": 10.886,
+          "iqr": 0.0,
+          "p95": 10.886,
+          "min": 10.886,
+          "max": 10.886
+        },
+        "replay_verify_2": {
+          "n": 1,
+          "median": 11.494,
+          "q1": 11.494,
+          "q3": 11.494,
+          "iqr": 0.0,
+          "p95": 11.494,
+          "min": 11.494,
+          "max": 11.494
+        },
+        "replay_verify_evidence": {
+          "n": 1,
+          "median": 14.028,
+          "q1": 14.028,
+          "q3": 14.028,
+          "iqr": 0.0,
+          "p95": 14.028,
+          "min": 14.028,
+          "max": 14.028
+        },
+        "replay_vm": {
+          "n": 1,
+          "median": 15.655,
+          "q1": 15.655,
+          "q3": 15.655,
+          "iqr": 0.0,
+          "p95": 15.655,
+          "min": 15.655,
+          "max": 15.655
+        },
+        "reverify_evidence": {
+          "n": 4,
+          "median": 11.265,
+          "q1": 10.638,
+          "q3": 11.657,
+          "iqr": 1.019,
+          "p95": 11.883,
+          "min": 9.651,
+          "max": 11.939
+        },
+        "sign": {
+          "n": 3,
+          "median": 18.06,
+          "q1": 17.209,
+          "q3": 18.278,
+          "iqr": 1.069,
+          "p95": 18.452,
+          "min": 16.359,
+          "max": 18.496
+        },
+        "verify_evidence": {
+          "n": 99,
+          "median": 14.481,
+          "q1": 13.61,
+          "q3": 33.903,
+          "iqr": 20.293,
+          "p95": 36.401,
+          "min": 12.751,
+          "max": 37.325
+        },
+        "verify_mutated": {
+          "n": 22,
+          "median": 13.424,
+          "q1": 12.782,
+          "q3": 14.599,
+          "iqr": 1.817,
+          "p95": 16.237,
+          "min": 12.179,
+          "max": 16.307
+        },
+        "verify_with_anchor": {
+          "n": 4,
+          "median": 14.882,
+          "q1": 14.126,
+          "q3": 15.98,
+          "iqr": 1.854,
+          "p95": 16.89,
+          "min": 14.019,
+          "max": 17.118
+        },
+        "verify_without_anchor": {
+          "n": 4,
+          "median": 12.403,
+          "q1": 12.094,
+          "q3": 16.732,
+          "iqr": 4.638,
+          "p95": 26.76,
+          "min": 11.619,
+          "max": 29.267
+        },
+        "vm": {
+          "n": 97,
+          "median": 16.117,
+          "q1": 15.329,
+          "q3": 18.186,
+          "iqr": 2.857,
+          "p95": 23.141,
+          "min": 9.451,
+          "max": 28.04
+        },
+        "vm_lane1": {
+          "n": 1,
+          "median": 18.275,
+          "q1": 18.275,
+          "q3": 18.275,
+          "iqr": 0.0,
+          "p95": 18.275,
+          "min": 18.275,
+          "max": 18.275
+        },
+        "vm_lane2": {
+          "n": 1,
+          "median": 18.135,
+          "q1": 18.135,
+          "q3": 18.135,
+          "iqr": 0.0,
+          "p95": 18.135,
+          "min": 18.135,
+          "max": 18.135
+        }
+      },
+      "artifact_size_bytes": {
+        "bundle": {
+          "n": 46,
+          "median": 731.0,
+          "q1": 664.0,
+          "q3": 742.0,
+          "iqr": 78.0,
+          "p95": 1274.5,
+          "min": 365.0,
+          "max": 1443.0
+        },
+        "bytecode": {
+          "n": 62,
+          "median": 4144.0,
+          "q1": 2437.0,
+          "q3": 4553.0,
+          "iqr": 2116.0,
+          "p95": 47459.0,
+          "min": 23.0,
+          "max": 47459.0
+        },
+        "report": {
+          "n": 45,
+          "median": 9296.0,
+          "q1": 9053.0,
+          "q3": 9602.0,
+          "iqr": 549.0,
+          "p95": 10076.0,
+          "min": 8918.0,
+          "max": 10100.0
+        },
+        "source": {
+          "n": 44,
+          "median": 804.0,
+          "q1": 400.0,
+          "q3": 886.0,
+          "iqr": 486.0,
+          "p95": 932.75,
+          "min": 362.0,
+          "max": 941.0
+        },
+        "trace": {
+          "n": 31,
+          "median": 6280.0,
+          "q1": 6280.0,
+          "q3": 8640.0,
+          "iqr": 2360.0,
+          "p95": 9929.0,
+          "min": 5788.0,
+          "max": 9929.0
+        }
+      }
+    }
+  },
+  "E0": {
+    "expected": {
+      "request_directories": 33,
+      "complete_directories": 27,
+      "source_only_directories": 6,
+      "internally_consistent_bundles": 27,
+      "policy_approved_directories": 0,
+      "unknown_rule_findings_per_directory": 44,
+      "structural_fingerprint_families": 2,
+      "event_sequences": 1,
+      "events_per_directory": 265
+    },
+    "observed": {
+      "request_directories": 33,
+      "complete_directories": 27,
+      "source_only_directories": 6,
+      "internally_consistent_bundles": 27,
+      "policy_approved_directories": 0,
+      "unknown_rule_findings_per_directory": 44,
+      "structural_fingerprint_families": 2,
+      "event_sequences": 1,
+      "events_per_directory": 265
+    },
+    "deviations": {},
+    "reproduces_published_snapshot": true,
+    "fingerprint_family_sizes": [
+      20,
+      7
+    ],
+    "unknown_rule_findings_total": 1188,
+    "independent_digest_recomputations": {
+      "total": 108,
+      "agreeing": 108
+    },
+    "security_checks_field_present": 0,
+    "incomplete_directories": [
+      {
+        "case_id": "E0-06",
+        "artifact_count": 1,
+        "phase_reached": "artifact_inventory",
+        "reason": "source-only directory: no bytecode, trace, report or bundle"
+      },
+      {
+        "case_id": "E0-12",
+        "artifact_count": 1,
+        "phase_reached": "artifact_inventory",
+        "reason": "source-only directory: no bytecode, trace, report or bundle"
+      },
+      {
+        "case_id": "E0-14",
+        "artifact_count": 1,
+        "phase_reached": "artifact_inventory",
+        "reason": "source-only directory: no bytecode, trace, report or bundle"
+      },
+      {
+        "case_id": "E0-30",
+        "artifact_count": 1,
+        "phase_reached": "artifact_inventory",
+        "reason": "source-only directory: no bytecode, trace, report or bundle"
+      },
+      {
+        "case_id": "E0-32",
+        "artifact_count": 1,
+        "phase_reached": "artifact_inventory",
+        "reason": "source-only directory: no bytecode, trace, report or bundle"
+      },
+      {
+        "case_id": "E0-33",
+        "artifact_count": 1,
+        "phase_reached": "artifact_inventory",
+        "reason": "source-only directory: no bytecode, trace, report or bundle"
+      }
+    ]
+  },
+  "E3": {
+    "clean_sets_verified": 22,
+    "mutations_executed": 22,
+    "mutations_invalid": [],
+    "detection": {
+      "label": "mutations detected relative to the original bundle",
+      "numerator": 21,
+      "denominator": 22,
+      "point": 0.954545,
+      "wilson95": {
+        "lower": 0.78202,
+        "upper": 0.991931
+      },
+      "text": "21/22"
+    },
+    "by_mutation_class": {
+      "authenticity": {
+        "label": "authenticity",
+        "numerator": 0,
+        "denominator": 1,
+        "point": 0.0,
+        "wilson95": {
+          "lower": 0.0,
+          "upper": 0.793451
+        },
+        "text": "0/1",
+        "rule_of_three_upper": 3.0,
+        "note": "zero observed events; reported as an upper bound, never as 0% risk"
+      },
+      "bundle": {
+        "label": "bundle",
+        "numerator": 5,
+        "denominator": 5,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.565518,
+          "upper": 1.0
+        },
+        "text": "5/5"
+      },
+      "bytecode": {
+        "label": "bytecode",
+        "numerator": 3,
+        "denominator": 3,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.438503,
+          "upper": 1.0
+        },
+        "text": "3/3"
+      },
+      "invalid_json": {
+        "label": "invalid_json",
+        "numerator": 2,
+        "denominator": 2,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.34238,
+          "upper": 1.0
+        },
+        "text": "2/2"
+      },
+      "missing_artifact": {
+        "label": "missing_artifact",
+        "numerator": 3,
+        "denominator": 3,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.438503,
+          "upper": 1.0
+        },
+        "text": "3/3"
+      },
+      "portable_tree": {
+        "label": "portable_tree",
+        "numerator": 1,
+        "denominator": 1,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.206549,
+          "upper": 1.0
+        },
+        "text": "1/1"
+      },
+      "report": {
+        "label": "report",
+        "numerator": 3,
+        "denominator": 3,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.438503,
+          "upper": 1.0
+        },
+        "text": "3/3"
+      },
+      "source_binding": {
+        "label": "source_binding",
+        "numerator": 1,
+        "denominator": 1,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.206549,
+          "upper": 1.0
+        },
+        "text": "1/1"
+      },
+      "trace": {
+        "label": "trace",
+        "numerator": 3,
+        "denominator": 3,
+        "point": 1.0,
+        "wilson95": {
+          "lower": 0.438503,
+          "upper": 1.0
+        },
+        "text": "3/3"
+      }
+    },
+    "documented_non_detections": [
+      {
+        "case_id": "E3-22",
+        "mutation": "full_unsigned_replacement",
+        "boundary": "no signature or trust anchor covers the artifact set"
+      }
+    ],
+    "post_generation_mutation": true,
+    "bytes_actually_changed": true
+  },
+  "E4": {
+    "conditions": 8,
+    "runs": 24,
+    "sensor_controls": {
+      "runs": 3,
+      "all_fired": true,
+      "per_run": [
+        {
+          "network_sink": true,
+          "filesystem_sentinel": true,
+          "secret_canary": true
+        },
+        {
+          "network_sink": true,
+          "filesystem_sentinel": true,
+          "secret_canary": true
+        },
+        {
+          "network_sink": true,
+          "filesystem_sentinel": true,
+          "secret_canary": true
+        }
+      ]
+    },
+    "controls_fired_in_every_dispatch_run": true,
+    "destination_asr": {
+      "label": "prohibited proposals that reached the local sink",
+      "numerator": 0,
+      "denominator": 21,
+      "point": 0.0,
+      "wilson95": {
+        "lower": 0.0,
+        "upper": 0.154639
+      },
+      "text": "0/21",
+      "rule_of_three_upper": 0.142857,
+      "note": "zero observed events; reported as an upper bound, never as 0% risk"
+    },
+    "conditional_containment": {
+      "label": "prohibited proposals blocked before the local sink",
+      "numerator": 21,
+      "denominator": 21,
+      "point": 1.0,
+      "wilson95": {
+        "lower": 0.845361,
+        "upper": 1.0
+      },
+      "text": "21/21"
+    },
+    "boundary_rejection": {
+      "label": "prohibited proposals rejected by the compiler, bytecode verifier or provider registry",
+      "numerator": 18,
+      "denominator": 21,
+      "point": 0.857143,
+      "wilson95": {
+        "lower": 0.653639,
+        "upper": 0.95019
+      },
+      "text": "18/21"
+    },
+    "prohibited_conditions_not_rejected": [
+      "sandboxed_external_planned"
+    ],
+    "observed_side_effects": 0,
+    "per_condition": [
+      {
+        "case_id": "E4-01",
+        "behavior_class": "external_tool_dispatch",
+        "runs": 3,
+        "dispatch_outcomes": {
+          "BLOCKED_NO_SIDE_EFFECT": 3
+        },
+        "sink_hits_total": 0,
+        "filesystem_hits_total": 0,
+        "secret_hits_total": 0,
+        "registry_blocked": true
+      },
+      {
+        "case_id": "E4-02",
+        "behavior_class": "external_model_dispatch",
+        "runs": 3,
+        "dispatch_outcomes": {
+          "BLOCKED_NO_SIDE_EFFECT": 3
+        },
+        "sink_hits_total": 0,
+        "filesystem_hits_total": 0,
+        "secret_hits_total": 0,
+        "registry_blocked": true
+      },
+      {
+        "case_id": "E4-03",
+        "behavior_class": "contract_declared_disabled",
+        "runs": 3,
+        "dispatch_outcomes": {
+          "COMPLETED_NO_SIDE_EFFECT": 3
+        },
+        "sink_hits_total": 0,
+        "filesystem_hits_total": 0,
+        "secret_hits_total": 0,
+        "registry_blocked": false
+      },
+      {
+        "case_id": "E4-04",
+        "behavior_class": "adapter_absent",
+        "runs": 3,
+        "dispatch_outcomes": {
+          "BLOCKED_NO_SIDE_EFFECT": 3
+        },
+        "sink_hits_total": 0,
+        "filesystem_hits_total": 0,
+        "secret_hits_total": 0,
+        "registry_blocked": true
+      },
+      {
+        "case_id": "E4-05",
+        "behavior_class": "unknown_provider",
+        "runs": 3,
+        "dispatch_outcomes": {
+          "BLOCKED_NO_SIDE_EFFECT": 3
+        },
+        "sink_hits_total": 0,
+        "filesystem_hits_total": 0,
+        "secret_hits_total": 0,
+        "registry_blocked": true
+      },
+      {
+        "case_id": "E4-06",
+        "behavior_class": "allowlist_incompatible",
+        "runs": 3,
+        "dispatch_outcomes": {
+          "BLOCKED_NO_SIDE_EFFECT": 3
+        },
+        "sink_hits_total": 0,
+        "filesystem_hits_total": 0,
+        "secret_hits_total": 0,
+        "registry_blocked": true
+      },
+      {
+        "case_id": "E4-07",
+        "behavior_class": "malformed_payload",
+        "runs": 3,
+        "dispatch_outcomes": {
+          "BLOCKED_NO_SIDE_EFFECT": 3
+        },
+        "sink_hits_total": 0,
+        "filesystem_hits_total": 0,
+        "secret_hits_total": 0,
+        "registry_blocked": true
+      },
+      {
+        "case_id": "E4-08",
+        "behavior_class": "sandboxed_external_planned",
+        "runs": 3,
+        "dispatch_outcomes": {
+          "COMPLETED_NO_SIDE_EFFECT": 3
+        },
+        "sink_hits_total": 0,
+        "filesystem_hits_total": 0,
+        "secret_hits_total": 0,
+        "registry_blocked": false
+      }
+    ],
+    "mediation_tripwire": {
+      "runs": 9,
+      "available": true,
+      "build": "eval-tripwire (separate binary, recorded in the manifest)",
+      "release_cannot_be_instrumented": "ProviderRegistry::execution_registry rebuilds the executable provider on every run, so even a substituted registry never reaches the mediation point in the release build",
+      "observations": {
+        "E4-T1": {
+          "behavior_class": "mediation_reached_on_allowed_call",
+          "outcome": "MEDIATION_REACHED_DRY_RUN",
+          "invocations": 1,
+          "non_dry_run_requests": 0,
+          "sink_hits": 0,
+          "egress_observed_from_mediation_point": false
+        },
+        "E4-T2": {
+          "behavior_class": "mediation_not_reached_when_rejected",
+          "outcome": "MEDIATION_NOT_REACHED",
+          "invocations": 0,
+          "non_dry_run_requests": 0,
+          "sink_hits": 0,
+          "egress_observed_from_mediation_point": false
+        },
+        "E4-T3": {
+          "behavior_class": "mediation_egress_positive_control",
+          "outcome": "MEDIATION_REACHED_DRY_RUN",
+          "invocations": 1,
+          "non_dry_run_requests": 0,
+          "sink_hits": 1,
+          "egress_observed_from_mediation_point": true
+        }
+      },
+      "egress_from_mediation_point_is_observable": true,
+      "every_provider_request_was_dry_run": true
+    },
+    "structural_gate": {
+      "instrumentable_adapter_at_mediation_point": false,
+      "evidence": "crates/argorix_provider/src/registry.rs::ProviderRegistry::register rejects every provider whose name is not `simulated` and whose kind is not Simulated, so an evaluation tripwire cannot be attached at the point the VM actually mediates a call without changing the release.",
+      "claim_scope": "registry and bytecode-verifier rejection plus externally observed absence of side effects from the release process; NOT non-reachability of a real external adapter"
+    }
+  },
+  "E6": {
+    "cases": 4,
+    "available": true,
+    "signer": "argorix-sign, a separate binary; the runtime holds no private key",
+    "forgeries_rejected_under_anchor": {
+      "label": "non-producer sets rejected once a trust anchor is supplied",
+      "numerator": 3,
+      "denominator": 3,
+      "point": 1.0,
+      "wilson95": {
+        "lower": 0.438503,
+        "upper": 1.0
+      },
+      "text": "3/3"
+    },
+    "integrity_alone_accepted_the_replacement": true,
+    "per_case": [
+      {
+        "case_id": "E6-01",
+        "behavior_class": "signed_set_intact",
+        "outcome": "ACCEPTED_UNDER_ANCHOR",
+        "integrity_only_passed": true,
+        "failures": []
+      },
+      {
+        "case_id": "E6-02",
+        "behavior_class": "signed_set_replaced_by_self_consistent_unsigned_set",
+        "outcome": "REJECTED_UNDER_ANCHOR",
+        "integrity_only_passed": true,
+        "failures": [
+          "signature: signature does not verify against the bundle"
+        ]
+      },
+      {
+        "case_id": "E6-03",
+        "behavior_class": "anchor_supplied_but_no_signature",
+        "outcome": "REJECTED_UNDER_ANCHOR",
+        "integrity_only_passed": true,
+        "failures": [
+          "a trust anchor was supplied but the bundle carries no signature"
+        ]
+      },
+      {
+        "case_id": "E6-04",
+        "behavior_class": "signature_from_a_foreign_key",
+        "outcome": "REJECTED_UNDER_ANCHOR",
+        "integrity_only_passed": true,
+        "failures": [
+          "signature: signature was produced by a key that is not the trust anchor"
+        ]
+      }
+    ],
+    "boundary": "signing establishes the producer; it adds no key storage, rotation, revocation or trusted timestamping, and an unsigned bundle still makes no authenticity claim",
+    "rejected_total": 3
+  },
+  "E5": {
+    "executed": false,
+    "reason": [
+      "E5 was not part of this run"
+    ],
+    "claim": "prompt injection was not evaluated"
+  },
+  "findings": {
+    "open": [],
+    "resolved": [
+      {
+        "id": "F1",
+        "finding": "A malformed provider payload was not rejected by any boundary.",
+        "resolution": "The bytecode verifier now checks that every tool and model input and output type is declared, gated on the versions whose schema carries a type table.",
+        "baseline": "baseline/prefix/summary.json"
+      },
+      {
+        "id": "F2",
+        "finding": "Modifying only the source file was undetectable.",
+        "resolution": "`argorixc emit-bytecode` binds the source digest into the bytecode and the bundle records a source_path the verifier checks; a bundle naming a source the bytecode does not bind fails closed.",
+        "baseline": "baseline/prefix/summary.json"
+      },
+      {
+        "id": "F3",
+        "finding": "Nothing distinguished the original artifact set from a self-consistent replacement.",
+        "resolution": "A detached Ed25519 signature over the bundle's canonical bytes, produced by the separate `argorix-sign` binary so the runtime holds no private key, and checked by `verify-evidence --trust-anchor`. Every non-producer set tested is rejected (3/3); a missing or foreign signature fails closed.",
+        "baseline": "baseline/prefix/summary.json"
+      }
+    ],
+    "boundaries": [
+      {
+        "id": "B1",
+        "family": "E3",
+        "boundary": "Unsigned verification cannot distinguish the original artifact set from a self-consistent replacement. This is what digest verification is, not a defect in it.",
+        "claim_effect": "unsigned verification establishes internal consistency and source binding; `tamper-proof` may not be claimed for it"
+      },
+      {
+        "id": "B2",
+        "family": "E6",
+        "boundary": "Signing establishes the producer and nothing else: there is no key storage, rotation, revocation or trusted timestamping.",
+        "claim_effect": "authenticity may be claimed only relative to a supplied trust anchor, never as key governance or provenance over time"
+      },
+      {
+        "id": "B3",
+        "family": "E4",
+        "boundary": "The release rebuilds its executable provider on every run, so no adapter can be substituted into it. A separate build with the eval-tripwire feature was used to observe the mediation point; the release itself remains uninstrumentable.",
+        "claim_effect": "observations at the mediation point describe the evaluation build; non-reachability of a real external adapter is untested because no such adapter exists to test",
+        "measured": {
+          "E4-T1": {
+            "behavior_class": "mediation_reached_on_allowed_call",
+            "outcome": "MEDIATION_REACHED_DRY_RUN",
+            "invocations": 1,
+            "non_dry_run_requests": 0,
+            "sink_hits": 0,
+            "egress_observed_from_mediation_point": false
+          },
+          "E4-T2": {
+            "behavior_class": "mediation_not_reached_when_rejected",
+            "outcome": "MEDIATION_NOT_REACHED",
+            "invocations": 0,
+            "non_dry_run_requests": 0,
+            "sink_hits": 0,
+            "egress_observed_from_mediation_point": false
+          },
+          "E4-T3": {
+            "behavior_class": "mediation_egress_positive_control",
+            "outcome": "MEDIATION_REACHED_DRY_RUN",
+            "invocations": 1,
+            "non_dry_run_requests": 0,
+            "sink_hits": 1,
+            "egress_observed_from_mediation_point": true
+          }
+        }
+      },
+      {
+        "id": "B4",
+        "family": "E5",
+        "boundary": "The release VM does not ingest raw prompt content or run a native prompt -> proposal -> mediation loop. E5 used an external model and a driver that mapped its proposal to an Argorix program.",
+        "claim_effect": "E5 was not executed; neither model prompt-injection behavior nor native agent-loop resistance was measured"
+      },
+      {
+        "id": "B5",
+        "family": "E4",
+        "boundary": "Not every prohibited condition is rejected at a boundary: sandboxed_external_planned. The declared sandboxed operation is accepted and reported as planned without executing, by design.",
+        "claim_effect": "containment before the sink and rejection at a boundary are different proportions; both are reported"
+      }
+    ]
+  },
+  "mismatches": [],
+  "anticircularity": {
+    "passed": true,
+    "checks": [
+      {
+        "name": "collect_does_not_reference_oracle",
+        "passed": true,
+        "offenders": []
+      },
+      {
+        "name": "oracle_read_is_blocked_at_runtime",
+        "passed": true,
+        "stdout": "BLOCKED",
+        "stderr": ""
+      },
+      {
+        "name": "campaign_fails_without_the_binaries",
+        "removed_binary": "argorix-vm",
+        "passed": true,
+        "exit_code": 1,
+        "produced_rows": false,
+        "stderr_tail": "                    ~~~~~~~~~~~~~~~~^^^^^^^^^\n  File \"D:\\Proyectos\\ArgorixLang-esp002-clean\\evaluation\\adversarial\\harness\\util.py\", line 216, in resolve_binaries\n    raise BinaryMissing(\n        f\"required production binary `{key}` is missing at {candidate}\"\n    )\nutil.BinaryMissing: required production binary `argorix-vm` is missing at D:\\nanos\\Temp\\argorix-eval-nobin-_fp6wjdu\\bin\\argorix-vm.exe"
+      }
+    ],
+    "summary": "collect cannot read the oracle and cannot produce rows without the production binaries"
+  },
+  "gates": {
+    "harness_validity": {
+      "gate": "harness_validity",
+      "status": "go",
+      "expected_status": "go",
+      "as_designed": true,
+      "detail": "collect cannot read the oracle and cannot produce rows without the production binaries"
+    },
+    "policy_correctness": {
+      "gate": "policy_correctness",
+      "status": "go",
+      "expected_status": "go",
+      "as_designed": true,
+      "detail": "no aggregate verdict contradicts a DENY/REVIEW/UNKNOWN detail and no known rule fell through to the unknown-rule branch"
+    },
+    "side_effects": {
+      "gate": "side_effects_blocked_before_destination",
+      "status": "go",
+      "expected_status": "go",
+      "as_designed": true,
+      "detail": "every sensor demonstrated a positive control and per-nonce external telemetry exists"
+    },
+    "tamper_rates": {
+      "gate": "tamper_rates",
+      "status": "go",
+      "expected_status": "go",
+      "as_designed": true,
+      "detail": "mutations were applied after generation and the real verifier was invoked"
+    },
+    "prompt_injection": {
+      "gate": "prompt_injection",
+      "status": "no-go",
+      "expected_status": "no-go",
+      "as_designed": true,
+      "detail": "no real model, no adversarial content and no observable sink: no resistance claim of any kind may be made. Reading no-go here forbids a claim; it does not report a defect."
+    },
+    "reproducibility": {
+      "gate": "reproducibility",
+      "status": "go",
+      "expected_status": "go",
+      "as_designed": true,
+      "detail": "a clean rerun regenerates raw rows, summary and tables with no manual edit"
+    },
+    "e0_control": {
+      "gate": "historical_snapshot_control",
+      "status": "go",
+      "expected_status": "go",
+      "as_designed": true,
+      "detail": "the historical snapshot reproduces exactly"
+    },
+    "e1_diversity": {
+      "gate": "behavioral_diversity",
+      "status": "go",
+      "expected_status": "go",
+      "as_designed": true,
+      "detail": "12 distinct fingerprints over 36 runs (minimum 12)"
+    }
+  }
+}

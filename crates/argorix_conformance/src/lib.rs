@@ -1,3 +1,6 @@
+pub mod core_memory;
+pub mod core_spec;
+pub mod identity_policy;
 pub mod mutation;
 pub mod runner;
 pub mod types;

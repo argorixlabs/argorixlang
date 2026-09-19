@@ -1,0 +1,4 @@
+core 9.9;
+module invalid.unknown_version;
+fn main() -> unit { unit }
+

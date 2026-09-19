@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "source_of_inventory": "crates/argorix_parser/src/ast.rs::Program",
+  "document": "spec/language/current-v1.md",
+  "scope": "Current v1.0 declaration surface. Core self-hosting syntax is a separate proposed version, not silently accepted in v1.0.",
+  "clauses": [
+    {"id": "L-01", "title": "Lexico, modulo, importacion y paquetes", "fields": ["module", "imports"], "mode": "current"},
+    {"id": "L-02", "title": "Tipos y enumeraciones de mensajes", "fields": ["enums", "types"], "mode": "declarative"},
+    {"id": "L-03", "title": "Agentes, mensajes, protocolos y capacidades", "fields": ["capabilities", "tools", "models", "agents", "protocols"], "mode": "simulated_runtime_only"},
+    {"id": "L-04", "title": "Politicas, aserciones y fallos", "fields": ["assertions", "policies", "failures"], "mode": "current_policy_checks"},
+    {"id": "L-05", "title": "Proveedores, adaptadores y limites declarativos", "fields": ["providers", "harnesses", "features", "secrets", "adapters", "adapter_profiles", "runtime_hardening_profiles", "runtime_execution_profiles", "sandboxed_provider_adapters"], "mode": "metadata_and_planning_only"},
+    {"id": "L-06", "title": "Identidad, criptografia y trust metadata", "fields": ["cryptos", "crypto_boundaries", "did_methods", "atrust_boundaries", "atrust_identities", "atrust_credential_contracts", "atrust_handshakes", "trust_ledgers", "passports"], "mode": "metadata_only"},
+    {"id": "L-07", "title": "Contratos de puentes y evidencia", "fields": ["mcp_bridge_contracts", "a2a_bridge_contracts", "atrust_evidence_maps"], "mode": "metadata_only"},
+    {"id": "L-08", "title": "Gobernanza, mapeos, reportes y release metadata", "fields": ["governance_profiles", "regulatory_mappings", "third_party_verifiers", "public_conformance_reports", "threat_models", "spec_freezes", "release_candidates"], "mode": "metadata_only"}
+  ],
+  "closed_sets": {
+    "token_kinds": ["Ident", "StringLiteral", "IntegerLiteral", "LeftBrace", "RightBrace", "LeftParen", "RightParen", "LeftBracket", "RightBracket", "Comma", "Colon", "Arrow", "Eof"],
+    "handler_instructions": ["Emit", "Trace", "Halt", "IntrinsicCall", "CallTool", "AskModel"],
+    "bytecode_instructions": ["DeclareProviderContract", "DeclareAgent", "DeclareCapability", "DeclareProtocol", "DeclareAssertion", "DeclareFailure", "VerifyAssertion", "PolicyReport", "DeclareTool", "AuthorizeTool", "DeclareModel", "AuthorizeModel", "DeclareHandler", "EmitMessage", "TraceValue", "HandlerHalt", "InvokeIntrinsic", "CallTool", "AskModel", "EndHandler", "SendMessage", "RequireCapability", "RequireApproval", "Trace", "Halt", "End", "Unknown"]
+  },
+  "excluded_from_v1": [
+    {"id": "X-01", "construction": "user_functions_and_general_calls", "reason": "No existe en el AST v1; propuesta Core no implementada.", "owner": "MAT-004"},
+    {"id": "X-02", "construction": "general_expressions_and_operators", "reason": "v1 sólo admite argumentos nominales de instrucciones.", "owner": "MAT-004"},
+    {"id": "X-03", "construction": "branches_loops_and_pattern_matching", "reason": "No existe control de flujo general v1.", "owner": "MAT-004"},
+    {"id": "X-04", "construction": "collections_mutation_memory_and_handles", "reason": "No hay modelo de memoria Core estable.", "owner": "MAT-004"},
+    {"id": "X-05", "construction": "checked_arithmetic_utf8_equality_and_evaluation_order", "reason": "Contrato propuesto en core-draft.md; no ejecutable en stage0.", "owner": "MAT-004"},
+    {"id": "X-06", "construction": "stable_native_abi_and_ffi", "reason": "No existe ABI pública estable.", "owner": "MAT-015"},
+    {"id": "X-07", "construction": "concurrency_cancellation_delegation_and_revocation", "reason": "Semántica de runtime R2 aún no congelada.", "owner": "MAT-005"}
+  ]
+}

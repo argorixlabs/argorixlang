@@ -1,0 +1,4 @@
+core 0.1;
+module invalid.control_outside_loop;
+fn wrong() -> unit { break; continue; }
+

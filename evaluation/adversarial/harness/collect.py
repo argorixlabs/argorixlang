@@ -390,6 +390,7 @@ class Collector:
         run_id: str,
         timeout: float,
         tripwire_bin_dir: Path | None = None,
+        snapshot_root: Path | None = None,
     ) -> None:
         self.binaries = resolve_binaries(bin_dir)
         # The evaluation build is a *different binary*; its identity is recorded
@@ -406,6 +407,7 @@ class Collector:
         self.out_dir = out_dir
         self.run_id = run_id
         self.timeout = timeout
+        self.snapshot_root = snapshot_root.resolve() if snapshot_root else None
         self.raw_dir = out_dir / "raw" / run_id
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.rows: list[dict[str, Any]] = []
@@ -475,7 +477,11 @@ class Collector:
     # -- E0 ---------------------------------------------------------------
 
     def run_snapshot_case(self, case: dict[str, Any], repetition: int) -> dict[str, Any]:
-        directory = REPO_ROOT / case["directory"]
+        directory = (
+            self.snapshot_root / Path(case["directory"]).name
+            if self.snapshot_root is not None
+            else REPO_ROOT / case["directory"]
+        )
         workdir = self.case_dir(case["case_id"], repetition)
         expected_artifacts = [
             "session.argx",
@@ -1936,6 +1942,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--family", action="append", default=None)
+    parser.add_argument(
+        "--snapshot-root",
+        default=None,
+        help="Directory containing pinned E0 request-ID subdirectories instead of demo/generated",
+    )
     args = parser.parse_args(argv)
 
     run_id = args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -1953,6 +1964,7 @@ def main(argv: list[str] | None = None) -> int:
         run_id=run_id,
         timeout=args.timeout,
         tripwire_bin_dir=Path(args.tripwire_bin_dir) if args.tripwire_bin_dir else None,
+        snapshot_root=Path(args.snapshot_root) if args.snapshot_root else None,
     )
     print(f"run_id={run_id} cases={len(cases)}", flush=True)
     for case in cases:

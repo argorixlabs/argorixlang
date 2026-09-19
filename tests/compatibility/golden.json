@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "purpose": "Manually curated stage-level regression expectations for a pinned commit; not an independent semantic correctness oracle",
+  "normalization": "Compare case ID, stage name and stage status in order; omit diagnostic prose, absolute paths, timing and temp directory",
+  "cases": [
+    {"suite": "v016", "id": "minimal-protocol-parses", "stages": ["parse=passed"]},
+    {"suite": "v016", "id": "invalid-module-name-rejected", "stages": ["parse=failed"]},
+    {"suite": "v016", "id": "bytecode-v014-runs", "stages": ["verify_bytecode=passed", "run_vm=passed"]},
+    {"suite": "v016", "id": "unknown-capability-rejected", "stages": ["parse=passed", "semantic_check=failed"]},
+    {"suite": "v017", "id": "policy-warn-runtime", "stages": ["parse=passed", "semantic_check=passed", "emit_ir=passed", "emit_bytecode=passed", "verify_bytecode=passed", "run_vm=passed"]},
+    {"suite": "v017", "id": "policy-v2-full-evidence", "stages": ["parse=passed", "semantic_check=passed", "emit_ir=passed", "emit_bytecode=passed", "verify_bytecode=passed", "run_vm=passed", "security_report=passed", "trace_out=passed", "evidence_bundle=passed", "verify_evidence=passed"]},
+    {"suite": "v017", "id": "provider-boundary-v010-compatible", "stages": ["verify_bytecode=passed"]},
+    {"suite": "v017", "id": "unknown-policy-rule", "stages": ["parse=passed", "semantic_check=failed"]},
+    {"suite": "v100", "id": "vm", "stages": ["parse=passed", "semantic_check=passed", "emit_ir=passed", "emit_bytecode=passed", "verify_bytecode=passed", "run_vm=passed", "trace_out=passed"]},
+    {"suite": "v100", "id": "provider-boundary", "stages": ["verify_bytecode=passed"]},
+    {"suite": "v100", "id": "feature-missing-status", "stages": ["parse=passed", "semantic_check=failed"]},
+    {"suite": "v100", "id": "secret-value-present", "stages": ["parse=failed", "semantic_check=skipped"]},
+    {"suite": "v100", "id": "invalid-runtime-mvp-unknown-runtime-provider", "stages": ["parse=passed", "semantic_check=failed"]}
+  ]
+}

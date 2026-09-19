@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "language": "Argorix Core",
+  "version": "0.1",
+  "required_header": "core 0.1;",
+  "documents": ["README.md", "grammar.ebnf", "types.md", "evaluation.md", "modules.md"],
+  "required_grammar_rules": [
+    "source", "module_decl", "import_decl", "item", "function", "struct_decl", "enum_decl", "type",
+    "block", "statement", "let_stmt", "assign_stmt", "while_stmt", "loop_expr", "expression", "if_expr",
+    "match_expr", "match_arm", "pattern", "postfix", "place", "literal"
+  ],
+  "required_constructs": [
+    "functions", "parameters", "returns", "recursion", "bindings", "mutability", "lexical_scope",
+    "left_to_right", "fixed_integers", "checked_overflow", "wrapping_explicit", "bool", "bytes", "utf8",
+    "arrays", "slices", "buffers", "arenas", "structs", "enums", "handles", "if", "while", "loop", "break",
+    "continue", "field_access", "calls", "recoverable_errors", "match_exhaustive", "modules", "imports"
+  ],
+  "forbidden_magic": ["extern rust", "cargo run", "rustc ", "builtin_lexer", "builtin_parser", "shell("],
+  "deferred_features": ["async", "macros", "classes", "user_generics", "raw_pointers", "arbitrary_ffi"],
+  "required_demonstrations": ["lexer", "parser", "symbols"],
+  "fixture_manifest": "tests/selfhost/spec/cases.json"
+}

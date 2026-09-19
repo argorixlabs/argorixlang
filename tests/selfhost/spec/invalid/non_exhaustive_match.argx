@@ -1,0 +1,7 @@
+core 0.1;
+module invalid.non_exhaustive;
+enum Choice { First, Second, }
+fn choose(value: Choice) -> i32 {
+    match value { Choice::First => 1i32, }
+}
+

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "model_id": "argorix-concurrency-c1-delivery-d1",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "message_states": ["CREATED", "ENQUEUED", "LEASED", "RETRY_QUEUED", "CANCEL_REQUESTED", "ACKED", "REJECTED", "CANCELLED", "EXPIRED", "DEAD_LETTER"],
+  "mailbox_states": ["OPEN", "DRAINING", "CLOSED"],
+  "effect_states": ["PROPOSED", "AUTHORIZED", "DISPATCHED", "COMPLETED", "FAILED", "UNCERTAIN"],
+  "required_scenarios": ["slow_receiver_backpressure", "duplicate_dedup", "reorder_fifo", "cancel_before_dispatch", "cancel_after_dispatch_uncertain", "deadline_expiry", "authority_escalation_rejected", "crash_redelivery", "deadlock_cycle", "drain_close", "message_id_collision", "replay_same_schedule"],
+  "invariants": ["no_silent_loss", "queue_bounds", "fifo_per_stream", "dedup_single_ack", "no_authority_escalation", "no_exactly_once_claim", "terminal_observable", "deterministic_replay"],
+  "bounded_exploration": {"max_depth": 7, "random_seeds": 256, "steps_per_seed": 80},
+  "mechanical_scope": "Deterministic single-process abstract scheduler with explicit fault actions; not proof of threads, network, persistence, authentication, host effects or production fairness."
+}

@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "task": "MAT-004",
+  "generated_at_utc": "2026-09-19T01:16:13.155486+00:00",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "model_policy_sha256": "bb8a63335bc37499ab0ed648716142c516af80918f04a57a6cd6b78740b9ce98",
+  "counterexamples_sha256": "fa1814e926d23f92646bc8c2c73beccd7a954a039dda8b03fa926d5aca941596",
+  "mechanical_scope": "Executable sequential abstract model with bounded exhaustive and deterministic generated traces; not a proof of compiler, backend, concurrency, ABI layout, performance or host sandboxing.",
+  "counterexamples": [
+    {
+      "expected": "UseAfterFree",
+      "observed": "UseAfterFree",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "id": "use_after_free",
+      "expected_from_fixture": "UseAfterFree"
+    },
+    {
+      "expected": "ArenaReleased",
+      "observed": "ArenaReleased",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "id": "arena_use_after_release",
+      "expected_from_fixture": "ArenaReleased"
+    },
+    {
+      "expected": "OutOfBounds",
+      "observed": "OutOfBounds",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "id": "out_of_bounds",
+      "expected_from_fixture": "OutOfBounds"
+    },
+    {
+      "expected": "BorrowConflict",
+      "observed": "BorrowConflict",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "id": "mutable_alias",
+      "expected_from_fixture": "BorrowConflict"
+    },
+    {
+      "expected": "OutOfMemory",
+      "observed": "OutOfMemory",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "id": "oom_atomicity",
+      "expected_from_fixture": "OutOfMemory"
+    },
+    {
+      "expected": "TypeMismatch",
+      "observed": "TypeMismatch",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "id": "type_mismatch",
+      "expected_from_fixture": "TypeMismatch"
+    },
+    {
+      "expected": "CapabilityMissing",
+      "observed": "CapabilityMissing",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "id": "unauthorized_effect",
+      "expected_from_fixture": "CapabilityMissing"
+    },
+    {
+      "expected": "EffectNotDeclared",
+      "observed": "EffectNotDeclared",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "id": "effect_not_declared",
+      "expected_from_fixture": "EffectNotDeclared"
+    },
+    {
+      "expected": "OutOfBounds",
+      "observed": "OutOfBounds",
+      "error_matched": true,
+      "failure_atomic": true,
+      "passed": true,
+      "effect_events": 0,
+      "id": "memory_error_before_effect",
+      "expected_from_fixture": "OutOfBounds"
+    }
+  ],
+  "bounded_exploration": {
+    "depth": 6,
+    "traces_explored": 46656,
+    "invariant_failures": [],
+    "observed_errors": [
+      "BorrowConflict",
+      "OutOfBounds",
+      "UseAfterFree"
+    ],
+    "passed": true
+  },
+  "generated_sequences": {
+    "seeds": 256,
+    "steps_per_seed": 96,
+    "attempted_steps": 24576,
+    "successful_operations": 12641,
+    "observed_errors": [
+      "ArenaReleased",
+      "BorrowConflict",
+      "InvalidBorrow",
+      "InvalidLimit",
+      "NotRoot",
+      "OutOfBounds",
+      "OutOfMemory",
+      "PermissionDenied",
+      "ResourceLimit",
+      "TypeMismatch",
+      "UseAfterFree"
+    ],
+    "failures": [],
+    "passed": true
+  },
+  "weak_generation_probe": {
+    "safe_model_error": "UseAfterFree",
+    "weak_model_accepted_stale_handle": true,
+    "rejection_gate_exercised": true
+  },
+  "mutation_self_test": {
+    "requested": true,
+    "detected": true
+  },
+  "arena_decision": "PROVISIONALLY_ACCEPTED_FOR_PROTOTYPE",
+  "overall_pass": true,
+  "not_proven": [
+    "compiler",
+    "backend",
+    "concurrency",
+    "ABI layout",
+    "performance",
+    "host sandboxing"
+  ]
+}

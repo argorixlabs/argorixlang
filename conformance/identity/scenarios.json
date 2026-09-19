@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id":"foreign_key","operation":"authenticate","key":"foreign","expected":"DENY"},
+    {"id":"expired_key","operation":"authenticate","key":"expired","expected":"DENY"},
+    {"id":"revoked_key","operation":"authenticate","key":"revoked","expected":"DENY"},
+    {"id":"recovered_identity","operation":"recover","key":"revoked","approvals":["offline","operator_b"],"expected":"VERIFIED"},
+    {"id":"leaked_credential","operation":"publish","payload":"token=ARGORIX_TEST_ONLY_CANARY_7f3a","expected":"BLOCKED_ROTATE"},
+    {"id":"unknown_anchor","operation":"authenticate","key":"unknown_anchor","expected":"UNKNOWN"},
+    {"id":"passport_is_metadata","operation":"metadata_auth","expected":"DENY"},
+    {"id":"replayed_challenge","operation":"replay","key":"active","expected":"DENY"},
+    {"id":"wrong_purpose","operation":"authenticate","key":"release_only","expected":"DENY"},
+    {"id":"suspended_key_review","operation":"authenticate","key":"suspended","expected":"REVIEW"},
+    {"id":"provenance_foreign_signer","operation":"verify_provenance","key":"foreign","expected":"DENY"},
+    {"id":"provenance_subject_mismatch","operation":"verify_provenance","key":"release","subject_match":false,"expected":"DENY"},
+    {"id":"test_key_release_rejected","operation":"verify_provenance","key":"test","subject_match":true,"expected":"DENY"},
+    {"id":"host_compromise_limit","operation":"limit","condition":"host_compromised","expected":"STOP_EXTERNAL_RECOVERY"},
+    {"id":"anchor_compromise_limit","operation":"limit","condition":"anchor_compromised","expected":"STOP_REPLACE_ANCHOR"}
+  ]
+}

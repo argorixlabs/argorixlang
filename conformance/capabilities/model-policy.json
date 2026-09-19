@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "model_id": "argorix-authority-a1",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "decisions": ["ALLOW", "DENY", "REVIEW", "UNKNOWN"],
+  "dispatch_states": ["PROPOSED", "AUTHORIZED", "DISPATCHED", "COMPLETED", "FAILED", "UNCERTAIN"],
+  "max_revocation_staleness_ticks": 1,
+  "clock_error_ticks": 0,
+  "required_scenarios": ["scope_escalation", "operation_escalation", "expiry_extension", "budget_amplification", "parent_revocation_cascade", "revocation_before_commit", "revocation_after_dispatch", "nonce_replay", "authority_failure_unknown", "policy_deny", "policy_review", "policy_unknown", "expiry_conservative", "budget_race", "policy_epoch_invalidates_ticket", "subject_mismatch", "removed_permission_not_recovered"],
+  "invariants": ["delegation_attenuates", "lineage_revocation", "budget_conservation", "single_use_commit", "fail_closed_non_allow", "final_recheck", "no_permission_recovery"],
+  "bounded_exploration": {"max_depth": 6, "random_seeds": 256, "steps_per_seed": 72},
+  "mechanical_scope": "Logical-tick authority model with trusted root issuance and in-memory revocation/policy state; not proof of authentication, cryptographic tokens, durable ledgers, distributed clocks, host enforcement or cancellation of real effects."
+}

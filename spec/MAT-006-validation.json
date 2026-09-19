@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "task": "MAT-006",
+  "generated_at_utc": "2026-09-19T01:34:46.385427+00:00",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "policy_sha256": "859a82f10aa83063f26e3b78209594aea89b079e29943db84f57b5498676335e",
+  "scenarios_sha256": "16c9959e5ff4c6ce1c31def8ad1924a702002a9b246be5edb90496690afceceb",
+  "mechanical_scope": "Logical-tick authority model with trusted root issuance and in-memory revocation/policy state; not proof of authentication, cryptographic tokens, durable ledgers, distributed clocks, host enforcement or cancellation of real effects.",
+  "contract_coverage": {
+    "decisions": 4,
+    "dispatch_states": 6,
+    "missing": {},
+    "passed": true
+  },
+  "scenario_results": [
+    {
+      "observed": "ScopeEscalation",
+      "passed": true,
+      "id": "scope_escalation",
+      "expected": "ScopeEscalation"
+    },
+    {
+      "observed": "OperationEscalation",
+      "passed": true,
+      "id": "operation_escalation",
+      "expected": "OperationEscalation"
+    },
+    {
+      "observed": "ExpiryExtension",
+      "passed": true,
+      "id": "expiry_extension",
+      "expected": "ExpiryExtension"
+    },
+    {
+      "observed": "BudgetAmplification",
+      "passed": true,
+      "id": "budget_amplification",
+      "expected": "BudgetAmplification"
+    },
+    {
+      "observed": "AncestorRevoked",
+      "passed": true,
+      "id": "parent_revocation_cascade",
+      "expected": "AncestorRevoked"
+    },
+    {
+      "observed": "Revoked",
+      "passed": true,
+      "id": "revocation_before_commit",
+      "expected": "Revoked"
+    },
+    {
+      "observed": "UNCERTAIN",
+      "passed": true,
+      "id": "revocation_after_dispatch",
+      "expected": "UNCERTAIN"
+    },
+    {
+      "observed": "Replay",
+      "passed": true,
+      "id": "nonce_replay",
+      "expected": "Replay"
+    },
+    {
+      "observed": "UNKNOWN",
+      "passed": true,
+      "id": "authority_failure_unknown",
+      "expected": "UNKNOWN"
+    },
+    {
+      "observed": "DENY",
+      "passed": true,
+      "id": "policy_deny",
+      "expected": "DENY"
+    },
+    {
+      "observed": "REVIEW",
+      "passed": true,
+      "id": "policy_review",
+      "expected": "REVIEW"
+    },
+    {
+      "observed": "UNKNOWN",
+      "passed": true,
+      "id": "policy_unknown",
+      "expected": "UNKNOWN"
+    },
+    {
+      "observed": "Expired",
+      "passed": true,
+      "id": "expiry_conservative",
+      "expected": "Expired"
+    },
+    {
+      "observed": "BudgetExceeded",
+      "passed": true,
+      "id": "budget_race",
+      "expected": "BudgetExceeded"
+    },
+    {
+      "observed": "PolicyChanged",
+      "passed": true,
+      "id": "policy_epoch_invalidates_ticket",
+      "expected": "PolicyChanged"
+    },
+    {
+      "observed": "SubjectMismatch",
+      "passed": true,
+      "id": "subject_mismatch",
+      "expected": "SubjectMismatch"
+    },
+    {
+      "observed": "DENY",
+      "passed": true,
+      "id": "removed_permission_not_recovered",
+      "expected": "DENY"
+    }
+  ],
+  "bounded_exploration": {
+    "depth": 6,
+    "traces_explored": 4096,
+    "failures": [],
+    "passed": true
+  },
+  "generated_sequences": {
+    "seeds": 256,
+    "steps_per_seed": 72,
+    "attempted_steps": 18432,
+    "totals": {
+      "delegated": 169,
+      "allowed": 359,
+      "denied": 4610,
+      "review": 91,
+      "unknown": 93,
+      "committed": 108,
+      "revoked": 2696
+    },
+    "failures": [],
+    "passed": true
+  },
+  "mutation_self_test": {
+    "requested": true,
+    "detected": true
+  },
+  "non_allow_dispatch_count": 0,
+  "overall_pass": true,
+  "not_proven": [
+    "authenticated identity",
+    "cryptographic tokens",
+    "durable revocation",
+    "distributed clock",
+    "host enforcement",
+    "real effect cancellation"
+  ]
+}

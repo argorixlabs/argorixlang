@@ -1,0 +1,4 @@
+// PROPOSED CORE SYNTAX — expected checked-overflow trap before effects.
+fn main() -> i64 {
+  return 9223372036854775807 + 1;
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "policy_id": "argorix-r1-independence-v1",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "supported_profiles": ["ubuntu-24.04-x86_64", "windows-11-x86_64"],
+  "essential_components": ["compiler", "runtime", "verifier", "conformance", "signer", "package_manager"],
+  "required_source_language": "argorix",
+  "required_backend_output": ["elf64-x86_64", "pe-coff-x86_64"],
+  "allowed_dependency_kinds": ["os_abi", "system_linker", "audited_non_rust_library", "versioned_data", "bounded_native_shim"],
+  "transitional_only_dependency_kinds": ["c_compiler", "c_runtime_bootstrap"],
+  "prohibited_dependency_kinds": ["rust_toolchain", "cargo_cache", "rust_source", "rust_static_library", "rust_dynamic_library", "rust_service", "remote_essential_service", "backend_emits_rust", "wrapper_to_rust", "unversioned_download", "c_compiler_final"],
+  "prohibited_file_suffixes": [".rs", ".rlib", ".rmeta"],
+  "prohibited_commands": ["cargo", "rustc", "rustup"],
+  "final_stage": "R1",
+  "stages": [
+    {"id":"B0","rust_allowed":true,"c_compiler_allowed":true,"counts_as_r1":false},
+    {"id":"B1","rust_allowed":false,"c_compiler_allowed":true,"counts_as_r1":false},
+    {"id":"B2","rust_allowed":false,"c_compiler_allowed":true,"counts_as_r1":false},
+    {"id":"N1","rust_allowed":false,"c_compiler_allowed":true,"counts_as_r1":false},
+    {"id":"N2","rust_allowed":false,"c_compiler_allowed":false,"counts_as_r1":false},
+    {"id":"R1","rust_allowed":false,"c_compiler_allowed":false,"counts_as_r1":true}
+  ],
+  "required_candidate_fields": ["profile", "stage", "components", "sources", "dependencies", "commands", "backend_outputs", "services", "shims"],
+  "required_dependency_metadata": ["name", "kind", "version", "sha256", "license", "purpose", "owner"],
+  "sensor_canaries": ["rust_command", "rust_file", "rust_static_library", "rust_service", "backend_emits_rust", "cargo_cache", "c_compiler_final"],
+  "external_linker_is_not_independence": true,
+  "normal_r1_network_access": "denied_after_input_preparation"
+}

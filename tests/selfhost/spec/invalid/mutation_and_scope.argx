@@ -1,0 +1,9 @@
+core 0.1;
+module invalid.mutation_and_scope;
+fn wrong() -> i32 {
+    let value: i32 = 1i32;
+    value = 2i32;
+    { let hidden: i32 = value; hidden; }
+    hidden
+}
+

@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "task": "ESP-005",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "scope": "Safe Rust sequential prototype and canonical ABI vectors; not stage0/C/native runtime or OS sandbox",
+  "abi_policy_sha256": "ea7da9b9a2f304a444c3fb969867ad88adaf05cd672aee13986f0c9b544d725d",
+  "checks": [
+    {
+      "id": "out_of_bounds",
+      "expected": "OutOfBounds",
+      "observed": "OutOfBounds",
+      "failure_atomic": true,
+      "passed": true
+    },
+    {
+      "id": "borrow_conflict",
+      "expected": "BorrowConflict",
+      "observed": "BorrowConflict",
+      "failure_atomic": true,
+      "passed": true
+    },
+    {
+      "id": "use_after_free",
+      "expected": "UseAfterFree",
+      "observed": "UseAfterFree",
+      "failure_atomic": true,
+      "passed": true
+    },
+    {
+      "id": "oom",
+      "expected": "OutOfMemory",
+      "observed": "OutOfMemory",
+      "failure_atomic": true,
+      "passed": true
+    },
+    {
+      "id": "depth_limit",
+      "expected": "DepthLimit",
+      "observed": "DepthLimit",
+      "failure_atomic": true,
+      "passed": true
+    },
+    {
+      "id": "arena_released",
+      "expected": "ArenaReleased",
+      "observed": "ArenaReleased",
+      "failure_atomic": true,
+      "passed": true
+    }
+  ],
+  "handle_roundtrip": true,
+  "abi_contract_passed": true,
+  "abi_contract_failures": [],
+  "abi_mutation_detected": true,
+  "forbidden_ffi_denied": true,
+  "memory_before_effect": true,
+  "unsafe_blocks_in_prototype": 0,
+  "measurements": {
+    "configured_arena_ceiling_bytes": 1048576,
+    "tree_depth": 8,
+    "tree_nodes": 255,
+    "tree_used_bytes": 30600,
+    "tree_peak_bytes": 30600,
+    "buffer_elements": 4096,
+    "buffer_capacity": 4096,
+    "buffer_peak_bytes": 6144,
+    "checked_reads": 100000,
+    "checked_read_elapsed_ns": 21423000,
+    "indicative_ns_per_checked_read": 214.23
+  },
+  "overall_pass": true,
+  "not_proven": [
+    "Core syntax compiles",
+    "C backend equivalence",
+    "native ABI layout",
+    "thread safety",
+    "OS sandbox enforcement",
+    "production performance",
+    "Rust independence"
+  ]
+}
