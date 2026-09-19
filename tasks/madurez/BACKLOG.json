@@ -394,7 +394,7 @@
       "id": "MAT-029",
       "title": "Gobernanza, soporte y mantenimiento del lenguaje",
       "priority": "P0",
-      "status": "PENDIENTE",
+      "status": "HECHA",
       "depends_on": [
         "MAT-001",
         "ESP-001"

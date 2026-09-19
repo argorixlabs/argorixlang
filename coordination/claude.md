@@ -3,7 +3,7 @@
 ## Current claim
 
 - Task: MAT-029 — language governance, support, and maintenance.
-- State: IN PROGRESS.
+- State: DONE (pending PR review and merge by the maintainer).
 - Branch: `claude/governance-mat029`.
 - Base: `3e620ab9` (`origin/main`, "docs: add shared collaboration workboard (#22)").
 - Started: 2026-09-19.
@@ -18,6 +18,8 @@
   - `operations/**` (new)
   - `tasks/madurez/MAT-029.md`
   - `spec/MAT-029-validation.json` (new)
+  - `CODE_OF_CONDUCT.md`, `.github/CODEOWNERS`, `.github/PULL_REQUEST_TEMPLATE.md`
+    (added during the task: broken contacts and review claim found in inspection)
 - Shared closeout paths, edited only at task closure:
   - `README.md` (status/version lines only, if needed for AC-2)
   - `PLAN_MAESTRO_ARGORIXLANG.md`
@@ -37,4 +39,29 @@ for an incompatible language change.
 
 ## Handoff
 
-Pending implementation and evidence.
+- Result: MAT-029 closed as `HECHA` with evidence in
+  `spec/MAT-029-validation.json` (`overall_pass: true`).
+- Repository setting changed (maintainer-authorized): GitHub private
+  vulnerability reporting enabled; it was off while `SECURITY.md` pointed to it.
+- Files: `GOVERNANCE.md` and `operations/**` (new); `SECURITY.md`,
+  `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `.github/CODEOWNERS`,
+  `.github/PULL_REQUEST_TEMPLATE.md`, `tasks/madurez/MAT-029.md`; closeout edits
+  to `README.md` (2 lines), `PLAN_MAESTRO_ARGORIXLANG.md`,
+  `tasks/madurez/BACKLOG.json`, `WORKBOARD.md`.
+- Tests: no code changed. Drills ran `cargo test --workspace --locked` on
+  v1.0.1 (372/0), on a v1.0.2 drill patch (372/0), and on two version-bump
+  mutations of `main` (26 and 56 expected failures). Both
+  `spec/validate-*.ps1` validators pass.
+- Findings for other lanes (no action taken here):
+  - 26 tests pin the internal `ir_version` string although
+    `spec/compatibility.md` calls IR internal; expect churn in Core IR work.
+  - Bytecode version allow-lists span 24 match arms in
+    `crates/argorix_bytecode/src/bytecode.rs`; unknown-version rejections
+    cascade into long messages.
+  - Tag v1.0.1 has `Cargo.toml` 1.0.0; the next release must fix it using
+    `operations/maintenance.md` §1 (includes the `cargo update --workspace`
+    step the drill uncovered).
+- Open for the maintainer: confirm 2FA on `argorixlabs`; review and merge the
+  PR.
+- Next ready work for this lane: none dependency-ready outside ESP-008.
+  Coordinate a file-level ESP-008 subtask with Codex, or wait for ESP-009.
