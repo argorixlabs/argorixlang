@@ -6,7 +6,7 @@
   "core_version": "0.1",
   "cases_manifest_sha256": "2cfa5cd5e46c5ab9b302612648f8e287c6dfd7e4ac1e836b05740774c89d9f58",
   "parser_sha256": "e6ddfdb5abd60b30556afa281dbc48bff980d0b8d7a03e9bc6d56c89c737d499",
-  "semantics_sha256": "13e73afd62b345fc0ac089fd7aa618c1e83c9d715cebd62711be0348d1d73d63",
+  "semantics_sha256": "5073a55fbcbc9e1b95e7e79dc9a4cf085305f73ae9db0734e1635babc9da8d39",
   "valid_cases": [
     {
       "id": "lexer",
