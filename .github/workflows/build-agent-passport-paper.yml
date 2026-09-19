@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # xu-cheng/latex-action ships a full TeX Live, so IEEEtran, tikz (with
       # arrows.meta/positioning/fit/backgrounds/shapes.geometric/calc), booktabs,
