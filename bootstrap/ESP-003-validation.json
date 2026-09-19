@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "task": "ESP-003",
+  "generated_at_utc": "2026-09-19T01:07:25.525651+00:00",
+  "policy": "bootstrap/independence-policy.json",
+  "policy_sha256": "085de0d419d5092d888eaf6ab16637967f4ee1c6d74872f538dfa88894b5cf26",
+  "policy_errors": [],
+  "candidate_errors": null,
+  "self_tests_executed": 9,
+  "self_tests_passed": 9,
+  "overall_pass": true,
+  "results": [
+    {
+      "id": "accept-clean-native",
+      "passed": true,
+      "expected_marker": null,
+      "errors": []
+    },
+    {
+      "id": "reject-wrapper-to-rust",
+      "passed": true,
+      "expected_marker": "prohibited dependency kind",
+      "errors": [
+        "prohibited dependency kind at R1: wrapper_to_rust"
+      ]
+    },
+    {
+      "id": "reject-static-rust-provenance",
+      "passed": true,
+      "expected_marker": "Rust dependency provenance",
+      "errors": [
+        "Rust dependency provenance prohibited: libhidden.a"
+      ]
+    },
+    {
+      "id": "reject-rust-service",
+      "passed": true,
+      "expected_marker": "Rust service prohibited",
+      "errors": [
+        "Rust service prohibited: compiler-rpc",
+        "essential phase may not be delegated to a service: compiler-rpc"
+      ]
+    },
+    {
+      "id": "reject-backend-emits-rust",
+      "passed": true,
+      "expected_marker": "backend emits Rust",
+      "errors": [
+        "backend emits Rust",
+        "missing native backend output elf64-x86_64"
+      ]
+    },
+    {
+      "id": "reject-cargo-cache",
+      "passed": true,
+      "expected_marker": "Cargo cache access prohibited",
+      "errors": [
+        "Cargo cache access prohibited: copy %CARGO_HOME%/registry/cache output"
+      ]
+    },
+    {
+      "id": "reject-rust-command",
+      "passed": true,
+      "expected_marker": "prohibited Rust command",
+      "errors": [
+        "prohibited Rust command: rustc hidden.rs -o hidden"
+      ]
+    },
+    {
+      "id": "reject-rust-source",
+      "passed": true,
+      "expected_marker": "Rust source/provenance prohibited",
+      "errors": [
+        "Rust source/provenance prohibited: hidden.rs"
+      ]
+    },
+    {
+      "id": "reject-c-compiler-in-r1",
+      "passed": true,
+      "expected_marker": "prohibited dependency kind",
+      "errors": [
+        "prohibited dependency kind at R1: c_compiler"
+      ]
+    }
+  ],
+  "limitations": [
+    "This validates the architecture contract and synthetic detector controls, not a future R1 candidate.",
+    "Binary/process/network/SBOM sensors are required later by ESP-024."
+  ]
+}

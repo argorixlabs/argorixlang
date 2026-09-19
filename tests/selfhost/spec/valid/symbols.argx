@@ -1,0 +1,38 @@
+core 0.1;
+module selfhost.symbols;
+
+struct Symbol { name: string, slot: u32, mutable: bool, }
+enum Parent { Root, Some { scope: Handle<Scope>, }, }
+struct Scope { parent: Parent, entries: Buffer<Symbol>, }
+enum Lookup { Found { symbol: Symbol, }, Missing, }
+enum Insert { Added, Duplicate, }
+
+pub fn insert(scope: Handle<Scope>, symbol: Symbol) -> Insert {
+    let mut index: u64 = 0u64;
+    while index < scope.entries.length() {
+        if scope.entries[index].name == symbol.name {
+            return Insert::Duplicate;
+        }
+        index += 1u64;
+    }
+    scope.entries.push(symbol);
+    Insert::Added
+}
+
+pub fn lookup(scope: Handle<Scope>, name: string) -> Lookup {
+    let mut current: Handle<Scope> = scope;
+    loop {
+        let mut index: u64 = 0u64;
+        while index < current.entries.length() {
+            if current.entries[index].name == name {
+                break Lookup::Found { symbol: current.entries[index] };
+            }
+            index += 1u64;
+        }
+        match current.parent {
+            Parent::Root => { break Lookup::Missing; },
+            Parent::Some { scope } => { current = scope; },
+        }
+        continue;
+    }
+}

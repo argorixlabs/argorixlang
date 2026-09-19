@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "task": "MAT-003",
+  "generated_at_utc": "2026-09-19T01:03:02.541062+00:00",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "compiler": "D:\\Proyectos\\ArgorixLang\\target\\debug\\argorixc.exe",
+  "compiler_sha256": "ef7ca5cdd97856502245402ec17a0379485b5a0253528dcc8ae4bc4d9c85f0a5",
+  "oracle": "conformance/normative/manifest.json",
+  "oracle_independent_of_compiler": true,
+  "contract": {
+    "ok": true,
+    "problems": [],
+    "program_fields_actual": 40,
+    "program_fields_covered": 40,
+    "closed_sets": {
+      "token_kinds": 13,
+      "handler_instructions": 6,
+      "bytecode_instructions": 27
+    },
+    "excluded_from_v1": 7
+  },
+  "executed_cases": 16,
+  "passed_cases": 16,
+  "failed_cases": 0,
+  "planned_core_cases": 4,
+  "planned_core_cases_executed": 0,
+  "self_test": {
+    "requested": true,
+    "passed": true
+  },
+  "overall_pass": true,
+  "results": [
+    {
+      "id": "L01-P01",
+      "clause": "L-01",
+      "kind": "valid",
+      "passed": true,
+      "actual_exit": 0,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L01-N01",
+      "clause": "L-01",
+      "kind": "invalid",
+      "passed": true,
+      "actual_exit": 1,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L02-P01",
+      "clause": "L-02",
+      "kind": "valid",
+      "passed": true,
+      "actual_exit": 0,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L02-N01",
+      "clause": "L-02",
+      "kind": "invalid",
+      "passed": true,
+      "actual_exit": 1,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L03-P01",
+      "clause": "L-03",
+      "kind": "valid",
+      "passed": true,
+      "actual_exit": 0,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L03-N01",
+      "clause": "L-03",
+      "kind": "invalid",
+      "passed": true,
+      "actual_exit": 1,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L04-P01",
+      "clause": "L-04",
+      "kind": "valid",
+      "passed": true,
+      "actual_exit": 0,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L04-N01",
+      "clause": "L-04",
+      "kind": "invalid",
+      "passed": true,
+      "actual_exit": 1,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L05-P01",
+      "clause": "L-05",
+      "kind": "valid",
+      "passed": true,
+      "actual_exit": 0,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L05-N01",
+      "clause": "L-05",
+      "kind": "invalid",
+      "passed": true,
+      "actual_exit": 1,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L06-P01",
+      "clause": "L-06",
+      "kind": "valid",
+      "passed": true,
+      "actual_exit": 0,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L06-N01",
+      "clause": "L-06",
+      "kind": "invalid",
+      "passed": true,
+      "actual_exit": 1,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L07-P01",
+      "clause": "L-07",
+      "kind": "valid",
+      "passed": true,
+      "actual_exit": 0,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L07-N01",
+      "clause": "L-07",
+      "kind": "invalid",
+      "passed": true,
+      "actual_exit": 1,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L08-P01",
+      "clause": "L-08",
+      "kind": "valid",
+      "passed": true,
+      "actual_exit": 0,
+      "reasons": [],
+      "observed_marker": true
+    },
+    {
+      "id": "L08-N01",
+      "clause": "L-08",
+      "kind": "invalid",
+      "passed": true,
+      "actual_exit": 1,
+      "reasons": [],
+      "observed_marker": true
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "task": "MAT-007",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "model_scope": "Rust conformance policy model; no runtime authentication, secret broker, keystore, remote resolver or release promotion",
+  "policy_sha256": "7d2bc6ffc02a1835826d14c90bc9c117e22b7973bbc65b7827919c07519598f2",
+  "scenario_sha256": "25c0657cb2ad3f3f80809a6d62496ef8a704ef7bf0705bee9ad7b9f848b13893",
+  "contract_coverage": {
+    "profile": "argorix-local-i1",
+    "decisions": 4,
+    "key_states": 7,
+    "forbidden_secret_sinks": 7,
+    "missing_scenarios": [],
+    "unexpected_scenarios": [],
+    "passed": true
+  },
+  "scenarios_total": 15,
+  "scenarios_passed": 15,
+  "scenario_results": [
+    {
+      "id": "foreign_key",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "expired_key",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "revoked_key",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "recovered_identity",
+      "expected": "VERIFIED",
+      "observed": "VERIFIED",
+      "passed": true
+    },
+    {
+      "id": "leaked_credential",
+      "expected": "BLOCKED_ROTATE",
+      "observed": "BLOCKED_ROTATE",
+      "passed": true
+    },
+    {
+      "id": "unknown_anchor",
+      "expected": "UNKNOWN",
+      "observed": "UNKNOWN",
+      "passed": true
+    },
+    {
+      "id": "passport_is_metadata",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "replayed_challenge",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "wrong_purpose",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "suspended_key_review",
+      "expected": "REVIEW",
+      "observed": "REVIEW",
+      "passed": true
+    },
+    {
+      "id": "provenance_foreign_signer",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "provenance_subject_mismatch",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "test_key_release_rejected",
+      "expected": "DENY",
+      "observed": "DENY",
+      "passed": true
+    },
+    {
+      "id": "host_compromise_limit",
+      "expected": "STOP_EXTERNAL_RECOVERY",
+      "observed": "STOP_EXTERNAL_RECOVERY",
+      "passed": true
+    },
+    {
+      "id": "anchor_compromise_limit",
+      "expected": "STOP_REPLACE_ANCHOR",
+      "observed": "STOP_REPLACE_ANCHOR",
+      "passed": true
+    }
+  ],
+  "exhaustive_authentication_cases": 112,
+  "exhaustive_failures": [],
+  "secret_canary_blocked": true,
+  "recovery_does_not_restore_old_key": true,
+  "test_key_rejected_for_release": true,
+  "overall_pass": true,
+  "not_proven": [
+    "private-key custody",
+    "operating-system keystore integration",
+    "runtime identity enforcement",
+    "secret broker isolation",
+    "remote revocation freshness",
+    "release provenance pipeline",
+    "compromised-host resistance"
+  ]
+}

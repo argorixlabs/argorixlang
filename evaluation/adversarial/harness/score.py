@@ -773,6 +773,7 @@ def findings_report(
     e3: dict[str, Any],
     e4: dict[str, Any],
     e6: dict[str, Any],
+    e5: dict[str, Any],
 ) -> dict[str, Any]:
     """Findings in three buckets, derived from the rows rather than asserted.
 
@@ -960,10 +961,19 @@ def findings_report(
             "id": "B4",
             "family": "E5",
             "boundary": (
-                "The release ingests no prompt content, so no "
-                "prompt -> proposal -> mediation path exists to attack."
+                "The release VM does not ingest raw prompt content or run a "
+                "native prompt -> proposal -> mediation loop. E5 used an "
+                "external model and a driver that mapped its proposal to an "
+                "Argorix program."
             ),
-            "claim_effect": "prompt injection was not evaluated",
+            "claim_effect": (
+                "E5 evaluated prompt injection against the configured model "
+                "and measured conditional containment after driver mapping; "
+                "it did not evaluate resistance of a native Argorix agent loop"
+                if e5["executed"]
+                else "E5 was not executed; neither model prompt-injection "
+                "behavior nor native agent-loop resistance was measured"
+            ),
         }
     )
     if not_rejected:
@@ -1129,7 +1139,7 @@ def build_summary(
             ),
             "claim": "prompt injection was not evaluated",
         },
-        "findings": findings_report(rows, e3, e4, e6),
+        "findings": findings_report(rows, e3, e4, e6, e5),
         "mismatches": mismatches,
         "anticircularity": anticircularity,
         "gates": gates(
@@ -1205,11 +1215,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Score a collected campaign run")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--results-dir", default=str(EVAL_ROOT / "results"))
+    parser.add_argument(
+        "--raw-dir",
+        default=None,
+        help="Read immutable raw rows from this directory while writing rescore outputs to --results-dir",
+    )
     parser.add_argument("--oracle", default=str(EVAL_ROOT / "oracle.json"))
     args = parser.parse_args(argv)
 
     results_dir = Path(args.results_dir)
-    raw_dir = results_dir / "raw" / args.run_id
+    raw_dir = Path(args.raw_dir) if args.raw_dir else results_dir / "raw" / args.run_id
     rows = load_rows(raw_dir / "rows.jsonl")
     with open(args.oracle, "r", encoding="utf-8") as handle:
         oracle = json.load(handle)

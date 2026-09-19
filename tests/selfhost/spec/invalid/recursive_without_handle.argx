@@ -1,0 +1,4 @@
+core 0.1;
+module invalid.recursive_without_handle;
+struct Node { next: Node, }
+

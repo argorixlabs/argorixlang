@@ -1,0 +1,5 @@
+// PROPOSED CORE SYNTAX — UTF-8 scalar semantics, not byte-index semantics.
+fn main() -> bool {
+  let text: string = "Argorix ⚔";
+  return text == "Argorix ⚔";
+}

@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "platform": "Windows-11-10.0.26340-SP0",
+  "python": "3.13.5",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)",
+  "cargo_lock_sha256": "0F998851B101A3A43AEB2F86F1223D00AFA89C504173F6018FA3F17E0E291C02",
+  "conformance_binary_sha256": "2FAAB7355B42BDD092C4972011CF09DA5314B75A5D71CB26439C1F4D3B048EE0",
+  "e0_snapshot_archive_sha256": "CC33FF74CC7DA3DD28AEEC2791F6CF88347707A4F72FBE0676706BE627933A00",
+  "normalization": "Compare case ID, stage name and stage status in order; omit diagnostic prose, absolute paths, timing and temp directory",
+  "suites": [
+    {
+      "version": "min_v022",
+      "cases": 4,
+      "expected_rejection": true,
+      "diagnostic": "escapes the portable suite tree",
+      "rerun_equal": true
+    },
+    {
+      "version": "v016",
+      "cases": 44,
+      "passed": 44,
+      "golden_cases": 4,
+      "normalized_sha256": "74577C171AB4E8150B5B3122D9147A637DC2F74CA41BF8D1CCD13C5E98A63E1D",
+      "rerun_equal": true
+    },
+    {
+      "version": "v017",
+      "cases": 26,
+      "passed": 26,
+      "golden_cases": 4,
+      "normalized_sha256": "FD44992658D3A549CAB183DF249E2318DDA77B9FF214E6172EFED4F13F29EE0F",
+      "rerun_equal": true
+    },
+    {
+      "version": "v018",
+      "cases": 24,
+      "passed": 24,
+      "golden_cases": 0,
+      "normalized_sha256": "E3E65457BB0443843965E14F844493498A23F59F3EED7FADE1D2A2F09B841C48",
+      "rerun_equal": true
+    },
+    {
+      "version": "v019",
+      "cases": 45,
+      "passed": 45,
+      "golden_cases": 0,
+      "normalized_sha256": "29B8BB356C3F73B7A633F7EFB464CF0032A5DB99136D5DCE1B24983BA33B00AF",
+      "rerun_equal": true
+    },
+    {
+      "version": "v020",
+      "cases": 43,
+      "passed": 43,
+      "golden_cases": 0,
+      "normalized_sha256": "56F28EB8F505D7392AA2D02A2C0221C010667035A86892EBF45E8069FD6AC9B6",
+      "rerun_equal": true
+    },
+    {
+      "version": "v021",
+      "cases": 67,
+      "passed": 67,
+      "golden_cases": 0,
+      "normalized_sha256": "FCCD24FCA66971FD6B830ED3D88D6F3F4A13D83907EBD634618F3A658878B6E0",
+      "rerun_equal": true
+    },
+    {
+      "version": "v022",
+      "cases": 67,
+      "passed": 67,
+      "golden_cases": 0,
+      "normalized_sha256": "FCCD24FCA66971FD6B830ED3D88D6F3F4A13D83907EBD634618F3A658878B6E0",
+      "rerun_equal": true
+    },
+    {
+      "version": "v024",
+      "cases": 5,
+      "expected_rejection": true,
+      "diagnostic": "escapes the portable suite tree",
+      "rerun_equal": true
+    },
+    {
+      "version": "v025",
+      "cases": 77,
+      "passed": 77,
+      "golden_cases": 0,
+      "normalized_sha256": "FB7336FF71A71999D10D56145EB564E9C1B38A222262EA95828B91F9B4D9EBED",
+      "rerun_equal": true
+    },
+    {
+      "version": "v026",
+      "cases": 79,
+      "passed": 79,
+      "golden_cases": 0,
+      "normalized_sha256": "C71B178F426253E183EAE0DC74FD62B0B9B11203C7AD971376DDA30FBD79B238",
+      "rerun_equal": true
+    },
+    {
+      "version": "v027",
+      "cases": 80,
+      "passed": 80,
+      "golden_cases": 0,
+      "normalized_sha256": "4BAF46585FCA8BC971171B86638F3E637B544F2AE86DBB51296B21FE049F7C05",
+      "rerun_equal": true
+    },
+    {
+      "version": "v028",
+      "cases": 81,
+      "passed": 81,
+      "golden_cases": 0,
+      "normalized_sha256": "9AD2326BE38FEF8D54C0D7AD4DC6C69490E9C2E516C6BAAD0705F7EC120403C0",
+      "rerun_equal": true
+    },
+    {
+      "version": "v029",
+      "cases": 82,
+      "passed": 82,
+      "golden_cases": 0,
+      "normalized_sha256": "D3475A46A5B154E793CCCB979989F34553FBD423ADCDC9428F2FAF4604E24FA8",
+      "rerun_equal": true
+    },
+    {
+      "version": "v030",
+      "cases": 83,
+      "passed": 83,
+      "golden_cases": 0,
+      "normalized_sha256": "F2DB84017B8F4C0E107D7E25903CE3B8B80FC6127E56983AF78B911023831C6F",
+      "rerun_equal": true
+    },
+    {
+      "version": "v031",
+      "cases": 89,
+      "passed": 89,
+      "golden_cases": 0,
+      "normalized_sha256": "348F63BE46DC50E5347822799B249C4770796F78B5A1CDD0549ED3108134FB87",
+      "rerun_equal": true
+    },
+    {
+      "version": "v032",
+      "cases": 95,
+      "passed": 95,
+      "golden_cases": 0,
+      "normalized_sha256": "EA18EFDC8FD625719E3BC759A67840E00025DA805A4120BB0261BF533505F986",
+      "rerun_equal": true
+    },
+    {
+      "version": "v034",
+      "cases": 98,
+      "passed": 98,
+      "golden_cases": 0,
+      "normalized_sha256": "558C36E8FCA34CCDAE99F943A380F15BA80258BDCB1DB7661D0F5A89018C78F3",
+      "rerun_equal": true
+    },
+    {
+      "version": "v035",
+      "cases": 100,
+      "passed": 100,
+      "golden_cases": 0,
+      "normalized_sha256": "3E68D1E12B74FD5DC07E245E6012790DC54673CAF87540F068B35E5C323E1E23",
+      "rerun_equal": true
+    },
+    {
+      "version": "v036",
+      "cases": 102,
+      "passed": 102,
+      "golden_cases": 0,
+      "normalized_sha256": "A6F6F618FE780B2F11F65DF3BC4DCDF986A96864422DEAD015C280AF8A78E26C",
+      "rerun_equal": true
+    },
+    {
+      "version": "v100",
+      "cases": 137,
+      "passed": 137,
+      "golden_cases": 5,
+      "normalized_sha256": "F4D4147A1092E395AAC2700B80ADBB2C0AA8E632C3A6B56AB1DB4CF2ED95521A",
+      "rerun_equal": true
+    }
+  ],
+  "negative_control": "PASS: altered expected stage rejected in memory"
+}

@@ -1,0 +1,6 @@
+core 0.1;
+module invalid.type_and_return;
+fn wrong(value: bool) -> i32 {
+    if value { true } else { 1i32 }
+}
+

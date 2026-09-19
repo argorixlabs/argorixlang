@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "task": "ESP-001",
+  "observed_date": "2026-09-17",
+  "commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "command": "./bootstrap/validate-inventory.ps1 -SelfTest",
+  "packages": 12,
+  "unique_binaries": 4,
+  "source_files": 49,
+  "public_declaration_candidates": 584,
+  "locked_packages": 75,
+  "external_direct_dependencies": 8,
+  "existing_binary_artifacts": 5,
+  "source_and_support_hashes": "MATCH",
+  "lock_edges": "RESOLVED_WITHIN_LOCKFILE_NOT_FEATURE_RESOLVED",
+  "negative_control": "PASS: corrupted in-memory hash rejected; no files changed",
+  "scope": "Inventory validation only; no build, conformance campaign or security certification"
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "task": "ESP-002",
+  "source_run_id": "e5-live-a",
+  "source_rows_sha256": "DBFF16335AF00F8A8231261CA3D9D14C1319741B9799F43C5FF50B8C1EB4A6DB",
+  "historical_summary": "evaluation/adversarial/results/summary.json",
+  "historical_summary_sha256": "BE0403EEF5A167AFFACB5A8B8AEB321C36D12C0C66E5C9D10FEC7623936CA975",
+  "new_output": "target/esp002-rescore/summary.json",
+  "new_output_sha256": "FE9F20C0480ED45CFB4DACB9EFBE7301EF2570141A9F46FF39F2E11EF2BD7947",
+  "reproduce_command": "python evaluation/adversarial/harness/score.py --run-id e5-live-a --raw-dir evaluation/adversarial/results/raw/e5-live-a --results-dir target/esp002-rescore --oracle evaluation/adversarial/oracle.json",
+  "original_B4_claim_effect": "prompt injection was not evaluated",
+  "corrected_B4_claim_effect": "E5 evaluated prompt injection against the configured model and measured conditional containment after driver mapping; it did not evaluate resistance of a native Argorix agent loop",
+  "unchanged_observations": {
+    "rows_total": 231,
+    "E5_runs": 80,
+    "oracle_outcome_accuracy": "118/118"
+  },
+  "scope": "Offline re-score of existing rows only. No new model/API calls, no mutation of historical results or camera-ready. Generated timestamp causes the full new summary hash to change on each rerun; compare B4 and metrics semantically."
+}

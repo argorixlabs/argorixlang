@@ -1,0 +1,46 @@
+core 0.1;
+module selfhost.lexer;
+
+enum TokenKind { Name, Number, Plus, End, }
+struct Token { kind: TokenKind, start: u64, length: u64, }
+enum ScanError { Unexpected { offset: u64, byte: u8, }, }
+enum ScanResult { Ok { tokens: Buffer<Token>, }, Err { error: ScanError, }, }
+
+fn is_digit(value: u8) -> bool {
+    value >= 48u8 && value <= 57u8
+}
+
+fn is_name_start(value: u8) -> bool {
+    (value >= 65u8 && value <= 90u8) || (value >= 97u8 && value <= 122u8) || value == 95u8
+}
+
+pub fn scan(input: Slice<u8>) -> ScanResult {
+    let mut tokens: Buffer<Token> = Buffer::new();
+    let mut offset: u64 = 0u64;
+    while offset < input.length() {
+        let byte: u8 = input[offset];
+        if byte == 32u8 {
+            offset += 1u64;
+        } else if byte == 43u8 {
+            tokens.push(Token { kind: TokenKind::Plus, start: offset, length: 1u64 });
+            offset += 1u64;
+        } else if is_digit(byte) {
+            let start: u64 = offset;
+            while offset < input.length() && is_digit(input[offset]) {
+                offset += 1u64;
+            }
+            tokens.push(Token { kind: TokenKind::Number, start: start, length: offset - start });
+        } else if is_name_start(byte) {
+            let start: u64 = offset;
+            while offset < input.length() && is_name_start(input[offset]) {
+                offset += 1u64;
+            }
+            tokens.push(Token { kind: TokenKind::Name, start: start, length: offset - start });
+        } else {
+            return ScanResult::Err { error: ScanError::Unexpected { offset: offset, byte: byte } };
+        }
+    }
+    tokens.push(Token { kind: TokenKind::End, start: offset, length: 0u64 });
+    ScanResult::Ok { tokens: tokens }
+}
+

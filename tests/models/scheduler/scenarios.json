@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id":"slow_receiver_backpressure","expected":"Backpressure"},
+    {"id":"duplicate_dedup","expected":"single_ack"},
+    {"id":"reorder_fifo","expected":"[1, 2]"},
+    {"id":"cancel_before_dispatch","expected":"CANCELLED"},
+    {"id":"cancel_after_dispatch_uncertain","expected":"UNCERTAIN"},
+    {"id":"deadline_expiry","expected":"EXPIRED"},
+    {"id":"authority_escalation_rejected","expected":"AuthorityEscalation"},
+    {"id":"crash_redelivery","expected":"attempts=2,single_ack"},
+    {"id":"deadlock_cycle","expected":"DeadlockDetected"},
+    {"id":"drain_close","expected":"CLOSED"},
+    {"id":"message_id_collision","expected":"MessageIdCollision"},
+    {"id":"replay_same_schedule","expected":"same_semantic_digest"}
+  ]
+}

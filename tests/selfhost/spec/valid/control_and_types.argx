@@ -1,0 +1,30 @@
+core 0.1;
+module selfhost.control_and_types;
+
+import selfhost.lexer as lexer;
+
+struct Pair { first: i32, second: i32, }
+enum Checked { Value { value: i32, }, Invalid, }
+
+fn fibonacci(value: u32) -> u32 {
+    if value < 2u32 { value } else { fibonacci(value - 1u32) + fibonacci(value - 2u32) }
+}
+
+pub fn compute(values: Slice<i32>, enabled: bool) -> Checked {
+    let fixed: Array<u8, 3> = [65u8, 66u8, 67u8];
+    let raw: bytes = fixed.as_bytes();
+    let text: string = raw.decode_utf8_or_trap();
+    let pair: Pair = Pair { first: values[0u64], second: values[1u64] };
+    let mut total: i32 = 0i32;
+    let mut index: u64 = 0u64;
+    while index < values.length() {
+        total += values[index];
+        index += 1u64;
+    }
+    let wrapped: u8 = 255u8.wrapping_add(1u8);
+    if enabled && text == "ABC" && wrapped == 0u8 && fibonacci(5u32) == 5u32 {
+        Checked::Value { value: total + pair.first - pair.second }
+    } else {
+        Checked::Invalid
+    }
+}

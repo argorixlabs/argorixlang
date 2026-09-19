@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id":"use_after_free","expected_error":"UseAfterFree","reason":"A stale allocation generation must never revive."},
+    {"id":"arena_use_after_release","expected_error":"ArenaReleased","reason":"Arena epoch invalidates every contained handle."},
+    {"id":"out_of_bounds","expected_error":"OutOfBounds","reason":"Index equal to view length is invalid."},
+    {"id":"mutable_alias","expected_error":"BorrowConflict","reason":"A write borrow cannot coexist with a read borrow."},
+    {"id":"oom_atomicity","expected_error":"OutOfMemory","reason":"Failed allocation must not change accounting or slots."},
+    {"id":"type_mismatch","expected_error":"TypeMismatch","reason":"Memory element type is preserved on write."},
+    {"id":"unauthorized_effect","expected_error":"CapabilityMissing","reason":"Declared effect without capability cannot dispatch."},
+    {"id":"effect_not_declared","expected_error":"EffectNotDeclared","reason":"Capability cannot widen a function effect set."},
+    {"id":"memory_error_before_effect","expected_error":"OutOfBounds","reason":"Invalid memory argument fails before any effect dispatch."}
+  ]
+}

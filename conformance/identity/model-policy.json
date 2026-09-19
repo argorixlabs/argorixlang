@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "profile": "argorix-local-i1",
+  "algorithms": {
+    "signature": "Ed25519",
+    "digest": "SHA-256",
+    "challenge_source": "OS-CSPRNG"
+  },
+  "identity_decisions": ["VERIFIED", "DENY", "REVIEW", "UNKNOWN"],
+  "key_states": ["PENDING", "ACTIVE", "SUSPENDED", "REVOKED", "EXPIRED", "COMPROMISED", "RETIRED"],
+  "required_scenarios": [
+    "foreign_key", "expired_key", "revoked_key", "recovered_identity",
+    "leaked_credential", "unknown_anchor", "passport_is_metadata",
+    "replayed_challenge", "wrong_purpose", "suspended_key_review",
+    "provenance_foreign_signer", "provenance_subject_mismatch",
+    "test_key_release_rejected", "host_compromise_limit", "anchor_compromise_limit"
+  ],
+  "secret_forbidden_sinks": ["source", "bytecode", "log", "trace", "evidence", "response", "provenance"],
+  "recovery_quorum": 2,
+  "test_key_marker": "ARGORIX_TEST_ONLY"
+}

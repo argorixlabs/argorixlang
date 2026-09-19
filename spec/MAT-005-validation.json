@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "task": "MAT-005",
+  "generated_at_utc": "2026-09-19T01:24:20.129578+00:00",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "policy_sha256": "2785dd6e85f689158cf9b65a201ec212f532c456858a7f8fb1b45fb19289d203",
+  "scenarios_sha256": "981261c7ed5130ce4deb4afb853c8a1d9b3b310a3e56f20e6aee27c9af6da9d9",
+  "mechanical_scope": "Deterministic single-process abstract scheduler with explicit fault actions; not proof of threads, network, persistence, authentication, host effects or production fairness.",
+  "contract_coverage": {
+    "message_states": 10,
+    "mailbox_states": 3,
+    "effect_states": 6,
+    "missing": {},
+    "passed": true
+  },
+  "scenario_results": [
+    {
+      "observed": "Backpressure",
+      "passed": true,
+      "accepted_messages": 1,
+      "id": "slow_receiver_backpressure",
+      "expected": "Backpressure"
+    },
+    {
+      "observed": "single_ack",
+      "passed": true,
+      "acks": 1,
+      "duplicate_drops": 2,
+      "id": "duplicate_dedup",
+      "expected": "single_ack"
+    },
+    {
+      "observed": "[1, 2]",
+      "passed": true,
+      "id": "reorder_fifo",
+      "expected": "[1, 2]"
+    },
+    {
+      "observed": "CANCELLED",
+      "passed": true,
+      "id": "cancel_before_dispatch",
+      "expected": "CANCELLED"
+    },
+    {
+      "observed": "UNCERTAIN",
+      "effect": "UNCERTAIN",
+      "passed": true,
+      "id": "cancel_after_dispatch_uncertain",
+      "expected": "UNCERTAIN"
+    },
+    {
+      "observed": "EXPIRED",
+      "passed": true,
+      "id": "deadline_expiry",
+      "expected": "EXPIRED"
+    },
+    {
+      "observed": "AuthorityEscalation",
+      "passed": true,
+      "id": "authority_escalation_rejected",
+      "expected": "AuthorityEscalation"
+    },
+    {
+      "observed": "attempts=2,single_ack",
+      "passed": true,
+      "id": "crash_redelivery",
+      "expected": "attempts=2,single_ack"
+    },
+    {
+      "observed": "DeadlockDetected",
+      "passed": true,
+      "id": "deadlock_cycle",
+      "expected": "DeadlockDetected"
+    },
+    {
+      "observed": "CLOSED",
+      "passed": true,
+      "id": "drain_close",
+      "expected": "CLOSED"
+    },
+    {
+      "observed": "MessageIdCollision",
+      "passed": true,
+      "id": "message_id_collision",
+      "expected": "MessageIdCollision"
+    },
+    {
+      "observed": "same_semantic_digest",
+      "passed": true,
+      "digest": "4ef1ebc835ef1e5ce6809285b3d64682aff975217958e67bc82384ab3b2f35e0",
+      "id": "replay_same_schedule",
+      "expected": "same_semantic_digest"
+    }
+  ],
+  "bounded_exploration": {
+    "depth": 7,
+    "traces_explored": 16384,
+    "failures": [],
+    "observed_errors": [],
+    "passed": true
+  },
+  "generated_sequences": {
+    "seeds": 256,
+    "steps_per_seed": 80,
+    "attempted_steps": 20480,
+    "totals": {
+      "accepted": 2874,
+      "rejected": 4886,
+      "leased": 2112,
+      "terminal": 2847
+    },
+    "failures": [],
+    "passed": true
+  },
+  "mutation_self_test": {
+    "requested": true,
+    "detected": true
+  },
+  "exactly_once_external_claim": false,
+  "overall_pass": true,
+  "not_proven": [
+    "threads",
+    "network",
+    "persistence",
+    "authenticated transport",
+    "external effects",
+    "production fairness"
+  ]
+}

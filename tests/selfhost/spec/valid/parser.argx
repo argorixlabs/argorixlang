@@ -1,0 +1,57 @@
+core 0.1;
+module selfhost.parser;
+
+enum TokenKind { Number, Plus, LeftParen, RightParen, End, }
+struct Token { kind: TokenKind, value: i64, }
+enum Expr { Number { value: i64, }, Add { left: Handle<Expr>, right: Handle<Expr>, }, }
+struct Parser { tokens: Slice<Token>, cursor: u64, expressions: Handle<Arena<Expr>>, }
+enum ParseError { Expected { wanted: TokenKind, at: u64, }, }
+enum ParseResult { Ok { value: Handle<Expr>, }, Err { error: ParseError, }, }
+
+fn parse_primary(parser: Handle<Parser>) -> ParseResult {
+    let token: Token = parser.tokens[parser.cursor];
+    match token.kind {
+        TokenKind::Number => {
+            parser.cursor += 1u64;
+            let node: Handle<Expr> = parser.expressions.alloc(Expr::Number { value: token.value });
+            ParseResult::Ok { value: node }
+        },
+        TokenKind::LeftParen => {
+            parser.cursor += 1u64;
+            let inner: ParseResult = parse_expression(parser);
+            match inner {
+                ParseResult::Err { error } => ParseResult::Err { error: error },
+                ParseResult::Ok { value } => {
+                    if parser.tokens[parser.cursor].kind != TokenKind::RightParen {
+                        ParseResult::Err { error: ParseError::Expected { wanted: TokenKind::RightParen, at: parser.cursor } }
+                    } else {
+                        parser.cursor += 1u64;
+                        ParseResult::Ok { value: value }
+                    }
+                },
+            }
+        },
+        _ => ParseResult::Err { error: ParseError::Expected { wanted: TokenKind::Number, at: parser.cursor } },
+    }
+}
+
+fn parse_expression(parser: Handle<Parser>) -> ParseResult {
+    let mut left: Handle<Expr> = match parse_primary(parser) {
+        ParseResult::Ok { value } => value,
+        ParseResult::Err { error } => return ParseResult::Err { error: error },
+    };
+    while parser.tokens[parser.cursor].kind == TokenKind::Plus {
+        parser.cursor += 1u64;
+        let right: Handle<Expr> = match parse_primary(parser) {
+            ParseResult::Ok { value } => value,
+            ParseResult::Err { error } => return ParseResult::Err { error: error },
+        };
+        left = parser.expressions.alloc(Expr::Add { left: left, right: right });
+    }
+    ParseResult::Ok { value: left }
+}
+
+pub fn parse(tokens: Slice<Token>, expressions: Handle<Arena<Expr>>, parsers: Handle<Arena<Parser>>) -> ParseResult {
+    let parser: Handle<Parser> = parsers.alloc(Parser { tokens: tokens, cursor: 0u64, expressions: expressions });
+    parse_expression(parser)
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id":"scope_escalation","expected":"ScopeEscalation"},
+    {"id":"operation_escalation","expected":"OperationEscalation"},
+    {"id":"expiry_extension","expected":"ExpiryExtension"},
+    {"id":"budget_amplification","expected":"BudgetAmplification"},
+    {"id":"parent_revocation_cascade","expected":"AncestorRevoked"},
+    {"id":"revocation_before_commit","expected":"Revoked"},
+    {"id":"revocation_after_dispatch","expected":"UNCERTAIN"},
+    {"id":"nonce_replay","expected":"Replay"},
+    {"id":"authority_failure_unknown","expected":"UNKNOWN"},
+    {"id":"policy_deny","expected":"DENY"},
+    {"id":"policy_review","expected":"REVIEW"},
+    {"id":"policy_unknown","expected":"UNKNOWN"},
+    {"id":"expiry_conservative","expected":"Expired"},
+    {"id":"budget_race","expected":"BudgetExceeded"},
+    {"id":"policy_epoch_invalidates_ticket","expected":"PolicyChanged"},
+    {"id":"subject_mismatch","expected":"SubjectMismatch"},
+    {"id":"removed_permission_not_recovered","expected":"DENY"}
+  ]
+}

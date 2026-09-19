@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "task": "MAT-002",
+  "date": "2026-09-18",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "execution_host": "Windows NT 10.0.26340.0, x86-64; not the Windows 11 candidate release profile",
+  "tools": {
+    "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+    "cargo": "1.96.0 (30a34c682 2026-05-25)",
+    "shell": "PowerShell"
+  },
+  "commands_and_results": [
+    {
+      "command": "./spec/validate-trust-model.ps1 -SelfTest",
+      "result": "PASS: 11 claims, 11 boundaries, requirement/task/file links; invalid requirement injected in memory rejected"
+    },
+    {
+      "command": "./spec/validate-product-contract.ps1 -SelfTest",
+      "result": "PASS: 29 requirements, 38 planned cases, 3 applications, 2 platform profiles; broken link rejected in memory"
+    },
+    {
+      "command": "cargo test -p argorix_module -p argorix_bytecode -p argorix_vm -p argorix_provider",
+      "result": "PASS: 129 unit/integration tests; 0 failed; doc tests 0",
+      "relevant_negative_controls": [
+        "resolver::tests::rejects_escaping_paths",
+        "bytecode::tests::rejects_unknown_instruction",
+        "tests::registry_rejects_external_executable_provider_implementations",
+        "reactive::tests::external_provider_execution_is_blocked_and_preserves_ledger",
+        "coordinated_unsigned_replacement_passes_without_an_anchor_and_fails_with_one",
+        "signature_from_a_foreign_key_is_rejected"
+      ]
+    }
+  ],
+  "artifact_sha256": {
+    "spec/trust-boundaries.md": "2D2CDBAFAF9A60CCFE0951FFCB22D7B0EDF531D197EFB7348681E80AC8734B10",
+    "spec/claims.json": "948BCE0994C53043C84A443875AEEFE363DCDF830002EAFBBD607CBC52A61835",
+    "ArgorixLang-threat-model.md": "CAEA131790E22B74C5671348C8ECDCA52EA734B353833837D448B5AD57274117",
+    "spec/validate-trust-model.ps1": "02EE424FC6281E79B92AB039EE2BB15C45BF27C13B27B721935847E727A107CC"
+  },
+  "application_walkthrough": {
+    "APP-01": "Design walkthrough with hostile model/tool proposal; TB-04/TB-05 predict deny/no dispatch. Not executed against real tool.",
+    "APP-02": "Design walkthrough with foreign/revoked/replayed sender; TB-06/TB-07 predict deny and correlation. Remote channel unimplemented.",
+    "APP-03": "Design walkthrough with tampered backup and uncertain effect; TB-07/TB-08 predict stop and reconcile. Persistent runtime unimplemented."
+  },
+  "not_executed": [
+    "T-01 to T-11 as release-profile adversarial experiments",
+    "APP-01 to APP-03 end-to-end acceptance on actual model/tool/remote/persistent runtime",
+    "Ubuntu 24.04 x86-64 release-profile tests and independent sensor campaign"
+  ],
+  "scope": "Architecture and catalog consistency only. Passing existing Rust tests does not prove future R1-R3 guarantees."
+}

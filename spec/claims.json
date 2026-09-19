@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "status": "ARCHITECTURE_CONTRACT_ONLY",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "primary_deployment": "local_cli_runtime",
+  "secondary_surface": "optional_http_demo",
+  "evidence_rule": "observed_control_is_not_a_production_guarantee; planned_tests_are_not_results",
+  "test_status": "PLANNED_NOT_EXECUTED",
+  "claims": [
+    {
+      "id": "CL-01", "boundary": "TB-01", "kind": "language_and_host", "guarantee": "La compilación de entradas hostiles respeta límites y falla de forma explícita.",
+      "observed_control": "Parser y compilador locales; no aislamiento de OS atribuido.", "evidence": ["crates/argorixc/src/main.rs"],
+      "test": "T-01: corpus malformado con límites de CPU, memoria y tiempo en ambos perfiles", "residual_risk": "Fuente hostil puede consumir recursos o activar defectos de parser", "tasks": ["MAT-003", "MAT-008", "MAT-011"], "requirements": ["LAN-001", "SEC-003"], "state": "PLANNED"
+    },
+    {
+      "id": "CL-02", "boundary": "TB-02", "kind": "host", "guarantee": "Un import no puede leer fuera de raíces autorizadas ni mediante enlaces del FS.",
+      "observed_control": "Normalización léxica rechaza absoluto, drive y ..; contención de enlaces sin demostrar.", "evidence": ["crates/argorix_module/src/resolver.rs"],
+      "test": "T-02: symlink/junction exterior con archivo centinela y control positivo", "residual_risk": "Contención léxica no comprueba destino real", "tasks": ["MAT-011", "MAT-016"], "requirements": ["LAN-003", "SEC-003"], "state": "PARTIAL_DESIGN"
+    },
+    {
+      "id": "CL-03", "boundary": "TB-03", "kind": "language", "guarantee": "Bytecode no válido se rechaza antes de ejecutarse, con consumo acotado.",
+      "observed_control": "verify_bytecode valida versión, opcodes y estructura; no garantiza procedencia ni límites del host.", "evidence": ["crates/argorix_bytecode/src/bytecode.rs", "crates/argorix_vm/src/vm.rs"],
+      "test": "T-03: mutaciones, fuzz y límites sobre binarios distribuidos", "residual_risk": "Validez sintáctica no prueba semántica segura ni ausencia de DoS", "tasks": ["MAT-004", "MAT-008", "MAT-011"], "requirements": ["LAN-001", "SEC-003"], "state": "PARTIAL_DESIGN"
+    },
+    {
+      "id": "CL-04", "boundary": "TB-04", "kind": "language", "guarantee": "Ninguna propuesta, prompt o metadato declarativo otorga capacidad; autorización final por efecto.",
+      "observed_control": "La VM evalúa reglas y bloquea o planifica; no ejecuta proveedor externo real.", "evidence": ["crates/argorix_vm/src/vm.rs"],
+      "test": "T-04: canario positivo y sensor externo para rechazo de herramienta real", "residual_risk": "No existe aún mediación completa de un sink real", "tasks": ["MAT-006", "MAT-013", "MAT-014"], "requirements": ["AGT-002", "SEC-001"], "state": "PARTIAL_DESIGN"
+    },
+    {
+      "id": "CL-05", "boundary": "TB-05", "kind": "host", "guarantee": "Efectos reales quedan restringidos por OS y no sólo por la VM.",
+      "observed_control": "Registro de providers sólo permite el simulado; eval-tripwire es experimento, no sandbox.", "evidence": ["crates/argorix_provider/src/registry.rs", "crates/argorix_vm/src/vm.rs"],
+      "test": "T-05: intentos de FS/red/proceso negados por OS en Linux y Windows", "residual_risk": "Futura herramienta puede escapar una política sólo declarativa", "tasks": ["MAT-011", "MAT-013"], "requirements": ["SEC-003"], "state": "UNIMPLEMENTED"
+    },
+    {
+      "id": "CL-06", "boundary": "TB-06", "kind": "identity_and_network", "guarantee": "Sólo identidad autenticada y delegación vigente autorizan mensajes y efectos remotos.",
+      "observed_control": "MCP/A2A, DID/VC son metadatos/contratos del MVP, no canal autenticado probado.", "evidence": ["README.md", "crates/argorix_vm/src/vm.rs"],
+      "test": "T-06: dos procesos, identidad extranjera y revocada, replay, duplicado y partición", "residual_risk": "Suplantación y replay si se habilita remoto antes de construir el canal", "tasks": ["MAT-007", "MAT-012", "MAT-015"], "requirements": ["AGT-005", "SEC-002"], "state": "UNIMPLEMENTED"
+    },
+    {
+      "id": "CL-07", "boundary": "TB-07", "kind": "storage_and_host", "guarantee": "Estado corrupto o efecto incierto no se traduce en avance ni reintento automático.",
+      "observed_control": "Trazas y bundles; no constituyen WAL y recuperación transaccional.", "evidence": ["crates/argorix_vm/src/evidence.rs"],
+      "test": "T-07: cortar antes/después de commit y efecto, alterar backup y recuperar", "residual_risk": "Pérdida o duplicado de efecto sin reconciliación", "tasks": ["MAT-010", "MAT-017"], "requirements": ["OPS-001", "OPS-002"], "state": "UNIMPLEMENTED"
+    },
+    {
+      "id": "CL-08", "boundary": "TB-08", "kind": "evidence", "guarantee": "Procedencia y contenido de bundle se vinculan a ancla, fuente y observación independiente.",
+      "observed_control": "Verifica digests y opcionalmente firma con ancla; sin ancla sólo consistencia interna.", "evidence": ["crates/argorix_vm/src/evidence.rs", "crates/argorix_vm/src/signature.rs"],
+      "test": "T-08: modificar archivos, sustituir firmante, symlink exterior y fuente multiarchivo", "residual_risk": "Bundle autoconsistente, enlace simbólico o ausencia de sensor pueden inducir afirmación falsa", "tasks": ["MAT-007", "MAT-018"], "requirements": ["SEC-004"], "state": "PARTIAL_DESIGN"
+    },
+    {
+      "id": "CL-09", "boundary": "TB-09", "kind": "host_and_key_governance", "guarantee": "Claves protegidas, rotables y revocables sustentan identidad y evidencia.",
+      "observed_control": "Firma/verificación y archivos de clave; semilla determinista sólo para evaluación.", "evidence": ["crates/argorix-sign/src/main.rs", "crates/argorix_vm/src/signature.rs"],
+      "test": "T-09: ancla equivocada, permisos, rotación/revocación y redacción de logs", "residual_risk": "Robo o uso de clave obsoleta si operador y OS no gestionan ciclo", "tasks": ["MAT-007", "MAT-012"], "requirements": ["SEC-002", "SEC-005"], "state": "PARTIAL_DESIGN"
+    },
+    {
+      "id": "CL-10", "boundary": "TB-10", "kind": "application_optional", "guarantee": "Si el demo HTTP se publica, controla autenticación, cuota y datos antes de consumir API externa.",
+      "observed_control": "Filtro léxico, execFileSync con argumentos y timeout, clave leída server-side; no se evidenció auth/rate limit del handler.", "evidence": ["demo/argorix-chatbot-runtime/app/api/chat/route.ts", "demo/argorix-chatbot-runtime/lib/argorix/runArgorix.ts", "demo/argorix-chatbot-runtime/lib/openai/callOpenAI.ts"],
+      "test": "T-10: abuso de endpoint publicado, límites de cuerpo/tasa/gasto y trazas de secretos", "residual_risk": "Exposición pública condicional puede causar gasto y fuga de datos", "tasks": ["MAT-013", "MAT-024"], "requirements": ["SEC-005", "OPS-004"], "state": "OUT_OF_PRIMARY_PROFILE"
+    },
+    {
+      "id": "CL-11", "boundary": "TB-11", "kind": "supply_chain", "guarantee": "Binarios de release son reproducibles, firmados y verificables sin Rust en R1.",
+      "observed_control": "CI Rust y auditoría de dependencias; no equivalen a procedencia de binario final.", "evidence": [".github/workflows/ci.yml", ".github/workflows/security.yml"],
+      "test": "T-11: rebuild limpio sin Rust, comparación de hash, firma y verificador externo", "residual_risk": "Dependencia/CI/artefacto sustituido antes de la distribución", "tasks": ["ESP-002", "ESP-023", "MAT-016", "MAT-023"], "requirements": ["IND-002", "SEC-006"], "state": "UNIMPLEMENTED"
+    }
+  ]
+}

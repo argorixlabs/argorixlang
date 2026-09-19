@@ -1,0 +1,5 @@
+// PROPOSED CORE SYNTAX — not accepted by ArgorixLang 1.0 stage0.
+fn main() -> i64 {
+  let x: i64 = 40;
+  return x + 2;
+}

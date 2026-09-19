@@ -1,0 +1,1400 @@
+{
+  "schema_version": 1,
+  "document": "spec/product-contract.md",
+  "planning_date": "2026-09-18",
+  "implementation_baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "status": "PLANNING_CONTRACT_ONLY",
+  "release_levels": [
+    "R1",
+    "R2",
+    "R3"
+  ],
+  "roles": [
+    "Desarrollador",
+    "Operador",
+    "Propietario de políticas",
+    "Agente",
+    "Verificador externo",
+    "Responsable de lenguaje",
+    "Maintainer de compilador",
+    "Maintainer de backend",
+    "Maintainer de plataforma",
+    "Responsable de releases",
+    "Responsable de compatibilidad",
+    "Responsable de paquetes",
+    "Responsable de experiencia de desarrollo",
+    "Responsable de herramientas",
+    "Responsable de documentación",
+    "Responsable de runtime",
+    "Responsable de políticas",
+    "Responsable de interoperabilidad",
+    "Responsable de seguridad",
+    "Responsable de identidad",
+    "Responsable de plataforma",
+    "Responsable de evidencia",
+    "Responsable de secretos",
+    "Responsable de supply chain",
+    "Responsable de persistencia",
+    "Responsable de mantenimiento de estado",
+    "Responsable de operaciones",
+    "Responsable de rendimiento",
+    "Responsable de resiliencia",
+    "Responsable de comunidad",
+    "Responsable de release"
+  ],
+  "platform_profiles": [
+    {
+      "id": "LINUX-X64",
+      "reference": "Ubuntu 24.04 x86-64",
+      "abi": "ELF / System V AMD64",
+      "release_levels": [
+        "R1",
+        "R2",
+        "R3"
+      ],
+      "min_test_envelope": "4 logical cores / 8 GiB RAM",
+      "exact_image_digest": "FIX_AT_CANDIDATE_FREEZE",
+      "status": "PLANNED"
+    },
+    {
+      "id": "WINDOWS-X64",
+      "reference": "Windows 11 x86-64",
+      "abi": "PE/COFF / Windows x64",
+      "release_levels": [
+        "R1",
+        "R2",
+        "R3"
+      ],
+      "min_test_envelope": "4 logical cores / 8 GiB RAM",
+      "exact_build": "FIX_AT_CANDIDATE_FREEZE",
+      "status": "PLANNED"
+    }
+  ],
+  "applications": [
+    {
+      "id": "APP-01",
+      "name": "Agente local con modelo y herramienta",
+      "required_level": "R2",
+      "actors": [
+        "Desarrollador",
+        "Agente",
+        "Propietario de políticas",
+        "Operador"
+      ],
+      "modes": [
+        "success",
+        "denied",
+        "fault"
+      ],
+      "minimum_envelope": "1 agente, 1 modelo, 1 herramienta autorizada y 1 prohibida"
+    },
+    {
+      "id": "APP-02",
+      "name": "Dos agentes autenticados en procesos separados",
+      "required_level": "R2",
+      "actors": [
+        "Agente",
+        "Propietario de políticas",
+        "Operador",
+        "Verificador externo"
+      ],
+      "modes": [
+        "success",
+        "denied",
+        "fault"
+      ],
+      "minimum_envelope": "2 procesos, 2 agentes, 10 mensajes tipados; delegación y revocación"
+    },
+    {
+      "id": "APP-03",
+      "name": "Recuperación y actualización de flujo persistente",
+      "required_level": "R2",
+      "actors": [
+        "Operador",
+        "Propietario de políticas",
+        "Verificador externo"
+      ],
+      "modes": [
+        "success",
+        "denied",
+        "fault"
+      ],
+      "minimum_envelope": "1 flujo con 10 transiciones y al menos 1 efecto externo controlado"
+    }
+  ],
+  "scope": {
+    "mandatory_by_R3": [
+      "autocompilacion_sin_Rust",
+      "backend_nativo",
+      "compilador_y_runtime",
+      "politicas_y_capacidades",
+      "agentes_reales",
+      "identidad_autenticada",
+      "MCP_acotado",
+      "A2A_acotado",
+      "persistencia_y_upgrade",
+      "herramientas_y_documentacion",
+      "evidencia",
+      "evaluacion_externa",
+      "soporte"
+    ],
+    "optional_after_R3": [
+      "macOS_y_otras_arquitecturas",
+      "WASM",
+      "registro_publico_de_paquetes",
+      "DID_VC_reales",
+      "blockchain",
+      "soporte_total_de_MCP_A2A"
+    ],
+    "excluded_claims": [
+      "seguridad_universal",
+      "cumplimiento_legal_automatico",
+      "identidad_verificada_por_campo_declarado",
+      "ausencia_de_efectos_externos_por_traza_de_VM_sola"
+    ]
+  },
+  "acceptance_floors": {
+    "native_platforms_required": 2,
+    "remote_agent_processes": 2,
+    "reference_message_count": 10,
+    "soak_hours_per_platform": 72,
+    "external_beta_developers": 2,
+    "external_beta_projects": 2,
+    "committed_state_rpo": "0 eventos confirmados perdidos para el perfil probado",
+    "recovery_rto": "<=5 minutos para el escenario mínimo APP-03 en el hardware de referencia",
+    "prohibited_effects": "0 observados, con sensor y control positivo por familia probada",
+    "resource_limits": "Paso, tiempo, memoria, tamaño de entrada, cola y gasto configurables; valores finales preregistrados en MAT-024 antes del candidato"
+  },
+  "requirements": [
+    {
+      "id": "IND-001",
+      "title": "Autocompilación estable de compiler+stdlib+tools",
+      "required_level": "R1",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Maintainer de compilador",
+      "implementation_tasks": [
+        "ESP-014",
+        "ESP-015"
+      ],
+      "test_ids": [
+        "TC-IND-001"
+      ],
+      "acceptance": "Stage2/3 equivalentes dentro de cada perfil y suites de lenguaje pasan.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-IND-001/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "IND-002",
+      "title": "Build y uso sin Rust",
+      "required_level": "R1",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de releases",
+      "implementation_tasks": [
+        "ESP-024",
+        "ESP-025"
+      ],
+      "test_ids": [
+        "TC-IND-002"
+      ],
+      "acceptance": "Build, ejecución y verificación terminan; auditoría de dependencias no registra Rust.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-IND-002/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "IND-003",
+      "title": "Backend nativo propio",
+      "required_level": "R1",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Maintainer de backend",
+      "implementation_tasks": [
+        "ESP-016",
+        "ESP-017"
+      ],
+      "test_ids": [
+        "TC-IND-003"
+      ],
+      "acceptance": "No se invoca compilador C ni se genera C/Rust en build normal; binarios pasan corpus.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-IND-003/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "IND-004",
+      "title": "Paridad de construcción Linux/Windows",
+      "required_level": "R1",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Maintainer de plataforma",
+      "implementation_tasks": [
+        "ESP-017",
+        "ESP-024"
+      ],
+      "test_ids": [
+        "TC-IND-004"
+      ],
+      "acceptance": "Ambos perfiles producen resultados definidos; plataformas no probadas no aparecen soportadas.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-IND-004/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "LAN-001",
+      "title": "Semántica normativa y tipos generales",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de lenguaje",
+      "implementation_tasks": [
+        "MAT-003",
+        "MAT-004",
+        "ESP-018"
+      ],
+      "test_ids": [
+        "TC-LAN-001"
+      ],
+      "acceptance": "Cada fixture coincide con el resultado especificado, incluyendo errores y límites.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-LAN-001/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "LAN-002",
+      "title": "Compatibilidad versionada",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de compatibilidad",
+      "implementation_tasks": [
+        "MAT-003",
+        "ESP-018",
+        "MAT-022"
+      ],
+      "test_ids": [
+        "TC-LAN-002"
+      ],
+      "acceptance": "No hay cambio silencioso de semántica ni de autoridad; excepciones aceptadas tienen migración.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-LAN-002/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "LAN-003",
+      "title": "Dependencias y paquetes reproducibles",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de paquetes",
+      "implementation_tasks": [
+        "MAT-016",
+        "ESP-020"
+      ],
+      "test_ids": [
+        "TC-LAN-003"
+      ],
+      "acceptance": "Grafo estable para lockfile; mutación relevante se detecta antes de ejecutar.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-LAN-003/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "DEV-001",
+      "title": "Instalación y proyecto inicial",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de experiencia de desarrollo",
+      "implementation_tasks": [
+        "ESP-022",
+        "MAT-020"
+      ],
+      "test_ids": [
+        "TC-DEV-001"
+      ],
+      "acceptance": "Flujo completo funciona sin checkout ni Rust y produce códigos de salida documentados.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-DEV-001/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "DEV-002",
+      "title": "Depuración y diagnósticos",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de herramientas",
+      "implementation_tasks": [
+        "MAT-018",
+        "MAT-019"
+      ],
+      "test_ids": [
+        "TC-DEV-002"
+      ],
+      "acceptance": "Ubicaciones correctas, navegación coherente y datos sensibles redactados.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-DEV-002/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "DEV-003",
+      "title": "Documentación comprobada por terceros",
+      "required_level": "R3",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de documentación",
+      "implementation_tasks": [
+        "MAT-020",
+        "MAT-028"
+      ],
+      "test_ids": [
+        "TC-DEV-003"
+      ],
+      "acceptance": "Usuario externo reproduce el flujo sin conocimiento implícito; problemas se registran.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-DEV-003/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "AGT-001",
+      "title": "Agente con modelo y herramienta gobernada",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de runtime",
+      "implementation_tasks": [
+        "MAT-013",
+        "ESP-021"
+      ],
+      "test_ids": [
+        "TC-AGT-001",
+        "TC-APP-01-SUCCESS",
+        "TC-APP-01-FAULT"
+      ],
+      "acceptance": "Respuesta y efecto permitido observados externamente; evidencia correlaciona decisión y llamada.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-AGT-001/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "AGT-002",
+      "title": "Propuesta no confiable sin autoridad implícita",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de políticas",
+      "implementation_tasks": [
+        "MAT-006",
+        "MAT-013"
+      ],
+      "test_ids": [
+        "TC-AGT-002",
+        "TC-APP-01-DENIED"
+      ],
+      "acceptance": "Propuesta registrada pero efecto prohibido no llega al sensor; no mapeable es explícito.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-AGT-002/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "AGT-003",
+      "title": "Concurrencia acotada y cancelación",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de runtime",
+      "implementation_tasks": [
+        "MAT-005",
+        "MAT-009"
+      ],
+      "test_ids": [
+        "TC-AGT-003",
+        "TC-APP-01-FAULT",
+        "TC-APP-02-SUCCESS",
+        "TC-APP-02-FAULT"
+      ],
+      "acceptance": "Entrega, bloqueo y cancelación siguen semántica especificada sin crecimiento ilimitado.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-AGT-003/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "AGT-004",
+      "title": "Herramienta MCP real",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de interoperabilidad",
+      "implementation_tasks": [
+        "MAT-014"
+      ],
+      "test_ids": [
+        "TC-AGT-004"
+      ],
+      "acceptance": "Permitida llega una vez, negada cero; cambio fuerza reevaluación.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-AGT-004/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "AGT-005",
+      "title": "Dos agentes autenticados en procesos distintos",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de interoperabilidad",
+      "implementation_tasks": [
+        "MAT-012",
+        "MAT-015"
+      ],
+      "test_ids": [
+        "TC-AGT-005",
+        "TC-APP-02-SUCCESS",
+        "TC-APP-02-DENIED",
+        "TC-APP-02-FAULT"
+      ],
+      "acceptance": "Válido completa; falso/replay rechazados; evidencia vincula ambos lados.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-AGT-005/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "SEC-001",
+      "title": "Autorización final por operación",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de seguridad",
+      "implementation_tasks": [
+        "MAT-006",
+        "ESP-019",
+        "ESP-021"
+      ],
+      "test_ids": [
+        "TC-SEC-001",
+        "TC-APP-01-SUCCESS",
+        "TC-APP-01-DENIED",
+        "TC-APP-02-DENIED"
+      ],
+      "acceptance": "Solo allow autorizado alcanza sink; otras decisiones y revocación según contrato.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-SEC-001/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "SEC-002",
+      "title": "Identidad autenticada y ciclo de claves",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de identidad",
+      "implementation_tasks": [
+        "MAT-007",
+        "MAT-012"
+      ],
+      "test_ids": [
+        "TC-SEC-002",
+        "TC-APP-02-SUCCESS",
+        "TC-APP-02-DENIED"
+      ],
+      "acceptance": "Solo identidad válida obtiene capacidad; atributos declarados no autentican.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-SEC-002/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "SEC-003",
+      "title": "Aislamiento real de efectos",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de plataforma",
+      "implementation_tasks": [
+        "MAT-011"
+      ],
+      "test_ids": [
+        "TC-SEC-003",
+        "TC-APP-01-DENIED"
+      ],
+      "acceptance": "Acceso permitido observable y prohibido ausente; falta de sandbox requerido falla cerrado.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-SEC-003/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "SEC-004",
+      "title": "Evidencia verificable de fuentes y decisiones",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de evidencia",
+      "implementation_tasks": [
+        "ESP-020"
+      ],
+      "test_ids": [
+        "TC-SEC-004",
+        "TC-APP-03-DENIED"
+      ],
+      "acceptance": "Detección y límites coinciden con política; firma anclada detecta productor ajeno.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-SEC-004/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "SEC-005",
+      "title": "Protección y redacción de secretos",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de secretos",
+      "implementation_tasks": [
+        "MAT-007",
+        "MAT-011",
+        "MAT-021"
+      ],
+      "test_ids": [
+        "TC-SEC-005",
+        "TC-APP-01-SUCCESS"
+      ],
+      "acceptance": "Sólo destino autorizado accede; canario no aparece en salidas persistidas.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-SEC-005/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "SEC-006",
+      "title": "Artefactos con procedencia y firma",
+      "required_level": "R3",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de supply chain",
+      "implementation_tasks": [
+        "MAT-023",
+        "ESP-025"
+      ],
+      "test_ids": [
+        "TC-SEC-006"
+      ],
+      "acceptance": "Artefacto auténtico se vincula a fuente/semilla; alterado o firma extranjera se rechaza.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-SEC-006/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "OPS-001",
+      "title": "Recuperación de estado y efectos inciertos",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de persistencia",
+      "implementation_tasks": [
+        "MAT-010"
+      ],
+      "test_ids": [
+        "TC-OPS-001",
+        "TC-APP-02-FAULT",
+        "TC-APP-03-SUCCESS",
+        "TC-APP-03-DENIED",
+        "TC-APP-03-FAULT"
+      ],
+      "acceptance": "Estado confirmado vuelve; efecto incierto se marca para reconciliar, no se repite automáticamente.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-OPS-001/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "OPS-002",
+      "title": "Upgrade, migración y rollback",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de mantenimiento de estado",
+      "implementation_tasks": [
+        "MAT-022"
+      ],
+      "test_ids": [
+        "TC-OPS-002",
+        "TC-APP-03-SUCCESS",
+        "TC-APP-03-DENIED",
+        "TC-APP-03-FAULT"
+      ],
+      "acceptance": "No hay corrupción ni éxito ficticio; rollback recupera versión soportada.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-OPS-002/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "OPS-003",
+      "title": "Observabilidad y auditoría acotadas",
+      "required_level": "R2",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de operaciones",
+      "implementation_tasks": [
+        "MAT-021"
+      ],
+      "test_ids": [
+        "TC-OPS-003",
+        "TC-APP-01-FAULT",
+        "TC-APP-03-SUCCESS",
+        "TC-APP-03-FAULT"
+      ],
+      "acceptance": "Cada decisión tiene causa/ID y los secretos no se filtran; fallo de auditoría obligatoria no pasa.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-OPS-003/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "OPS-004",
+      "title": "Presupuestos de capacidad",
+      "required_level": "R3",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de rendimiento",
+      "implementation_tasks": [
+        "MAT-024"
+      ],
+      "test_ids": [
+        "TC-OPS-004"
+      ],
+      "acceptance": "Cumple umbrales preregistrados; p95/p99, memoria y dispersión reportados.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-OPS-004/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "OPS-005",
+      "title": "Estabilidad y recuperación prolongadas",
+      "required_level": "R3",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de resiliencia",
+      "implementation_tasks": [
+        "MAT-025"
+      ],
+      "test_ids": [
+        "TC-OPS-005"
+      ],
+      "acceptance": "Sin pérdida silenciosa ni crecimiento no acotado; RPO/RTO cumplen umbrales.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-OPS-005/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "GOV-001",
+      "title": "Validación de seguridad independiente",
+      "required_level": "R3",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de seguridad",
+      "implementation_tasks": [
+        "MAT-026"
+      ],
+      "test_ids": [
+        "TC-GOV-001"
+      ],
+      "acceptance": "No críticos/altos abiertos; riesgos residuales documentados sin presentarlos como seguridad universal.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-GOV-001/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "GOV-002",
+      "title": "Beta externa reproducible",
+      "required_level": "R3",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de comunidad",
+      "implementation_tasks": [
+        "MAT-028"
+      ],
+      "test_ids": [
+        "TC-GOV-002"
+      ],
+      "acceptance": "Reproducen casos y registran errores; bloqueos de instalación/datos resueltos.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-GOV-002/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    },
+    {
+      "id": "GOV-003",
+      "title": "Soporte, versiones y respuesta a incidentes",
+      "required_level": "R3",
+      "mandatory": true,
+      "status": "PLANNED",
+      "owner_role": "Responsable de release",
+      "implementation_tasks": [
+        "MAT-029",
+        "MAT-030"
+      ],
+      "test_ids": [
+        "TC-GOV-003"
+      ],
+      "acceptance": "Tiempos, responsables y versiones soportadas son verificables; no promesas sin dueño.",
+      "evidence_expected": [
+        "artifacts/acceptance/<candidate-sha>/TC-GOV-003/"
+      ],
+      "current_product_claim": "NOT_CLAIMED_BY_THIS_PLAN"
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TC-IND-001",
+      "kind": "requirement",
+      "requirements": [
+        "IND-001"
+      ],
+      "application": null,
+      "release_gate": "R1",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R1 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Desde semilla publicada y fuentes .argx construir stage2 y stage3 sin Rust; comparar binarios y comportamiento determinista; documentar origen de la semilla.",
+      "then": "Stage2/3 equivalentes dentro de cada perfil y suites de lenguaje pasan.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-IND-001/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-IND-002",
+      "kind": "requirement",
+      "requirements": [
+        "IND-002"
+      ],
+      "application": null,
+      "release_gate": "R1",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R1 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "En runner limpio sin rustc, Cargo, crates, cachés Rust ni servicios Rust construir y usar compiler, VM, verifier, signer y conformidad.",
+      "then": "Build, ejecución y verificación terminan; auditoría de dependencias no registra Rust.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-IND-002/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-IND-003",
+      "kind": "requirement",
+      "requirements": [
+        "IND-003"
+      ],
+      "application": null,
+      "release_gate": "R1",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R1 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Compilar herramientas y proyecto de ejemplo desde Argorix a objeto nativo y enlazar usando linker permitido, con backend C deshabilitado.",
+      "then": "No se invoca compilador C ni se genera C/Rust en build normal; binarios pasan corpus.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-IND-003/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-IND-004",
+      "kind": "requirement",
+      "requirements": [
+        "IND-004"
+      ],
+      "application": null,
+      "release_gate": "R1",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R1 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Repetir bootstrap, ejecución y verificación en los perfiles de plataforma de referencia.",
+      "then": "Ambos perfiles producen resultados definidos; plataformas no probadas no aparecen soportadas.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-IND-004/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-LAN-001",
+      "kind": "requirement",
+      "requirements": [
+        "LAN-001"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Compilar fixtures válidos e inválidos de funciones, tipos, módulos, errores y contratos; contrastar contra cláusulas normativas.",
+      "then": "Cada fixture coincide con el resultado especificado, incluyendo errores y límites.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-LAN-001/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-LAN-002",
+      "kind": "requirement",
+      "requirements": [
+        "LAN-002"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Cargar corpus histórico soportado y rechazar bytecode/estado incompatible con diagnóstico y guía.",
+      "then": "No hay cambio silencioso de semántica ni de autoridad; excepciones aceptadas tienen migración.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-LAN-002/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-LAN-003",
+      "kind": "requirement",
+      "requirements": [
+        "LAN-003"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Instalar y compilar con lockfile desde caché offline; mutar hash, fuente y dependencia transitiva.",
+      "then": "Grafo estable para lockfile; mutación relevante se detecta antes de ejecutar.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-LAN-003/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-DEV-001",
+      "kind": "requirement",
+      "requirements": [
+        "DEV-001"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Instalar artefacto distribuido en máquina limpia y crear, comprobar, compilar, ejecutar y verificar proyecto.",
+      "then": "Flujo completo funciona sin checkout ni Rust y produce códigos de salida documentados.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-DEV-001/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-DEV-002",
+      "kind": "requirement",
+      "requirements": [
+        "DEV-002"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Provocar error de tipos y error runtime anidado; localizar archivo/línea y causa con CLI/editor.",
+      "then": "Ubicaciones correctas, navegación coherente y datos sensibles redactados.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-DEV-002/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-DEV-003",
+      "kind": "requirement",
+      "requirements": [
+        "DEV-003"
+      ],
+      "application": null,
+      "release_gate": "R3",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R3 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Seguir manual desde cero por usuario externo y compilar snippets publicados.",
+      "then": "Usuario externo reproduce el flujo sin conocimiento implícito; problemas se registran.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-DEV-003/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-AGT-001",
+      "kind": "requirement",
+      "requirements": [
+        "AGT-001"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Ejecutar mensaje benigno a modelo real o adaptador de integración, obtener propuesta válida y herramienta autorizada.",
+      "then": "Respuesta y efecto permitido observados externamente; evidencia correlaciona decisión y llamada.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-AGT-001/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-AGT-002",
+      "kind": "requirement",
+      "requirements": [
+        "AGT-002"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Introducir propuesta prohibida y contenido de herramienta adverso en ciclo real.",
+      "then": "Propuesta registrada pero efecto prohibido no llega al sensor; no mapeable es explícito.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-AGT-002/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-AGT-003",
+      "kind": "requirement",
+      "requirements": [
+        "AGT-003"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Ejecutar dos agentes con diez mensajes, receptor lento, cancelación y presupuesto agotado.",
+      "then": "Entrega, bloqueo y cancelación siguen semántica especificada sin crecimiento ilimitado.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-AGT-003/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-AGT-004",
+      "kind": "requirement",
+      "requirements": [
+        "AGT-004"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Conectar servidor MCP con una herramienta permitida y otra negada; cambiar catálogo durante sesión.",
+      "then": "Permitida llega una vez, negada cero; cambio fuerza reevaluación.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-AGT-004/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-AGT-005",
+      "kind": "requirement",
+      "requirements": [
+        "AGT-005"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Enviar flujo tipado entre dos procesos con emisor válido, emisor falso y replay.",
+      "then": "Válido completa; falso/replay rechazados; evidencia vincula ambos lados.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-AGT-005/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-SEC-001",
+      "kind": "requirement",
+      "requirements": [
+        "SEC-001"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Ejecutar operaciones allow, deny, review, unknown y revocación concurrente contra sink propio.",
+      "then": "Solo allow autorizado alcanza sink; otras decisiones y revocación según contrato.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-SEC-001/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-SEC-002",
+      "kind": "requirement",
+      "requirements": [
+        "SEC-002"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Probar firma válida, ajena, expirada, rotada y revocada con ancla configurada.",
+      "then": "Solo identidad válida obtiene capacidad; atributos declarados no autentican.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-SEC-002/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-SEC-003",
+      "kind": "requirement",
+      "requirements": [
+        "SEC-003"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Ejecutar canarios de red, sistema de archivos, proceso y secretos en Linux/Windows con controles positivos.",
+      "then": "Acceso permitido observable y prohibido ausente; falta de sandbox requerido falla cerrado.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-SEC-003/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-SEC-004",
+      "kind": "requirement",
+      "requirements": [
+        "SEC-004"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Mutar fuente, módulo importado, trace, report y conjunto coordinado firmado/no firmado.",
+      "then": "Detección y límites coinciden con política; firma anclada detecta productor ajeno.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-SEC-004/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-SEC-005",
+      "kind": "requirement",
+      "requirements": [
+        "SEC-005"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Entregar canarios sintéticos al adaptador autorizado y rastrear stdout, stderr, artefactos y logs.",
+      "then": "Sólo destino autorizado accede; canario no aparece en salidas persistidas.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-SEC-005/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-SEC-006",
+      "kind": "requirement",
+      "requirements": [
+        "SEC-006"
+      ],
+      "application": null,
+      "release_gate": "R3",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R3 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Instalar release con checksums/firmas; alterar artefacto y verificar rechazo.",
+      "then": "Artefacto auténtico se vincula a fuente/semilla; alterado o firma extranjera se rechaza.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-SEC-006/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-OPS-001",
+      "kind": "requirement",
+      "requirements": [
+        "OPS-001"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Interrumpir proceso antes/después de commit y llamada externa; restaurar y reanudar.",
+      "then": "Estado confirmado vuelve; efecto incierto se marca para reconciliar, no se repite automáticamente.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-OPS-001/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-OPS-002",
+      "kind": "requirement",
+      "requirements": [
+        "OPS-002"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Actualizar estado con flujo activo, interrumpir migración y ensayar rollback soportado.",
+      "then": "No hay corrupción ni éxito ficticio; rollback recupera versión soportada.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-OPS-002/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-OPS-003",
+      "kind": "requirement",
+      "requirements": [
+        "OPS-003"
+      ],
+      "application": null,
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R2 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Ejecutar flujos concurrentes y fallo de almacenamiento de logs; correlacionar eventos.",
+      "then": "Cada decisión tiene causa/ID y los secretos no se filtran; fallo de auditoría obligatoria no pasa.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-OPS-003/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-OPS-004",
+      "kind": "requirement",
+      "requirements": [
+        "OPS-004"
+      ],
+      "application": null,
+      "release_gate": "R3",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R3 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Medir autocompilación, VM y verificación bajo carga acordada en ambos perfiles.",
+      "then": "Cumple umbrales preregistrados; p95/p99, memoria y dispersión reportados.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-OPS-004/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-OPS-005",
+      "kind": "requirement",
+      "requirements": [
+        "OPS-005"
+      ],
+      "application": null,
+      "release_gate": "R3",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R3 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Ejecutar 72 horas por perfil obligatorio con carga y fallos inyectados definidos.",
+      "then": "Sin pérdida silenciosa ni crecimiento no acotado; RPO/RTO cumplen umbrales.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-OPS-005/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-GOV-001",
+      "kind": "requirement",
+      "requirements": [
+        "GOV-001"
+      ],
+      "application": null,
+      "release_gate": "R3",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R3 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Evaluador separado intenta falsificar cada garantía del candidato congelado.",
+      "then": "No críticos/altos abiertos; riesgos residuales documentados sin presentarlos como seguridad universal.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-GOV-001/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-GOV-002",
+      "kind": "requirement",
+      "requirements": [
+        "GOV-002"
+      ],
+      "application": null,
+      "release_gate": "R3",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R3 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Dos desarrolladores ajenos trabajan en dos proyectos distintos con instalación distribuida.",
+      "then": "Reproducen casos y registran errores; bloqueos de instalación/datos resueltos.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-GOV-002/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-GOV-003",
+      "kind": "requirement",
+      "requirements": [
+        "GOV-003"
+      ],
+      "application": null,
+      "release_gate": "R3",
+      "status": "PLANNED",
+      "oracle": "clausula_normativa_y_observacion_externa_cuando_hay_efecto",
+      "given": "Candidato de R3 instalado en el perfil de plataforma aplicable; fixtures, políticas y oráculo fijados antes de ejecutar.",
+      "when": "Ejecutar simulacro de parche de seguridad y publicar matriz de versiones/plataformas.",
+      "then": "Tiempos, responsables y versiones soportadas son verificables; no promesas sin dueño.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-GOV-003/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-01-SUCCESS",
+      "kind": "success",
+      "requirements": [
+        "AGT-001",
+        "SEC-001",
+        "SEC-005"
+      ],
+      "application": "APP-01",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Un agente local tiene identidad/capacidad para una herramienta de prueba y un modelo configurado; sensor externo activo.",
+      "when": "Entregar solicitud benigna y completar una iteración.",
+      "then": "Modelo propone acción permitida; herramienta se invoca una vez, resultado llega al agente y evidencia enlaza decisión y efecto.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-01-SUCCESS/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-01-DENIED",
+      "kind": "denied",
+      "requirements": [
+        "AGT-002",
+        "SEC-001",
+        "SEC-003"
+      ],
+      "application": "APP-01",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Igual flujo, con recurso o operación fuera de scope; control positivo del sensor ya demostrado.",
+      "when": "Presentar propuesta prohibida desde modelo o contenido de herramienta.",
+      "then": "Se registra intento y decisión; cero efectos prohibitivos en sensor y presupuesto no excedido.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-01-DENIED/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-01-FAULT",
+      "kind": "fault",
+      "requirements": [
+        "AGT-001",
+        "AGT-003",
+        "OPS-003"
+      ],
+      "application": "APP-01",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Igual flujo con proveedor que agota plazo o devuelve respuesta malformada.",
+      "when": "Iniciar iteración con fallo controlado del proveedor.",
+      "then": "Estado de fallo explícito, cancelación/acotación y evidencia; no respuesta de éxito fabricada.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-01-FAULT/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-02-SUCCESS",
+      "kind": "success",
+      "requirements": [
+        "AGT-005",
+        "SEC-002",
+        "AGT-003"
+      ],
+      "application": "APP-02",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Dos agentes de identidad autenticada en procesos distintos y transporte permitido.",
+      "when": "Enviar tarea tipada con diez mensajes correlacionados.",
+      "then": "Receptor procesa mensajes autorizados, emisor obtiene resultado y ambas evidencias concuerdan.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-02-SUCCESS/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-02-DENIED",
+      "kind": "denied",
+      "requirements": [
+        "AGT-005",
+        "SEC-002",
+        "SEC-001"
+      ],
+      "application": "APP-02",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Transporte vivo y sensor de recepción positivo; emisor usa identidad extranjera o capacidad revocada.",
+      "when": "Enviar misma tarea desde emisor no autorizado.",
+      "then": "Receptor rechaza antes de efecto; el emisor recibe causa verificable.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-02-DENIED/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-02-FAULT",
+      "kind": "fault",
+      "requirements": [
+        "AGT-005",
+        "AGT-003",
+        "OPS-001"
+      ],
+      "application": "APP-02",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Tarea en curso; enlace se corta, paquete se duplica y receptor reinicia.",
+      "when": "Restaurar enlace y reanudar según contrato de entrega.",
+      "then": "No hay éxito ficticio ni efecto duplicado sin reconciliación; estados recuperados o fallidos son explícitos.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-02-FAULT/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-03-SUCCESS",
+      "kind": "success",
+      "requirements": [
+        "OPS-001",
+        "OPS-002",
+        "OPS-003"
+      ],
+      "application": "APP-03",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Flujo persistido con efecto externo idempotente y backup íntegro.",
+      "when": "Reiniciar proceso y actualizar a versión soportada.",
+      "then": "Reanudación y upgrade conservan estado, referencias de evidencia y presupuesto.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-03-SUCCESS/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-03-DENIED",
+      "kind": "denied",
+      "requirements": [
+        "OPS-001",
+        "OPS-002",
+        "SEC-004"
+      ],
+      "application": "APP-03",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Backup o estado firmado/hasheado está alterado y sensor de efectos activo.",
+      "when": "Intentar restaurar/continuar flujo.",
+      "then": "Incompatibilidad o manipulación se rechaza antes del efecto; el estado anterior queda recuperable.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-03-DENIED/",
+      "evidence_state": "NOT_PRODUCED"
+    },
+    {
+      "id": "TC-APP-03-FAULT",
+      "kind": "fault",
+      "requirements": [
+        "OPS-001",
+        "OPS-002",
+        "OPS-003"
+      ],
+      "application": "APP-03",
+      "release_gate": "R2",
+      "status": "PLANNED",
+      "oracle": "sensor_externo_y_estado_congelado",
+      "given": "Corte durante commit o migración con llamada externa de resultado incierto.",
+      "when": "Matar proceso en punto de inyección y restaurar.",
+      "then": "Estado queda recuperado o incierto de forma auditable; no se repite automáticamente la llamada.",
+      "evidence_expected": "artifacts/acceptance/<candidate-sha>/TC-APP-03-FAULT/",
+      "evidence_state": "NOT_PRODUCED"
+    }
+  ],
+  "evidence_note": "Cada artifact path es un destino esperado. Ningún archivo se ha producido ni se cuenta como prueba en MAT-001."
+}

@@ -1,0 +1,412 @@
+{
+  "schema_version": 1,
+  "plan": "PLAN_MAESTRO_ARGORIXLANG.md",
+  "created": "2026-09-17",
+  "esp_progress": {
+    "ESP-001": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-001.md",
+      "evidence": "bootstrap/ESP-001-validation.json",
+      "scope": "Inventario verificado; no implementacion de migracion"
+    },
+    "ESP-002": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-002.md",
+      "evidence": "bootstrap/ESP-002-validation.json",
+      "scope": "Baseline historico Windows; no independencia Rust ni R1"
+    },
+    "ESP-003": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-003.md",
+      "evidence": "bootstrap/ESP-003-validation.json",
+      "scope": "Contrato y arquitectura validados; no implementacion Core ni R1"
+    },
+    "ESP-004": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-004.md",
+      "evidence": "bootstrap/ESP-004-validation.json",
+      "scope": "Especificacion y corpus Core validados; no frontend stage0 ni ejecucion Core"
+    },
+    "ESP-005": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-005.md",
+      "evidence": "bootstrap/ESP-005-validation.json",
+      "scope": "Memoria y ABI prototipadas en Rust seguro; no stage0, C, backend nativo ni independencia"
+    },
+    "ESP-006": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-006.md",
+      "evidence": "bootstrap/ESP-006-validation.json",
+      "scope": "Frontend Core 0.1 temporal en Rust stage0; no IR, ejecucion, self-hosting ni independencia"
+    }
+  },
+  "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad.",
+  "additional_dependencies": {
+    "ESP-003": [
+      "MAT-002"
+    ],
+    "ESP-004": [
+      "MAT-003"
+    ],
+    "ESP-005": [
+      "MAT-004"
+    ],
+    "ESP-019": [
+      "MAT-005",
+      "MAT-006"
+    ],
+    "ESP-020": [
+      "MAT-007"
+    ],
+    "ESP-021": [
+      "MAT-006"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "MAT-001",
+      "title": "Definir el producto final y sus contratos",
+      "priority": "P0",
+      "status": "HECHA",
+      "depends_on": [],
+      "file": "tasks/madurez/MAT-001.md"
+    },
+    {
+      "id": "MAT-002",
+      "title": "Arquitectura de confianza y catálogo de garantías",
+      "priority": "P0",
+      "status": "HECHA",
+      "depends_on": [
+        "MAT-001",
+        "ESP-001"
+      ],
+      "file": "tasks/madurez/MAT-002.md"
+    },
+    {
+      "id": "MAT-003",
+      "title": "Especificación normativa completa y compatibilidad",
+      "priority": "P0",
+      "status": "HECHA",
+      "depends_on": [
+        "MAT-002",
+        "ESP-002"
+      ],
+      "file": "tasks/madurez/MAT-003.md"
+    },
+    {
+      "id": "MAT-004",
+      "title": "Modelo de memoria, tipos y efectos con invariantes",
+      "priority": "P0",
+      "status": "HECHA",
+      "depends_on": [
+        "MAT-003"
+      ],
+      "file": "tasks/madurez/MAT-004.md"
+    },
+    {
+      "id": "MAT-005",
+      "title": "Semántica de concurrencia y entrega de mensajes",
+      "priority": "P0",
+      "status": "HECHA",
+      "depends_on": [
+        "MAT-003"
+      ],
+      "file": "tasks/madurez/MAT-005.md"
+    },
+    {
+      "id": "MAT-006",
+      "title": "Capacidades, delegación y revocación",
+      "priority": "P0",
+      "status": "HECHA",
+      "depends_on": [
+        "MAT-002"
+      ],
+      "file": "tasks/madurez/MAT-006.md"
+    },
+    {
+      "id": "MAT-007",
+      "title": "Política de identidad, secretos y procedencia",
+      "priority": "P0",
+      "status": "HECHA",
+      "depends_on": [
+        "MAT-006"
+      ],
+      "file": "tasks/madurez/MAT-007.md"
+    },
+    {
+      "id": "MAT-008",
+      "title": "Validación del compilador y backend nativo",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-017",
+        "MAT-004"
+      ],
+      "file": "tasks/madurez/MAT-008.md"
+    },
+    {
+      "id": "MAT-009",
+      "title": "Scheduler concurrente y cuotas implementados",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-019",
+        "MAT-005",
+        "MAT-006"
+      ],
+      "file": "tasks/madurez/MAT-009.md"
+    },
+    {
+      "id": "MAT-010",
+      "title": "Persistencia, checkpoints y recuperación",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-009"
+      ],
+      "file": "tasks/madurez/MAT-010.md"
+    },
+    {
+      "id": "MAT-011",
+      "title": "Aislamiento y límites efectivos del host",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-021",
+        "MAT-006",
+        "MAT-009"
+      ],
+      "file": "tasks/madurez/MAT-011.md"
+    },
+    {
+      "id": "MAT-012",
+      "title": "Identidad autenticada y ciclo de claves implementados",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-020",
+        "MAT-007"
+      ],
+      "file": "tasks/madurez/MAT-012.md"
+    },
+    {
+      "id": "MAT-013",
+      "title": "Ciclo real de agentes con mediación completa",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-021",
+        "MAT-009",
+        "MAT-011",
+        "MAT-012"
+      ],
+      "file": "tasks/madurez/MAT-013.md"
+    },
+    {
+      "id": "MAT-014",
+      "title": "Puente MCP ejecutable y verificable",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-013"
+      ],
+      "file": "tasks/madurez/MAT-014.md"
+    },
+    {
+      "id": "MAT-015",
+      "title": "Comunicación autenticada entre agentes",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-013",
+        "MAT-010"
+      ],
+      "file": "tasks/madurez/MAT-015.md"
+    },
+    {
+      "id": "MAT-016",
+      "title": "Dependencias reproducibles y paquetes confiables",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-022",
+        "MAT-007"
+      ],
+      "file": "tasks/madurez/MAT-016.md"
+    },
+    {
+      "id": "MAT-017",
+      "title": "Biblioteca estándar de producción",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-022",
+        "MAT-004"
+      ],
+      "file": "tasks/madurez/MAT-017.md"
+    },
+    {
+      "id": "MAT-018",
+      "title": "Depuración, trazas y profiling",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-022",
+        "MAT-009"
+      ],
+      "file": "tasks/madurez/MAT-018.md"
+    },
+    {
+      "id": "MAT-019",
+      "title": "Editor y LSP coherentes con compilador",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-022",
+        "MAT-003"
+      ],
+      "file": "tasks/madurez/MAT-019.md"
+    },
+    {
+      "id": "MAT-020",
+      "title": "Documentación y experiencia de aprendizaje",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-018",
+        "MAT-019",
+        "MAT-017"
+      ],
+      "file": "tasks/madurez/MAT-020.md"
+    },
+    {
+      "id": "MAT-021",
+      "title": "Observabilidad y operación segura",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-009",
+        "MAT-010",
+        "MAT-011"
+      ],
+      "file": "tasks/madurez/MAT-021.md"
+    },
+    {
+      "id": "MAT-022",
+      "title": "Actualizaciones y migración de estado",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-010",
+        "MAT-016"
+      ],
+      "file": "tasks/madurez/MAT-022.md"
+    },
+    {
+      "id": "MAT-023",
+      "title": "Cadena de suministro y releases auditables",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "ESP-025",
+        "MAT-007",
+        "MAT-016"
+      ],
+      "file": "tasks/madurez/MAT-023.md"
+    },
+    {
+      "id": "MAT-024",
+      "title": "Presupuestos de rendimiento y capacidad",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-008",
+        "MAT-010",
+        "MAT-013",
+        "MAT-021"
+      ],
+      "file": "tasks/madurez/MAT-024.md"
+    },
+    {
+      "id": "MAT-025",
+      "title": "Pruebas prolongadas, caos y recuperación operativa",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-010",
+        "MAT-011",
+        "MAT-022",
+        "MAT-024"
+      ],
+      "file": "tasks/madurez/MAT-025.md"
+    },
+    {
+      "id": "MAT-026",
+      "title": "Validación de seguridad independiente",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-008",
+        "MAT-011",
+        "MAT-012",
+        "MAT-014",
+        "MAT-015",
+        "MAT-016",
+        "MAT-023"
+      ],
+      "file": "tasks/madurez/MAT-026.md"
+    },
+    {
+      "id": "MAT-027",
+      "title": "Aplicaciones completas de referencia",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-014",
+        "MAT-015",
+        "MAT-017",
+        "MAT-020",
+        "MAT-021",
+        "MAT-022"
+      ],
+      "file": "tasks/madurez/MAT-027.md"
+    },
+    {
+      "id": "MAT-028",
+      "title": "Beta externa y usabilidad reproducible",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-027",
+        "MAT-024",
+        "MAT-025",
+        "MAT-026"
+      ],
+      "file": "tasks/madurez/MAT-028.md"
+    },
+    {
+      "id": "MAT-029",
+      "title": "Gobernanza, soporte y mantenimiento del lenguaje",
+      "priority": "P0",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-001",
+        "ESP-001"
+      ],
+      "file": "tasks/madurez/MAT-029.md"
+    },
+    {
+      "id": "MAT-030",
+      "title": "Release de producción y aceptación final",
+      "priority": "P1",
+      "status": "PENDIENTE",
+      "depends_on": [
+        "MAT-028",
+        "MAT-029",
+        "MAT-023",
+        "ESP-025"
+      ],
+      "file": "tasks/madurez/MAT-030.md"
+    }
+  ]
+}

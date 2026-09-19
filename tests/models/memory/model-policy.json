@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "model_id": "argorix-core-memory-m1-effects-e1",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "decision": "PROVISIONALLY_ACCEPTED_FOR_PROTOTYPE",
+  "operations": ["arena_create", "alloc", "slice", "borrow_read", "borrow_write", "read", "write", "end_borrow", "free", "transfer", "arena_release", "authorize_effect"],
+  "errors": ["InvalidLimit", "ResourceLimit", "NotOwner", "ArenaReleased", "Overflow", "OutOfMemory", "InvalidHandle", "OutOfBounds", "PermissionDenied", "BorrowConflict", "UseAfterFree", "TypeMismatch", "InvalidBorrow", "NotRoot", "DoubleFree", "InvalidOwner", "EffectNotDeclared", "CapabilityMissing", "ScopeDenied"],
+  "invariants": ["well_formed", "no_revival", "bounds", "borrow_exclusion", "accounting", "failure_atomicity", "effect_authority"],
+  "required_counterexamples": ["use_after_free", "arena_use_after_release", "out_of_bounds", "mutable_alias", "oom_atomicity", "type_mismatch", "unauthorized_effect", "effect_not_declared", "memory_error_before_effect"],
+  "bounded_exploration": {"max_depth": 6, "random_seeds": 256, "steps_per_seed": 96},
+  "rejection_conditions": ["missing_counterexample", "invariant_failure", "failure_mutated_state", "weak_generation_model_accepts_stale_handle"],
+  "mechanical_scope": "Executable sequential abstract model with bounded exhaustive and deterministic generated traces; not a proof of compiler, backend, concurrency, ABI layout, performance or host sandboxing."
+}

@@ -1,0 +1,77 @@
+(* Argorix Core 0.1 — normative concrete grammar. *)
+source       = "core", version, ";", module_decl, { import_decl }, { item }, EOF ;
+version      = "0.1" ;
+module_decl  = "module", path, ";" ;
+import_decl  = "import", path, [ "as", identifier ], ";" ;
+path         = identifier, { ".", identifier } ;
+
+item         = [ "pub" ], ( function | struct_decl | enum_decl | const_decl ) ;
+function     = "fn", identifier, "(", [ parameters ], ")", "->", type, block ;
+parameters   = parameter, { ",", parameter }, [ "," ] ;
+parameter    = identifier, ":", type ;
+struct_decl  = "struct", identifier, "{", { field_decl }, "}" ;
+field_decl   = identifier, ":", type, "," ;
+enum_decl    = "enum", identifier, "{", { variant_decl }, "}" ;
+variant_decl = identifier, [ "{", { field_decl }, "}" ], "," ;
+const_decl   = "const", identifier, ":", type, "=", expression, ";" ;
+
+type         = scalar_type | identifier
+             | "Array", "<", type, ",", integer, ">"
+             | ( "Slice" | "Buffer" | "Arena" | "Handle" ), "<", type, ">" ;
+scalar_type  = "unit" | "bool" | "u8" | "u16" | "u32" | "u64"
+             | "i8" | "i16" | "i32" | "i64" | "bytes" | "string" ;
+
+block        = "{", { statement }, [ expression ], "}" ;
+statement    = let_stmt | assign_stmt | while_stmt
+             | break_stmt | continue_stmt | return_stmt | expression_stmt ;
+let_stmt     = "let", [ "mut" ], identifier, [ ":", type ], "=", expression, ";" ;
+assign_stmt  = place, assign_op, expression, ";" ;
+assign_op    = "=" | "+=" | "-=" | "*=" | "/=" | "%=" ;
+while_stmt   = "while", expression, block ;
+break_stmt   = "break", [ expression ], ";" ;
+continue_stmt= "continue", ";" ;
+return_stmt  = "return", [ expression ], ";" ;
+expression_stmt = expression, ";" ;
+
+expression   = if_expr | match_expr | loop_expr | logical_or ;
+if_expr      = "if", expression, block, [ "else", ( block | if_expr ) ] ;
+match_expr   = "match", expression, "{", { match_arm }, "}" ;
+loop_expr    = "loop", block ;
+match_arm    = pattern, [ "if", expression ], "=>", ( expression | block ), "," ;
+pattern      = "_" | literal | identifier
+             | path, [ "::", identifier ], [ "{", [ field_patterns ], "}" ] ;
+field_patterns = field_pattern, { ",", field_pattern }, [ "," ] ;
+field_pattern  = identifier, [ ":", pattern ] ;
+
+logical_or   = logical_and, { "||", logical_and } ;
+logical_and  = equality, { "&&", equality } ;
+equality     = comparison, { ( "==" | "!=" ), comparison } ;
+comparison   = bit_or, { ( "<" | "<=" | ">" | ">=" ), bit_or } ;
+bit_or       = bit_xor, { "|", bit_xor } ;
+bit_xor      = bit_and, { "^", bit_and } ;
+bit_and      = shift, { "&", shift } ;
+shift        = additive, { ( "<<" | ">>" ), additive } ;
+additive     = multiplicative, { ( "+" | "-" ), multiplicative } ;
+multiplicative = unary, { ( "*" | "/" | "%" ), unary } ;
+unary        = [ "!" | "-" ], postfix ;
+postfix      = primary, { call | index | field } ;
+call         = "(", [ arguments ], ")" ;
+arguments    = expression, { ",", expression }, [ "," ] ;
+index        = "[", expression, "]" ;
+field        = ".", identifier ;
+place        = identifier, { index | field } ;
+primary      = literal | path | struct_value | enum_value | array_value | block
+             | "(", expression, ")" ;
+struct_value = path, "{", [ field_values ], "}" ;
+enum_value   = path, "::", identifier, [ "{", [ field_values ], "}" ] ;
+field_values = field_value, { ",", field_value }, [ "," ] ;
+field_value  = identifier, ":", expression ;
+array_value  = "[", [ arguments ], "]" ;
+
+literal      = integer | byte_literal | string_literal | "true" | "false" | "unit" ;
+identifier   = letter, { letter | digit | "_" } ;
+integer      = digit, { digit | "_" }, [ integer_suffix ] ;
+integer_suffix = "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" ;
+
+(* Whitespace and // line or /* nested block */ comments separate tokens. Strings
+   are UTF-8 source text with documented escapes; byte literals contain one byte. *)

@@ -1,0 +1,5 @@
+core 0.1;
+module invalid.unknown_import;
+import outside.unlocked.package;
+fn main() -> unit { unit }
+

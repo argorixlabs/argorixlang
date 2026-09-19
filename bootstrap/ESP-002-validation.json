@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "task": "ESP-002",
+  "date": "2026-09-18",
+  "status": "PASS_FOR_HISTORICAL_WINDOWS_BASELINE_ONLY",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "clean_checkout": {
+    "method": "git worktree add --detach at baseline commit",
+    "git_status_porcelain": "",
+    "temporary_worktree_removed_after_evidence_capture": true,
+    "platform": "Windows 11 10.0.26340 x86-64",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)",
+    "python": "3.13.5",
+    "network": "offline Cargo build and tests; no model/API call during ESP-002 rerun",
+    "cargo_lock_sha256": "0F998851B101A3A43AEB2F86F1223D00AFA89C504173F6018FA3F17E0E291C02"
+  },
+  "commands_and_results": [
+    {
+      "command": "cargo test --locked --offline --workspace --all-targets",
+      "result": "PASS: 382 tests in 29 test binaries; 0 failed"
+    },
+    {
+      "command": "cargo build --locked --offline --release -p argorixc -p argorix-vm -p argorix-conformance -p argorix-sign",
+      "result": "PASS; four production binaries built in clean checkout"
+    },
+    {
+      "command": "cargo build --locked --offline --release -p argorix-vm --features eval-tripwire --target-dir target/eval-tripwire",
+      "result": "PASS; separate evaluation binary, not a product release binary"
+    },
+    {
+      "command": "python bootstrap/run-compatibility-baseline.py --repo <clean-checkout> --bin-dir <clean-checkout>/target/release --self-test",
+      "result": "PASS: 21 pinned suite files twice; 19 passing suites, 1419 passing cases, 2 expected-invalid historical suites, 13 curated goldens; rerun fingerprints equal; mutated golden rejected"
+    },
+    {
+      "command": "python evaluation/adversarial/harness/anticircularity.py --bin-dir <clean-checkout>/target/release",
+      "result": "PASS: collector cannot read oracle and fails without production binary"
+    },
+    {
+      "command": "python evaluation/adversarial/harness/collect.py --cases <clean-checkout>/evaluation/adversarial/cases.json --bin-dir <clean-checkout>/target/release --tripwire-bin-dir <clean-checkout>/target/eval-tripwire/release --out-dir <clean-checkout>/target/esp002-adversarial-clean --run-id esp002-clean-offline --family E0 --family E1 --family E2 --family E3 --family E4 --family E6",
+      "result": "PASS: 151 rows collected with clean harness and clean production binaries; E0 fixture ZIP expanded into ignored demo/generated first; manifest worktree_dirty=false"
+    },
+    {
+      "command": "python evaluation/adversarial/harness/score.py --run-id esp002-clean-offline --raw-dir <clean-checkout>/target/esp002-adversarial-clean/raw/esp002-clean-offline --results-dir <clean-checkout>/target/esp002-adversarial-clean --oracle evaluation/adversarial/oracle.json",
+      "result": "118/118 scored oracle checks; 0 mismatches; E0 27 complete and 6 source-only; E3 tamper detection 21/22; E5 NOT_EXECUTED as designed"
+    },
+    {
+      "command": "python bootstrap/compare-adversarial-runs.py <clean-rows> <offline-rerun-rows> --historical evaluation/adversarial/results/results.jsonl",
+      "result": "151/151 normalized observable rows equal across reruns and historical run; normalized SHA-256 93B3EAC3D6990F1BE085A759EAD2C7B961F7DB5FEF2088E5525F3C1BFF4D4965"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_b4_rescore.py -v",
+      "result": "PASS: historical summary bytes unchanged and new B4 distinguishes external-model test from native agent-loop resistance"
+    },
+    {
+      "command": "Expand-Archive bootstrap/ESP-002-offline-rows.zip; python evaluation/adversarial/harness/score.py --raw-dir target/esp002-audit ...",
+      "result": "PASS: versioned 3-file evidence archive independently re-scored to 151 rows, 118/118 and manifest worktree_dirty=false"
+    }
+  ],
+  "binary_sha256": {
+    "argorixc": "58913AA85D0CF4763CFD48EBA1E118494F89F69C8FB2AB4BD45AFA0522CD20CE",
+    "argorix-vm": "809135FF6C15B0DB3B32794900AB3546BAC0CD39B34F5B6E97EADBAF7B3603A2",
+    "argorix-conformance": "2FAAB7355B42BDD092C4972011CF09DA5314B75A5D71CB26439C1F4D3B048EE0",
+    "argorix-sign": "21EFF87CCE9FD5CDA041AFE94D03213E66D23114F4B19B854D1B33300C43759B",
+    "argorix-vm-eval-tripwire": "AEDC784BD823B6C21E5E91935ACDEF27DCB09EB8D9E4E592C555C00CD8BE9887"
+  },
+  "versioned_artifact_sha256": {
+    "bootstrap/baseline.json": "2D35E8F38C5D7C9DDAE2734C492DE1E75DE6854AC429587EC614787C62E8C1AF",
+    "bootstrap/run-compatibility-baseline.py": "FA0102FE88C250C820698AACE0C1018BF4A3B27CEE304C712FA6B692A96CC752",
+    "bootstrap/compare-adversarial-runs.py": "AEC3C21238B3F98FB808397585FC4A16D2A88353D9AAAF676990825CE45D7721",
+    "tests/compatibility/golden.json": "AEB7E9A25FEC9DF7E80C568AC9F40B3B39E17D1AD7DFB0542155863227D85E69",
+    "tests/compatibility/e0-snapshots.zip": "CC33FF74CC7DA3DD28AEEC2791F6CF88347707A4F72FBE0676706BE627933A00",
+    "bootstrap/ESP-002-conformance-run.json": "A5686B2EC1E6D751B0C152FF95AFB813C50EA3E9FF2A2F14365B6B6A4E0EE304",
+    "bootstrap/ESP-002-offline-summary.json": "5FC5B24208C4D4AE926BB1A9ED09DF56AEF7ADEE813A747C0E0D985FD0CB654B",
+    "bootstrap/ESP-002-offline-rows.zip": "0162EF8B30400228EF8B90C02CB0BE05D9CFD9569BF014A20B1DDBF2241BD4A4",
+    "evaluation/adversarial/results/summary.json": "BE0403EEF5A167AFFACB5A8B8AEB321C36D12C0C66E5C9D10FEC7623936CA975"
+  },
+  "offline_rows_archive_members": {
+    "rows.jsonl": "6AB970945B84D5B5CFCFB3689CE23BD26D8AFD80967CECA36DDD2A349ED8BC31",
+    "manifest.json": "59EDE93B30F707C4B3948D189A3B5A8D930DC10189A0B55C0151789C75790222",
+    "anticircularity.json": "0F0E4DF166ACC9BC2F8EC7BDD9FDB25D10C22A43AF8AEE7F4590459083F86A1D"
+  },
+  "limits": [
+    "This closes a historical Windows baseline, not product independence from Rust. Cargo and Rust are still required here.",
+    "No Ubuntu profile test in this run; R1 and MAT acceptance gates remain pending.",
+    "E5 live model campaign was not rerun or replaced by simulation; historic E5 is preserved separately and B4 corrected only in a new offline rescore.",
+    "suite_min_v022.json and suite.v024.json are expected validation rejects, not passing conformance suites.",
+    "Normalized rerun equality covers selected observable fields and suite stage status, not raw timestamps, paths, nonces, byte-for-byte traces or universal behavior."
+  ]
+}

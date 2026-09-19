@@ -1,0 +1,4 @@
+core 0.1;
+module invalid.user_generics;
+struct Box<T> { value: T, }
+

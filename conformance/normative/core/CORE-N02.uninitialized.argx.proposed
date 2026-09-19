@@ -1,0 +1,5 @@
+// PROPOSED CORE SYNTAX — read-before-initialization shall be rejected.
+fn main() -> i64 {
+  let value: i64;
+  return value;
+}

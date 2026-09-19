@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "task": "ESP-004",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "scope": "Executable specification inventory and corpus contract; not a Core parser/compiler/runtime",
+  "spec_manifest_sha256": "42d78bc567641f775abd6fa828c419c6137987ee50bf16ef0c394d3059ba3753",
+  "fixture_manifest_sha256": "2cfa5cd5e46c5ab9b302612648f8e287c6dfd7e4ac1e836b05740774c89d9f58",
+  "validation": {
+    "passed": true,
+    "failures": [],
+    "documents_checked": 5,
+    "valid_fixtures_checked": 4,
+    "invalid_fixtures_checked": 12,
+    "constructs_covered": 32,
+    "demonstrations_covered": 3,
+    "forbidden_magic_control_detected": true,
+    "artifact_sha256": {
+      "README.md": "04e6145c037f30edacf9bc2f506be3390123995866cc3b18a862e476c7c4de22",
+      "evaluation.md": "a5bc873b419943f5bb86eae28d75f0cec6ccbf42cfcff8e497e9011f77bbd31d",
+      "grammar.ebnf": "ae3b63cb825fef33fb331f2c5ffa59c6e9dff50374ed576f599a6c1d9bd749a5",
+      "invalid/control_outside_loop.argx": "69dac9c05b6c7d4fe0bd46f8df23e65900bfeaa83d27f128a399b2e11ee65e2c",
+      "invalid/forbidden_magic.argx": "946165721e4bcd27e9f0ffca406440d3f0304c7f9aef0ed53b06988dde879fd9",
+      "invalid/invalid_utf8_and_index.argx": "0c7b81dc5e01dbeb7d44cc7097f7ae1c713da91adcca564c3889a565c13e35de",
+      "invalid/missing_core_header.argx": "53f567951643e547c7bd80e0e044811c9b73e3b4b1346fdba72286b5c37a3a38",
+      "invalid/mutation_and_scope.argx": "7930b0a2c326701fe841fb940a67e2f91e940b0732a8eb7d24c4610b0e281c15",
+      "invalid/non_exhaustive_match.argx": "94a0757b65e95c5c39fc7c2f133271b64ae2435e10c0f06db705476b557026c4",
+      "invalid/numeric_errors.argx": "10fb01ebde7b5c5f34105e5cc0d69fb7de01cf69ebc2d4990970b6823c0ae13c",
+      "invalid/recursive_without_handle.argx": "d462a9d4758528d19f58ae0500440667b9298daf4218225171604ddf06879f70",
+      "invalid/type_and_return.argx": "6e7ef8c50a95bd36843ffe1000e76bedcc3b7b46dc9d786539a5a70841325fbb",
+      "invalid/unknown_import.argx": "3b2035e4415bd5371b97a53d8e2689d50f2afa96160e9648e1c8a9c73ef2c2a8",
+      "invalid/unknown_version.argx": "cf0a2abbc864359217d6ba836aac319d8db8c3c4d4bedd49f2c362afda6d4d4f",
+      "invalid/user_generics.argx": "50e36bdae5e9a738c032a3a268534cb341e89ab92f0dc0360d34381f20fec721",
+      "modules.md": "3952f1e879e4f040914430a163922b90ea1fdd4d8879b584a81cb1194dc2ebf6",
+      "types.md": "43102e78208c0e9813300f9f7035c5f484e70ba8abc73449c3a319c3d6fdbba7",
+      "valid/control_and_types.argx": "3aacf99aa14446122cd952d107aeafa33131832168c1488f132f38a3b01ab0ae",
+      "valid/lexer.argx": "018f3691358d2587fe9a4e2b457b83740523a72f12a982915199329450b2d3ce",
+      "valid/parser.argx": "32b07f161ae00b304074c99bb9e0ae69c2a1a0f133a98c81360b583a3f1c3fc5",
+      "valid/symbols.argx": "4f4d17fb463701068443e607ae8e79d9f41ee5438b877630143f6e613365cd65"
+    }
+  },
+  "mutation_control_detected": true,
+  "syntax_execution": "NOT_EXECUTED_UNTIL_ESP_006",
+  "overall_pass": true,
+  "not_proven": [
+    "stage0 parses Core",
+    "Core programs execute",
+    "memory and host ABI are implementable",
+    "self-hosting",
+    "Rust independence",
+    "native backend"
+  ]
+}

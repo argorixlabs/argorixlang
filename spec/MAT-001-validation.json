@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "task": "MAT-001",
+  "observed_date": "2026-09-18",
+  "implementation_baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "command": "./spec/validate-product-contract.ps1 -SelfTest",
+  "requirements": 29,
+  "tests": 38,
+  "applications": 3,
+  "platform_profiles": 2,
+  "release_levels": 3,
+  "evidence_produced": 0,
+  "negative_control": "PASS: broken requirement/test link rejected in memory",
+  "scope": "Contract consistency only; product acceptance tests have not run"
+}

@@ -1,0 +1,5 @@
+core 0.1;
+module invalid.forbidden_magic;
+// The following fictional escape is intentionally forbidden by Core.
+extern rust fn tokenize_with_host_parser(input: bytes) -> bytes;
+

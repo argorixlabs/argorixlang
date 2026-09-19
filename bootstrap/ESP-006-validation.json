@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "task": "ESP-006",
+  "baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "scope": "Rust stage0 Core 0.1 lexer/parser/resolution/semantics; no lowering, execution, self-hosting, or Rust independence",
+  "core_version": "0.1",
+  "cases_manifest_sha256": "2cfa5cd5e46c5ab9b302612648f8e287c6dfd7e4ac1e836b05740774c89d9f58",
+  "parser_sha256": "e6ddfdb5abd60b30556afa281dbc48bff980d0b8d7a03e9bc6d56c89c737d499",
+  "semantics_sha256": "13e73afd62b345fc0ac089fd7aa618c1e83c9d715cebd62711be0348d1d73d63",
+  "valid_cases": [
+    {
+      "id": "lexer",
+      "file": "valid/lexer.argx",
+      "expected_category": "ACCEPT",
+      "observed_categories": [],
+      "token_count": 407,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "parser",
+      "file": "valid/parser.argx",
+      "expected_category": "ACCEPT",
+      "observed_categories": [],
+      "token_count": 564,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "symbols",
+      "file": "valid/symbols.argx",
+      "expected_category": "ACCEPT",
+      "observed_categories": [],
+      "token_count": 275,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "control_types",
+      "file": "valid/control_and_types.argx",
+      "expected_category": "ACCEPT",
+      "observed_categories": [],
+      "token_count": 249,
+      "spans_valid": true,
+      "passed": true
+    }
+  ],
+  "invalid_cases": [
+    {
+      "id": "missing_header",
+      "file": "invalid/missing_core_header.argx",
+      "expected_category": "VersionRequired",
+      "observed_categories": [
+        "VersionRequired"
+      ],
+      "token_count": 15,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "unknown_version",
+      "file": "invalid/unknown_version.argx",
+      "expected_category": "VersionUnsupported",
+      "observed_categories": [
+        "VersionUnsupported"
+      ],
+      "token_count": 20,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "type_return",
+      "file": "invalid/type_and_return.argx",
+      "expected_category": "TypeMismatch",
+      "observed_categories": [
+        "TypeMismatch"
+      ],
+      "token_count": 31,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "mutation_scope",
+      "file": "invalid/mutation_and_scope.argx",
+      "expected_category": "ImmutableAssignmentOrUnknownName",
+      "observed_categories": [
+        "ImmutableAssignmentOrUnknownName"
+      ],
+      "token_count": 42,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "non_exhaustive",
+      "file": "invalid/non_exhaustive_match.argx",
+      "expected_category": "NonExhaustiveMatch",
+      "observed_categories": [
+        "NonExhaustiveMatch"
+      ],
+      "token_count": 40,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "recursive_value",
+      "file": "invalid/recursive_without_handle.argx",
+      "expected_category": "InfiniteType",
+      "observed_categories": [
+        "InfiniteType"
+      ],
+      "token_count": 19,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "numeric",
+      "file": "invalid/numeric_errors.argx",
+      "expected_category": "LiteralOutOfRangeOrConstantTrap",
+      "observed_categories": [
+        "LiteralOutOfRangeOrConstantTrap"
+      ],
+      "token_count": 29,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "bad_control",
+      "file": "invalid/control_outside_loop.argx",
+      "expected_category": "ControlOutsideLoop",
+      "observed_categories": [
+        "ControlOutsideLoop"
+      ],
+      "token_count": 23,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "unknown_import",
+      "file": "invalid/unknown_import.argx",
+      "expected_category": "ImportNotLocked",
+      "observed_categories": [
+        "ImportNotLocked"
+      ],
+      "token_count": 27,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "forbidden_magic",
+      "file": "invalid/forbidden_magic.argx",
+      "expected_category": "ForbiddenHostEscape",
+      "observed_categories": [
+        "ExpectedToken",
+        "ForbiddenHostEscape"
+      ],
+      "token_count": 23,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "utf8_index",
+      "file": "invalid/invalid_utf8_and_index.argx",
+      "expected_category": "StringNotByteIndexable",
+      "observed_categories": [
+        "StringNotByteIndexable"
+      ],
+      "token_count": 26,
+      "spans_valid": true,
+      "passed": true
+    },
+    {
+      "id": "user_generics",
+      "file": "invalid/user_generics.argx",
+      "expected_category": "FeatureDeferred",
+      "observed_categories": [
+        "FeatureDeferred"
+      ],
+      "token_count": 22,
+      "spans_valid": true,
+      "passed": true
+    }
+  ],
+  "accepted_valid": 4,
+  "rejected_invalid_with_expected_category": 12,
+  "phases_exercised": [
+    "lexical",
+    "syntax",
+    "resolution",
+    "semantic"
+  ],
+  "fixture_shortcuts_found": [],
+  "mutation_control_detected": true,
+  "unsafe_blocks_in_frontend": 0,
+  "overall_pass": true,
+  "not_proven": [
+    "Core lowering or execution",
+    "self-hosted frontend",
+    "stage0/stage1 equivalence",
+    "native backend",
+    "Rust independence",
+    "production security or performance"
+  ]
+}
