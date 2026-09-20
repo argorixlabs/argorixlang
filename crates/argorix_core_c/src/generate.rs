@@ -80,6 +80,7 @@ pub fn unsigned(kind: IntType) -> bool {
 pub enum Trap {
     IntegerOverflow,
     DivisionByZero,
+    IndexOutOfBounds,
 }
 
 impl Trap {
@@ -87,6 +88,7 @@ impl Trap {
         match self {
             Trap::IntegerOverflow => "INTEGER_OVERFLOW",
             Trap::DivisionByZero => "DIVISION_BY_ZERO",
+            Trap::IndexOutOfBounds => "INDEX_OUT_OF_BOUNDS",
         }
     }
 }
@@ -108,6 +110,17 @@ pub enum Expr {
     Not(Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
+    /// `array[index]`, where both are locals. The index is a `u64` local, and
+    /// it may be out of range, which must trap.
+    Index {
+        array: String,
+        index: String,
+    },
+    /// `value.fN` on a flat struct local.
+    Field {
+        value: String,
+        field: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,6 +143,24 @@ pub enum Stmt {
         condition: Expr,
         body: Vec<Stmt>,
     },
+    /// `let name: Array<T, N> = [..];`, declared at function level only:
+    /// an array declared inside an `if` or a loop body hits gap g06.
+    LetArray {
+        name: String,
+        elements: Vec<Expr>,
+    },
+    /// `let name: u64 = K;`, the only `u64` in a program of another width,
+    /// used to index an array. It may point past the end.
+    LetIndex {
+        name: String,
+        value: u64,
+    },
+    /// `let name: SN = SN { f0: .., f1: .. };` for a flat struct.
+    LetStruct {
+        name: String,
+        type_name: String,
+        fields: Vec<Expr>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -144,6 +175,9 @@ pub struct Function {
 pub struct Program {
     pub id: String,
     pub kind: IntType,
+    /// Flat struct declarations, as (name, field count). Structs holding
+    /// structs, and arrays of structs, are gaps g02 and g03.
+    pub structs: Vec<(String, usize)>,
     pub functions: Vec<Function>,
     pub main: Function,
 }
@@ -215,8 +249,14 @@ pub fn arithmetic(op: &str, left: i128, right: i128, kind: IntType) -> Result<i1
     }
 }
 
+#[derive(Default)]
 struct Environment {
     values: Vec<(String, i128)>,
+    /// Array and struct locals, each held as its element or field values.
+    aggregates: Vec<(String, Vec<i128>)>,
+    /// `u64` index locals, kept apart because they are not of the program's
+    /// integer type.
+    indexes: Vec<(String, u64)>,
 }
 
 impl Environment {
@@ -235,11 +275,27 @@ impl Environment {
             self.values.push((name.to_string(), value));
         }
     }
+    fn aggregate(&self, name: &str) -> &[i128] {
+        self.aggregates
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, items)| items.as_slice())
+            .unwrap_or(&[])
+    }
+    fn index(&self, name: &str) -> u64 {
+        self.indexes
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| *value)
+            .unwrap_or(0)
+    }
 }
 
 pub fn evaluate_program(program: &Program) -> Result<i128, Failure> {
     let mut fuel = MAX_LOOP_ITERATIONS;
-    let mut env = Environment { values: Vec::new() };
+    let mut env = Environment::default();
     let value = run_body(
         &program.main.body,
         &program.main.tail,
@@ -279,6 +335,21 @@ fn execute(
             let computed = arithmetic(op, env.get(name), right, program.kind)?;
             env.set(name, computed);
         }
+        Stmt::LetArray { name, elements } => {
+            let mut values = Vec::with_capacity(elements.len());
+            for element in elements {
+                values.push(evaluate(element, env, program, fuel)?.int());
+            }
+            env.aggregates.push((name.clone(), values));
+        }
+        Stmt::LetStruct { name, fields, .. } => {
+            let mut values = Vec::with_capacity(fields.len());
+            for field in fields {
+                values.push(evaluate(field, env, program, fuel)?.int());
+            }
+            env.aggregates.push((name.clone(), values));
+        }
+        Stmt::LetIndex { name, value } => env.indexes.push((name.clone(), *value)),
         Stmt::While { condition, body } => {
             while evaluate(condition, env, program, fuel)?.truthy() {
                 if *fuel == 0 {
@@ -345,6 +416,21 @@ fn evaluate(
             };
             evaluate(branch, env, program, fuel)?
         }
+        Expr::Index { array, index } => {
+            let items = env.aggregate(array);
+            let position = env.index(index);
+            // Reading past the end is a typed trap, never a wrong value.
+            match items.get(position as usize) {
+                Some(value) => Value::Int(*value),
+                None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
+            }
+        }
+        Expr::Field { value, field } => Value::Int(
+            env.aggregate(value)
+                .get(*field)
+                .copied()
+                .expect("a generated field index is in range"),
+        ),
         Expr::Call(name, arguments) => {
             let function = program
                 .functions
@@ -355,7 +441,7 @@ fn evaluate(
             for argument in arguments {
                 values.push(evaluate(argument, env, program, fuel)?.int());
             }
-            let mut local = Environment { values: Vec::new() };
+            let mut local = Environment::default();
             for (parameter, value) in function.params.iter().zip(values) {
                 local.set(parameter, value);
             }
@@ -407,6 +493,8 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        Expr::Index { array, index } => format!("{array}[{index}]"),
+        Expr::Field { value, field } => format!("{value}.f{field}"),
     }
 }
 
@@ -447,6 +535,32 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                 render_statements(body, kind, &format!("{indent}    "), lines);
                 lines.push(format!("{indent}}}"));
             }
+            Stmt::LetArray { name, elements } => lines.push(format!(
+                "{indent}let {name}: Array<{}, {}> = [{}];",
+                kind.name,
+                elements.len(),
+                elements
+                    .iter()
+                    .map(|element| render_expr(element, kind))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            Stmt::LetIndex { name, value } => {
+                lines.push(format!("{indent}let {name}: u64 = {value}u64;"))
+            }
+            Stmt::LetStruct {
+                name,
+                type_name,
+                fields,
+            } => lines.push(format!(
+                "{indent}let {name}: {type_name} = {type_name} {{ {} }};",
+                fields
+                    .iter()
+                    .enumerate()
+                    .map(|(position, field)| format!("f{position}: {}", render_expr(field, kind)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
         }
     }
 }
@@ -458,6 +572,14 @@ pub fn render_program(program: &Program) -> String {
         format!("module fuzz.{};", program.id),
         String::new(),
     ];
+    for (name, fields) in &program.structs {
+        let declared = (0..*fields)
+            .map(|position| format!("f{position}: {}", kind.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("struct {name} {{ {declared}, }}"));
+        lines.push(String::new());
+    }
     for function in &program.functions {
         let params = function
             .params
@@ -752,12 +874,24 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
             reads(else_branch, seen);
         }
         Expr::Call(_, arguments) => arguments.iter().for_each(|argument| reads(argument, seen)),
+        Expr::Index { array, index } => {
+            seen.insert(array.clone());
+            seen.insert(index.clone());
+        }
+        Expr::Field { value, .. } => {
+            seen.insert(value.clone());
+        }
     }
 }
 
 fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
     match statement {
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } => reads(value, seen),
+        Stmt::LetArray {
+            elements: items, ..
+        }
+        | Stmt::LetStruct { fields: items, .. } => items.iter().for_each(|item| reads(item, seen)),
+        Stmt::LetIndex { .. } => {}
         Stmt::Compound { name, value, .. } => {
             seen.insert(name.clone());
             reads(value, seen);
@@ -798,7 +932,7 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
             calls(then_branch, seen);
             calls(else_branch, seen);
         }
-        Expr::Literal(_) | Expr::Var(_) => {}
+        Expr::Literal(_) | Expr::Var(_) | Expr::Index { .. } | Expr::Field { .. } => {}
     }
 }
 
@@ -807,6 +941,11 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Compound { value, .. } => {
             calls(value, seen)
         }
+        Stmt::LetArray {
+            elements: items, ..
+        }
+        | Stmt::LetStruct { fields: items, .. } => items.iter().for_each(|item| calls(item, seen)),
+        Stmt::LetIndex { .. } => {}
         Stmt::While { condition, body } => {
             calls(condition, seen);
             body.iter().for_each(|inner| statement_calls(inner, seen));
@@ -848,8 +987,27 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     }
     let mut names = Vec::new();
     let mut mutable = Vec::new();
-    let body = generator.statements(&mut names, &mut mutable, &functions, true);
+    let mut body = generator.statements(&mut names, &mut mutable, &functions, true);
+
+    // Aggregates are declared at function level only: inside an `if` or a loop
+    // body they hit gap g06, and nesting them hits g01, g02 and g03.
+    let mut structs = Vec::new();
+    let mut reads: Vec<Expr> = Vec::new();
+    if generator.rng.chance(55) {
+        let (statements, expression) = generator.array(&names, &functions);
+        body.extend(statements);
+        reads.push(expression);
+    }
+    if generator.rng.chance(45) {
+        let (declaration, statement, expression) = generator.flat_struct(&names, &functions);
+        structs.push(declaration);
+        body.push(statement);
+        reads.push(expression);
+    }
     let mut tail = generator.value(&names, 3, &functions, true);
+    for expression in reads {
+        tail = Expr::Arith("^", Box::new(tail), Box::new(expression));
+    }
 
     let mut called = BTreeSet::new();
     body.iter()
@@ -874,6 +1032,7 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     Program {
         id: format!("fuzz_{seed}_{index:04}"),
         kind,
+        structs,
         functions,
         main: Function {
             name: "argorix_main".into(),
@@ -885,6 +1044,65 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
 }
 
 impl Generator {
+    /// A fixed array plus the `u64` index local that reads it. The index is in
+    /// range most of the time and past the end sometimes, which must trap.
+    fn array(&mut self, names: &[String], functions: &[Function]) -> (Vec<Stmt>, Expr) {
+        let name = self.fresh("a");
+        let index_name = self.fresh("x");
+        let length = 1 + self.rng.below(4) as usize;
+        let elements = (0..length)
+            .map(|_| self.value(names, 1, functions, false))
+            .collect();
+        let index = if self.rng.chance(20) {
+            length as u64 + self.rng.below(3)
+        } else {
+            self.rng.below(length as u64)
+        };
+        (
+            vec![
+                Stmt::LetArray {
+                    name: name.clone(),
+                    elements,
+                },
+                Stmt::LetIndex {
+                    name: index_name.clone(),
+                    value: index,
+                },
+            ],
+            Expr::Index {
+                array: name,
+                index: index_name,
+            },
+        )
+    }
+
+    /// A struct of scalar fields, and a read of one of them.
+    fn flat_struct(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+    ) -> ((String, usize), Stmt, Expr) {
+        let type_name = format!("S{}", self.counter + 1);
+        let name = self.fresh("s");
+        let count = 1 + self.rng.below(3) as usize;
+        let fields = (0..count)
+            .map(|_| self.value(names, 1, functions, false))
+            .collect();
+        let read = Expr::Field {
+            value: name.clone(),
+            field: self.rng.below(count as u64) as usize,
+        };
+        (
+            (type_name.clone(), count),
+            Stmt::LetStruct {
+                name,
+                type_name,
+                fields,
+            },
+            read,
+        )
+    }
+
     fn function(&mut self, index: u64, functions: &[Function]) -> Function {
         let name = format!("helper{index}");
         let count = 1 + self.rng.below(2);
@@ -1050,6 +1268,7 @@ mod tests {
         Program {
             id: "t".into(),
             kind: I32,
+            structs: Vec::new(),
             functions: Vec::new(),
             main: Function {
                 name: "argorix_main".into(),
@@ -1211,8 +1430,13 @@ mod tests {
                 "shift in {}",
                 program.id
             );
-            assert!(!source.contains("Array<"), "array in {}", program.id);
-            assert!(!source.contains("struct "), "struct in {}", program.id);
+            // Flat arrays and flat structs are generated on purpose; the
+            // nested forms are gaps g01, g02 and g03.
+            assert!(
+                !source.contains("Array<Array"),
+                "nested array in {}",
+                program.id
+            );
             for line in source.lines() {
                 let trimmed = line.trim();
                 assert!(
@@ -1246,5 +1470,157 @@ mod tests {
             results > 0 && traps > 0,
             "corpus should hold both results and traps"
         );
+    }
+}
+
+#[cfg(test)]
+mod aggregate_tests {
+    use super::*;
+
+    const U32: IntType = TYPES[2];
+
+    fn program(structs: Vec<(String, usize)>, body: Vec<Stmt>, tail: Expr) -> Program {
+        Program {
+            id: "t".into(),
+            kind: U32,
+            structs,
+            functions: Vec::new(),
+            main: Function {
+                name: "argorix_main".into(),
+                params: Vec::new(),
+                body,
+                tail,
+            },
+        }
+    }
+
+    fn array_body(length: usize, index: u64) -> Vec<Stmt> {
+        vec![
+            Stmt::LetArray {
+                name: "a1".into(),
+                elements: (0..length)
+                    .map(|item| Expr::Literal(10 + item as i128))
+                    .collect(),
+            },
+            Stmt::LetIndex {
+                name: "x1".into(),
+                value: index,
+            },
+        ]
+    }
+
+    fn read_array() -> Expr {
+        Expr::Index {
+            array: "a1".into(),
+            index: "x1".into(),
+        }
+    }
+
+    #[test]
+    fn an_index_inside_the_array_reads_that_element() {
+        let result = evaluate_program(&program(Vec::new(), array_body(3, 2), read_array()));
+        assert_eq!(result.ok(), Some(12));
+    }
+
+    #[test]
+    fn an_index_past_the_end_traps() {
+        for index in [3, 4, 99] {
+            let result = evaluate_program(&program(Vec::new(), array_body(3, index), read_array()));
+            assert!(
+                matches!(result, Err(Failure::Trapped(Trap::IndexOutOfBounds))),
+                "index {index} should trap"
+            );
+        }
+    }
+
+    #[test]
+    fn an_element_that_traps_is_reported_before_the_index_is_used() {
+        let body = vec![
+            Stmt::LetArray {
+                name: "a1".into(),
+                elements: vec![Expr::Arith(
+                    "/",
+                    Box::new(Expr::Literal(1)),
+                    Box::new(Expr::Literal(0)),
+                )],
+            },
+            Stmt::LetIndex {
+                name: "x1".into(),
+                value: 9,
+            },
+        ];
+        let result = evaluate_program(&program(Vec::new(), body, read_array()));
+        assert!(matches!(
+            result,
+            Err(Failure::Trapped(Trap::DivisionByZero))
+        ));
+    }
+
+    #[test]
+    fn a_struct_field_reads_its_own_value() {
+        let body = vec![Stmt::LetStruct {
+            name: "s1".into(),
+            type_name: "S1".into(),
+            fields: vec![Expr::Literal(7), Expr::Literal(35)],
+        }];
+        let tail = Expr::Field {
+            value: "s1".into(),
+            field: 1,
+        };
+        let result = evaluate_program(&program(vec![("S1".into(), 2)], body, tail));
+        assert_eq!(result.ok(), Some(35));
+    }
+
+    #[test]
+    fn aggregates_render_as_core_declarations() {
+        let body = [
+            array_body(2, 0).as_slice(),
+            &[Stmt::LetStruct {
+                name: "s1".into(),
+                type_name: "S1".into(),
+                fields: vec![Expr::Literal(1), Expr::Literal(2)],
+            }],
+        ]
+        .concat();
+        let source = render_program(&program(vec![("S1".into(), 2)], body, read_array()));
+        assert!(source.contains("struct S1 { f0: u32, f1: u32, }"));
+        assert!(source.contains("let a1: Array<u32, 2> = [10u32, 11u32];"));
+        assert!(source.contains("let x1: u64 = 0u64;"));
+        assert!(source.contains("let s1: S1 = S1 { f0: 1u32, f1: 2u32 };"));
+        assert!(source.contains("a1[x1]"));
+    }
+
+    #[test]
+    fn generated_programs_keep_aggregates_flat_and_out_of_blocks() {
+        for index in 1..60 {
+            let program = generate_program(7, index);
+            let source = render_program(&program);
+            assert!(
+                !source.contains("Array<Array"),
+                "nested array in {}",
+                program.id
+            );
+            for line in source.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("struct ") {
+                    // A struct of scalars only: no field takes another struct.
+                    assert!(
+                        !program
+                            .structs
+                            .iter()
+                            .any(|(name, _)| trimmed.contains(&format!(": {name}"))),
+                        "struct inside struct in {}: {line}",
+                        program.id
+                    );
+                }
+                if trimmed.starts_with("let a") && trimmed.contains("Array<") {
+                    assert!(
+                        !line.starts_with("        "),
+                        "array declared inside a block in {}: {line}",
+                        program.id
+                    );
+                }
+            }
+        }
     }
 }
