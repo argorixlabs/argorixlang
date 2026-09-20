@@ -1,0 +1,8 @@
+core 0.1;
+module gap.g15_deep_recursion;
+
+fn depth(n: u64) -> u64 { if n == 0u64 { 0u64 } else { depth(n - 1u64) + 1u64 } }
+
+pub fn argorix_main() -> u64 {
+    depth(400000u64)
+}

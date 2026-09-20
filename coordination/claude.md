@@ -2,8 +2,68 @@
 
 ## Current claim
 
+- Task: ESP-008.R follow-up — Rust harness, known-gap corpus, and differential
+  testing against a spec oracle.
+- State: DONE (pending review).
+- Branch: `claude/core-c-harness-rust`. It supersedes the stacked branches
+  `claude/core-c-gaps` (PR #28) and `claude/core-c-differential` (PR #29),
+  which carried the same work in Python.
+- Base: `4b0705a` through those branches.
+- Started: 2026-09-19.
+- Exclusive paths: `conformance/core_c/**`, `.github/workflows/core-c.yml`,
+  and the new crate `crates/argorix_core_c/**`. One shared line added to the
+  workspace `Cargo.toml` members list.
+- Not touched: any Codex ESP-008/ESP-009 path.
+- **The harness is Rust, at the maintainer's instruction.** The Python runner
+  that landed in PR #25 is deleted here; ESP-008.R no longer adds a Python
+  dependency to the project.
+
+## Intended result
+
+One `core-c-harness` binary that emits, compiles, executes, compares, inspects
+dependencies, checks the known-gap corpus, and generates differential programs
+whose expected result comes from an evaluator written against
+`spec/core/evaluation.md`, never from `argorixc` or the C backend.
+
+## Handoff
+
+- The harness uses only workspace dependencies (anyhow, clap, serde,
+  serde_json, sha2) and reads ELF itself, so `readelf` is no longer required
+  and the Rust-free container installs only a C compiler.
+- 40 Rust unit tests: ELF parsing, policy patterns, compiler allow-list,
+  argument-vector rules, case validation, output comparison, gap
+  classification for every status and kind, and the oracle's trap rules,
+  truncating division, evaluation order, short-circuiting and determinism.
+- Earlier evidence from the Python implementation of the same checks:
+  **900 generated programs (seeds 42, 7, 13; 296 expected traps) all matched
+  the oracle** with GCC 15.2 in WSL, emitted by `argorixc` built from
+  `main@4b0705a`. No divergence in arithmetic, traps, evaluation order,
+  short-circuiting, loops, or calls. The Rust port reproduces the same rules
+  and is verified end to end by CI.
+- New defect found by the generator and recorded as gap `g16`: an arithmetic
+  expression containing an `if`, used as a comparison operand, is rejected with
+  `CBackendUnsupported: checked arithmetic requires an integer`. Minimal repro:
+  `if ((if c { 5u32 } else { 1u32 }) + 1u32) > 3u32 { 42u32 } else { 0u32 }`,
+  which `core-check` accepts. Same root cause as `g09`. Reported on issue #27.
+- CI: `harness-unit`, `emit`, `execute` (gcc and clang), `execute-rust-free`,
+  `gap-corpus` and `differential`, all driven by `cargo` and the harness
+  binary. The differential job uploads the generated programs with the report,
+  so a failure is reproducible from the artifact.
+- The Rust-free job carries the harness binary in with the bundle: that host
+  has no Rust toolchain, which is the point, and the binary is stage0 tooling
+  exactly like `argorixc`, not evidence of independence (ESP-024).
+- Limit: the generator covers scalars only. Arrays, structs, enums, buffers,
+  arenas, bytes, and UTF-8 are not generated yet; they are the obvious next
+  extension once the aggregate gaps in issue #27 are fixed.
+
+---
+
+# Previous claim: MAT-029 (merged in PR #24)
+
+## Claim
+
 - Task: MAT-029 — language governance, support, and maintenance.
-- State: DONE (pending PR review and merge by the maintainer).
+- State: DONE, merged in PR #24.
 - Branch: `claude/governance-mat029`.
 - Base: `3e620ab9` (`origin/main`, "docs: add shared collaboration workboard (#22)").
 - Started: 2026-09-19.
@@ -75,7 +135,8 @@ for an incompatible language change.
 - Task: ESP-008.R — native C execution runner and dependency evidence
   (subtask of Codex's ESP-008; split accepted in `coordination/codex.md`,
   "Accepted file-level split", commit `2756e76` on `codex/c-backend-esp008`).
-- State: DONE, merged in PR #25; its runner now produces ESP-008's execution evidence on `main`.
+- State: DONE, merged in PR #25; its runner produced ESP-008's execution
+  evidence on `main` and is replaced by the Rust harness in the current claim.
 - Branch: `claude/core-c-runner`.
 - Base: `3e620ab9` (`origin/main`).
 - Started: 2026-09-19.

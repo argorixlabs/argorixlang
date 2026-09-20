@@ -1,0 +1,7 @@
+core 0.1;
+module gap.g11_evaluation_order_variable;
+
+pub fn argorix_main() -> u32 {
+    let mut x: u32 = 1u32;
+    x + { x += 1u32; x }
+}

@@ -1,13 +1,15 @@
 {
   "schema_version": 1,
   "task": "ESP-008.R",
-  "description": "What a transitional Core C executable may depend on. Applied to Linux ELF binaries produced by conformance/core_c/run.py.",
+  "description": "What a transitional Core C executable may depend on. Applied to Linux ELF binaries by the core-c-harness crate. A pattern is a plain substring, or anchored with ^ (prefix), $ (suffix), or both (exact).",
   "allowed_needed_libraries": ["libc.so.6"],
-  "forbidden_library_patterns": ["rust", "libstd-", "libcore-", "\\.rlib$"],
+  "forbidden_library_patterns": ["rust", "libstd-", "libcore-", ".rlib$"],
   "forbidden_symbol_patterns": [
-    "^_*rust_",
-    "^_ZN.*17h[0-9a-f]{16}E$",
-    "^_R[A-Z][A-Za-z0-9_]*$"
+    "^rust_",
+    "^_rust_",
+    "^__rust",
+    "^_ZN",
+    "^_R"
   ],
   "forbidden_imports": [
     "system", "popen",

@@ -1,0 +1,7 @@
+core 0.1;
+module gap.g09_comparison_with_block_operand;
+
+pub fn argorix_main() -> bool {
+    let c: bool = true;
+    (if c { 5u32 } else { 1u32 }) < 3u32
+}

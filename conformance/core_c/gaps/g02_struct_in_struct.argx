@@ -1,0 +1,10 @@
+core 0.1;
+module gap.g02_struct_in_struct;
+
+struct Point { x: u32, y: u32, }
+struct Line { a: Point, b: Point, }
+
+pub fn argorix_main() -> u32 {
+    let line: Line = Line { a: Point { x: 10u32, y: 20u32 }, b: Point { x: 5u32, y: 7u32 } };
+    line.a.x + line.a.y + line.b.x + line.b.y
+}
