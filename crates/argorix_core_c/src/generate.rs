@@ -81,6 +81,7 @@ pub enum Trap {
     IntegerOverflow,
     DivisionByZero,
     IndexOutOfBounds,
+    ArenaReleased,
 }
 
 impl Trap {
@@ -89,6 +90,7 @@ impl Trap {
             Trap::IntegerOverflow => "INTEGER_OVERFLOW",
             Trap::DivisionByZero => "DIVISION_BY_ZERO",
             Trap::IndexOutOfBounds => "INDEX_OUT_OF_BOUNDS",
+            Trap::ArenaReleased => "ARENA_RELEASED",
         }
     }
 }
@@ -119,6 +121,11 @@ pub enum Expr {
     /// `value.fN` on a flat struct local.
     Field {
         value: String,
+        field: usize,
+    },
+    /// `handle.fN`. Reading a handle whose arena was released must trap.
+    HandleField {
+        handle: String,
         field: usize,
     },
 }
@@ -160,6 +167,31 @@ pub enum Stmt {
         name: String,
         type_name: String,
         fields: Vec<Expr>,
+    },
+    /// `let mut name: Buffer<T> = Buffer::new();`
+    LetBuffer {
+        name: String,
+    },
+    /// `name.push(value);`
+    Push {
+        name: String,
+        value: Expr,
+    },
+    /// `let mut name: Arena<SN> = Arena::new();`
+    LetArena {
+        name: String,
+        type_name: String,
+    },
+    /// `let handle: Handle<SN> = arena.alloc(SN { .. });`
+    Alloc {
+        handle: String,
+        arena: String,
+        type_name: String,
+        fields: Vec<Expr>,
+    },
+    /// `arena.release();`, after which its handles must trap.
+    Release {
+        arena: String,
     },
 }
 
@@ -257,6 +289,10 @@ struct Environment {
     /// `u64` index locals, kept apart because they are not of the program's
     /// integer type.
     indexes: Vec<(String, u64)>,
+    /// Arenas by name, with whether they have been released.
+    arenas: Vec<(String, bool)>,
+    /// Handles, as (name, owning arena, field values).
+    handles: Vec<(String, String, Vec<i128>)>,
 }
 
 impl Environment {
@@ -290,6 +326,28 @@ impl Environment {
             .find(|(key, _)| key == name)
             .map(|(_, value)| *value)
             .unwrap_or(0)
+    }
+    fn push(&mut self, name: &str, value: i128) {
+        if let Some(entry) = self
+            .aggregates
+            .iter_mut()
+            .rev()
+            .find(|(key, _)| key == name)
+        {
+            entry.1.push(value);
+        }
+    }
+    /// The field values behind a handle, or `None` once its arena is released.
+    fn handle(&self, name: &str) -> Option<&[i128]> {
+        let (_, arena, fields) = self.handles.iter().rev().find(|(key, _, _)| key == name)?;
+        let released = self
+            .arenas
+            .iter()
+            .rev()
+            .find(|(key, _)| key == arena)
+            .map(|(_, released)| *released)
+            .unwrap_or(false);
+        (!released).then_some(fields.as_slice())
     }
 }
 
@@ -350,6 +408,29 @@ fn execute(
             env.aggregates.push((name.clone(), values));
         }
         Stmt::LetIndex { name, value } => env.indexes.push((name.clone(), *value)),
+        Stmt::LetBuffer { name } => env.aggregates.push((name.clone(), Vec::new())),
+        Stmt::Push { name, value } => {
+            let computed = evaluate(value, env, program, fuel)?.int();
+            env.push(name, computed);
+        }
+        Stmt::LetArena { name, .. } => env.arenas.push((name.clone(), false)),
+        Stmt::Alloc {
+            handle,
+            arena,
+            fields,
+            ..
+        } => {
+            let mut values = Vec::with_capacity(fields.len());
+            for field in fields {
+                values.push(evaluate(field, env, program, fuel)?.int());
+            }
+            env.handles.push((handle.clone(), arena.clone(), values));
+        }
+        Stmt::Release { arena } => {
+            if let Some(entry) = env.arenas.iter_mut().rev().find(|(key, _)| key == arena) {
+                entry.1 = true;
+            }
+        }
         Stmt::While { condition, body } => {
             while evaluate(condition, env, program, fuel)?.truthy() {
                 if *fuel == 0 {
@@ -431,6 +512,16 @@ fn evaluate(
                 .copied()
                 .expect("a generated field index is in range"),
         ),
+        Expr::HandleField { handle, field } => match env.handle(handle) {
+            // Reading through a handle whose arena is gone is a typed trap.
+            None => return Err(Failure::Trapped(Trap::ArenaReleased)),
+            Some(fields) => Value::Int(
+                fields
+                    .get(*field)
+                    .copied()
+                    .expect("a generated field index is in range"),
+            ),
+        },
         Expr::Call(name, arguments) => {
             let function = program
                 .functions
@@ -495,6 +586,7 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
         ),
         Expr::Index { array, index } => format!("{array}[{index}]"),
         Expr::Field { value, field } => format!("{value}.f{field}"),
+        Expr::HandleField { handle, field } => format!("{handle}.f{field}"),
     }
 }
 
@@ -561,6 +653,32 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                     .collect::<Vec<_>>()
                     .join(", ")
             )),
+            Stmt::LetBuffer { name } => lines.push(format!(
+                "{indent}let mut {name}: Buffer<{}> = Buffer::new();",
+                kind.name
+            )),
+            Stmt::Push { name, value } => lines.push(format!(
+                "{indent}{name}.push({});",
+                render_expr(value, kind)
+            )),
+            Stmt::LetArena { name, type_name } => lines.push(format!(
+                "{indent}let mut {name}: Arena<{type_name}> = Arena::new();"
+            )),
+            Stmt::Alloc {
+                handle,
+                arena,
+                type_name,
+                fields,
+            } => lines.push(format!(
+                "{indent}let {handle}: Handle<{type_name}> = {arena}.alloc({type_name} {{ {} }});",
+                fields
+                    .iter()
+                    .enumerate()
+                    .map(|(position, field)| format!("f{position}: {}", render_expr(field, kind)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            Stmt::Release { arena } => lines.push(format!("{indent}{arena}.release();")),
         }
     }
 }
@@ -881,6 +999,9 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
         Expr::Field { value, .. } => {
             seen.insert(value.clone());
         }
+        Expr::HandleField { handle, .. } => {
+            seen.insert(handle.clone());
+        }
     }
 }
 
@@ -890,8 +1011,16 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
         Stmt::LetArray {
             elements: items, ..
         }
-        | Stmt::LetStruct { fields: items, .. } => items.iter().for_each(|item| reads(item, seen)),
-        Stmt::LetIndex { .. } => {}
+        | Stmt::LetStruct { fields: items, .. }
+        | Stmt::Alloc { fields: items, .. } => items.iter().for_each(|item| reads(item, seen)),
+        Stmt::Push { name, value } => {
+            seen.insert(name.clone());
+            reads(value, seen);
+        }
+        Stmt::Release { arena } => {
+            seen.insert(arena.clone());
+        }
+        Stmt::LetIndex { .. } | Stmt::LetBuffer { .. } | Stmt::LetArena { .. } => {}
         Stmt::Compound { name, value, .. } => {
             seen.insert(name.clone());
             reads(value, seen);
@@ -932,7 +1061,11 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
             calls(then_branch, seen);
             calls(else_branch, seen);
         }
-        Expr::Literal(_) | Expr::Var(_) | Expr::Index { .. } | Expr::Field { .. } => {}
+        Expr::Literal(_)
+        | Expr::Var(_)
+        | Expr::Index { .. }
+        | Expr::Field { .. }
+        | Expr::HandleField { .. } => {}
     }
 }
 
@@ -944,8 +1077,13 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
         Stmt::LetArray {
             elements: items, ..
         }
-        | Stmt::LetStruct { fields: items, .. } => items.iter().for_each(|item| calls(item, seen)),
-        Stmt::LetIndex { .. } => {}
+        | Stmt::LetStruct { fields: items, .. }
+        | Stmt::Alloc { fields: items, .. } => items.iter().for_each(|item| calls(item, seen)),
+        Stmt::Push { value, .. } => calls(value, seen),
+        Stmt::LetIndex { .. }
+        | Stmt::LetBuffer { .. }
+        | Stmt::LetArena { .. }
+        | Stmt::Release { .. } => {}
         Stmt::While { condition, body } => {
             calls(condition, seen);
             body.iter().for_each(|inner| statement_calls(inner, seen));
@@ -1002,6 +1140,17 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
         let (declaration, statement, expression) = generator.flat_struct(&names, &functions);
         structs.push(declaration);
         body.push(statement);
+        reads.push(expression);
+    }
+    if generator.rng.chance(40) {
+        let (statements, expression) = generator.buffer(&names, &functions);
+        body.extend(statements);
+        reads.push(expression);
+    }
+    if generator.rng.chance(35) {
+        let (declaration, statements, expression) = generator.arena(&names, &functions);
+        structs.push(declaration);
+        body.extend(statements);
         reads.push(expression);
     }
     let mut tail = generator.value(&names, 3, &functions, true);
@@ -1072,6 +1221,77 @@ impl Generator {
             Expr::Index {
                 array: name,
                 index: index_name,
+            },
+        )
+    }
+
+    /// A buffer filled by pushes, and a read that may be past the end.
+    fn buffer(&mut self, names: &[String], functions: &[Function]) -> (Vec<Stmt>, Expr) {
+        let name = self.fresh("b");
+        let index_name = self.fresh("x");
+        let pushes = 1 + self.rng.below(4) as usize;
+        let mut statements = vec![Stmt::LetBuffer { name: name.clone() }];
+        for _ in 0..pushes {
+            statements.push(Stmt::Push {
+                name: name.clone(),
+                value: self.value(names, 1, functions, false),
+            });
+        }
+        let index = if self.rng.chance(20) {
+            pushes as u64 + self.rng.below(3)
+        } else {
+            self.rng.below(pushes as u64)
+        };
+        statements.push(Stmt::LetIndex {
+            name: index_name.clone(),
+            value: index,
+        });
+        (
+            statements,
+            Expr::Index {
+                array: name,
+                index: index_name,
+            },
+        )
+    }
+
+    /// An arena, one allocation, and a read through its handle. The arena is
+    /// sometimes released first, and then the read must trap.
+    fn arena(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+    ) -> ((String, usize), Vec<Stmt>, Expr) {
+        let type_name = format!("N{}", self.counter + 1);
+        let name = self.fresh("r");
+        let handle = self.fresh("h");
+        let count = 1 + self.rng.below(2) as usize;
+        let fields = (0..count)
+            .map(|_| self.value(names, 1, functions, false))
+            .collect();
+        let mut statements = vec![
+            Stmt::LetArena {
+                name: name.clone(),
+                type_name: type_name.clone(),
+            },
+            Stmt::Alloc {
+                handle: handle.clone(),
+                arena: name.clone(),
+                type_name: type_name.clone(),
+                fields,
+            },
+        ];
+        // Releasing before the read is the ARENA_RELEASED trap; releasing is
+        // also what keeps the arena from sitting in the runtime's registry.
+        if self.rng.chance(25) {
+            statements.push(Stmt::Release { arena: name });
+        }
+        (
+            (type_name, count),
+            statements,
+            Expr::HandleField {
+                handle,
+                field: self.rng.below(count as u64) as usize,
             },
         )
     }
@@ -1622,5 +1842,154 @@ mod aggregate_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    const U32: IntType = TYPES[2];
+
+    fn program(structs: Vec<(String, usize)>, body: Vec<Stmt>, tail: Expr) -> Program {
+        Program {
+            id: "t".into(),
+            kind: U32,
+            structs,
+            functions: Vec::new(),
+            main: Function {
+                name: "argorix_main".into(),
+                params: Vec::new(),
+                body,
+                tail,
+            },
+        }
+    }
+
+    fn buffer_body(pushes: &[i128], index: u64) -> Vec<Stmt> {
+        let mut body = vec![Stmt::LetBuffer { name: "b1".into() }];
+        for value in pushes {
+            body.push(Stmt::Push {
+                name: "b1".into(),
+                value: Expr::Literal(*value),
+            });
+        }
+        body.push(Stmt::LetIndex {
+            name: "x1".into(),
+            value: index,
+        });
+        body
+    }
+
+    fn read_buffer() -> Expr {
+        Expr::Index {
+            array: "b1".into(),
+            index: "x1".into(),
+        }
+    }
+
+    fn arena_body(release: bool) -> Vec<Stmt> {
+        let mut body = vec![
+            Stmt::LetArena {
+                name: "r1".into(),
+                type_name: "N1".into(),
+            },
+            Stmt::Alloc {
+                handle: "h1".into(),
+                arena: "r1".into(),
+                type_name: "N1".into(),
+                fields: vec![Expr::Literal(41), Expr::Literal(42)],
+            },
+        ];
+        if release {
+            body.push(Stmt::Release { arena: "r1".into() });
+        }
+        body
+    }
+
+    fn read_handle(field: usize) -> Expr {
+        Expr::HandleField {
+            handle: "h1".into(),
+            field,
+        }
+    }
+
+    #[test]
+    fn a_buffer_grows_with_each_push() {
+        let result = evaluate_program(&program(
+            Vec::new(),
+            buffer_body(&[10, 20, 30], 2),
+            read_buffer(),
+        ));
+        assert_eq!(result.ok(), Some(30));
+    }
+
+    #[test]
+    fn reading_past_the_last_push_traps() {
+        let result = evaluate_program(&program(
+            Vec::new(),
+            buffer_body(&[10, 20], 2),
+            read_buffer(),
+        ));
+        assert!(matches!(
+            result,
+            Err(Failure::Trapped(Trap::IndexOutOfBounds))
+        ));
+    }
+
+    #[test]
+    fn a_handle_reads_its_allocation_while_the_arena_lives() {
+        let result = evaluate_program(&program(
+            vec![("N1".into(), 2)],
+            arena_body(false),
+            read_handle(1),
+        ));
+        assert_eq!(result.ok(), Some(42));
+    }
+
+    #[test]
+    fn a_handle_into_a_released_arena_traps() {
+        let result = evaluate_program(&program(
+            vec![("N1".into(), 2)],
+            arena_body(true),
+            read_handle(0),
+        ));
+        assert!(matches!(result, Err(Failure::Trapped(Trap::ArenaReleased))));
+    }
+
+    #[test]
+    fn memory_statements_render_as_core_declarations() {
+        let mut body = buffer_body(&[7], 0);
+        body.extend(arena_body(true));
+        let source = render_program(&program(vec![("N1".into(), 2)], body, read_buffer()));
+        assert!(source.contains("let mut b1: Buffer<u32> = Buffer::new();"));
+        assert!(source.contains("b1.push(7u32);"));
+        assert!(source.contains("let mut r1: Arena<N1> = Arena::new();"));
+        assert!(source.contains("let h1: Handle<N1> = r1.alloc(N1 { f0: 41u32, f1: 42u32 });"));
+        assert!(source.contains("r1.release();"));
+    }
+
+    #[test]
+    fn generated_programs_exercise_buffers_and_arenas() {
+        let mut buffers = 0;
+        let mut arenas = 0;
+        let mut releases = 0;
+        for index in 1..80 {
+            let source = render_program(&generate_program(13, index));
+            if source.contains("Buffer::new()") {
+                buffers += 1;
+            }
+            if source.contains("Arena::new()") {
+                arenas += 1;
+            }
+            if source.contains(".release();") {
+                releases += 1;
+            }
+        }
+        assert!(
+            buffers > 0 && arenas > 0,
+            "buffers {buffers}, arenas {arenas}"
+        );
+        assert!(releases > 0, "some arena should be released");
     }
 }
