@@ -489,6 +489,7 @@ impl<'a> FunctionEmitter<'a> {
         source.push_str(") {\n    argorix_step(budget);\n");
         self.emit_block(&self.function.body, 1, Some(&signature.result), source)?;
         if signature.result == ScalarType::Unit {
+            self.emit_buffer_drops(1, source);
             source.push_str("    return;\n");
         }
         source.push_str("}\n\n");
@@ -510,9 +511,29 @@ impl<'a> FunctionEmitter<'a> {
                 CoreCError::unsupported("value block needs an expected scalar type")
             })?;
             let value = self.emit_expr(tail, Some(expected), indent, source)?;
+            self.emit_buffer_drops(indent, source);
             line(source, indent, &format!("return {};", value.0));
         }
         Ok(())
+    }
+
+    /// Release every `Buffer` local before leaving the function.
+    ///
+    /// `argorix_buffer_new` allocates on first push, so a buffer that is never
+    /// dropped leaks its storage. `argorix_buffer_drop` clears the pointer, so
+    /// emitting it on more than one exit path is safe. The result is computed
+    /// into a temporary before these calls, and a `Buffer` cannot be returned,
+    /// so nothing here can be read after it is freed.
+    fn emit_buffer_drops(&self, indent: usize, source: &mut String) {
+        for (name, ty) in &self.locals {
+            if matches!(ty, ScalarType::Buffer(_)) {
+                line(
+                    source,
+                    indent,
+                    &format!("argorix_buffer_drop(&argorix_v_{name});"),
+                );
+            }
+        }
     }
 
     fn emit_statement(
@@ -590,8 +611,10 @@ impl<'a> FunctionEmitter<'a> {
                 if let Some(value) = value {
                     let result = &self.signatures[&self.function.name].result;
                     let value = self.emit_expr(value, Some(result), indent, source)?;
+                    self.emit_buffer_drops(indent, source);
                     line(source, indent, &format!("return {};", value.0));
                 } else {
+                    self.emit_buffer_drops(indent, source);
                     line(source, indent, "return;");
                 }
             }

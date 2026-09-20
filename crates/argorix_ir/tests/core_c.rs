@@ -215,3 +215,25 @@ fn c1_runtime_validates_handle_generation_and_arena_lifetime_when_cc_is_availabl
     }
     fs::remove_dir_all(temporary).unwrap();
 }
+
+#[test]
+fn buffers_are_released_before_every_return() {
+    let source = emit("buffer_success.argx");
+    let drop_call = "argorix_buffer_drop(&argorix_v_values);";
+    assert!(
+        source.contains(drop_call),
+        "a Buffer local must be dropped, or its storage leaks:\n{source}"
+    );
+    // The drop has to precede the return that leaves the function, and the
+    // result is already in a temporary by then.
+    let dropped = source.find(drop_call).unwrap();
+    let returned = source[dropped..]
+        .find("return argorix_t_")
+        .expect("the function returns after dropping");
+    assert!(
+        source[dropped..dropped + returned]
+            .lines()
+            .all(|line| !line.contains("argorix_buffer_push")),
+        "nothing may use the buffer after it is dropped:\n{source}"
+    );
+}
