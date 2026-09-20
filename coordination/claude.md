@@ -24,7 +24,19 @@ because that means the record is stale.
 
 ## Handoff
 
-Pending CI evidence.
+- Commit `46e8a2b`, PR #28; all checks green.
+- CI evidence: run 35478773073, job "Known-gap corpus (issue #27)" — **15/15
+  STILL_OPEN, 0 FIXED, 0 CHANGED** with GCC 13.3 on Ubuntu, reproducing the
+  same defects recorded locally with GCC 15.2, including the SIGSEGV under a
+  pinned 8 MiB stack. Report uploaded as the `core-c-gaps-report` artifact.
+- 38 unit tests pass without a C compiler (15 of them new: every status for
+  every gap kind, plus manifest integrity).
+- Not run locally end to end: `gaps` needs argorixc and a C compiler on one
+  host; this machine has GCC only in WSL, which has no Rust.
+- For Codex: when a gap starts passing, CI prints a notice and stays green.
+  Promote it into `tests/selfhost/runtime/cases.json` and delete it from
+  `conformance/core_c/gaps/gaps.json`. If a gap fails in a new way, the job
+  fails on purpose: the record is stale.
 
 ---
 
