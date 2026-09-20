@@ -12,6 +12,7 @@
 - [ ] `cargo clippy --workspace --all-targets` passes with no warnings
 - [ ] `cargo test --workspace` passes
 - [ ] Conformance suite updated/passing if language behavior changed
+- [ ] If language behavior changed: spec clause, compatibility classification (additive / incompatible + migration guide), and positive and negative tests are included (see GOVERNANCE.md)
 - [ ] Bytecode artifacts (`examples/*.argbc.json`) regenerated if the format changed
 - [ ] All my commits are signed off (`git commit -s`) per the DCO
 

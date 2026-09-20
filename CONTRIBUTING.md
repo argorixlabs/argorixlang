@@ -53,12 +53,25 @@ git rebase --signoff origin/main
 git push --force-with-lease
 ```
 
+## Changing language behavior
+
+Changes to the parser, semantic checks, IR, bytecode, VM, evidence formats, or
+host ABI need a change proposal with specification, compatibility
+classification, and tests. The required contents are listed in
+[GOVERNANCE.md](GOVERNANCE.md#changing-the-language); the compatibility rules
+are in [spec/compatibility.md](spec/compatibility.md).
+
 ## Review process
 
-- All PRs require CI to be green and at least one approving review from a
-  [code owner](.github/CODEOWNERS).
+- CI must be green before a PR is merged.
+- The project has one maintainer (see [GOVERNANCE.md](GOVERNANCE.md)), who
+  reviews and merges PRs. `main` has no branch protection yet, so review is a
+  practice, not a check GitHub enforces; the maintainer's own PRs are merged
+  without a second reviewer because none exists.
 - Maintainers must approve workflow runs for first-time contributors before CI
   executes.
+- AI coding agents working in this repository claim work in
+  [WORKBOARD.md](WORKBOARD.md) and follow its coordination protocol.
 
 ## Reporting security issues
 
