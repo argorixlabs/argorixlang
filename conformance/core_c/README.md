@@ -135,7 +135,9 @@ multi-argument calls, mutation through assignment and compound assignment,
 fixed arrays read through a `u64` index that is sometimes past the end (which
 must trap `INDEX_OUT_OF_BOUNDS`), reads of flat struct fields, buffers filled
 by `push` and read the same way, and arenas with one allocation read through a
-handle — sometimes after `release()`, which must trap `ARENA_RELEASED`. All of
+handle — sometimes after `release()`, which must trap `ARENA_RELEASED` — and
+enums read back through a function whose body is an exhaustive `match`, with
+both a variant that carries a field and a fieldless one. All of
 it across all eight integer widths.
 
 Running the generated corpus with `--sanitize` is worth doing for the memory

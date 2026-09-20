@@ -128,6 +128,13 @@ pub enum Expr {
         handle: String,
         field: usize,
     },
+    /// `readN(local)`: the generated reader function whose body is an
+    /// exhaustive `match` over the enum this local holds.
+    ReadEnum {
+        declaration: usize,
+        reader: String,
+        value: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,6 +200,26 @@ pub enum Stmt {
     Release {
         arena: String,
     },
+    /// `let name: EN = EN::Variant { p0: .. };`
+    LetEnum {
+        name: String,
+        type_name: String,
+        variant: usize,
+        payload: Option<Expr>,
+    },
+}
+
+/// An enum, its variants, and the function that reads one back.
+///
+/// Each variant carries at most one field, and the reader's `match` lists
+/// every variant, since Core requires exhaustiveness.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumDecl {
+    pub name: String,
+    pub reader: String,
+    /// One entry per variant: `Some(fallback)` for a fieldless variant, which
+    /// the arm answers with that literal, or `None` when it carries a field.
+    pub variants: Vec<Option<i128>>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +237,7 @@ pub struct Program {
     /// Flat struct declarations, as (name, field count). Structs holding
     /// structs, and arrays of structs, are gaps g02 and g03.
     pub structs: Vec<(String, usize)>,
+    pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
     pub main: Function,
 }
@@ -289,6 +317,8 @@ struct Environment {
     /// `u64` index locals, kept apart because they are not of the program's
     /// integer type.
     indexes: Vec<(String, u64)>,
+    /// Enum locals, as (name, variant index, payload when the variant has one).
+    enums: Vec<(String, usize, Option<i128>)>,
     /// Arenas by name, with whether they have been released.
     arenas: Vec<(String, bool)>,
     /// Handles, as (name, owning arena, field values).
@@ -431,6 +461,18 @@ fn execute(
                 entry.1 = true;
             }
         }
+        Stmt::LetEnum {
+            name,
+            variant,
+            payload,
+            ..
+        } => {
+            let carried = match payload {
+                Some(expression) => Some(evaluate(expression, env, program, fuel)?.int()),
+                None => None,
+            };
+            env.enums.push((name.clone(), *variant, carried));
+        }
         Stmt::While { condition, body } => {
             while evaluate(condition, env, program, fuel)?.truthy() {
                 if *fuel == 0 {
@@ -512,6 +554,22 @@ fn evaluate(
                 .copied()
                 .expect("a generated field index is in range"),
         ),
+        Expr::ReadEnum {
+            declaration, value, ..
+        } => {
+            let (_, variant, payload) = env
+                .enums
+                .iter()
+                .rev()
+                .find(|(key, _, _)| key == value)
+                .expect("a generated enum local exists before it is read");
+            // The arm that matches the variant decides the answer: its own
+            // field, or the fallback literal of a fieldless variant.
+            match program.enums[*declaration].variants[*variant] {
+                Some(fallback) => Value::Int(fallback),
+                None => Value::Int(payload.expect("a variant with a field carries one")),
+            }
+        }
         Expr::HandleField { handle, field } => match env.handle(handle) {
             // Reading through a handle whose arena is gone is a typed trap.
             None => return Err(Failure::Trapped(Trap::ArenaReleased)),
@@ -587,6 +645,7 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
         Expr::Index { array, index } => format!("{array}[{index}]"),
         Expr::Field { value, field } => format!("{value}.f{field}"),
         Expr::HandleField { handle, field } => format!("{handle}.f{field}"),
+        Expr::ReadEnum { reader, value, .. } => format!("{reader}({value})"),
     }
 }
 
@@ -679,6 +738,23 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                     .join(", ")
             )),
             Stmt::Release { arena } => lines.push(format!("{indent}{arena}.release();")),
+            Stmt::LetEnum {
+                name,
+                type_name,
+                variant,
+                payload,
+            } => {
+                let variant_name = format!("V{variant}");
+                match payload {
+                    Some(value) => lines.push(format!(
+                        "{indent}let {name}: {type_name} = {type_name}::{variant_name} {{ p0: {} }};",
+                        render_expr(value, kind)
+                    )),
+                    None => lines.push(format!(
+                        "{indent}let {name}: {type_name} = {type_name}::{variant_name};"
+                    )),
+                }
+            }
         }
     }
 }
@@ -696,6 +772,40 @@ pub fn render_program(program: &Program) -> String {
             .collect::<Vec<_>>()
             .join(", ");
         lines.push(format!("struct {name} {{ {declared}, }}"));
+        lines.push(String::new());
+    }
+    for declaration in &program.enums {
+        let variants = declaration
+            .variants
+            .iter()
+            .enumerate()
+            .map(|(index, fallback)| match fallback {
+                Some(_) => format!("V{index}"),
+                None => format!("V{index} {{ p0: {}, }}", kind.name),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("enum {} {{ {variants}, }}", declaration.name));
+        lines.push(String::new());
+        // The reader lists every variant: Core requires an exhaustive match.
+        lines.push(format!(
+            "fn {}(value: {}) -> {} {{",
+            declaration.reader, declaration.name, kind.name
+        ));
+        lines.push("    match value {".to_string());
+        for (index, fallback) in declaration.variants.iter().enumerate() {
+            let arm = match fallback {
+                Some(value) => format!(
+                    "        {}::V{index} => {},",
+                    declaration.name,
+                    render_literal(*value, kind)
+                ),
+                None => format!("        {}::V{index} {{ p0 }} => p0,", declaration.name),
+            };
+            lines.push(arm);
+        }
+        lines.push("    }".to_string());
+        lines.push("}".to_string());
         lines.push(String::new());
     }
     for function in &program.functions {
@@ -1002,6 +1112,9 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
         Expr::HandleField { handle, .. } => {
             seen.insert(handle.clone());
         }
+        Expr::ReadEnum { value, .. } => {
+            seen.insert(value.clone());
+        }
     }
 }
 
@@ -1019,6 +1132,11 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
         }
         Stmt::Release { arena } => {
             seen.insert(arena.clone());
+        }
+        Stmt::LetEnum { payload, .. } => {
+            if let Some(value) = payload {
+                reads(value, seen);
+            }
         }
         Stmt::LetIndex { .. } | Stmt::LetBuffer { .. } | Stmt::LetArena { .. } => {}
         Stmt::Compound { name, value, .. } => {
@@ -1065,7 +1183,9 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
         | Expr::Var(_)
         | Expr::Index { .. }
         | Expr::Field { .. }
-        | Expr::HandleField { .. } => {}
+        | Expr::HandleField { .. }
+        // The reader is generated with the enum, not through the call graph.
+        | Expr::ReadEnum { .. } => {}
     }
 }
 
@@ -1084,6 +1204,11 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
         | Stmt::LetBuffer { .. }
         | Stmt::LetArena { .. }
         | Stmt::Release { .. } => {}
+        Stmt::LetEnum { payload, .. } => {
+            if let Some(value) = payload {
+                calls(value, seen);
+            }
+        }
         Stmt::While { condition, body } => {
             calls(condition, seen);
             body.iter().for_each(|inner| statement_calls(inner, seen));
@@ -1153,6 +1278,14 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
         body.extend(statements);
         reads.push(expression);
     }
+    let mut enums = Vec::new();
+    if generator.rng.chance(45) {
+        let (declaration, statement, expression) =
+            generator.enumeration(&names, &functions, enums.len());
+        enums.push(declaration);
+        body.push(statement);
+        reads.push(expression);
+    }
     let mut tail = generator.value(&names, 3, &functions, true);
     for expression in reads {
         tail = Expr::Arith("^", Box::new(tail), Box::new(expression));
@@ -1182,6 +1315,7 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
         id: format!("fuzz_{seed}_{index:04}"),
         kind,
         structs,
+        enums,
         functions,
         main: Function {
             name: "argorix_main".into(),
@@ -1294,6 +1428,51 @@ impl Generator {
                 field: self.rng.below(count as u64) as usize,
             },
         )
+    }
+
+    /// An enum, the exhaustive `match` that reads it, and one value of it.
+    fn enumeration(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+        position: usize,
+    ) -> (EnumDecl, Stmt, Expr) {
+        let name = format!("E{}", self.counter + 1);
+        let local = self.fresh("e");
+        let count = 2 + self.rng.below(2) as usize;
+        // At least one variant carries a field and at least one does not, so
+        // both kinds of arm are exercised.
+        let with_payload = self.rng.below(count as u64) as usize;
+        let variants: Vec<Option<i128>> = (0..count)
+            .map(|index| {
+                if index == with_payload {
+                    None
+                } else {
+                    Some(self.rng.range(0.max(self.kind.low), self.kind.high.min(30)))
+                }
+            })
+            .collect();
+        let chosen = self.rng.below(count as u64) as usize;
+        let declaration = EnumDecl {
+            name: name.clone(),
+            reader: format!("read{position}"),
+            variants,
+        };
+        let payload = declaration.variants[chosen]
+            .is_none()
+            .then(|| self.value(names, 1, functions, false));
+        let statement = Stmt::LetEnum {
+            name: local.clone(),
+            type_name: name,
+            variant: chosen,
+            payload,
+        };
+        let read = Expr::ReadEnum {
+            declaration: position,
+            reader: declaration.reader.clone(),
+            value: local,
+        };
+        (declaration, statement, read)
     }
 
     /// A struct of scalar fields, and a read of one of them.
@@ -1489,6 +1668,7 @@ mod tests {
             id: "t".into(),
             kind: I32,
             structs: Vec::new(),
+            enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
                 name: "argorix_main".into(),
@@ -1704,6 +1884,7 @@ mod aggregate_tests {
             id: "t".into(),
             kind: U32,
             structs,
+            enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
                 name: "argorix_main".into(),
@@ -1856,6 +2037,7 @@ mod memory_tests {
             id: "t".into(),
             kind: U32,
             structs,
+            enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
                 name: "argorix_main".into(),
@@ -1991,5 +2173,119 @@ mod memory_tests {
             "buffers {buffers}, arenas {arenas}"
         );
         assert!(releases > 0, "some arena should be released");
+    }
+}
+
+#[cfg(test)]
+mod enum_tests {
+    use super::*;
+
+    const U32: IntType = TYPES[2];
+
+    fn declaration(variants: Vec<Option<i128>>) -> EnumDecl {
+        EnumDecl {
+            name: "E1".into(),
+            reader: "read0".into(),
+            variants,
+        }
+    }
+
+    fn program(declaration: EnumDecl, variant: usize, payload: Option<Expr>) -> Program {
+        Program {
+            id: "t".into(),
+            kind: U32,
+            structs: Vec::new(),
+            enums: vec![declaration],
+            functions: Vec::new(),
+            main: Function {
+                name: "argorix_main".into(),
+                params: Vec::new(),
+                body: vec![Stmt::LetEnum {
+                    name: "e1".into(),
+                    type_name: "E1".into(),
+                    variant,
+                    payload,
+                }],
+                tail: Expr::ReadEnum {
+                    declaration: 0,
+                    reader: "read0".into(),
+                    value: "e1".into(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn the_arm_of_the_variant_with_a_field_answers_with_it() {
+        let result = evaluate_program(&program(
+            declaration(vec![Some(5), None]),
+            1,
+            Some(Expr::Literal(31)),
+        ));
+        assert_eq!(result.ok(), Some(31));
+    }
+
+    #[test]
+    fn a_fieldless_variant_answers_with_its_own_arm() {
+        let result = evaluate_program(&program(declaration(vec![Some(5), None]), 0, None));
+        assert_eq!(result.ok(), Some(5));
+    }
+
+    #[test]
+    fn a_payload_that_traps_is_reported_when_the_value_is_built() {
+        let trapping = Expr::Arith("/", Box::new(Expr::Literal(1)), Box::new(Expr::Literal(0)));
+        let result = evaluate_program(&program(
+            declaration(vec![Some(5), None]),
+            1,
+            Some(trapping),
+        ));
+        assert!(matches!(
+            result,
+            Err(Failure::Trapped(Trap::DivisionByZero))
+        ));
+    }
+
+    #[test]
+    fn the_reader_matches_every_variant() {
+        let source = render_program(&program(
+            declaration(vec![Some(5), None, Some(9)]),
+            1,
+            Some(Expr::Literal(2)),
+        ));
+        assert!(source.contains("enum E1 { V0, V1 { p0: u32, }, V2, }"));
+        assert!(source.contains("fn read0(value: E1) -> u32 {"));
+        assert!(source.contains("E1::V0 => 5u32,"));
+        assert!(source.contains("E1::V1 { p0 } => p0,"));
+        assert!(source.contains("E1::V2 => 9u32,"));
+        assert!(source.contains("let e1: E1 = E1::V1 { p0: 2u32 };"));
+        assert!(source.contains("read0(e1)"));
+    }
+
+    #[test]
+    fn a_fieldless_variant_renders_without_a_payload() {
+        let source = render_program(&program(declaration(vec![Some(5), None]), 0, None));
+        assert!(source.contains("let e1: E1 = E1::V0;"));
+    }
+
+    #[test]
+    fn generated_enums_always_have_both_kinds_of_arm() {
+        let mut seen = 0;
+        for index in 1..80 {
+            let program = generate_program(23, index);
+            for declaration in &program.enums {
+                seen += 1;
+                assert!(
+                    declaration.variants.iter().any(|item| item.is_none()),
+                    "{} has no variant with a field",
+                    declaration.name
+                );
+                assert!(
+                    declaration.variants.iter().any(|item| item.is_some()),
+                    "{} has no fieldless variant",
+                    declaration.name
+                );
+            }
+        }
+        assert!(seen > 0, "some program should declare an enum");
     }
 }
