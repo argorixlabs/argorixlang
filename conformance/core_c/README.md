@@ -121,7 +121,9 @@ The generator deliberately stays inside the subset the backend claims to
 support, avoiding every shape recorded in `gaps/`: no shadowing, no block
 operands, no shifts, no signed negation, no `if` statements, no unused locals,
 parameters or functions, no recursion, and no `if` expression anywhere inside a
-comparison operand. It also avoids shapes that only upset the C compiler's
+comparison operand. Aggregates stay flat and at function level for the same
+reason: nested arrays, structs holding structs, arrays of structs and arrays
+declared inside a block are gaps g01, g02, g03 and g06. It also avoids shapes that only upset the C compiler's
 warning profile, such as `unsigned < 0` or a literal `^` pair that GCC reads as
 a mistyped power. **A failure is therefore a real divergence between the
 backend and the specification, not a known gap.**
@@ -129,8 +131,10 @@ backend and the specification, not a known gap.**
 Coverage: exact-width arithmetic with overflow traps, trapping division by zero
 and `MIN / -1`, truncating `/` and `%`, bitwise operators, comparisons,
 `&&`/`||` short-circuiting, `if` expressions, `while` loops with counters,
-multi-argument calls, and mutation through assignment and compound assignment,
-across all eight integer widths.
+multi-argument calls, mutation through assignment and compound assignment,
+fixed arrays read through a `u64` index that is sometimes past the end (which
+must trap `INDEX_OUT_OF_BOUNDS`), and reads of flat struct fields — across all
+eight integer widths.
 
 ## Sanitized runs
 
