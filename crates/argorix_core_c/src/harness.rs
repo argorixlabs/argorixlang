@@ -109,6 +109,8 @@ pub struct CaseResult {
     pub observed: Option<Execution>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<DependencyReport>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sanitizer_findings: Vec<String>,
     pub failures: Vec<String>,
     pub passed: bool,
 }
@@ -422,6 +424,16 @@ pub fn glob_matches(pattern: &str, value: &str) -> bool {
     }
 }
 
+/// The sanitizers the `sanitize` mode adds on top of the declared profile.
+///
+/// `-fno-sanitize-recover=all` makes undefined behaviour abort instead of
+/// printing and continuing, so a finding cannot be missed.
+pub const SANITIZER_FLAGS: [&str; 3] = [
+    "-fsanitize=address,undefined",
+    "-fno-sanitize-recover=all",
+    "-g",
+];
+
 pub fn compile_argv(
     compiler: &Path,
     toolchain: &Toolchain,
@@ -429,12 +441,24 @@ pub fn compile_argv(
     sources: &[PathBuf],
     output: &Path,
 ) -> Result<Vec<String>> {
+    compile_argv_with(compiler, toolchain, root, sources, output, &[])
+}
+
+pub fn compile_argv_with(
+    compiler: &Path,
+    toolchain: &Toolchain,
+    root: &Path,
+    sources: &[PathBuf],
+    output: &Path,
+    extra_flags: &[&str],
+) -> Result<Vec<String>> {
     anyhow::ensure!(
         !toolchain.required_flags.is_empty(),
         "toolchain.json declares no required_flags"
     );
     let mut argv = vec![compiler.display().to_string()];
     argv.extend(toolchain.required_flags.iter().cloned());
+    argv.extend(extra_flags.iter().map(|flag| flag.to_string()));
     let mut includes: Vec<String> = toolchain
         .runtime_sources
         .iter()
@@ -483,7 +507,32 @@ pub fn run_argv(argv: &[String]) -> Result<(i32, String, String)> {
 // Execution
 
 pub fn execute(executable: &Path, timeout: Duration) -> Result<Execution> {
-    let mut child = Command::new(executable)
+    execute_with_env(executable, timeout, &[])
+}
+
+/// Lines that mean a sanitizer caught something, whatever the exit status.
+pub fn sanitizer_findings(stderr: &str) -> Vec<String> {
+    stderr
+        .lines()
+        .filter(|line| {
+            line.contains("LeakSanitizer")
+                || line.contains("AddressSanitizer:")
+                || line.contains("runtime error:")
+        })
+        .map(|line| line.trim().to_string())
+        .collect()
+}
+
+pub fn execute_with_env(
+    executable: &Path,
+    timeout: Duration,
+    env: &[(&str, &str)],
+) -> Result<Execution> {
+    let mut command = Command::new(executable);
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -736,5 +785,67 @@ mod tests {
             };
             assert!(validate_case(&candidate, base).is_err(), "accepted {id:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod sanitizer_tests {
+    use super::*;
+
+    #[test]
+    fn leaks_undefined_behaviour_and_address_errors_are_findings() {
+        let stderr = "\
+==1219==ERROR: LeakSanitizer: detected memory leaks
+Direct leak of 16 byte(s) in 1 object(s) allocated from:
+case.c:12:5: runtime error: signed integer overflow
+==42==ERROR: AddressSanitizer: heap-use-after-free on address 0x602
+";
+        let findings = sanitizer_findings(stderr);
+        assert_eq!(findings.len(), 3);
+        assert!(findings[0].contains("LeakSanitizer"));
+        assert!(findings[1].contains("runtime error:"));
+        assert!(findings[2].contains("AddressSanitizer:"));
+    }
+
+    #[test]
+    fn ordinary_trap_output_is_not_a_finding() {
+        assert!(sanitizer_findings("ARGORIX_TRAP:INTEGER_OVERFLOW\n").is_empty());
+        assert!(sanitizer_findings("").is_empty());
+    }
+
+    #[test]
+    fn the_sanitizer_flags_make_undefined_behaviour_fatal() {
+        assert!(SANITIZER_FLAGS.contains(&"-fno-sanitize-recover=all"));
+        assert!(SANITIZER_FLAGS
+            .iter()
+            .any(|flag| flag.contains("address") && flag.contains("undefined")));
+    }
+
+    #[test]
+    fn sanitizer_flags_follow_the_declared_profile_rather_than_replacing_it() {
+        let toolchain = Toolchain {
+            allowed_compiler_names: vec!["gcc".into()],
+            required_flags: vec!["-std=c11".into(), "-Werror".into()],
+            runtime_sources: vec!["bootstrap/c/argorix_core_runtime.c".into()],
+            forbidden_link_inputs: Vec::new(),
+        };
+        let argv = compile_argv_with(
+            Path::new("/usr/bin/gcc"),
+            &toolchain,
+            Path::new("/repo"),
+            &[PathBuf::from("/w/case.c")],
+            Path::new("/w/case"),
+            &SANITIZER_FLAGS,
+        )
+        .expect("argv");
+        let werror = argv.iter().position(|item| item == "-Werror").unwrap();
+        let sanitize = argv
+            .iter()
+            .position(|item| item.starts_with("-fsanitize="))
+            .unwrap();
+        assert!(
+            werror < sanitize,
+            "the declared flags stay in front: {argv:?}"
+        );
     }
 }

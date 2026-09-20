@@ -57,6 +57,9 @@ enum Command {
         /// Run the cases only; the report then cannot pass.
         #[arg(long)]
         skip_negative_controls: bool,
+        /// Compile and run with AddressSanitizer and UndefinedBehaviorSanitizer.
+        #[arg(long)]
+        sanitize: bool,
         /// Fail if rustc, cargo or rustup is on PATH of this host.
         #[arg(long)]
         require_rust_free_host: bool,
@@ -75,6 +78,9 @@ enum Command {
         report: Option<PathBuf>,
         #[arg(long)]
         skip_negative_controls: bool,
+        /// Compile and run with AddressSanitizer and UndefinedBehaviorSanitizer.
+        #[arg(long)]
+        sanitize: bool,
     },
     /// Check the known-gap corpus (issue #27).
     Gaps {
@@ -169,6 +175,7 @@ fn main() -> Result<()> {
             cc,
             report,
             skip_negative_controls,
+            sanitize,
             require_rust_free_host,
         } => {
             let cases = cases.unwrap_or(default_cases);
@@ -180,6 +187,7 @@ fn main() -> Result<()> {
                 compiler_name: &cc,
                 work: &work.join("build"),
                 with_controls: !skip_negative_controls,
+                sanitize,
                 require_rust_free: require_rust_free_host,
             })?;
             run::print_summary(&outcome);
@@ -196,6 +204,7 @@ fn main() -> Result<()> {
             cc,
             report,
             skip_negative_controls,
+            sanitize,
         } => {
             let cases = cases.unwrap_or(default_cases);
             let bundle = bundle.unwrap_or_else(|| work.join("bundle"));
@@ -217,6 +226,7 @@ fn main() -> Result<()> {
                 compiler_name: &cc,
                 work: &work.join("build"),
                 with_controls: !skip_negative_controls,
+                sanitize,
                 require_rust_free: false,
             })?;
             run::print_summary(&outcome);
