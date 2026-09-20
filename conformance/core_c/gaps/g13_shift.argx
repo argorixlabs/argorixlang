@@ -1,0 +1,6 @@
+core 0.1;
+module gap.g13_shift;
+
+pub fn argorix_main() -> u32 {
+    256u32 >> 4u32
+}

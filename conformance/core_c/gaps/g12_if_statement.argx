@@ -1,0 +1,9 @@
+core 0.1;
+module gap.g12_if_statement;
+
+pub fn argorix_main() -> u32 {
+    let mut x: u32 = 1u32;
+    let c: bool = true;
+    if c { x += 41u32; }
+    x
+}

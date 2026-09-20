@@ -343,7 +343,12 @@ void argorix_validate_handle(
 
 #define DEFINE_UNSIGNED_CHECKED(width, type, maximum)                         \
     type argorix_u##width##_add(type left, type right) {                      \
-        if (right > (type)((maximum) - left)) {                               \
+        /* The headroom goes through a local of the same width: written     \
+           inline, `(type)(maximum - left)` is the bitwise complement of    \
+           `left` for the narrow widths, and GCC 12 rejects comparing that  \
+           promoted value with an unsigned one under -Werror=sign-compare. */ \
+        const type headroom = (type)((maximum) - left);                        \
+        if (right > headroom) {                                                \
             argorix_trap("INTEGER_OVERFLOW");                                \
         }                                                                      \
         return (type)(left + right);                                           \

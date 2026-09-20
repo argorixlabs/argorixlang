@@ -1,0 +1,13 @@
+core 0.1;
+module gap.g10_shadowed_local_type;
+
+pub fn argorix_main() -> u32 {
+    let x: u32 = 1000u32;
+    let mut i: u32 = 0u32;
+    while i < 1u32 {
+        let mut x: u8 = 7u8;
+        while x < 8u8 { x += 1u8; }
+        i += 1u32;
+    }
+    x + 1u32
+}

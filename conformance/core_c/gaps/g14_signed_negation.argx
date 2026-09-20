@@ -1,0 +1,7 @@
+core 0.1;
+module gap.g14_signed_negation;
+
+pub fn argorix_main() -> i32 {
+    let a: i32 = 0i32 - 42i32;
+    -a
+}
