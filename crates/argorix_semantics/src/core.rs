@@ -624,6 +624,9 @@ impl<'a> Checker<'a> {
             if path == &["Buffer".to_string(), "new".to_string()] && arguments.is_empty() {
                 return Ty::Buffer(Box::new(Ty::Unknown));
             }
+            if path == &["Arena".to_string(), "new".to_string()] && arguments.is_empty() {
+                return Ty::Arena(Box::new(Ty::Unknown));
+            }
             if path.len() == 1 {
                 if let Some(function) = self.functions.get(&path[0]).cloned() {
                     if function.parameters.len() != arguments.len() {
@@ -666,6 +669,7 @@ impl<'a> Checker<'a> {
                 self.require_compatible(&element, &actual, arguments[0].span);
                 Ty::Handle(element)
             }
+            ("release", Ty::Arena(_)) if arguments.is_empty() => Ty::Unit,
             ("as_bytes", Ty::Array(element, _))
                 if *element == Ty::Int("u8".into()) && arguments.is_empty() =>
             {
@@ -1000,6 +1004,12 @@ impl<'a> Checker<'a> {
         } else if let (Ty::Buffer(left), Ty::Buffer(right)) = (expected, actual) {
             if **right == Ty::Unknown {
                 Ty::Buffer(left.clone())
+            } else {
+                actual.clone()
+            }
+        } else if let (Ty::Arena(left), Ty::Arena(right)) = (expected, actual) {
+            if **right == Ty::Unknown {
+                Ty::Arena(left.clone())
             } else {
                 actual.clone()
             }

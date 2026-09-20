@@ -802,7 +802,9 @@ fn collect_expr_effects(value: &CoreIrExpr, effects: &mut BTreeSet<CoreIrEffect>
         }
         CoreIrExpr::Call { callee, arguments } => {
             if let CoreIrExpr::Path { segments } = callee.as_ref() {
-                if segments == &["Buffer".to_string(), "new".to_string()] {
+                if segments == &["Buffer".to_string(), "new".to_string()]
+                    || segments == &["Arena".to_string(), "new".to_string()]
+                {
                     effects.insert(CoreIrEffect::Allocate);
                 }
             }
@@ -813,6 +815,9 @@ fn collect_expr_effects(value: &CoreIrExpr, effects: &mut BTreeSet<CoreIrEffect>
                     }
                     "alloc" => {
                         effects.insert(CoreIrEffect::Allocate);
+                        effects.insert(CoreIrEffect::MemoryWrite);
+                    }
+                    "release" => {
                         effects.insert(CoreIrEffect::MemoryWrite);
                     }
                     "decode_utf8_or_trap" => {

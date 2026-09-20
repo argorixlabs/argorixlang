@@ -78,6 +78,9 @@ enum ScalarType {
     Integer(String),
     User(String),
     Slice(Box<ScalarType>),
+    Buffer(Box<ScalarType>),
+    Arena(Box<ScalarType>),
+    Handle(Box<ScalarType>),
     Array {
         element: Box<ScalarType>,
         length: u64,
@@ -110,6 +113,21 @@ impl ScalarType {
                 element,
                 array_length: None,
             } if name == "Slice" => Ok(Self::Slice(Box::new(Self::from_ir(element)?))),
+            CoreIrType::Container {
+                name,
+                element,
+                array_length: None,
+            } if name == "Buffer" => Ok(Self::Buffer(Box::new(Self::from_ir(element)?))),
+            CoreIrType::Container {
+                name,
+                element,
+                array_length: None,
+            } if name == "Arena" => Ok(Self::Arena(Box::new(Self::from_ir(element)?))),
+            CoreIrType::Container {
+                name,
+                element,
+                array_length: None,
+            } if name == "Handle" => Ok(Self::Handle(Box::new(Self::from_ir(element)?))),
             CoreIrType::Container { .. } => Err(CoreCError::unsupported(format!(
                 "container type `{value:?}` is not lowered by this C profile"
             ))),
@@ -135,6 +153,9 @@ impl ScalarType {
             },
             Self::User(name) => format!("argorix_type_{name}"),
             Self::Slice(element) => format!("argorix_slice_{}", element.mangle()),
+            Self::Buffer(_) => "argorix_buffer".into(),
+            Self::Arena(_) => "argorix_arena".into(),
+            Self::Handle(_) => "argorix_handle".into(),
             Self::Array { element, length } => {
                 format!("argorix_array_{}_{}", element.mangle(), length)
             }
@@ -150,6 +171,9 @@ impl ScalarType {
             Self::Integer(name) => name.clone(),
             Self::User(name) => format!("type_{name}"),
             Self::Slice(element) => format!("slice_{}", element.mangle()),
+            Self::Buffer(element) => format!("buffer_{}", element.mangle()),
+            Self::Arena(element) => format!("arena_{}", element.mangle()),
+            Self::Handle(element) => format!("handle_{}", element.mangle()),
             Self::Array { element, length } => format!("array_{}_{}", element.mangle(), length),
         }
     }
@@ -235,6 +259,15 @@ impl<'a> Emitter<'a> {
              #include <stdio.h>\n\
              #ifndef ARGORIX_STEP_LIMIT\n\
              #define ARGORIX_STEP_LIMIT 1000000U\n\
+             #endif\n\
+             #ifndef ARGORIX_BUFFER_LIMIT_BYTES\n\
+             #define ARGORIX_BUFFER_LIMIT_BYTES 1048576U\n\
+             #endif\n\
+             #ifndef ARGORIX_ARENA_LIMIT_BYTES\n\
+             #define ARGORIX_ARENA_LIMIT_BYTES 1048576U\n\
+             #endif\n\
+             #ifndef ARGORIX_ARENA_SLOT_LIMIT\n\
+             #define ARGORIX_ARENA_SLOT_LIMIT 1024U\n\
              #endif\n\n",
         );
         let mut arrays = BTreeMap::new();
@@ -395,6 +428,9 @@ impl<'a> Emitter<'a> {
             | ScalarType::String
             | ScalarType::User(_)
             | ScalarType::Slice(_)
+            | ScalarType::Buffer(_)
+            | ScalarType::Arena(_)
+            | ScalarType::Handle(_)
             | ScalarType::Array { .. } => unreachable!(),
         }
         source.push_str("    return 0;\n}\n");
@@ -453,6 +489,7 @@ impl<'a> FunctionEmitter<'a> {
         source.push_str(") {\n    argorix_step(budget);\n");
         self.emit_block(&self.function.body, 1, Some(&signature.result), source)?;
         if signature.result == ScalarType::Unit {
+            self.emit_buffer_drops(1, source);
             source.push_str("    return;\n");
         }
         source.push_str("}\n\n");
@@ -474,9 +511,29 @@ impl<'a> FunctionEmitter<'a> {
                 CoreCError::unsupported("value block needs an expected scalar type")
             })?;
             let value = self.emit_expr(tail, Some(expected), indent, source)?;
+            self.emit_buffer_drops(indent, source);
             line(source, indent, &format!("return {};", value.0));
         }
         Ok(())
+    }
+
+    /// Release every `Buffer` local before leaving the function.
+    ///
+    /// `argorix_buffer_new` allocates on first push, so a buffer that is never
+    /// dropped leaks its storage. `argorix_buffer_drop` clears the pointer, so
+    /// emitting it on more than one exit path is safe. The result is computed
+    /// into a temporary before these calls, and a `Buffer` cannot be returned,
+    /// so nothing here can be read after it is freed.
+    fn emit_buffer_drops(&self, indent: usize, source: &mut String) {
+        for (name, ty) in &self.locals {
+            if matches!(ty, ScalarType::Buffer(_)) {
+                line(
+                    source,
+                    indent,
+                    &format!("argorix_buffer_drop(&argorix_v_{name});"),
+                );
+            }
+        }
     }
 
     fn emit_statement(
@@ -554,8 +611,10 @@ impl<'a> FunctionEmitter<'a> {
                 if let Some(value) = value {
                     let result = &self.signatures[&self.function.name].result;
                     let value = self.emit_expr(value, Some(result), indent, source)?;
+                    self.emit_buffer_drops(indent, source);
                     line(source, indent, &format!("return {};", value.0));
                 } else {
+                    self.emit_buffer_drops(indent, source);
                     line(source, indent, "return;");
                 }
             }
@@ -721,20 +780,24 @@ impl<'a> FunctionEmitter<'a> {
             }
             CoreIrExpr::Index { value, index } => {
                 let value = self.emit_expr(value, None, indent, source)?;
-                let (element, length) = match &value.1 {
+                let (element, length, buffer) = match &value.1 {
                     ScalarType::Array { element, length } => {
-                        ((**element).clone(), format!("{}U", length))
+                        ((**element).clone(), format!("{}U", length), false)
                     }
                     ScalarType::Slice(element) => {
-                        ((**element).clone(), format!("{}.length", value.0))
+                        ((**element).clone(), format!("{}.length", value.0), false)
                     }
                     ScalarType::Bytes => (
                         ScalarType::Integer("u8".into()),
                         format!("{}.length", value.0),
+                        false,
                     ),
+                    ScalarType::Buffer(element) => {
+                        ((**element).clone(), format!("{}.length", value.0), true)
+                    }
                     _ => {
                         return Err(CoreCError::unsupported(
-                            "indexing requires Array, Slice, or bytes",
+                            "indexing requires Array, Slice, Buffer, or bytes",
                         ));
                     }
                 };
@@ -744,22 +807,49 @@ impl<'a> FunctionEmitter<'a> {
                     indent,
                     source,
                 )?;
-                self.bind_temp(
+                let access = if buffer {
+                    format!(
+                        "((const {} *){}.data)[argorix_bounds((uint64_t){}, {})]",
+                        element.c_name(),
+                        value.0,
+                        index.0,
+                        length
+                    )
+                } else {
                     format!(
                         "{}.data[argorix_bounds((uint64_t){}, {})]",
                         value.0, index.0, length
-                    ),
-                    element,
-                    indent,
-                    source,
-                )
+                    )
+                };
+                self.bind_temp(access, element, indent, source)
             }
             CoreIrExpr::Field { value, name } => {
                 let value = self.emit_expr(value, None, indent, source)?;
-                let ScalarType::User(type_name) = &value.1 else {
-                    return Err(CoreCError::unsupported(
-                        "field access currently requires a struct value",
-                    ));
+                let (type_name, access) = match &value.1 {
+                    ScalarType::User(type_name) => (type_name, format!("{}.{}", value.0, name)),
+                    ScalarType::Handle(element) => {
+                        let ScalarType::User(type_name) = element.as_ref() else {
+                            return Err(CoreCError::unsupported(
+                                "handle field access requires a struct element",
+                            ));
+                        };
+                        (
+                            type_name,
+                            format!(
+                                "((const {} *)argorix_handle_get({}, {}U, sizeof({}), false))->{}",
+                                element.c_name(),
+                                value.0,
+                                core_type_id(element),
+                                element.c_name(),
+                                name
+                            ),
+                        )
+                    }
+                    _ => {
+                        return Err(CoreCError::unsupported(
+                            "field access currently requires a struct or struct handle",
+                        ));
+                    }
                 };
                 let field_ty = self
                     .structs
@@ -769,7 +859,7 @@ impl<'a> FunctionEmitter<'a> {
                     .ok_or_else(|| {
                         CoreCError::unsupported(format!("unknown field `{name}` on `{type_name}`"))
                     })?;
-                self.bind_temp(format!("{}.{}", value.0, name), field_ty, indent, source)
+                self.bind_temp(access, field_ty, indent, source)
             }
             CoreIrExpr::Unary { operator, value } => {
                 let value = self.emit_expr(value, expected, indent, source)?;
@@ -789,7 +879,122 @@ impl<'a> FunctionEmitter<'a> {
                 right,
             } => self.emit_binary(left, *operator, right, expected, indent, source),
             CoreIrExpr::Call { callee, arguments } => {
+                if let CoreIrExpr::Path { segments } = callee.as_ref() {
+                    if segments == &["Buffer".to_string(), "new".to_string()]
+                        && arguments.is_empty()
+                    {
+                        let ty = expected.cloned().ok_or_else(|| {
+                            CoreCError::unsupported("Buffer::new requires an expected Buffer type")
+                        })?;
+                        let ScalarType::Buffer(element) = &ty else {
+                            return Err(CoreCError::unsupported(
+                                "Buffer::new has a non-Buffer expected type",
+                            ));
+                        };
+                        return self.bind_temp(
+                            format!(
+                                "argorix_buffer_new(sizeof({}), ARGORIX_BUFFER_LIMIT_BYTES)",
+                                element.c_name()
+                            ),
+                            ty,
+                            indent,
+                            source,
+                        );
+                    }
+                    if segments == &["Arena".to_string(), "new".to_string()] && arguments.is_empty()
+                    {
+                        let ty = expected.cloned().ok_or_else(|| {
+                            CoreCError::unsupported("Arena::new requires an expected Arena type")
+                        })?;
+                        let ScalarType::Arena(element) = &ty else {
+                            return Err(CoreCError::unsupported(
+                                "Arena::new has a non-Arena expected type",
+                            ));
+                        };
+                        return self.bind_temp(
+                            format!(
+                                "argorix_arena_new(sizeof({}), {}U, ARGORIX_ARENA_LIMIT_BYTES, ARGORIX_ARENA_SLOT_LIMIT)",
+                                element.c_name(),
+                                core_type_id(element)
+                            ),
+                            ty,
+                            indent,
+                            source,
+                        );
+                    }
+                }
                 if let CoreIrExpr::Field { value, name } = callee.as_ref() {
+                    if name == "push" {
+                        let CoreIrExpr::Path { segments } = value.as_ref() else {
+                            return Err(CoreCError::unsupported(
+                                "Buffer::push receiver must be a local",
+                            ));
+                        };
+                        let local = single_path(segments)?;
+                        let receiver_ty = self.locals.get(local).cloned().ok_or_else(|| {
+                            CoreCError::unsupported(format!("unknown local `{local}`"))
+                        })?;
+                        let ScalarType::Buffer(element) = receiver_ty else {
+                            return Err(CoreCError::unsupported(
+                                "push is only implemented for Buffer values",
+                            ));
+                        };
+                        let [argument] = arguments.as_slice() else {
+                            return Err(CoreCError::unsupported(
+                                "Buffer::push requires one argument",
+                            ));
+                        };
+                        let value = self.emit_expr(argument, Some(&element), indent, source)?;
+                        let value = self.bind_temp(value.0, (*element).clone(), indent, source)?;
+                        line(
+                            source,
+                            indent,
+                            &format!("argorix_buffer_push(&argorix_v_{local}, &{});", value.0),
+                        );
+                        return Ok(("0".into(), ScalarType::Unit));
+                    }
+                    if name == "alloc" || name == "release" {
+                        let CoreIrExpr::Path { segments } = value.as_ref() else {
+                            return Err(CoreCError::unsupported(
+                                "Arena method receiver must be a local",
+                            ));
+                        };
+                        let local = single_path(segments)?;
+                        let receiver_ty = self.locals.get(local).cloned().ok_or_else(|| {
+                            CoreCError::unsupported(format!("unknown local `{local}`"))
+                        })?;
+                        let ScalarType::Arena(element) = receiver_ty else {
+                            return Err(CoreCError::unsupported(
+                                "arena method requires an Arena value",
+                            ));
+                        };
+                        if name == "release" {
+                            if !arguments.is_empty() {
+                                return Err(CoreCError::unsupported(
+                                    "Arena::release accepts no arguments",
+                                ));
+                            }
+                            line(
+                                source,
+                                indent,
+                                &format!("argorix_arena_release(&argorix_v_{local});"),
+                            );
+                            return Ok(("0".into(), ScalarType::Unit));
+                        }
+                        let [argument] = arguments.as_slice() else {
+                            return Err(CoreCError::unsupported(
+                                "Arena::alloc requires one argument",
+                            ));
+                        };
+                        let value = self.emit_expr(argument, Some(&element), indent, source)?;
+                        let value = self.bind_temp(value.0, (*element).clone(), indent, source)?;
+                        return self.bind_temp(
+                            format!("argorix_arena_alloc(&argorix_v_{local}, &{})", value.0),
+                            ScalarType::Handle(element),
+                            indent,
+                            source,
+                        );
+                    }
                     if !arguments.is_empty() {
                         return Err(CoreCError::unsupported(format!(
                             "intrinsic `{name}` does not accept arguments"
@@ -805,7 +1010,10 @@ impl<'a> FunctionEmitter<'a> {
                         ),
                         (
                             "length",
-                            ScalarType::Slice(_) | ScalarType::Bytes | ScalarType::String,
+                            ScalarType::Slice(_)
+                            | ScalarType::Buffer(_)
+                            | ScalarType::Bytes
+                            | ScalarType::String,
                         ) => self.bind_temp(
                             format!("{}.length", receiver.0),
                             ScalarType::Integer("u64".into()),
@@ -1143,9 +1351,15 @@ fn line(source: &mut String, indent: usize, value: &str) {
 
 fn collect_array_type(value: &ScalarType, arrays: &mut BTreeMap<String, ScalarType>) {
     match value {
-        ScalarType::Array { element, .. } | ScalarType::Slice(element) => {
+        ScalarType::Array { element, .. }
+        | ScalarType::Slice(element)
+        | ScalarType::Buffer(element)
+        | ScalarType::Arena(element)
+        | ScalarType::Handle(element) => {
             collect_array_type(element, arrays);
-            arrays.insert(value.c_name(), value.clone());
+            if matches!(value, ScalarType::Array { .. } | ScalarType::Slice(_)) {
+                arrays.insert(value.c_name(), value.clone());
+            }
         }
         _ => {}
     }
@@ -1211,6 +1425,19 @@ fn integer_literal_suffix(ty: &ScalarType) -> Result<&'static str, CoreCError> {
         _ => Err(CoreCError::unsupported(
             "integer literal has non-integer type",
         )),
+    }
+}
+
+fn core_type_id(ty: &ScalarType) -> u32 {
+    let mut hash = 2_166_136_261_u32;
+    for byte in ty.mangle().bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    if hash == 0 {
+        1
+    } else {
+        hash
     }
 }
 

@@ -2,17 +2,18 @@
 
 ## Current claim
 
-- Task: ESP-008 — transitional C backend and minimal runtime.
-- State: DONE.
-- Branch: `codex/c-backend-esp008`.
-- Base: `13069ff02b3dcd6583e1fd75f1ab5ab2165e8d46`.
+- Task: ESP-009 — minimal standard library.
+- State: IN PROGRESS.
+- Branch: `codex/stdlib-esp009`.
+- Base: `4b0705a7fc162ceb57eaf604890eb16b98fb4a0c`.
 - Started: 2026-09-19.
 - Exclusive paths:
-  - `bootstrap/c/**`
-  - `crates/argorix_ir/src/core_c.rs`
-  - Core C CLI integration in `crates/argorixc/src/main.rs`
-  - `spec/core/c-backend.md`
-  - `tasks/espada/ESP-008.md`
+  - `stdlib/**`
+  - `spec/core/stdlib.md`
+  - `tests/selfhost/stdlib/**`
+  - `tasks/espada/ESP-009.md`
+  - ESP-009 Buffer/Arena/host-ABI additions in `bootstrap/c/**` and the Core
+    parser/semantics/IR/C-backend modules
 - Shared closeout paths, edited only at task closure:
   - `PLAN_ESPADA_INDEPENDIENTE.md`
   - `PLAN_MAESTRO_ARGORIXLANG.md`
@@ -88,3 +89,24 @@ the resulting programs do not link a Rust runtime.
   dependency scanning. Local formatting/Clippy passed and 418 workspace tests
   passed with zero failures. Versioned evidence is in
   `bootstrap/ESP-008-validation.json`; PR #23 is ready for review/merge.
+
+## ESP-009 progress
+
+- 2026-09-19: froze the S1 API/boundary in `spec/core/stdlib.md`, including
+  deterministic ordering, resource ceilings, specialized bootstrap types, and
+  the typed compiler-host path boundary.
+- Implemented the first executable vertical: bounded `Buffer<T>` C1 storage
+  with checked geometric growth, atomic push, typed indexing, stable
+  `INTEGER_OVERFLOW`/`RESOURCE_LIMIT`/`OUT_OF_MEMORY` traps, and C backend
+  lowering for `Buffer::new`, `push`, `length`, and index.
+- Added source-level success and resource-limit fixtures to the native Core C
+  manifest. Rust emission tests pass locally; native gcc/clang execution is
+  pending CI on PR #26.
+- Implemented the next executable vertical: bounded `Arena<T>` allocation,
+  canonical pointer-free `Handle<T>` creation, registry lookup, validated
+  struct-field reads, release, and registry-slot reclamation. Stale handles
+  preserve deterministic `ARENA_RELEASED` behavior after the arena state is
+  freed.
+- Added arena success, released-handle, and slot-limit fixtures. Native C
+  execution is pending CI; handle mutation/free/slot reuse and borrow tokens
+  remain before the arena API is complete.
