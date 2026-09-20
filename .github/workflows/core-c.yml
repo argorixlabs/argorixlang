@@ -231,3 +231,30 @@ jobs:
           name: core-c-report-gcc12
           path: target/core-c/report-gcc12.json
           if-no-files-found: ignore
+
+  sanitizers:
+    name: Sanitized execution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build argorixc and the harness
+        run: cargo build --locked -p argorixc -p argorix-core-c
+      - name: Run every case under AddressSanitizer and UBSan
+        # Catches leaks and undefined behaviour that a plain run cannot see,
+        # such as the Buffer storage that was never released.
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc gcc
+          --sanitize
+          --bundle target/core-c/bundle-sanitized
+          --work-dir target/core-c/sanitized
+          --report target/core-c/report-sanitized.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: core-c-report-sanitized
+          path: target/core-c/report-sanitized.json
+          if-no-files-found: ignore

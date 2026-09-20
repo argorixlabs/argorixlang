@@ -27,6 +27,7 @@ pub struct Report {
     pub commit: Option<String>,
     pub execution_host: Host,
     pub rust_free_host_required: bool,
+    pub sanitized: bool,
     pub emission_commit: Option<String>,
     pub emission_host: Host,
     pub emission_argorixc: ToolRecord,
@@ -48,6 +49,8 @@ pub struct RunOptions<'a> {
     pub work: &'a Path,
     pub with_controls: bool,
     pub require_rust_free: bool,
+    /// Compile and run with AddressSanitizer and UndefinedBehaviorSanitizer.
+    pub sanitize: bool,
 }
 
 pub fn load_bundle(bundle_dir: &Path, cases_path: &Path) -> Result<Bundle> {
@@ -136,6 +139,7 @@ pub fn run(options: RunOptions<'_>) -> Result<Report> {
         commit: harness::git_commit(options.root),
         execution_host: host,
         rust_free_host_required: options.require_rust_free,
+        sanitized: options.sanitize,
         emission_commit: bundle.commit.clone(),
         emission_host: bundle.host.clone(),
         emission_argorixc: bundle.argorixc.clone(),
@@ -172,6 +176,7 @@ fn run_case(
         executable_sha256: None,
         observed: None,
         dependencies: None,
+        sanitizer_findings: Vec::new(),
         failures: Vec::new(),
         passed: false,
     };
@@ -195,7 +200,19 @@ fn run_case(
     }
 
     let executable = options.work.join(&case.id);
-    let argv = harness::compile_argv(compiler, toolchain, options.root, &[c_path], &executable)?;
+    let extra: &[&str] = if options.sanitize {
+        &harness::SANITIZER_FLAGS
+    } else {
+        &[]
+    };
+    let argv = harness::compile_argv_with(
+        compiler,
+        toolchain,
+        options.root,
+        &[c_path],
+        &executable,
+        extra,
+    )?;
     let (code, _, diagnostics) = harness::run_argv(&argv)?;
     result.compile_argv = Some(
         argv.iter()
@@ -210,20 +227,45 @@ fn run_case(
     }
     result.executable_sha256 = Some(harness::sha256_file(&executable)?);
 
-    let execution = harness::execute(
+    // Leak detection is explicit rather than left to the build default.
+    let env: &[(&str, &str)] = if options.sanitize {
+        &[("ASAN_OPTIONS", "detect_leaks=1")]
+    } else {
+        &[]
+    };
+    let execution = harness::execute_with_env(
         &executable,
         Duration::from_secs(policy.execution_timeout_seconds),
+        env,
     )?;
     if execution.timed_out {
         result.failures.push(format!(
-            "timed out after {} s",
-            policy.execution_timeout_seconds
+            "timed out after {} s{}",
+            policy.execution_timeout_seconds,
+            if options.sanitize {
+                "; a sanitized binary can hang where the host allows more ASLR \
+entropy than AddressSanitizer supports, so check vm.mmap_rnd_bits"
+            } else {
+                ""
+            }
         ));
     } else {
         result.failures.extend(harness::compare(case, &execution));
     }
+    if options.sanitize {
+        let findings = harness::sanitizer_findings(&execution.stderr);
+        result.failures.extend(findings.clone());
+        result.sanitizer_findings = findings;
+    }
     result.observed = Some(execution);
 
+    if options.sanitize {
+        // A sanitized build links libasan and friends, so the dependency policy
+        // does not apply to it. The ordinary run is what checks dependencies;
+        // this mode is about leaks and undefined behaviour.
+        result.passed = result.failures.is_empty();
+        return Ok(result);
+    }
     let dependencies = harness::inspect_binary(&executable, policy)?;
     result.failures.extend(dependencies.violations.clone());
     result.dependencies = Some(dependencies);

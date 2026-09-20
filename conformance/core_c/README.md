@@ -132,13 +132,41 @@ and `MIN / -1`, truncating `/` and `%`, bitwise operators, comparisons,
 multi-argument calls, and mutation through assignment and compound assignment,
 across all eight integer widths.
 
+## Sanitized runs
+
+`--sanitize` adds `-fsanitize=address,undefined -fno-sanitize-recover=all -g`
+on top of the declared profile and runs with `ASAN_OPTIONS=detect_leaks=1`. Any
+`LeakSanitizer`, `AddressSanitizer:` or `runtime error:` line fails the case,
+whatever its exit status.
+
+```sh
+./target/debug/core-c-harness all --argorixc target/debug/argorixc --cc gcc --sanitize
+```
+
+This is what catches what a plain run cannot see. Every `Buffer` leaked its
+storage for a while — the emitter never called `argorix_buffer_drop` — and the
+ordinary run stayed green throughout, because the program still printed the
+right answer and exited 0.
+
+Dependency inspection is skipped in this mode: a sanitized binary links
+`libasan` and friends, so the policy does not apply to it. The ordinary run is
+what enforces dependencies.
+
+**On a host with high ASLR entropy** (`vm.mmap_rnd_bits` of 32, as on the WSL2
+kernel behind Docker Desktop) AddressSanitizer intermittently hangs instead of
+starting, on a random subset of programs. It is not a defect in the program
+under test. Run the harness under `setarch $(uname -m) -R` there; GitHub's
+runners are unaffected. A hang is reported as a timeout with that hint.
+
 ## CI
 
 `.github/workflows/core-c.yml` runs the harness unit tests, then emits a bundle
 on Ubuntu and executes it with GCC and Clang, and again with GCC inside a
 `debian:stable-slim` container that has no Rust installed. Separate jobs check
-the known-gap corpus and run the differential seeds, uploading the generated
-programs with the report so a failure can be reproduced exactly.
+the known-gap corpus, run the differential seeds, run every case under the
+sanitizers, and execute with GCC 12 (an older compiler than the runner's,
+because the C1 runtime once failed to build there), uploading each report so a
+failure can be reproduced exactly.
 
 The execution jobs are skipped only while **both** `argorixc core-emit-c` and
 the cases manifest are absent, as on `main` before ESP-008 landed; if only one
