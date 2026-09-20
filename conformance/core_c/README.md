@@ -133,8 +133,14 @@ and `MIN / -1`, truncating `/` and `%`, bitwise operators, comparisons,
 `&&`/`||` short-circuiting, `if` expressions, `while` loops with counters,
 multi-argument calls, mutation through assignment and compound assignment,
 fixed arrays read through a `u64` index that is sometimes past the end (which
-must trap `INDEX_OUT_OF_BOUNDS`), and reads of flat struct fields — across all
-eight integer widths.
+must trap `INDEX_OUT_OF_BOUNDS`), reads of flat struct fields, buffers filled
+by `push` and read the same way, and arenas with one allocation read through a
+handle — sometimes after `release()`, which must trap `ARENA_RELEASED`. All of
+it across all eight integer widths.
+
+Running the generated corpus with `--sanitize` is worth doing for the memory
+constructs in particular: it is the combination that would have caught the
+`Buffer` leak on the first run.
 
 ## Sanitized runs
 
