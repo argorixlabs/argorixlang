@@ -197,3 +197,37 @@ jobs:
             target/core-c/fuzz-*/
             target/core-c/fuzz-report-*.json
           if-no-files-found: ignore
+
+  execute-older-gcc:
+    name: Execute with GCC 12
+    runs-on: ubuntu-latest
+    # The declared toolchain profile is C11 with -Wall -Wextra -Werror and no
+    # compiler version floor, but the runner and the Rust-free container both
+    # carry a recent GCC. This job pins an older one: GCC 12 rejected the
+    # unsigned add check that GCC 13+ accepted. The image ships cargo too, so
+    # argorixc and the harness are built here rather than carried in.
+    container: rust:1-slim-bookworm
+    steps:
+      - name: Install git for checkout
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v7
+      - name: Trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Build argorixc and the harness
+        run: cargo build --locked -p argorixc -p argorix-core-c
+      - name: Emit, execute and inspect with GCC 12
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc gcc
+          --bundle target/core-c/bundle-gcc12
+          --work-dir target/core-c/gcc12
+          --report target/core-c/report-gcc12.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: core-c-report-gcc12
+          path: target/core-c/report-gcc12.json
+          if-no-files-found: ignore
