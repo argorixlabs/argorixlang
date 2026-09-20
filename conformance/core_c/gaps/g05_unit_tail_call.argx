@@ -1,0 +1,10 @@
+core 0.1;
+module gap.g05_unit_tail_call;
+
+fn noop() -> unit { unit }
+fn g() -> unit { noop() }
+
+pub fn argorix_main() -> u32 {
+    g();
+    42u32
+}

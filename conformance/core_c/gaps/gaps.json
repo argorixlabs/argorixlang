@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "recorded_commit": "4b0705a",
+  "recorded_with": "gcc 15.2.0 / clang 18, -std=c11 -Wall -Wextra -Werror",
+  "purpose": "Known gaps of the transitional C backend (issue #27). Each program is valid Core 0.1 that argorixc core-check accepts. The corpus records today's behaviour so a fix is noticed and can be promoted into tests/selfhost/runtime/cases.json.",
+  "gaps": [
+    {
+      "id": "g01_nested_array",
+      "file": "g01_nested_array.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "Array typedefs are emitted sorted by name, so the outer array precedes the inner one.",
+      "signature": "unknown type name"
+    },
+    {
+      "id": "g02_struct_in_struct",
+      "file": "g02_struct_in_struct.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "Struct definitions are emitted alphabetically instead of in dependency order.",
+      "signature": "incomplete type"
+    },
+    {
+      "id": "g03_array_of_struct",
+      "file": "g03_array_of_struct.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "The array typedef is emitted before the struct it contains.",
+      "signature": "incomplete element type"
+    },
+    {
+      "id": "g04_block_scope",
+      "file": "g04_block_scope.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "A block expression's locals are not wrapped in a C scope.",
+      "signature": "redefinition of"
+    },
+    {
+      "id": "g05_unit_tail_call",
+      "file": "g05_unit_tail_call.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "A unit function whose body ends in a call emits `return <value>;` inside void.",
+      "signature": "return"
+    },
+    {
+      "id": "g06_array_in_if",
+      "file": "g06_array_in_if.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "Array types declared inside if/block expressions never get a typedef.",
+      "signature": "unknown type name"
+    },
+    {
+      "id": "g07_field_named_like_c_keyword",
+      "file": "g07_field_named_like_c_keyword.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "Struct field names reach C unprefixed, so C keywords collide.",
+      "signature": "two or more data types"
+    },
+    {
+      "id": "g08_unused_parameter",
+      "file": "g08_unused_parameter.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "Valid Core with an unused parameter fails the declared -Wall -Wextra -Werror profile.",
+      "signature": "unused parameter"
+    },
+    {
+      "id": "g09_comparison_with_block_operand",
+      "file": "g09_comparison_with_block_operand.argx",
+      "issue": 27,
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:false",
+      "note": "The left operand of a comparison is emitted as a bool temporary; without -Werror this would silently compare 1 < 3.",
+      "signature": "bool-compare"
+    },
+    {
+      "id": "g10_shadowed_local_type",
+      "file": "g10_shadowed_local_type.argx",
+      "issue": 27,
+      "kind": "wrong_result",
+      "spec_expected_stdout": "ARGORIX_RESULT:1001",
+      "note": "After the inner scope closes the emitter still treats x as u8, truncating 1000 to 232.",
+      "observed_stdout": "ARGORIX_RESULT:233",
+      "observed_exit": 0
+    },
+    {
+      "id": "g11_evaluation_order_variable",
+      "file": "g11_evaluation_order_variable.argx",
+      "issue": 27,
+      "kind": "wrong_result",
+      "spec_expected_stdout": "ARGORIX_RESULT:3",
+      "note": "The left operand is read after the right side mutates it, against spec/core/evaluation.md.",
+      "observed_stdout": "ARGORIX_RESULT:4",
+      "observed_exit": 0
+    },
+    {
+      "id": "g12_if_statement",
+      "file": "g12_if_statement.argx",
+      "issue": 27,
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "`if` used as a statement is not lowered yet.",
+      "signature": "if expression needs an expected scalar type"
+    },
+    {
+      "id": "g13_shift",
+      "file": "g13_shift.argx",
+      "issue": 27,
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:16",
+      "note": "Shifts are defined by the spec (amount below the width, otherwise a trap).",
+      "signature": "checked shifts are not implemented yet"
+    },
+    {
+      "id": "g14_signed_negation",
+      "file": "g14_signed_negation.argx",
+      "issue": 27,
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "note": "Signed negation is defined by the spec and must trap on MIN.",
+      "signature": "checked signed negation is not implemented yet"
+    },
+    {
+      "id": "g15_deep_recursion",
+      "file": "g15_deep_recursion.argx",
+      "issue": 27,
+      "kind": "crash",
+      "spec_expected_stdout": "ARGORIX_RESULT:400000",
+      "note": "Native stack overflow (SIGSEGV) instead of the typed depth/step trap the spec requires.",
+      "observed_exit": -11,
+      "stack_limit_mib": 8
+    }
+  ]
+}

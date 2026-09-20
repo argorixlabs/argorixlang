@@ -1,0 +1,8 @@
+core 0.1;
+module gap.g08_unused_parameter;
+
+fn pick(a: u32, b: u32) -> u32 { a }
+
+pub fn argorix_main() -> u32 {
+    pick(42u32, 1u32)
+}

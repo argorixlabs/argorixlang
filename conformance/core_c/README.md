@@ -67,11 +67,35 @@ version, input hashes, compile argument vectors, observed output, dependency
 findings, and control results. `overall_pass` is true only if every case passes
 and every negative control is detected.
 
+## Known-gap corpus
+
+`gaps/` holds valid Core programs that the backend gets wrong today, recorded in
+[`gaps/gaps.json`](gaps/gaps.json) with the defect each one reproduces
+(issue #27). Every program is accepted by `argorixc core-check`, and the
+expected output comes from `spec/core/evaluation.md`.
+
+```sh
+python3 conformance/core_c/run.py gaps --argorixc target/debug/argorixc --cc gcc
+```
+
+Each gap is classified against its record:
+
+| Status | Meaning | Effect |
+| --- | --- | --- |
+| `STILL_OPEN` | the recorded defect is reproduced | expected; exit 0 |
+| `FIXED` | the program now behaves as the spec requires | reported as a notice; promote it into `tests/selfhost/runtime/cases.json` (Codex lane) and remove it from `gaps.json` |
+| `CHANGED` | it fails in a different way | **exit 1**: the record is stale and someone must look |
+
+A fixed gap is not a build failure, so fixing the backend never breaks CI. Only
+an unexplained change does. The corpus is not a substitute for the runtime cases:
+it tracks what does not work yet.
+
 ## CI
 
 `.github/workflows/core-c.yml` runs the unit tests, then emits a bundle on
 Ubuntu and executes it with GCC and Clang, and again with GCC inside a
-`debian:stable-slim` container that has no Rust installed. The execution jobs
+`debian:stable-slim` container that has no Rust installed. A separate job checks
+the known-gap corpus. The execution jobs
 are skipped only while **both** `argorixc core-emit-c` and the cases manifest
 are absent, as on `main` before ESP-008 lands; if only one of the two exists,
 the job fails.

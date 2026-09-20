@@ -42,6 +42,7 @@ DEFAULT_CASES = ROOT / "tests" / "selfhost" / "runtime" / "cases.json"
 TOOLCHAIN = ROOT / "bootstrap" / "c" / "toolchain.json"
 POLICY = ROOT / "conformance" / "core_c" / "policy.json"
 DEFAULT_WORK = ROOT / "target" / "core-c"
+GAPS = ROOT / "conformance" / "core_c" / "gaps" / "gaps.json"
 
 REPORT_SCHEMA = 1
 BUNDLE_SCHEMA = 1
@@ -402,9 +403,23 @@ def compare(case: dict[str, Any], exit_code: int | None, stdout: str, stderr: st
     return mismatches
 
 
-def execute(executable: pathlib.Path, timeout: int) -> dict[str, Any]:
+def stack_limiter(mib):
+    """Pin the child's stack so a stack-overflow gap reproduces the same way."""
+    if mib is None or os.name != "posix":
+        return None
+    import resource  # POSIX only
+
+    def apply() -> None:  # pragma: no cover - runs in the forked child
+        _, hard = resource.getrlimit(resource.RLIMIT_STACK)
+        resource.setrlimit(resource.RLIMIT_STACK, (mib * 1024 * 1024, hard))
+
+    return apply
+
+
+def execute(executable: pathlib.Path, timeout: int, stack_mib=None) -> dict[str, Any]:
     try:
-        completed = run_argv([str(executable)], stdin=subprocess.DEVNULL, timeout=timeout)
+        completed = run_argv([str(executable)], stdin=subprocess.DEVNULL, timeout=timeout,
+                             preexec_fn=stack_limiter(stack_mib))
     except subprocess.TimeoutExpired:
         return {"exit": None, "stdout": "", "stderr": "", "timed_out": True}
     return {
@@ -550,6 +565,149 @@ def negative_controls(
 
 
 # --------------------------------------------------------------------------
+# Known gaps (issue #27): record today's behaviour so a fix gets noticed
+
+
+STILL_OPEN = "STILL_OPEN"
+FIXED = "FIXED"
+CHANGED = "CHANGED"
+
+
+def classify_gap(gap: dict[str, Any], outcome: dict[str, Any]) -> tuple[str, str]:
+    """Compare one gap's observed behaviour with what the manifest recorded.
+
+    STILL_OPEN: the recorded defect is reproduced.
+    FIXED:      the program now behaves as the spec requires; promote it.
+    CHANGED:    something else happens, so the record is stale.
+    """
+    kind = gap["kind"]
+    spec_stdout = gap["spec_expected_stdout"]
+    signature = gap.get("signature", "")
+    emit_code = outcome["emit_exit"]
+    if kind == "emit_rejected" and emit_code != 0:
+        if signature in outcome["emit_stderr"]:
+            return STILL_OPEN, "emission still rejects it: " + signature
+        return CHANGED, "emission fails with a different message: " + outcome["emit_stderr"][:160]
+    if emit_code != 0:
+        return CHANGED, "emission now fails: " + outcome["emit_stderr"][:160]
+    if outcome["compile_exit"] is None:
+        return CHANGED, "emission succeeded but nothing was compiled"
+    if outcome["compile_exit"] != 0:
+        if kind == "compile_error" and signature in outcome["compile_diagnostics"]:
+            return STILL_OPEN, "C compilation still fails: " + signature
+        return CHANGED, "C compilation fails: " + outcome["compile_diagnostics"][:160]
+
+    observed = strip_one_newline(outcome["stdout"])
+    matches_spec = observed == spec_stdout and outcome["exit"] == 0
+    if kind == "crash":
+        if matches_spec:
+            return FIXED, "the program now runs to the expected result"
+        if outcome["exit"] == 70 and outcome["stderr"].startswith("ARGORIX_TRAP:"):
+            return FIXED, "now a typed trap: " + strip_one_newline(outcome["stderr"])
+        if outcome["exit"] == gap.get("observed_exit"):
+            return STILL_OPEN, "still exits %s instead of a typed trap" % outcome["exit"]
+        return CHANGED, "exit %s, stdout %r, stderr %r" % (outcome["exit"], observed, outcome["stderr"][:120])
+    if matches_spec:
+        return FIXED, "the program now produces the result the spec requires"
+    if kind == "wrong_result" and observed == gap.get("observed_stdout") \
+            and outcome["exit"] == gap.get("observed_exit"):
+        return STILL_OPEN, "still prints %r instead of %r" % (observed, spec_stdout)
+    return CHANGED, "exit %s, stdout %r, stderr %r" % (outcome["exit"], observed, outcome["stderr"][:120])
+
+
+def observe_gap(
+    gap: dict[str, Any],
+    argorixc: pathlib.Path,
+    work: pathlib.Path,
+    compiler: pathlib.Path,
+    toolchain: dict[str, Any],
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    source = GAPS.parent / gap["file"]
+    generated = work / (gap["id"] + ".c")
+    emit_code, emit_stderr = emit_once(argorixc, source, generated)
+    outcome: dict[str, Any] = {
+        "emit_exit": emit_code,
+        "emit_stderr": emit_stderr,
+        "compile_exit": None,
+        "compile_diagnostics": "",
+        "exit": None,
+        "stdout": "",
+        "stderr": "",
+    }
+    if emit_code != 0 or not generated.is_file():
+        return outcome
+    executable = work / gap["id"]
+    compiled = run_argv(compile_argv(compiler, toolchain, [generated], executable), timeout=300)
+    outcome["compile_exit"] = compiled.returncode
+    outcome["compile_diagnostics"] = decode(compiled.stderr).strip()
+    if compiled.returncode != 0 or not executable.is_file():
+        return outcome
+    outcome.update(execute(executable, policy["execution_timeout_seconds"], gap.get("stack_limit_mib")))
+    return outcome
+
+
+def check_gaps(argorixc: pathlib.Path, compiler_name: str, work: pathlib.Path) -> dict[str, Any]:
+    toolchain = load_json(TOOLCHAIN)
+    policy = load_json(POLICY)
+    manifest = load_json(GAPS)
+    if manifest.get("schema_version") != 1:
+        raise RunnerError("unsupported gaps schema_version in %s" % GAPS)
+    argorixc = argorixc.resolve()
+    if not argorixc.is_file():
+        raise RunnerError("argorixc not found: %s" % argorixc)
+    if not emitter_available(argorixc):
+        raise RunnerError("argorixc has no `core-emit-c` command")
+    compiler = resolve_compiler(compiler_name, toolchain)
+    work.mkdir(parents=True, exist_ok=True)
+    results = []
+    for gap in manifest["gaps"]:
+        outcome = observe_gap(gap, argorixc, work, compiler, toolchain, policy)
+        status, detail = classify_gap(gap, outcome)
+        results.append({
+            "id": gap["id"], "kind": gap["kind"], "issue": gap.get("issue"),
+            "status": status, "detail": detail, "observed": outcome,
+        })
+    counts = {status: sum(1 for item in results if item["status"] == status)
+              for status in (STILL_OPEN, FIXED, CHANGED)}
+    return {
+        "schema_version": REPORT_SCHEMA,
+        "task": "ESP-008.R gap corpus",
+        "scope": "Known defects of the transitional C backend (issue #27). A gap that starts "
+                 "passing must be promoted into tests/selfhost/runtime/cases.json.",
+        "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "commit": git_commit(),
+        "recorded_commit": manifest.get("recorded_commit"),
+        "host": host_info(),
+        "compiler": {"requested": compiler_name, "path": str(compiler),
+                     "version": first_line([str(compiler), "--version"])},
+        "argorixc": {"path": display(argorixc), "sha256": sha256_file(argorixc),
+                     "version": first_line([str(argorixc), "--version"])},
+        "gaps_total": len(results),
+        "counts": counts,
+        "gaps": results,
+        # A fixed gap is good news, not a build failure. A different failure means
+        # the record is stale and someone has to look at it.
+        "overall_pass": counts[CHANGED] == 0,
+    }
+
+
+def print_gap_summary(report: dict[str, Any], annotate: bool) -> None:
+    for item in report["gaps"]:
+        print("%-10s %s: %s" % (item["status"], item["id"], item["detail"]))
+        if annotate and item["status"] != STILL_OPEN:
+            title = "Core C gap fixed" if item["status"] == FIXED else "Core C gap changed"
+            print("::notice title=%s::%s: %s" % (title, item["id"], item["detail"]))
+    counts = report["counts"]
+    print("gaps %d: %d still open, %d fixed, %d changed; recorded at %s; overall_pass=%s"
+          % (report["gaps_total"], counts[STILL_OPEN], counts[FIXED], counts[CHANGED],
+             report["recorded_commit"], report["overall_pass"]))
+    if counts[FIXED]:
+        print("Promote each fixed gap into tests/selfhost/runtime/cases.json (Codex lane) "
+              "and drop it from conformance/core_c/gaps/gaps.json.")
+
+
+# --------------------------------------------------------------------------
 # Run phase and report
 
 
@@ -664,7 +822,29 @@ def main(argv: list[str] | None = None) -> int:
                              help="fail if rustc, cargo, or rustup is on PATH of the execution host")
         common(command)
 
+    gaps_cmd = sub.add_parser("gaps", help="check the known-gap corpus (issue #27)")
+    gaps_cmd.add_argument("--argorixc", type=pathlib.Path, required=True)
+    gaps_cmd.add_argument("--cc", required=True, help="allow-listed compiler name or absolute path")
+    gaps_cmd.add_argument("--report", type=pathlib.Path)
+    gaps_cmd.add_argument("--github-annotations", action="store_true",
+                          help="print ::notice lines for gaps that are fixed or changed")
+    gaps_cmd.add_argument("--work-dir", type=pathlib.Path, default=DEFAULT_WORK)
+
     args = parser.parse_args(argv)
+    if args.command == "gaps":
+        work = args.work_dir.resolve()
+        try:
+            report = check_gaps(args.argorixc, args.cc, work / "gaps")
+        except RunnerError as error:
+            print("error: %s" % error, file=sys.stderr)
+            return 2
+        report_path = (args.report or work / "gaps-report.json").resolve()
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print_gap_summary(report, args.github_annotations)
+        print("report: %s" % report_path)
+        return 0 if report["overall_pass"] else 1
+
     cases_path = args.cases.resolve()
     work = args.work_dir.resolve()
     bundle = (args.bundle or work / "bundle").resolve()

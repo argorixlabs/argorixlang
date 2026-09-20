@@ -1,0 +1,9 @@
+core 0.1;
+module gap.g03_array_of_struct;
+
+struct Pair { first: u32, second: u32, }
+
+pub fn argorix_main() -> u32 {
+    let pairs: Array<Pair, 2> = [Pair { first: 20u32, second: 1u32 }, Pair { first: 20u32, second: 1u32 }];
+    pairs[0u64].first + pairs[0u64].second + pairs[1u64].first + pairs[1u64].second
+}

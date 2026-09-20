@@ -128,3 +128,29 @@ jobs:
           name: core-c-report-rust-free
           path: target/core-c/report-rust-free.json
           if-no-files-found: ignore
+
+  gap-corpus:
+    name: Known-gap corpus (issue #27)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build argorixc
+        run: cargo build -p argorixc --locked
+      - name: Check recorded gaps
+        id: check
+        # Fails only when a gap behaves differently from its record. A gap that
+        # starts passing is reported as a notice, for promotion into cases.json.
+        run: >-
+          python3 conformance/core_c/run.py gaps
+          --argorixc target/debug/argorixc
+          --cc gcc
+          --github-annotations
+          --report target/core-c/gaps-report.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: core-c-gaps-report
+          path: target/core-c/gaps-report.json
+          if-no-files-found: ignore

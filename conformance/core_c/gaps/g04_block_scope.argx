@@ -1,0 +1,8 @@
+core 0.1;
+module gap.g04_block_scope;
+
+pub fn argorix_main() -> u32 {
+    let a: u32 = { let t: u32 = 40u32; t };
+    let t: u32 = 2u32;
+    a + t
+}

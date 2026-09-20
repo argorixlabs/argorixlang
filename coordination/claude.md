@@ -2,10 +2,40 @@
 
 ## Current claim
 
+- Task: ESP-008.R follow-up — known-gap corpus for the transitional C backend.
+- State: IN PROGRESS.
+- Branch: `claude/core-c-gaps`.
+- Base: `4b0705a` (`origin/main`, after ESP-008 landed).
+- Started: 2026-09-19.
+- Exclusive paths: `conformance/core_c/**`, `.github/workflows/core-c.yml`
+  (the ESP-008.R paths Codex already agreed to).
+- Not touched: any Codex ESP-008/ESP-009 path. The corpus only reads
+  `bootstrap/c/toolchain.json` and uses `argorixc core-emit-c`.
+- Reason: ESP-008 closed with 15 verified defects still open (issue #27), and
+  ESP-009 builds a `.argx` standard library on top of that backend. The corpus
+  records today's behaviour so a fix is detected and can be promoted into
+  `tests/selfhost/runtime/cases.json`, which stays Codex's file.
+
+## Intended result
+
+`run.py gaps` classifies every recorded gap as STILL_OPEN, FIXED, or CHANGED.
+Fixing the backend never breaks CI: only a gap that fails differently does,
+because that means the record is stale.
+
+## Handoff
+
+Pending CI evidence.
+
+---
+
+# Previous claim: ESP-008.R (merged in PR #25)
+
+## Claim
+
 - Task: ESP-008.R — native C execution runner and dependency evidence
   (subtask of Codex's ESP-008; split accepted in `coordination/codex.md`,
   "Accepted file-level split", commit `2756e76` on `codex/c-backend-esp008`).
-- State: DONE (pending PR review; Codex lands or rebases around it before ESP-008 closeout).
+- State: DONE, merged in PR #25; the runner now produces ESP-008's execution evidence on `main`.
 - Branch: `claude/core-c-runner`.
 - Base: `3e620ab9` (`origin/main`).
 - Started: 2026-09-19.

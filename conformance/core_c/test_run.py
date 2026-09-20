@@ -193,3 +193,88 @@ class Inspection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def outcome(**overrides):
+    base = {"emit_exit": 0, "emit_stderr": "", "compile_exit": 0, "compile_diagnostics": "",
+            "exit": 0, "stdout": "", "stderr": ""}
+    base.update(overrides)
+    return base
+
+
+GAP_REJECTED = {"id": "g13", "kind": "emit_rejected", "spec_expected_stdout": "ARGORIX_RESULT:16",
+                "signature": "checked shifts are not implemented yet"}
+GAP_COMPILE = {"id": "g04", "kind": "compile_error", "spec_expected_stdout": "ARGORIX_RESULT:42",
+               "signature": "redefinition of"}
+GAP_WRONG = {"id": "g11", "kind": "wrong_result", "spec_expected_stdout": "ARGORIX_RESULT:3",
+             "observed_stdout": "ARGORIX_RESULT:4", "observed_exit": 0}
+GAP_CRASH = {"id": "g15", "kind": "crash", "spec_expected_stdout": "ARGORIX_RESULT:400000",
+             "observed_exit": -11, "stack_limit_mib": 8}
+
+
+class GapClassification(unittest.TestCase):
+    def status(self, gap, **kwargs):
+        return run.classify_gap(gap, outcome(**kwargs))[0]
+
+    def test_recorded_emission_rejection_is_still_open(self):
+        self.assertEqual(self.status(GAP_REJECTED, emit_exit=1,
+                                     emit_stderr="CBackendUnsupported: checked shifts are not implemented yet"),
+                         run.STILL_OPEN)
+
+    def test_emission_rejection_with_another_message_changed(self):
+        self.assertEqual(self.status(GAP_REJECTED, emit_exit=1, emit_stderr="internal error"), run.CHANGED)
+
+    def test_emission_rejection_that_now_runs_correctly_is_fixed(self):
+        self.assertEqual(self.status(GAP_REJECTED, stdout="ARGORIX_RESULT:16\n"), run.FIXED)
+
+    def test_recorded_compile_error_is_still_open(self):
+        self.assertEqual(self.status(GAP_COMPILE, compile_exit=1,
+                                     compile_diagnostics="error: redefinition of 'argorix_v_t'"),
+                         run.STILL_OPEN)
+
+    def test_other_compile_error_is_changed(self):
+        self.assertEqual(self.status(GAP_COMPILE, compile_exit=1,
+                                     compile_diagnostics="error: unknown type name"), run.CHANGED)
+
+    def test_compile_error_that_now_compiles_and_runs_is_fixed(self):
+        self.assertEqual(self.status(GAP_COMPILE, stdout="ARGORIX_RESULT:42\n"), run.FIXED)
+
+    def test_compiles_but_prints_something_else_is_changed(self):
+        self.assertEqual(self.status(GAP_COMPILE, stdout="ARGORIX_RESULT:7\n"), run.CHANGED)
+
+    def test_recorded_wrong_result_is_still_open(self):
+        self.assertEqual(self.status(GAP_WRONG, stdout="ARGORIX_RESULT:4\n"), run.STILL_OPEN)
+
+    def test_wrong_result_corrected_is_fixed(self):
+        self.assertEqual(self.status(GAP_WRONG, stdout="ARGORIX_RESULT:3\n"), run.FIXED)
+
+    def test_a_third_wrong_value_is_changed(self):
+        self.assertEqual(self.status(GAP_WRONG, stdout="ARGORIX_RESULT:5\n"), run.CHANGED)
+
+    def test_recorded_crash_is_still_open(self):
+        self.assertEqual(self.status(GAP_CRASH, exit=-11), run.STILL_OPEN)
+
+    def test_crash_replaced_by_typed_trap_is_fixed(self):
+        self.assertEqual(self.status(GAP_CRASH, exit=70, stderr="ARGORIX_TRAP:STEP_LIMIT\n"), run.FIXED)
+
+    def test_crash_replaced_by_the_expected_result_is_fixed(self):
+        self.assertEqual(self.status(GAP_CRASH, stdout="ARGORIX_RESULT:400000\n"), run.FIXED)
+
+    def test_emission_that_starts_failing_is_changed(self):
+        self.assertEqual(self.status(GAP_WRONG, emit_exit=1, emit_stderr="boom"), run.CHANGED)
+
+
+class GapManifest(unittest.TestCase):
+    def test_every_gap_has_a_program_and_a_usable_record(self):
+        manifest = json.loads(run.GAPS.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["schema_version"], 1)
+        for gap in manifest["gaps"]:
+            with self.subTest(gap=gap["id"]):
+                self.assertTrue((run.GAPS.parent / gap["file"]).is_file())
+                self.assertIn(gap["kind"], ("emit_rejected", "compile_error", "wrong_result", "crash"))
+                self.assertTrue(gap["spec_expected_stdout"].startswith("ARGORIX_RESULT:"))
+                self.assertTrue(gap.get("note"))
+                if gap["kind"] in ("emit_rejected", "compile_error"):
+                    self.assertTrue(gap.get("signature"))
+                if gap["kind"] == "wrong_result":
+                    self.assertNotEqual(gap["observed_stdout"], gap["spec_expected_stdout"])
