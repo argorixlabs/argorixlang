@@ -138,9 +138,8 @@
       "issue": 27,
       "kind": "crash",
       "spec_expected_stdout": "ARGORIX_RESULT:400000",
-      "note": "Native stack overflow (SIGSEGV) instead of the typed depth/step trap the spec requires.",
-      "observed_exit": -11,
-      "stack_limit_mib": 8
+      "note": "Native stack overflow (SIGSEGV, reported as 128+11) instead of the typed depth/step trap the spec requires. Assumes the usual 8 MiB stack; on a host with a much larger stack the program would finish instead.",
+      "observed_exit": 139
     },
     {
       "id": "g16_if_inside_comparison_operand",

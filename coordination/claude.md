@@ -2,38 +2,56 @@
 
 ## Current claim
 
-- Task: ESP-008.R follow-up — differential testing against a spec oracle
-  (continues the gap corpus of PR #28, same lane paths).
+- Task: ESP-008.R follow-up — Rust harness, known-gap corpus, and differential
+  testing against a spec oracle.
 - State: DONE (pending review).
-- Branch: `claude/core-c-differential`, stacked on `claude/core-c-gaps` (PR #28).
-- Base: `91eff90`.
+- Branch: `claude/core-c-harness-rust`. It supersedes the stacked branches
+  `claude/core-c-gaps` (PR #28) and `claude/core-c-differential` (PR #29),
+  which carried the same work in Python.
+- Base: `4b0705a` through those branches.
 - Started: 2026-09-19.
-- Exclusive paths: `conformance/core_c/**`, `.github/workflows/core-c.yml`.
+- Exclusive paths: `conformance/core_c/**`, `.github/workflows/core-c.yml`,
+  and the new crate `crates/argorix_core_c/**`. One shared line added to the
+  workspace `Cargo.toml` members list.
 - Not touched: any Codex ESP-008/ESP-009 path.
+- **The harness is Rust, at the maintainer's instruction.** The Python runner
+  that landed in PR #25 is deleted here; ESP-008.R no longer adds a Python
+  dependency to the project.
 
 ## Intended result
 
-Random Core programs whose expected result comes from an evaluator written
-against `spec/core/evaluation.md`, never from `argorixc` or the C backend, run
-through the existing emit/compile/execute pipeline. The generator avoids every
-shape recorded in `gaps/`, so a failure means a real divergence.
+One `core-c-harness` binary that emits, compiles, executes, compares, inspects
+dependencies, checks the known-gap corpus, and generates differential programs
+whose expected result comes from an evaluator written against
+`spec/core/evaluation.md`, never from `argorixc` or the C backend.
 
 ## Handoff
 
-- Result: **900 generated programs (seeds 42, 7, 13; 296 expected traps) all
-  match the oracle** with GCC 15.2 in WSL, emitted by `argorixc` built from
+- The harness uses only workspace dependencies (anyhow, clap, serde,
+  serde_json, sha2) and reads ELF itself, so `readelf` is no longer required
+  and the Rust-free container installs only a C compiler.
+- 40 Rust unit tests: ELF parsing, policy patterns, compiler allow-list,
+  argument-vector rules, case validation, output comparison, gap
+  classification for every status and kind, and the oracle's trap rules,
+  truncating division, evaluation order, short-circuiting and determinism.
+- Earlier evidence from the Python implementation of the same checks:
+  **900 generated programs (seeds 42, 7, 13; 296 expected traps) all matched
+  the oracle** with GCC 15.2 in WSL, emitted by `argorixc` built from
   `main@4b0705a`. No divergence in arithmetic, traps, evaluation order,
-  short-circuiting, loops, or calls.
+  short-circuiting, loops, or calls. The Rust port reproduces the same rules
+  and is verified end to end by CI.
 - New defect found by the generator and recorded as gap `g16`: an arithmetic
   expression containing an `if`, used as a comparison operand, is rejected with
   `CBackendUnsupported: checked arithmetic requires an integer`. Minimal repro:
   `if ((if c { 5u32 } else { 1u32 }) + 1u32) > 3u32 { 42u32 } else { 0u32 }`,
   which `core-check` accepts. Same root cause as `g09`. Reported on issue #27.
-- 57 unit tests pass (19 new for the oracle: trap rules, truncating division,
-  left-to-right order, short-circuiting, loop fuel, corpus determinism, and a
-  check that generated programs avoid the known-gap shapes).
-- CI: new `differential` job runs three seeds and uploads the generated
-  programs with the report, so a failure is reproducible from the artifact.
+- CI: `harness-unit`, `emit`, `execute` (gcc and clang), `execute-rust-free`,
+  `gap-corpus` and `differential`, all driven by `cargo` and the harness
+  binary. The differential job uploads the generated programs with the report,
+  so a failure is reproducible from the artifact.
+- The Rust-free job carries the harness binary in with the bundle: that host
+  has no Rust toolchain, which is the point, and the binary is stage0 tooling
+  exactly like `argorixc`, not evidence of independence (ESP-024).
 - Limit: the generator covers scalars only. Arrays, structs, enums, buffers,
   arenas, bytes, and UTF-8 are not generated yet; they are the obvious next
   extension once the aggregate gaps in issue #27 are fixed.
