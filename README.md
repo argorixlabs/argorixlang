@@ -34,6 +34,7 @@ compiler and runtime can ultimately be implemented in Argorix itself.
 
 | Area | Current state |
 | --- | --- |
+| Latest release | `v1.0.1` — see [supported versions](GOVERNANCE.md#supported-versions) |
 | Workspace version | `1.0.0` |
 | Compiler and VM | Rust implementation |
 | Agent language | Parser, semantic checks, IR, bytecode, verification, and deterministic VM |
@@ -244,9 +245,9 @@ states what remains unproven.
 
 ## Contributing
 
-Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md), use
-Conventional Commits, include a DCO sign-off, and keep behavioral claims tied to
-tests or reproducible evidence.
+Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`GOVERNANCE.md`](GOVERNANCE.md), use Conventional Commits, include a DCO
+sign-off, and keep behavioral claims tied to tests or reproducible evidence.
 
 ```bash
 git commit --signoff -m "feat: describe the change"

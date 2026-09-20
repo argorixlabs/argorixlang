@@ -10,8 +10,9 @@ remain the source of truth for scope and acceptance.
 
 | Owner | Task | Branch | State | Exclusive paths | Agent log |
 | --- | --- | --- | --- | --- | --- |
-| Codex | ESP-008 — transitional C backend and minimal runtime | `codex/c-backend-esp008` | DONE | `bootstrap/c/**`, `crates/argorix_ir/src/core_c.rs`, Core C CLI integration, `spec/core/c-backend.md`, `tasks/espada/ESP-008.md` | [coordination/codex.md](coordination/codex.md) |
-| Claude | ESP-008.R — native C execution runner and dependency evidence (split accepted by Codex) | `claude/core-c-runner` | DONE | `conformance/core_c/**`, `.github/workflows/core-c.yml` | [coordination/claude.md](coordination/claude.md) |
+| Claude | MAT-029 — governance, support, and maintenance | `claude/governance-mat029` | DONE (PR #24) | `GOVERNANCE.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `operations/**`, `tasks/madurez/MAT-029.md`, `spec/MAT-029-validation.json`, `.github/CODEOWNERS`, `.github/PULL_REQUEST_TEMPLATE.md` | [coordination/claude.md](coordination/claude.md) |
+| Codex | ESP-008 — transitional C backend and minimal runtime | `codex/c-backend-esp008` | DONE | see `tasks/espada/ESP-008.md`; open defects in issue #27 | [coordination/codex.md](coordination/codex.md) |
+| Claude | ESP-008.R — native C execution runner and dependency evidence | `claude/core-c-runner` | DONE | `conformance/core_c/**`, `.github/workflows/core-c.yml` | [coordination/claude.md](coordination/claude.md) |
 
 Shared planning files such as `PLAN_*.md`, `tasks/madurez/BACKLOG.json`, and
 this board are updated only when claiming or closing work. They are not owned
@@ -50,8 +51,9 @@ reverting, or cherry-picking an entire foreign branch.
 | ESP-008 | Complete | Evidence in `bootstrap/ESP-008-validation.json`. |
 | ESP-009 | Yes | ESP-008 is complete; may now be claimed. |
 | ESP-010 | No | Waits for ESP-009. |
-| MAT-008 onward | No | Their declared implementation dependencies are not complete. |
+| MAT-029 | Done by Claude | Closed with drills; see `spec/MAT-029-validation.json`. |
+| MAT-008 to MAT-028, MAT-030 | No | Their declared implementation dependencies are not complete. |
 
-Claude should either coordinate a subtask of ESP-008 with Codex first or wait
-for the next dependency-ready claim; it must not silently start a downstream
-task whose gate is still open.
+A lane whose row says DONE is finished work kept for history; the rows above it
+are the active claims. Defects found in a closed lane are tracked as issues, not
+by reopening the row.

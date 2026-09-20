@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "task": "MAT-029",
+  "baseline_commit": "3e620ab9",
+  "planning_baseline_commit": "5d73d663bf5b85fd71bdd0cbc1ac1636959d7e64",
+  "date": "2026-09-19",
+  "scope": "Governance, support, and maintenance policy with two tabletop drills. No Rust, .argx, bytecode, or fixture changes. GOV-003 stays PLANNED (R3; also needs MAT-030 and TC-GOV-003 on an R3 candidate).",
+  "platform": "Windows 11 Pro x86-64",
+  "tools": {
+    "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+    "cargo": "1.96.0 (30a34c682 2026-05-25)",
+    "gh": "authenticated as argorixlabs"
+  },
+  "repository_settings_changed": [
+    {
+      "setting": "private_vulnerability_reporting",
+      "before": {
+        "enabled": false
+      },
+      "after": {
+        "enabled": true
+      },
+      "command": "gh api -X PUT repos/argorixlabs/argorixlang/private-vulnerability-reporting",
+      "authorized_by": "maintainer, 2026-09-19"
+    }
+  ],
+  "verified_facts": [
+    {
+      "fact": "argorixlabs.dev does not resolve",
+      "command": "nslookup argorixlabs.dev 8.8.8.8",
+      "observed": "Non-existent domain"
+    },
+    {
+      "fact": "argorixlabs is a GitHub user, not an organization",
+      "command": "gh api users/argorixlabs --jq .type",
+      "observed": "User"
+    },
+    {
+      "fact": "main has no branch protection",
+      "command": "gh api repos/argorixlabs/argorixlang/branches/main/protection",
+      "observed": "404 Branch not protected"
+    },
+    {
+      "fact": "latest release is v1.0.1 with no assets",
+      "command": "gh release view v1.0.1 --json assets",
+      "observed": "assets: []"
+    },
+    {
+      "fact": "tag v1.0.1 carries Cargo.toml version 1.0.0",
+      "command": "git show v1.0.1:Cargo.toml",
+      "observed": "version = \"1.0.0\""
+    },
+    {
+      "fact": "owner account 2FA state",
+      "command": "gh api user --jq .two_factor_authentication",
+      "observed": "null (not readable with this token; maintainer to confirm)"
+    }
+  ],
+  "drills": [
+    {
+      "id": "patch-release",
+      "record": "operations/exercises/2026-09-19-patch-release.md",
+      "start": "v1.0.1 (12e1fad7f12030fed8a5f7db3dac4ff476c81219)",
+      "steps": [
+        {
+          "command": "cargo test --workspace --locked",
+          "at": "v1.0.1",
+          "observed": "372 passed, 0 failed",
+          "exit": 0
+        },
+        {
+          "command": "cargo test --workspace --locked",
+          "at": "after version bump",
+          "observed": "cannot update the lock file because --locked was passed",
+          "exit": 101
+        },
+        {
+          "command": "cargo update --workspace --offline",
+          "observed": "11 workspace crates 1.0.0 -> 1.0.2; Cargo.lock 11/11 lines; no third-party change",
+          "exit": 0
+        },
+        {
+          "command": "cargo test --workspace --locked",
+          "at": "after lockfile update",
+          "observed": "372 passed, 0 failed",
+          "exit": 0
+        },
+        {
+          "command": "argorixc --version; argorix-vm --version",
+          "observed": "argorixc 1.0.2; argorix-vm 1.0.2",
+          "exit": 0
+        },
+        {
+          "command": "git archive --format=tar.gz --prefix=argorixlang-1.0.2/ drill-v1.0.2 (twice)",
+          "observed": "identical sha256 1a89603648aa6221d580132f5cd333a29a2217f7c337c60cf548bca26f0c67ef"
+        }
+      ],
+      "not_executed": [
+        "git push of branch/tag",
+        "gh release create",
+        "advisory publication",
+        "advisory private-fork workflow",
+        "Linux/macOS runs"
+      ],
+      "cleanup": "scratch worktree, drill branch, and drill tag deleted; nothing pushed",
+      "passed": true
+    },
+    {
+      "id": "incompatible-change",
+      "record": "operations/exercises/2026-09-19-incompatible-change.md",
+      "start": "origin/main 3e620ab9",
+      "steps": [
+        {
+          "change": "ir_version 1.0 -> 1.1 (crates/argorix_ir/src/ir.rs:986)",
+          "command": "cargo test --workspace --locked --no-fail-fast",
+          "observed": "385 passed, 26 failed (all version-string assertions)",
+          "exit": 101
+        },
+        {
+          "change": "bytecode_version 1.0 -> 1.1 (crates/argorix_bytecode/src/lower.rs:185)",
+          "command": "cargo test --workspace --locked --no-fail-fast",
+          "observed": "355 passed, 56 failed (assertions and UnsupportedVersion(\"1.1\"))",
+          "exit": 101
+        },
+        {
+          "command": "argorixc emit-bytecode examples/runtime_mvp_v100.argx",
+          "observed": "no output written",
+          "exit": 1
+        },
+        {
+          "command": "argorixc verify-bytecode examples/runtime_mvp_v100.argx",
+          "observed": "rejected",
+          "exit": 1
+        },
+        {
+          "command": "argorix-vm (v1.0.1) run runtime_mvp_v100.argbc.json --dry-run",
+          "observed": "Status: completed (control)",
+          "exit": 0
+        },
+        {
+          "command": "argorix-vm (v1.0.1) run <same artifact with bytecode_version 1.1> --dry-run",
+          "observed": "bytecode verification failed: unsupported bytecode version `1.1`",
+          "exit": 1
+        }
+      ],
+      "cleanup": "scratch worktree deleted; nothing committed",
+      "passed": true
+    }
+  ],
+  "validators": [
+    {
+      "command": "spec/validate-product-contract.ps1",
+      "exit": 0,
+      "observed": "PASS, 29 requirements, 38 tests"
+    },
+    {
+      "command": "spec/validate-trust-model.ps1",
+      "exit": 0,
+      "observed": "PASS: 11 claims, 11 boundaries"
+    },
+    {
+      "command": "relative link and anchor check over touched Markdown",
+      "observed": "0 broken"
+    }
+  ],
+  "acceptance": {
+    "AC-1": true,
+    "AC-2": true,
+    "AC-3": true,
+    "AC-4": true,
+    "AC-COMUN": true,
+    "AC-EVIDENCIA": true
+  },
+  "open_gaps": [
+    "single maintainer, no successor",
+    "main not branch-protected",
+    "unsigned tags and releases (MAT-023)",
+    "v1.0.1 reports version 1.0.0",
+    "no private conduct channel",
+    "language-change spec/compat rule enforced by review only",
+    "2FA state of owner account unconfirmed",
+    "no independent security review (MAT-026)"
+  ],
+  "artifact_sha256": {
+    "GOVERNANCE.md": "bae57befffd2a3f500e22a75752db73f26195527c4e7bb0f6ebe0dc0770dcdbf",
+    "SECURITY.md": "b09a9ba864d4bcf95e077900d58c1a6f3a58ba2f5de3178da5dc643f703f8d07",
+    "CONTRIBUTING.md": "853f0c3a384ab67d7405b10e57ef92ae17753d9ba072bd3a90165b552702e1a2",
+    "CODE_OF_CONDUCT.md": "e0a4e32b12157b9402341022eb9ec83fb12742af58524ec869b1a654662554de",
+    ".github/CODEOWNERS": "e25fa1570dfae4d7ef708eb786eccda0f33092830071277631b969fbe421111c",
+    ".github/PULL_REQUEST_TEMPLATE.md": "52c14d8a4ac7dd7ac13c14144ce55e949670c757a5614a804e738c8c58529094",
+    "operations/maintenance.md": "7dba5a7d5f4c6c2be9542f3d0e548cb1538c994455b722a9d5ce57c275a3cc44",
+    "operations/exercises/2026-09-19-patch-release.md": "a897d27021bed2f61467e38030f44353cad70e40cf395227138bc9e5f5f2d275",
+    "operations/exercises/2026-09-19-incompatible-change.md": "d00c3ecbc25515d33b1998ca8a61afb9b442228e76e7e1c4698989e2f9b75a8d"
+  },
+  "overall_pass": true
+}
