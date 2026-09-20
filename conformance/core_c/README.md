@@ -90,12 +90,46 @@ A fixed gap is not a build failure, so fixing the backend never breaks CI. Only
 an unexplained change does. The corpus is not a substitute for the runtime cases:
 it tracks what does not work yet.
 
+## Differential testing against the spec
+
+[`generate.py`](generate.py) builds random Core programs and computes what each
+one must print by evaluating its AST against `spec/core/evaluation.md` and
+`spec/core/types.md`. That evaluator never calls `argorixc`, the C backend, or
+the C runtime, so it is an independent oracle, as the master plan requires of
+any acceptance test.
+
+```sh
+python3 conformance/core_c/generate.py --seed 7 --count 60 --out target/core-c/fuzz
+python3 conformance/core_c/run.py all --argorixc target/debug/argorixc --cc gcc     --cases target/core-c/fuzz/cases.json --bundle target/core-c/fuzz-bundle
+```
+
+The output is an ordinary case corpus, so emission, compilation, execution,
+comparison, and dependency inspection all reuse the pipeline above. A seed
+reproduces its corpus exactly.
+
+The generator deliberately stays inside the subset the backend claims to
+support, avoiding every shape recorded in `gaps/`: no shadowing, no block
+operands, no shifts, no signed negation, no `if` statements, no unused locals,
+parameters or functions, no recursion, and no `if` expression anywhere inside a
+comparison operand. It also avoids shapes that only upset the C compiler's
+warning profile, such as `unsigned < 0` or a literal `^` pair that GCC reads as
+a mistyped power. **A failure is therefore a real divergence between the
+backend and the specification, not a known gap.**
+
+Coverage as of this corpus: exact-width arithmetic with overflow traps, trapping
+division by zero and `MIN / -1`, truncating `/` and `%`, bitwise operators,
+comparisons, `&&`/`||` short-circuiting, `if` expressions, `while` loops with
+counters, multi-argument calls, and mutation through assignment and compound
+assignment, across all eight integer widths.
+
 ## CI
 
 `.github/workflows/core-c.yml` runs the unit tests, then emits a bundle on
 Ubuntu and executes it with GCC and Clang, and again with GCC inside a
 `debian:stable-slim` container that has no Rust installed. A separate job checks
-the known-gap corpus. The execution jobs
+the known-gap corpus, and a `differential` job generates programs for three
+seeds and compares them with the oracle, uploading the generated programs with
+the report so a failure can be reproduced exactly. The execution jobs
 are skipped only while **both** `argorixc core-emit-c` and the cases manifest
 are absent, as on `main` before ESP-008 lands; if only one of the two exists,
 the job fails.

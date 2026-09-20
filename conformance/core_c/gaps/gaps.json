@@ -141,6 +141,15 @@
       "note": "Native stack overflow (SIGSEGV) instead of the typed depth/step trap the spec requires.",
       "observed_exit": -11,
       "stack_limit_mib": 8
+    },
+    {
+      "id": "g16_if_inside_comparison_operand",
+      "file": "g16_if_inside_comparison_operand.argx",
+      "issue": 27,
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "signature": "checked arithmetic requires an integer",
+      "note": "An arithmetic expression containing an `if` is rejected when it is a comparison operand: the expected bool type is pushed into the operand (same root cause as g09). Found by the differential generator."
     }
   ]
 }

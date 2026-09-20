@@ -2,41 +2,41 @@
 
 ## Current claim
 
-- Task: ESP-008.R follow-up — known-gap corpus for the transitional C backend.
-- State: IN PROGRESS.
-- Branch: `claude/core-c-gaps`.
-- Base: `4b0705a` (`origin/main`, after ESP-008 landed).
+- Task: ESP-008.R follow-up — differential testing against a spec oracle
+  (continues the gap corpus of PR #28, same lane paths).
+- State: DONE (pending review).
+- Branch: `claude/core-c-differential`, stacked on `claude/core-c-gaps` (PR #28).
+- Base: `91eff90`.
 - Started: 2026-09-19.
-- Exclusive paths: `conformance/core_c/**`, `.github/workflows/core-c.yml`
-  (the ESP-008.R paths Codex already agreed to).
-- Not touched: any Codex ESP-008/ESP-009 path. The corpus only reads
-  `bootstrap/c/toolchain.json` and uses `argorixc core-emit-c`.
-- Reason: ESP-008 closed with 15 verified defects still open (issue #27), and
-  ESP-009 builds a `.argx` standard library on top of that backend. The corpus
-  records today's behaviour so a fix is detected and can be promoted into
-  `tests/selfhost/runtime/cases.json`, which stays Codex's file.
+- Exclusive paths: `conformance/core_c/**`, `.github/workflows/core-c.yml`.
+- Not touched: any Codex ESP-008/ESP-009 path.
 
 ## Intended result
 
-`run.py gaps` classifies every recorded gap as STILL_OPEN, FIXED, or CHANGED.
-Fixing the backend never breaks CI: only a gap that fails differently does,
-because that means the record is stale.
+Random Core programs whose expected result comes from an evaluator written
+against `spec/core/evaluation.md`, never from `argorixc` or the C backend, run
+through the existing emit/compile/execute pipeline. The generator avoids every
+shape recorded in `gaps/`, so a failure means a real divergence.
 
 ## Handoff
 
-- Commit `46e8a2b`, PR #28; all checks green.
-- CI evidence: run 35478773073, job "Known-gap corpus (issue #27)" — **15/15
-  STILL_OPEN, 0 FIXED, 0 CHANGED** with GCC 13.3 on Ubuntu, reproducing the
-  same defects recorded locally with GCC 15.2, including the SIGSEGV under a
-  pinned 8 MiB stack. Report uploaded as the `core-c-gaps-report` artifact.
-- 38 unit tests pass without a C compiler (15 of them new: every status for
-  every gap kind, plus manifest integrity).
-- Not run locally end to end: `gaps` needs argorixc and a C compiler on one
-  host; this machine has GCC only in WSL, which has no Rust.
-- For Codex: when a gap starts passing, CI prints a notice and stays green.
-  Promote it into `tests/selfhost/runtime/cases.json` and delete it from
-  `conformance/core_c/gaps/gaps.json`. If a gap fails in a new way, the job
-  fails on purpose: the record is stale.
+- Result: **900 generated programs (seeds 42, 7, 13; 296 expected traps) all
+  match the oracle** with GCC 15.2 in WSL, emitted by `argorixc` built from
+  `main@4b0705a`. No divergence in arithmetic, traps, evaluation order,
+  short-circuiting, loops, or calls.
+- New defect found by the generator and recorded as gap `g16`: an arithmetic
+  expression containing an `if`, used as a comparison operand, is rejected with
+  `CBackendUnsupported: checked arithmetic requires an integer`. Minimal repro:
+  `if ((if c { 5u32 } else { 1u32 }) + 1u32) > 3u32 { 42u32 } else { 0u32 }`,
+  which `core-check` accepts. Same root cause as `g09`. Reported on issue #27.
+- 57 unit tests pass (19 new for the oracle: trap rules, truncating division,
+  left-to-right order, short-circuiting, loop fuel, corpus determinism, and a
+  check that generated programs avoid the known-gap shapes).
+- CI: new `differential` job runs three seeds and uploads the generated
+  programs with the report, so a failure is reproducible from the artifact.
+- Limit: the generator covers scalars only. Arrays, structs, enums, buffers,
+  arenas, bytes, and UTF-8 are not generated yet; they are the obvious next
+  extension once the aggregate gaps in issue #27 are fixed.
 
 ---
 

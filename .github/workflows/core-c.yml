@@ -154,3 +154,30 @@ jobs:
           name: core-c-gaps-report
           path: target/core-c/gaps-report.json
           if-no-files-found: ignore
+
+  differential:
+    name: Differential against the spec oracle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build argorixc
+        run: cargo build -p argorixc --locked
+      - name: Generate programs and compare against the oracle
+        run: |
+          set -eu
+          for seed in 1 2 3; do
+            python3 conformance/core_c/generate.py --seed "$seed" --count 60               --out "target/core-c/fuzz-$seed"
+            python3 conformance/core_c/run.py all               --argorixc target/debug/argorixc --cc gcc               --cases "target/core-c/fuzz-$seed/cases.json"               --bundle "target/core-c/fuzz-bundle-$seed"               --work-dir "target/core-c/fuzz-work-$seed"               --report "target/core-c/fuzz-report-$seed.json"
+          done
+      - uses: actions/upload-artifact@v7
+        # The generated programs go with the report so any failure can be
+        # reproduced exactly from the artifact.
+        if: always()
+        with:
+          name: core-c-differential
+          path: |
+            target/core-c/fuzz-*/
+            target/core-c/fuzz-report-*.json
+          if-no-files-found: ignore
