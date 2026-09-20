@@ -22,8 +22,14 @@ information.
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the maintainers at **conduct@argorixlabs.dev**. All complaints will
-be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior can be
+reported to the maintainer (GitHub `@argorixlabs`, see
+[GOVERNANCE.md](GOVERNANCE.md)). The project has no private conduct mailbox;
+an earlier version of this file listed `conduct@argorixlabs.dev`, a domain that
+does not exist. To report privately, open an issue asking only for a private
+contact, without details, or use GitHub's
+[report content](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam)
+feature. Complaints are reviewed by the single maintainer, on a best-effort
+basis.
 
 For the full text, see https://www.contributor-covenant.org/version/2/1/code_of_conduct/.
