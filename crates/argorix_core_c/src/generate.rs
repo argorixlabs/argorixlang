@@ -80,6 +80,8 @@ pub fn unsigned(kind: IntType) -> bool {
 pub enum Trap {
     IntegerOverflow,
     DivisionByZero,
+    IndexOutOfBounds,
+    ArenaReleased,
 }
 
 impl Trap {
@@ -87,6 +89,8 @@ impl Trap {
         match self {
             Trap::IntegerOverflow => "INTEGER_OVERFLOW",
             Trap::DivisionByZero => "DIVISION_BY_ZERO",
+            Trap::IndexOutOfBounds => "INDEX_OUT_OF_BOUNDS",
+            Trap::ArenaReleased => "ARENA_RELEASED",
         }
     }
 }
@@ -108,6 +112,29 @@ pub enum Expr {
     Not(Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
+    /// `array[index]`, where both are locals. The index is a `u64` local, and
+    /// it may be out of range, which must trap.
+    Index {
+        array: String,
+        index: String,
+    },
+    /// `value.fN` on a flat struct local.
+    Field {
+        value: String,
+        field: usize,
+    },
+    /// `handle.fN`. Reading a handle whose arena was released must trap.
+    HandleField {
+        handle: String,
+        field: usize,
+    },
+    /// `readN(local)`: the generated reader function whose body is an
+    /// exhaustive `match` over the enum this local holds.
+    ReadEnum {
+        declaration: usize,
+        reader: String,
+        value: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,6 +157,69 @@ pub enum Stmt {
         condition: Expr,
         body: Vec<Stmt>,
     },
+    /// `let name: Array<T, N> = [..];`, declared at function level only:
+    /// an array declared inside an `if` or a loop body hits gap g06.
+    LetArray {
+        name: String,
+        elements: Vec<Expr>,
+    },
+    /// `let name: u64 = K;`, the only `u64` in a program of another width,
+    /// used to index an array. It may point past the end.
+    LetIndex {
+        name: String,
+        value: u64,
+    },
+    /// `let name: SN = SN { f0: .., f1: .. };` for a flat struct.
+    LetStruct {
+        name: String,
+        type_name: String,
+        fields: Vec<Expr>,
+    },
+    /// `let mut name: Buffer<T> = Buffer::new();`
+    LetBuffer {
+        name: String,
+    },
+    /// `name.push(value);`
+    Push {
+        name: String,
+        value: Expr,
+    },
+    /// `let mut name: Arena<SN> = Arena::new();`
+    LetArena {
+        name: String,
+        type_name: String,
+    },
+    /// `let handle: Handle<SN> = arena.alloc(SN { .. });`
+    Alloc {
+        handle: String,
+        arena: String,
+        type_name: String,
+        fields: Vec<Expr>,
+    },
+    /// `arena.release();`, after which its handles must trap.
+    Release {
+        arena: String,
+    },
+    /// `let name: EN = EN::Variant { p0: .. };`
+    LetEnum {
+        name: String,
+        type_name: String,
+        variant: usize,
+        payload: Option<Expr>,
+    },
+}
+
+/// An enum, its variants, and the function that reads one back.
+///
+/// Each variant carries at most one field, and the reader's `match` lists
+/// every variant, since Core requires exhaustiveness.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumDecl {
+    pub name: String,
+    pub reader: String,
+    /// One entry per variant: `Some(fallback)` for a fieldless variant, which
+    /// the arm answers with that literal, or `None` when it carries a field.
+    pub variants: Vec<Option<i128>>,
 }
 
 #[derive(Debug, Clone)]
@@ -144,6 +234,10 @@ pub struct Function {
 pub struct Program {
     pub id: String,
     pub kind: IntType,
+    /// Flat struct declarations, as (name, field count). Structs holding
+    /// structs, and arrays of structs, are gaps g02 and g03.
+    pub structs: Vec<(String, usize)>,
+    pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
     pub main: Function,
 }
@@ -215,8 +309,20 @@ pub fn arithmetic(op: &str, left: i128, right: i128, kind: IntType) -> Result<i1
     }
 }
 
+#[derive(Default)]
 struct Environment {
     values: Vec<(String, i128)>,
+    /// Array and struct locals, each held as its element or field values.
+    aggregates: Vec<(String, Vec<i128>)>,
+    /// `u64` index locals, kept apart because they are not of the program's
+    /// integer type.
+    indexes: Vec<(String, u64)>,
+    /// Enum locals, as (name, variant index, payload when the variant has one).
+    enums: Vec<(String, usize, Option<i128>)>,
+    /// Arenas by name, with whether they have been released.
+    arenas: Vec<(String, bool)>,
+    /// Handles, as (name, owning arena, field values).
+    handles: Vec<(String, String, Vec<i128>)>,
 }
 
 impl Environment {
@@ -235,11 +341,49 @@ impl Environment {
             self.values.push((name.to_string(), value));
         }
     }
+    fn aggregate(&self, name: &str) -> &[i128] {
+        self.aggregates
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, items)| items.as_slice())
+            .unwrap_or(&[])
+    }
+    fn index(&self, name: &str) -> u64 {
+        self.indexes
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| *value)
+            .unwrap_or(0)
+    }
+    fn push(&mut self, name: &str, value: i128) {
+        if let Some(entry) = self
+            .aggregates
+            .iter_mut()
+            .rev()
+            .find(|(key, _)| key == name)
+        {
+            entry.1.push(value);
+        }
+    }
+    /// The field values behind a handle, or `None` once its arena is released.
+    fn handle(&self, name: &str) -> Option<&[i128]> {
+        let (_, arena, fields) = self.handles.iter().rev().find(|(key, _, _)| key == name)?;
+        let released = self
+            .arenas
+            .iter()
+            .rev()
+            .find(|(key, _)| key == arena)
+            .map(|(_, released)| *released)
+            .unwrap_or(false);
+        (!released).then_some(fields.as_slice())
+    }
 }
 
 pub fn evaluate_program(program: &Program) -> Result<i128, Failure> {
     let mut fuel = MAX_LOOP_ITERATIONS;
-    let mut env = Environment { values: Vec::new() };
+    let mut env = Environment::default();
     let value = run_body(
         &program.main.body,
         &program.main.tail,
@@ -278,6 +422,56 @@ fn execute(
             let right = evaluate(value, env, program, fuel)?.int();
             let computed = arithmetic(op, env.get(name), right, program.kind)?;
             env.set(name, computed);
+        }
+        Stmt::LetArray { name, elements } => {
+            let mut values = Vec::with_capacity(elements.len());
+            for element in elements {
+                values.push(evaluate(element, env, program, fuel)?.int());
+            }
+            env.aggregates.push((name.clone(), values));
+        }
+        Stmt::LetStruct { name, fields, .. } => {
+            let mut values = Vec::with_capacity(fields.len());
+            for field in fields {
+                values.push(evaluate(field, env, program, fuel)?.int());
+            }
+            env.aggregates.push((name.clone(), values));
+        }
+        Stmt::LetIndex { name, value } => env.indexes.push((name.clone(), *value)),
+        Stmt::LetBuffer { name } => env.aggregates.push((name.clone(), Vec::new())),
+        Stmt::Push { name, value } => {
+            let computed = evaluate(value, env, program, fuel)?.int();
+            env.push(name, computed);
+        }
+        Stmt::LetArena { name, .. } => env.arenas.push((name.clone(), false)),
+        Stmt::Alloc {
+            handle,
+            arena,
+            fields,
+            ..
+        } => {
+            let mut values = Vec::with_capacity(fields.len());
+            for field in fields {
+                values.push(evaluate(field, env, program, fuel)?.int());
+            }
+            env.handles.push((handle.clone(), arena.clone(), values));
+        }
+        Stmt::Release { arena } => {
+            if let Some(entry) = env.arenas.iter_mut().rev().find(|(key, _)| key == arena) {
+                entry.1 = true;
+            }
+        }
+        Stmt::LetEnum {
+            name,
+            variant,
+            payload,
+            ..
+        } => {
+            let carried = match payload {
+                Some(expression) => Some(evaluate(expression, env, program, fuel)?.int()),
+                None => None,
+            };
+            env.enums.push((name.clone(), *variant, carried));
         }
         Stmt::While { condition, body } => {
             while evaluate(condition, env, program, fuel)?.truthy() {
@@ -345,6 +539,47 @@ fn evaluate(
             };
             evaluate(branch, env, program, fuel)?
         }
+        Expr::Index { array, index } => {
+            let items = env.aggregate(array);
+            let position = env.index(index);
+            // Reading past the end is a typed trap, never a wrong value.
+            match items.get(position as usize) {
+                Some(value) => Value::Int(*value),
+                None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
+            }
+        }
+        Expr::Field { value, field } => Value::Int(
+            env.aggregate(value)
+                .get(*field)
+                .copied()
+                .expect("a generated field index is in range"),
+        ),
+        Expr::ReadEnum {
+            declaration, value, ..
+        } => {
+            let (_, variant, payload) = env
+                .enums
+                .iter()
+                .rev()
+                .find(|(key, _, _)| key == value)
+                .expect("a generated enum local exists before it is read");
+            // The arm that matches the variant decides the answer: its own
+            // field, or the fallback literal of a fieldless variant.
+            match program.enums[*declaration].variants[*variant] {
+                Some(fallback) => Value::Int(fallback),
+                None => Value::Int(payload.expect("a variant with a field carries one")),
+            }
+        }
+        Expr::HandleField { handle, field } => match env.handle(handle) {
+            // Reading through a handle whose arena is gone is a typed trap.
+            None => return Err(Failure::Trapped(Trap::ArenaReleased)),
+            Some(fields) => Value::Int(
+                fields
+                    .get(*field)
+                    .copied()
+                    .expect("a generated field index is in range"),
+            ),
+        },
         Expr::Call(name, arguments) => {
             let function = program
                 .functions
@@ -355,7 +590,7 @@ fn evaluate(
             for argument in arguments {
                 values.push(evaluate(argument, env, program, fuel)?.int());
             }
-            let mut local = Environment { values: Vec::new() };
+            let mut local = Environment::default();
             for (parameter, value) in function.params.iter().zip(values) {
                 local.set(parameter, value);
             }
@@ -407,6 +642,10 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        Expr::Index { array, index } => format!("{array}[{index}]"),
+        Expr::Field { value, field } => format!("{value}.f{field}"),
+        Expr::HandleField { handle, field } => format!("{handle}.f{field}"),
+        Expr::ReadEnum { reader, value, .. } => format!("{reader}({value})"),
     }
 }
 
@@ -447,6 +686,75 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                 render_statements(body, kind, &format!("{indent}    "), lines);
                 lines.push(format!("{indent}}}"));
             }
+            Stmt::LetArray { name, elements } => lines.push(format!(
+                "{indent}let {name}: Array<{}, {}> = [{}];",
+                kind.name,
+                elements.len(),
+                elements
+                    .iter()
+                    .map(|element| render_expr(element, kind))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            Stmt::LetIndex { name, value } => {
+                lines.push(format!("{indent}let {name}: u64 = {value}u64;"))
+            }
+            Stmt::LetStruct {
+                name,
+                type_name,
+                fields,
+            } => lines.push(format!(
+                "{indent}let {name}: {type_name} = {type_name} {{ {} }};",
+                fields
+                    .iter()
+                    .enumerate()
+                    .map(|(position, field)| format!("f{position}: {}", render_expr(field, kind)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            Stmt::LetBuffer { name } => lines.push(format!(
+                "{indent}let mut {name}: Buffer<{}> = Buffer::new();",
+                kind.name
+            )),
+            Stmt::Push { name, value } => lines.push(format!(
+                "{indent}{name}.push({});",
+                render_expr(value, kind)
+            )),
+            Stmt::LetArena { name, type_name } => lines.push(format!(
+                "{indent}let mut {name}: Arena<{type_name}> = Arena::new();"
+            )),
+            Stmt::Alloc {
+                handle,
+                arena,
+                type_name,
+                fields,
+            } => lines.push(format!(
+                "{indent}let {handle}: Handle<{type_name}> = {arena}.alloc({type_name} {{ {} }});",
+                fields
+                    .iter()
+                    .enumerate()
+                    .map(|(position, field)| format!("f{position}: {}", render_expr(field, kind)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            Stmt::Release { arena } => lines.push(format!("{indent}{arena}.release();")),
+            Stmt::LetEnum {
+                name,
+                type_name,
+                variant,
+                payload,
+            } => {
+                let variant_name = format!("V{variant}");
+                match payload {
+                    Some(value) => lines.push(format!(
+                        "{indent}let {name}: {type_name} = {type_name}::{variant_name} {{ p0: {} }};",
+                        render_expr(value, kind)
+                    )),
+                    None => lines.push(format!(
+                        "{indent}let {name}: {type_name} = {type_name}::{variant_name};"
+                    )),
+                }
+            }
         }
     }
 }
@@ -458,6 +766,48 @@ pub fn render_program(program: &Program) -> String {
         format!("module fuzz.{};", program.id),
         String::new(),
     ];
+    for (name, fields) in &program.structs {
+        let declared = (0..*fields)
+            .map(|position| format!("f{position}: {}", kind.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("struct {name} {{ {declared}, }}"));
+        lines.push(String::new());
+    }
+    for declaration in &program.enums {
+        let variants = declaration
+            .variants
+            .iter()
+            .enumerate()
+            .map(|(index, fallback)| match fallback {
+                Some(_) => format!("V{index}"),
+                None => format!("V{index} {{ p0: {}, }}", kind.name),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("enum {} {{ {variants}, }}", declaration.name));
+        lines.push(String::new());
+        // The reader lists every variant: Core requires an exhaustive match.
+        lines.push(format!(
+            "fn {}(value: {}) -> {} {{",
+            declaration.reader, declaration.name, kind.name
+        ));
+        lines.push("    match value {".to_string());
+        for (index, fallback) in declaration.variants.iter().enumerate() {
+            let arm = match fallback {
+                Some(value) => format!(
+                    "        {}::V{index} => {},",
+                    declaration.name,
+                    render_literal(*value, kind)
+                ),
+                None => format!("        {}::V{index} {{ p0 }} => p0,", declaration.name),
+            };
+            lines.push(arm);
+        }
+        lines.push("    }".to_string());
+        lines.push("}".to_string());
+        lines.push(String::new());
+    }
     for function in &program.functions {
         let params = function
             .params
@@ -752,12 +1102,43 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
             reads(else_branch, seen);
         }
         Expr::Call(_, arguments) => arguments.iter().for_each(|argument| reads(argument, seen)),
+        Expr::Index { array, index } => {
+            seen.insert(array.clone());
+            seen.insert(index.clone());
+        }
+        Expr::Field { value, .. } => {
+            seen.insert(value.clone());
+        }
+        Expr::HandleField { handle, .. } => {
+            seen.insert(handle.clone());
+        }
+        Expr::ReadEnum { value, .. } => {
+            seen.insert(value.clone());
+        }
     }
 }
 
 fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
     match statement {
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } => reads(value, seen),
+        Stmt::LetArray {
+            elements: items, ..
+        }
+        | Stmt::LetStruct { fields: items, .. }
+        | Stmt::Alloc { fields: items, .. } => items.iter().for_each(|item| reads(item, seen)),
+        Stmt::Push { name, value } => {
+            seen.insert(name.clone());
+            reads(value, seen);
+        }
+        Stmt::Release { arena } => {
+            seen.insert(arena.clone());
+        }
+        Stmt::LetEnum { payload, .. } => {
+            if let Some(value) = payload {
+                reads(value, seen);
+            }
+        }
+        Stmt::LetIndex { .. } | Stmt::LetBuffer { .. } | Stmt::LetArena { .. } => {}
         Stmt::Compound { name, value, .. } => {
             seen.insert(name.clone());
             reads(value, seen);
@@ -798,7 +1179,13 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
             calls(then_branch, seen);
             calls(else_branch, seen);
         }
-        Expr::Literal(_) | Expr::Var(_) => {}
+        Expr::Literal(_)
+        | Expr::Var(_)
+        | Expr::Index { .. }
+        | Expr::Field { .. }
+        | Expr::HandleField { .. }
+        // The reader is generated with the enum, not through the call graph.
+        | Expr::ReadEnum { .. } => {}
     }
 }
 
@@ -806,6 +1193,21 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
     match statement {
         Stmt::Let { value, .. } | Stmt::Assign { value, .. } | Stmt::Compound { value, .. } => {
             calls(value, seen)
+        }
+        Stmt::LetArray {
+            elements: items, ..
+        }
+        | Stmt::LetStruct { fields: items, .. }
+        | Stmt::Alloc { fields: items, .. } => items.iter().for_each(|item| calls(item, seen)),
+        Stmt::Push { value, .. } => calls(value, seen),
+        Stmt::LetIndex { .. }
+        | Stmt::LetBuffer { .. }
+        | Stmt::LetArena { .. }
+        | Stmt::Release { .. } => {}
+        Stmt::LetEnum { payload, .. } => {
+            if let Some(value) = payload {
+                calls(value, seen);
+            }
         }
         Stmt::While { condition, body } => {
             calls(condition, seen);
@@ -848,8 +1250,46 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     }
     let mut names = Vec::new();
     let mut mutable = Vec::new();
-    let body = generator.statements(&mut names, &mut mutable, &functions, true);
+    let mut body = generator.statements(&mut names, &mut mutable, &functions, true);
+
+    // Aggregates are declared at function level only: inside an `if` or a loop
+    // body they hit gap g06, and nesting them hits g01, g02 and g03.
+    let mut structs = Vec::new();
+    let mut reads: Vec<Expr> = Vec::new();
+    if generator.rng.chance(55) {
+        let (statements, expression) = generator.array(&names, &functions);
+        body.extend(statements);
+        reads.push(expression);
+    }
+    if generator.rng.chance(45) {
+        let (declaration, statement, expression) = generator.flat_struct(&names, &functions);
+        structs.push(declaration);
+        body.push(statement);
+        reads.push(expression);
+    }
+    if generator.rng.chance(40) {
+        let (statements, expression) = generator.buffer(&names, &functions);
+        body.extend(statements);
+        reads.push(expression);
+    }
+    if generator.rng.chance(35) {
+        let (declaration, statements, expression) = generator.arena(&names, &functions);
+        structs.push(declaration);
+        body.extend(statements);
+        reads.push(expression);
+    }
+    let mut enums = Vec::new();
+    if generator.rng.chance(45) {
+        let (declaration, statement, expression) =
+            generator.enumeration(&names, &functions, enums.len());
+        enums.push(declaration);
+        body.push(statement);
+        reads.push(expression);
+    }
     let mut tail = generator.value(&names, 3, &functions, true);
+    for expression in reads {
+        tail = Expr::Arith("^", Box::new(tail), Box::new(expression));
+    }
 
     let mut called = BTreeSet::new();
     body.iter()
@@ -874,6 +1314,8 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     Program {
         id: format!("fuzz_{seed}_{index:04}"),
         kind,
+        structs,
+        enums,
         functions,
         main: Function {
             name: "argorix_main".into(),
@@ -885,6 +1327,181 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
 }
 
 impl Generator {
+    /// A fixed array plus the `u64` index local that reads it. The index is in
+    /// range most of the time and past the end sometimes, which must trap.
+    fn array(&mut self, names: &[String], functions: &[Function]) -> (Vec<Stmt>, Expr) {
+        let name = self.fresh("a");
+        let index_name = self.fresh("x");
+        let length = 1 + self.rng.below(4) as usize;
+        let elements = (0..length)
+            .map(|_| self.value(names, 1, functions, false))
+            .collect();
+        let index = if self.rng.chance(20) {
+            length as u64 + self.rng.below(3)
+        } else {
+            self.rng.below(length as u64)
+        };
+        (
+            vec![
+                Stmt::LetArray {
+                    name: name.clone(),
+                    elements,
+                },
+                Stmt::LetIndex {
+                    name: index_name.clone(),
+                    value: index,
+                },
+            ],
+            Expr::Index {
+                array: name,
+                index: index_name,
+            },
+        )
+    }
+
+    /// A buffer filled by pushes, and a read that may be past the end.
+    fn buffer(&mut self, names: &[String], functions: &[Function]) -> (Vec<Stmt>, Expr) {
+        let name = self.fresh("b");
+        let index_name = self.fresh("x");
+        let pushes = 1 + self.rng.below(4) as usize;
+        let mut statements = vec![Stmt::LetBuffer { name: name.clone() }];
+        for _ in 0..pushes {
+            statements.push(Stmt::Push {
+                name: name.clone(),
+                value: self.value(names, 1, functions, false),
+            });
+        }
+        let index = if self.rng.chance(20) {
+            pushes as u64 + self.rng.below(3)
+        } else {
+            self.rng.below(pushes as u64)
+        };
+        statements.push(Stmt::LetIndex {
+            name: index_name.clone(),
+            value: index,
+        });
+        (
+            statements,
+            Expr::Index {
+                array: name,
+                index: index_name,
+            },
+        )
+    }
+
+    /// An arena, one allocation, and a read through its handle. The arena is
+    /// sometimes released first, and then the read must trap.
+    fn arena(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+    ) -> ((String, usize), Vec<Stmt>, Expr) {
+        let type_name = format!("N{}", self.counter + 1);
+        let name = self.fresh("r");
+        let handle = self.fresh("h");
+        let count = 1 + self.rng.below(2) as usize;
+        let fields = (0..count)
+            .map(|_| self.value(names, 1, functions, false))
+            .collect();
+        let mut statements = vec![
+            Stmt::LetArena {
+                name: name.clone(),
+                type_name: type_name.clone(),
+            },
+            Stmt::Alloc {
+                handle: handle.clone(),
+                arena: name.clone(),
+                type_name: type_name.clone(),
+                fields,
+            },
+        ];
+        // Releasing before the read is the ARENA_RELEASED trap; releasing is
+        // also what keeps the arena from sitting in the runtime's registry.
+        if self.rng.chance(25) {
+            statements.push(Stmt::Release { arena: name });
+        }
+        (
+            (type_name, count),
+            statements,
+            Expr::HandleField {
+                handle,
+                field: self.rng.below(count as u64) as usize,
+            },
+        )
+    }
+
+    /// An enum, the exhaustive `match` that reads it, and one value of it.
+    fn enumeration(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+        position: usize,
+    ) -> (EnumDecl, Stmt, Expr) {
+        let name = format!("E{}", self.counter + 1);
+        let local = self.fresh("e");
+        let count = 2 + self.rng.below(2) as usize;
+        // At least one variant carries a field and at least one does not, so
+        // both kinds of arm are exercised.
+        let with_payload = self.rng.below(count as u64) as usize;
+        let variants: Vec<Option<i128>> = (0..count)
+            .map(|index| {
+                if index == with_payload {
+                    None
+                } else {
+                    Some(self.rng.range(0.max(self.kind.low), self.kind.high.min(30)))
+                }
+            })
+            .collect();
+        let chosen = self.rng.below(count as u64) as usize;
+        let declaration = EnumDecl {
+            name: name.clone(),
+            reader: format!("read{position}"),
+            variants,
+        };
+        let payload = declaration.variants[chosen]
+            .is_none()
+            .then(|| self.value(names, 1, functions, false));
+        let statement = Stmt::LetEnum {
+            name: local.clone(),
+            type_name: name,
+            variant: chosen,
+            payload,
+        };
+        let read = Expr::ReadEnum {
+            declaration: position,
+            reader: declaration.reader.clone(),
+            value: local,
+        };
+        (declaration, statement, read)
+    }
+
+    /// A struct of scalar fields, and a read of one of them.
+    fn flat_struct(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+    ) -> ((String, usize), Stmt, Expr) {
+        let type_name = format!("S{}", self.counter + 1);
+        let name = self.fresh("s");
+        let count = 1 + self.rng.below(3) as usize;
+        let fields = (0..count)
+            .map(|_| self.value(names, 1, functions, false))
+            .collect();
+        let read = Expr::Field {
+            value: name.clone(),
+            field: self.rng.below(count as u64) as usize,
+        };
+        (
+            (type_name.clone(), count),
+            Stmt::LetStruct {
+                name,
+                type_name,
+                fields,
+            },
+            read,
+        )
+    }
+
     fn function(&mut self, index: u64, functions: &[Function]) -> Function {
         let name = format!("helper{index}");
         let count = 1 + self.rng.below(2);
@@ -1050,6 +1667,8 @@ mod tests {
         Program {
             id: "t".into(),
             kind: I32,
+            structs: Vec::new(),
+            enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
                 name: "argorix_main".into(),
@@ -1211,8 +1830,13 @@ mod tests {
                 "shift in {}",
                 program.id
             );
-            assert!(!source.contains("Array<"), "array in {}", program.id);
-            assert!(!source.contains("struct "), "struct in {}", program.id);
+            // Flat arrays and flat structs are generated on purpose; the
+            // nested forms are gaps g01, g02 and g03.
+            assert!(
+                !source.contains("Array<Array"),
+                "nested array in {}",
+                program.id
+            );
             for line in source.lines() {
                 let trimmed = line.trim();
                 assert!(
@@ -1246,5 +1870,422 @@ mod tests {
             results > 0 && traps > 0,
             "corpus should hold both results and traps"
         );
+    }
+}
+
+#[cfg(test)]
+mod aggregate_tests {
+    use super::*;
+
+    const U32: IntType = TYPES[2];
+
+    fn program(structs: Vec<(String, usize)>, body: Vec<Stmt>, tail: Expr) -> Program {
+        Program {
+            id: "t".into(),
+            kind: U32,
+            structs,
+            enums: Vec::new(),
+            functions: Vec::new(),
+            main: Function {
+                name: "argorix_main".into(),
+                params: Vec::new(),
+                body,
+                tail,
+            },
+        }
+    }
+
+    fn array_body(length: usize, index: u64) -> Vec<Stmt> {
+        vec![
+            Stmt::LetArray {
+                name: "a1".into(),
+                elements: (0..length)
+                    .map(|item| Expr::Literal(10 + item as i128))
+                    .collect(),
+            },
+            Stmt::LetIndex {
+                name: "x1".into(),
+                value: index,
+            },
+        ]
+    }
+
+    fn read_array() -> Expr {
+        Expr::Index {
+            array: "a1".into(),
+            index: "x1".into(),
+        }
+    }
+
+    #[test]
+    fn an_index_inside_the_array_reads_that_element() {
+        let result = evaluate_program(&program(Vec::new(), array_body(3, 2), read_array()));
+        assert_eq!(result.ok(), Some(12));
+    }
+
+    #[test]
+    fn an_index_past_the_end_traps() {
+        for index in [3, 4, 99] {
+            let result = evaluate_program(&program(Vec::new(), array_body(3, index), read_array()));
+            assert!(
+                matches!(result, Err(Failure::Trapped(Trap::IndexOutOfBounds))),
+                "index {index} should trap"
+            );
+        }
+    }
+
+    #[test]
+    fn an_element_that_traps_is_reported_before_the_index_is_used() {
+        let body = vec![
+            Stmt::LetArray {
+                name: "a1".into(),
+                elements: vec![Expr::Arith(
+                    "/",
+                    Box::new(Expr::Literal(1)),
+                    Box::new(Expr::Literal(0)),
+                )],
+            },
+            Stmt::LetIndex {
+                name: "x1".into(),
+                value: 9,
+            },
+        ];
+        let result = evaluate_program(&program(Vec::new(), body, read_array()));
+        assert!(matches!(
+            result,
+            Err(Failure::Trapped(Trap::DivisionByZero))
+        ));
+    }
+
+    #[test]
+    fn a_struct_field_reads_its_own_value() {
+        let body = vec![Stmt::LetStruct {
+            name: "s1".into(),
+            type_name: "S1".into(),
+            fields: vec![Expr::Literal(7), Expr::Literal(35)],
+        }];
+        let tail = Expr::Field {
+            value: "s1".into(),
+            field: 1,
+        };
+        let result = evaluate_program(&program(vec![("S1".into(), 2)], body, tail));
+        assert_eq!(result.ok(), Some(35));
+    }
+
+    #[test]
+    fn aggregates_render_as_core_declarations() {
+        let body = [
+            array_body(2, 0).as_slice(),
+            &[Stmt::LetStruct {
+                name: "s1".into(),
+                type_name: "S1".into(),
+                fields: vec![Expr::Literal(1), Expr::Literal(2)],
+            }],
+        ]
+        .concat();
+        let source = render_program(&program(vec![("S1".into(), 2)], body, read_array()));
+        assert!(source.contains("struct S1 { f0: u32, f1: u32, }"));
+        assert!(source.contains("let a1: Array<u32, 2> = [10u32, 11u32];"));
+        assert!(source.contains("let x1: u64 = 0u64;"));
+        assert!(source.contains("let s1: S1 = S1 { f0: 1u32, f1: 2u32 };"));
+        assert!(source.contains("a1[x1]"));
+    }
+
+    #[test]
+    fn generated_programs_keep_aggregates_flat_and_out_of_blocks() {
+        for index in 1..60 {
+            let program = generate_program(7, index);
+            let source = render_program(&program);
+            assert!(
+                !source.contains("Array<Array"),
+                "nested array in {}",
+                program.id
+            );
+            for line in source.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("struct ") {
+                    // A struct of scalars only: no field takes another struct.
+                    assert!(
+                        !program
+                            .structs
+                            .iter()
+                            .any(|(name, _)| trimmed.contains(&format!(": {name}"))),
+                        "struct inside struct in {}: {line}",
+                        program.id
+                    );
+                }
+                if trimmed.starts_with("let a") && trimmed.contains("Array<") {
+                    assert!(
+                        !line.starts_with("        "),
+                        "array declared inside a block in {}: {line}",
+                        program.id
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    const U32: IntType = TYPES[2];
+
+    fn program(structs: Vec<(String, usize)>, body: Vec<Stmt>, tail: Expr) -> Program {
+        Program {
+            id: "t".into(),
+            kind: U32,
+            structs,
+            enums: Vec::new(),
+            functions: Vec::new(),
+            main: Function {
+                name: "argorix_main".into(),
+                params: Vec::new(),
+                body,
+                tail,
+            },
+        }
+    }
+
+    fn buffer_body(pushes: &[i128], index: u64) -> Vec<Stmt> {
+        let mut body = vec![Stmt::LetBuffer { name: "b1".into() }];
+        for value in pushes {
+            body.push(Stmt::Push {
+                name: "b1".into(),
+                value: Expr::Literal(*value),
+            });
+        }
+        body.push(Stmt::LetIndex {
+            name: "x1".into(),
+            value: index,
+        });
+        body
+    }
+
+    fn read_buffer() -> Expr {
+        Expr::Index {
+            array: "b1".into(),
+            index: "x1".into(),
+        }
+    }
+
+    fn arena_body(release: bool) -> Vec<Stmt> {
+        let mut body = vec![
+            Stmt::LetArena {
+                name: "r1".into(),
+                type_name: "N1".into(),
+            },
+            Stmt::Alloc {
+                handle: "h1".into(),
+                arena: "r1".into(),
+                type_name: "N1".into(),
+                fields: vec![Expr::Literal(41), Expr::Literal(42)],
+            },
+        ];
+        if release {
+            body.push(Stmt::Release { arena: "r1".into() });
+        }
+        body
+    }
+
+    fn read_handle(field: usize) -> Expr {
+        Expr::HandleField {
+            handle: "h1".into(),
+            field,
+        }
+    }
+
+    #[test]
+    fn a_buffer_grows_with_each_push() {
+        let result = evaluate_program(&program(
+            Vec::new(),
+            buffer_body(&[10, 20, 30], 2),
+            read_buffer(),
+        ));
+        assert_eq!(result.ok(), Some(30));
+    }
+
+    #[test]
+    fn reading_past_the_last_push_traps() {
+        let result = evaluate_program(&program(
+            Vec::new(),
+            buffer_body(&[10, 20], 2),
+            read_buffer(),
+        ));
+        assert!(matches!(
+            result,
+            Err(Failure::Trapped(Trap::IndexOutOfBounds))
+        ));
+    }
+
+    #[test]
+    fn a_handle_reads_its_allocation_while_the_arena_lives() {
+        let result = evaluate_program(&program(
+            vec![("N1".into(), 2)],
+            arena_body(false),
+            read_handle(1),
+        ));
+        assert_eq!(result.ok(), Some(42));
+    }
+
+    #[test]
+    fn a_handle_into_a_released_arena_traps() {
+        let result = evaluate_program(&program(
+            vec![("N1".into(), 2)],
+            arena_body(true),
+            read_handle(0),
+        ));
+        assert!(matches!(result, Err(Failure::Trapped(Trap::ArenaReleased))));
+    }
+
+    #[test]
+    fn memory_statements_render_as_core_declarations() {
+        let mut body = buffer_body(&[7], 0);
+        body.extend(arena_body(true));
+        let source = render_program(&program(vec![("N1".into(), 2)], body, read_buffer()));
+        assert!(source.contains("let mut b1: Buffer<u32> = Buffer::new();"));
+        assert!(source.contains("b1.push(7u32);"));
+        assert!(source.contains("let mut r1: Arena<N1> = Arena::new();"));
+        assert!(source.contains("let h1: Handle<N1> = r1.alloc(N1 { f0: 41u32, f1: 42u32 });"));
+        assert!(source.contains("r1.release();"));
+    }
+
+    #[test]
+    fn generated_programs_exercise_buffers_and_arenas() {
+        let mut buffers = 0;
+        let mut arenas = 0;
+        let mut releases = 0;
+        for index in 1..80 {
+            let source = render_program(&generate_program(13, index));
+            if source.contains("Buffer::new()") {
+                buffers += 1;
+            }
+            if source.contains("Arena::new()") {
+                arenas += 1;
+            }
+            if source.contains(".release();") {
+                releases += 1;
+            }
+        }
+        assert!(
+            buffers > 0 && arenas > 0,
+            "buffers {buffers}, arenas {arenas}"
+        );
+        assert!(releases > 0, "some arena should be released");
+    }
+}
+
+#[cfg(test)]
+mod enum_tests {
+    use super::*;
+
+    const U32: IntType = TYPES[2];
+
+    fn declaration(variants: Vec<Option<i128>>) -> EnumDecl {
+        EnumDecl {
+            name: "E1".into(),
+            reader: "read0".into(),
+            variants,
+        }
+    }
+
+    fn program(declaration: EnumDecl, variant: usize, payload: Option<Expr>) -> Program {
+        Program {
+            id: "t".into(),
+            kind: U32,
+            structs: Vec::new(),
+            enums: vec![declaration],
+            functions: Vec::new(),
+            main: Function {
+                name: "argorix_main".into(),
+                params: Vec::new(),
+                body: vec![Stmt::LetEnum {
+                    name: "e1".into(),
+                    type_name: "E1".into(),
+                    variant,
+                    payload,
+                }],
+                tail: Expr::ReadEnum {
+                    declaration: 0,
+                    reader: "read0".into(),
+                    value: "e1".into(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn the_arm_of_the_variant_with_a_field_answers_with_it() {
+        let result = evaluate_program(&program(
+            declaration(vec![Some(5), None]),
+            1,
+            Some(Expr::Literal(31)),
+        ));
+        assert_eq!(result.ok(), Some(31));
+    }
+
+    #[test]
+    fn a_fieldless_variant_answers_with_its_own_arm() {
+        let result = evaluate_program(&program(declaration(vec![Some(5), None]), 0, None));
+        assert_eq!(result.ok(), Some(5));
+    }
+
+    #[test]
+    fn a_payload_that_traps_is_reported_when_the_value_is_built() {
+        let trapping = Expr::Arith("/", Box::new(Expr::Literal(1)), Box::new(Expr::Literal(0)));
+        let result = evaluate_program(&program(
+            declaration(vec![Some(5), None]),
+            1,
+            Some(trapping),
+        ));
+        assert!(matches!(
+            result,
+            Err(Failure::Trapped(Trap::DivisionByZero))
+        ));
+    }
+
+    #[test]
+    fn the_reader_matches_every_variant() {
+        let source = render_program(&program(
+            declaration(vec![Some(5), None, Some(9)]),
+            1,
+            Some(Expr::Literal(2)),
+        ));
+        assert!(source.contains("enum E1 { V0, V1 { p0: u32, }, V2, }"));
+        assert!(source.contains("fn read0(value: E1) -> u32 {"));
+        assert!(source.contains("E1::V0 => 5u32,"));
+        assert!(source.contains("E1::V1 { p0 } => p0,"));
+        assert!(source.contains("E1::V2 => 9u32,"));
+        assert!(source.contains("let e1: E1 = E1::V1 { p0: 2u32 };"));
+        assert!(source.contains("read0(e1)"));
+    }
+
+    #[test]
+    fn a_fieldless_variant_renders_without_a_payload() {
+        let source = render_program(&program(declaration(vec![Some(5), None]), 0, None));
+        assert!(source.contains("let e1: E1 = E1::V0;"));
+    }
+
+    #[test]
+    fn generated_enums_always_have_both_kinds_of_arm() {
+        let mut seen = 0;
+        for index in 1..80 {
+            let program = generate_program(23, index);
+            for declaration in &program.enums {
+                seen += 1;
+                assert!(
+                    declaration.variants.iter().any(|item| item.is_none()),
+                    "{} has no variant with a field",
+                    declaration.name
+                );
+                assert!(
+                    declaration.variants.iter().any(|item| item.is_some()),
+                    "{} has no fieldless variant",
+                    declaration.name
+                );
+            }
+        }
+        assert!(seen > 0, "some program should declare an enum");
     }
 }

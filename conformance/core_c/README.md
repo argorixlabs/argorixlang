@@ -121,7 +121,9 @@ The generator deliberately stays inside the subset the backend claims to
 support, avoiding every shape recorded in `gaps/`: no shadowing, no block
 operands, no shifts, no signed negation, no `if` statements, no unused locals,
 parameters or functions, no recursion, and no `if` expression anywhere inside a
-comparison operand. It also avoids shapes that only upset the C compiler's
+comparison operand. Aggregates stay flat and at function level for the same
+reason: nested arrays, structs holding structs, arrays of structs and arrays
+declared inside a block are gaps g01, g02, g03 and g06. It also avoids shapes that only upset the C compiler's
 warning profile, such as `unsigned < 0` or a literal `^` pair that GCC reads as
 a mistyped power. **A failure is therefore a real divergence between the
 backend and the specification, not a known gap.**
@@ -129,8 +131,44 @@ backend and the specification, not a known gap.**
 Coverage: exact-width arithmetic with overflow traps, trapping division by zero
 and `MIN / -1`, truncating `/` and `%`, bitwise operators, comparisons,
 `&&`/`||` short-circuiting, `if` expressions, `while` loops with counters,
-multi-argument calls, and mutation through assignment and compound assignment,
-across all eight integer widths.
+multi-argument calls, mutation through assignment and compound assignment,
+fixed arrays read through a `u64` index that is sometimes past the end (which
+must trap `INDEX_OUT_OF_BOUNDS`), reads of flat struct fields, buffers filled
+by `push` and read the same way, and arenas with one allocation read through a
+handle — sometimes after `release()`, which must trap `ARENA_RELEASED` — and
+enums read back through a function whose body is an exhaustive `match`, with
+both a variant that carries a field and a fieldless one. All of
+it across all eight integer widths.
+
+Running the generated corpus with `--sanitize` is worth doing for the memory
+constructs in particular: it is the combination that would have caught the
+`Buffer` leak on the first run.
+
+## Sanitized runs
+
+`--sanitize` adds `-fsanitize=address,undefined -fno-sanitize-recover=all -g`
+on top of the declared profile and runs with `ASAN_OPTIONS=detect_leaks=1`. Any
+`LeakSanitizer`, `AddressSanitizer:` or `runtime error:` line fails the case,
+whatever its exit status.
+
+```sh
+./target/debug/core-c-harness all --argorixc target/debug/argorixc --cc gcc --sanitize
+```
+
+This is what catches what a plain run cannot see. Every `Buffer` leaked its
+storage for a while — the emitter never called `argorix_buffer_drop` — and the
+ordinary run stayed green throughout, because the program still printed the
+right answer and exited 0.
+
+Dependency inspection is skipped in this mode: a sanitized binary links
+`libasan` and friends, so the policy does not apply to it. The ordinary run is
+what enforces dependencies.
+
+**On a host with high ASLR entropy** (`vm.mmap_rnd_bits` of 32, as on the WSL2
+kernel behind Docker Desktop) AddressSanitizer intermittently hangs instead of
+starting, on a random subset of programs. It is not a defect in the program
+under test. Run the harness under `setarch $(uname -m) -R` there; GitHub's
+runners are unaffected. A hang is reported as a timeout with that hint.
 
 ## Sanitized runs
 
