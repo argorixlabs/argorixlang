@@ -6,7 +6,7 @@ Base de inspección: `5d73d66`, workspace `1.0.0`. Comprobar revisión, ramas y 
 Última actualización de estado: 2026-09-22 sobre `main@9c77061`. **ESP-009
 (biblioteca estándar mínima) está EN_CURSO**: su API S1 está congelada y dos
 verticales ejecutables (`Buffer<T>` y `Arena<T>`/`Handle<T>`) están en `main`;
-sus subtareas ESP-009.B y ESP-009.C están cerradas. Ninguna otra tarea cambió
+sus subtareas ESP-009.B, ESP-009.C y ESP-009.D están cerradas. Ninguna otra tarea cambió
 de estado. El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)
 y el estado operativo del día —carriles, ramas, PRs e issues abiertos— en
 [WORKBOARD.md](WORKBOARD.md) y `coordination/`.
