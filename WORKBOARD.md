@@ -1,6 +1,6 @@
 # ArgorixLang collaboration board
 
-Last coordination update: 2026-09-19.
+Last coordination update: 2026-09-22.
 
 This file prevents Codex, Claude, and human contributors from modifying the
 same work at the same time. It coordinates ownership; the plans and task files
@@ -10,7 +10,8 @@ remain the source of truth for scope and acceptance.
 
 | Owner | Task | Branch | State | Exclusive paths | Agent log |
 | --- | --- | --- | --- | --- | --- |
-| Claude | ESP-009.B — backend defects that blocked writing Core (subtask of ESP-009) | `claude/esp009b-backend-defects` | DONE | `crates/argorix_ir/src/core_c.rs`, `crates/argorix_ir/tests/core_c.rs`, `bootstrap/c/argorix_core_runtime.{c,h}`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.B.md` | [coordination/claude.md](coordination/claude.md) |
+| Claude | ESP-009.C — differential coverage for shifts, negation, `if` statements, blocks and nested aggregates (subtask of ESP-009) | `claude/differential-bitwise` | IN PROGRESS | `crates/argorix_core_c/**`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.C.md` | [coordination/claude.md](coordination/claude.md) |
+| Claude | ESP-009.B — backend defects that blocked writing Core (subtask of ESP-009) | `claude/esp009b-backend-defects` | DONE (PR #37) | `crates/argorix_ir/src/core_c.rs`, `crates/argorix_ir/tests/core_c.rs`, `bootstrap/c/argorix_core_runtime.{c,h}`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.B.md` | [coordination/claude.md](coordination/claude.md) |
 | Codex | ESP-009 — minimal standard library | `codex/stdlib-esp009` | IN PROGRESS | `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`, `tasks/espada/ESP-009.md`; required Buffer/Arena/host-ABI plumbing coordinated through `bootstrap/c/**` and Core stage0 modules | [coordination/codex.md](coordination/codex.md) |
 | Claude | MAT-029 — governance, support, and maintenance | `claude/governance-mat029` | DONE (PR #24) | `GOVERNANCE.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `operations/**`, `tasks/madurez/MAT-029.md`, `spec/MAT-029-validation.json`, `.github/CODEOWNERS`, `.github/PULL_REQUEST_TEMPLATE.md` | [coordination/claude.md](coordination/claude.md) |
 | Codex | ESP-008 — transitional C backend and minimal runtime | `codex/c-backend-esp008` | DONE | see `tasks/espada/ESP-008.md`; open defects in issue #27 | [coordination/codex.md](coordination/codex.md) |

@@ -2,10 +2,45 @@
 
 ## Current claim
 
+- Task: ESP-009.C — differential coverage for the constructs ESP-009.B
+  unlocked: shifts, signed negation, `if` as a statement, scoped blocks and
+  nested aggregates. Subtask of ESP-009 under the master plan's subdivision
+  rule (§10): it cuts none of the parent's criteria, it raises the evidence
+  behind them.
+- State: IN PROGRESS.
+- Branch: `claude/differential-bitwise`.
+- Base: `9c77061` (`origin/main`, "Close the backend defects that blocked
+  writing Core (ESP-009.B) (#37)").
+- Started: 2026-09-22.
+- Ficha: `tasks/espada/ESP-009.C.md`.
+- Exclusive paths: `crates/argorix_core_c/**`, `conformance/core_c/**`,
+  `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.C.md`.
+- Not touched: `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/**`,
+  `tasks/espada/ESP-009.md`, `bootstrap/c/**`, `crates/argorix_ir/**` — every
+  Codex ESP-009 path and every path ESP-009.B already closed. If the generator
+  finds a backend defect, it is recorded in `gaps/gaps.json` and reported as an
+  issue, not fixed here.
+
+## Intended result
+
+The differential generator emits the constructs that were gaps until #37, so
+they are checked against the spec oracle on every run instead of resting on
+the 16 fixed regression fixtures. Concretely: `<<` and `>>` with in-range and
+out-of-range amounts (`SHIFT_OUT_OF_RANGE`), signed negation including `MIN`
+(`INTEGER_OVERFLOW`), `if` used as a statement, scoped blocks, and nested
+arrays and structs. The oracle derives each expectation from
+`spec/core/evaluation.md` and `spec/core/types.md`, never from the backend.
+
+---
+
+# Previous claim: ESP-009.C predecessor — ESP-009.B (merged in PR #37)
+
+## Claim
+
 - Task: ESP-009.B — defects of the transitional C backend that blocked writing
   Core. Subtask of ESP-009, under the master plan's subdivision rule (§10):
   it cuts none of the parent's criteria, it enables them.
-- State: DONE (pending review).
+- State: DONE, merged in PR #37.
 - Branch: `claude/esp009b-backend-defects`.
 - Base: `06b489b` (`origin/main`).
 - Started: 2026-09-20.
