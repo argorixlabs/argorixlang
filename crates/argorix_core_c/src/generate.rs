@@ -1487,7 +1487,7 @@ impl Generator {
         let op = if self.rng.chance(50) { "<<" } else { ">>" };
         let left = self.value(names, depth - 1, functions, allow_if);
         let bits = i128::from(width(self.kind));
-        let amount = if self.rng.chance(70) {
+        let amount = if self.rng.chance(82) {
             Expr::Literal(self.rng.range(0, bits - 1))
         } else if self.rng.chance(50) {
             Expr::Literal(self.rng.range(bits, bits + 8))

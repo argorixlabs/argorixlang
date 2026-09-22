@@ -130,7 +130,11 @@ The sixteen defects of issue #27 were fixed in PR #37, so the shapes the
 generator used to steer around are now generated on purpose: shifts, signed
 negation, `if` used as a statement, blocks whose local shadows an outer name,
 `if` expressions inside comparison operands and inside aggregate literals, and
-the nested aggregates that were gaps g01, g02 and g03.
+the nested aggregates that were gaps g01, g02 and g03. Alongside them the
+generator gained the control flow the backend already supported and no
+generated program had used: `else if` chains, `return` inside a branch,
+`continue` and `break` inside a loop, one nested loop, and a function that
+calls itself.
 
 One shape is spelt a particular way for a reason. A final `if` statement is
 rendered with the `;` that `expression_stmt` spells out in the grammar,
@@ -155,7 +159,10 @@ trap `INTEGER_OVERFLOW`), `if` used as a statement with and without `else`,
 block expressions whose local shadows an outer name, nested arrays read
 through two `u64` indexes that may each point past the end, structs that hold
 structs read through `q.f0.f1`, and arrays of structs read through
-`t[i].f0`. All of it across all eight integer widths.
+`t[i].f0`. Control flow covers `else if` chains of up to three links, an
+early `return`, `continue` and `break` after a loop's counter has advanced, a
+nested counted loop, and a self-recursive function whose literal argument
+always reaches its base case. All of it across all eight integer widths.
 
 Running the generated corpus with `--sanitize` is worth doing for the memory
 constructs in particular: it is the combination that would have caught the
@@ -239,8 +246,14 @@ of the two exists, the job fails.
   toolchain. The harness binary itself is built from Rust beforehand and copied
   in, exactly like `argorixc`: this is stage0 tooling, not evidence of
   toolchain independence (ESP-024).
-- The generator does not produce `bytes`, `string`, `Slice`, `match` on a
-  value other than a generated enum, `loop`/`break`, `return`, recursion, or
-  an aggregate declared inside an `if` or a loop body (gap g06). Handle
-  mutation and arena slot reuse are exercised by the runtime cases, not by the
-  generator.
+- The generator does not produce `bytes`, `string`, `Slice`, module
+  constants, `match` on anything but a generated enum, match guards, `loop`,
+  a value `break`, or an aggregate declared inside an `if` or a loop body.
+  Everything in that list except the first three is a recorded gap (g17–g22,
+  issue #39) rather than a choice: the backend refuses them today. Handle
+  mutation and arena slot reuse are exercised by the runtime cases, not by
+  the generator.
+- The oracle evaluates on the host stack, so it stops at `MAX_CALL_DEPTH`
+  (200 frames) and marks a deeper program unusable. The runtime's own limit
+  is far higher, so a program that recurses between those two depths is
+  skipped rather than compared.
