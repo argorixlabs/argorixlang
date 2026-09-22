@@ -258,3 +258,28 @@ jobs:
           name: core-c-report-sanitized
           path: target/core-c/report-sanitized.json
           if-no-files-found: ignore
+
+  regression:
+    name: Backend regression corpus (ESP-009.B)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build argorixc and the harness
+        run: cargo build --locked -p argorixc -p argorix-core-c
+      - name: Run the programs the backend once got wrong
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc gcc
+          --cases conformance/core_c/regression/cases.json
+          --bundle target/core-c/regression-bundle
+          --work-dir target/core-c/regression
+          --report target/core-c/report-regression.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: core-c-report-regression
+          path: target/core-c/report-regression.json
+          if-no-files-found: ignore

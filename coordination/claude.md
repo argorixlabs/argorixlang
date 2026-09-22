@@ -2,6 +2,55 @@
 
 ## Current claim
 
+- Task: ESP-009.B — defects of the transitional C backend that blocked writing
+  Core. Subtask of ESP-009, under the master plan's subdivision rule (§10):
+  it cuts none of the parent's criteria, it enables them.
+- State: DONE (pending review).
+- Branch: `claude/esp009b-backend-defects`.
+- Base: `06b489b` (`origin/main`).
+- Started: 2026-09-20.
+- Ficha: `tasks/espada/ESP-009.B.md`, filled in with the mandatory template.
+- Exclusive paths: `crates/argorix_ir/src/core_c.rs`,
+  `crates/argorix_ir/tests/core_c.rs`, `bootstrap/c/argorix_core_runtime.{c,h}`,
+  `conformance/core_c/**`, `.github/workflows/core-c.yml`,
+  `tasks/espada/ESP-009.B.md`.
+- **Overlap with the Codex ESP-009 lane:** `core_c.rs` and `bootstrap/c/**` are
+  inside their claim. These are the defects that block ESP-009's own criterion
+  that the algorithms live in `.argx`, and the maintainer asked for the plan to
+  advance. No stdlib, spec, runtime-case or ESP-009 ficha file was touched, and
+  one Codex test was updated only because field names are now prefixed.
+
+## Intended result
+
+Close every defect of issue #27, so a real Core program can be written: `if` as
+a statement, scoped blocks, nested types, shifts, signed negation, and a typed
+trap instead of a native stack overflow.
+
+## Handoff
+
+- **16 of 16 gaps fixed**, including the two silent wrong results (233 → 1001
+  and 4 → 3) and the SIGSEGV, now `ARGORIX_TRAP:CALL_DEPTH_LIMIT`.
+- The corpus moved from `gaps/` to `regression/`: **16/16 pass**, and also
+  under AddressSanitizer and UBSan. A CI job runs it on every change, and
+  `gaps.json` stays in place, empty, for the next defect.
+- No regression: runtime cases **15/15**, differential **120/120** and
+  **150/150**, workspace **490 tests**, Clippy and formatting clean.
+- While closing g01 my own recorded expectation turned out to be miscomputed
+  (42 where the program yields 37). The corpus flagged it as `CHANGED` and the
+  record was corrected: the backend was right, my note was not.
+- For Codex: the backend now emits `if` statements, scoped blocks, nested
+  arrays and structs, checked shifts and negation, and charges a call-depth
+  budget. `struct` fields are emitted as `argorix_f_<name>`.
+- Remaining for other lanes: the depth limit (50000) is tuned to the 8 MiB
+  Linux stack and belongs per profile in MAT-011/MAT-024; arenas are still
+  released only explicitly; the differential generator does not emit shifts or
+  negation yet, so those stay covered by the regression corpus.
+
+---
+
+# Previous claim: ESP-008.R harness and corpora (merged in #30, #32, #35)
+
+
 - Task: ESP-008.R follow-up — Rust harness, known-gap corpus, and differential
   testing against a spec oracle.
 - State: DONE (pending review).
@@ -57,6 +106,7 @@ whose expected result comes from an evaluator written against
   extension once the aggregate gaps in issue #27 are fixed.
 
 ---
+
 
 # Previous claim: MAT-029 (merged in PR #24)
 

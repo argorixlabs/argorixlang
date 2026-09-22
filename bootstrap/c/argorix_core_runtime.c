@@ -35,6 +35,19 @@ _Noreturn void argorix_trap(const char *code) {
     exit(ARGORIX_TRAP_EXIT);
 }
 
+void argorix_enter(argorix_budget *budget) {
+    if (budget == NULL || budget->remaining_depth == 0U) {
+        argorix_trap("CALL_DEPTH_LIMIT");
+    }
+    budget->remaining_depth -= 1U;
+}
+
+void argorix_leave(argorix_budget *budget) {
+    if (budget != NULL) {
+        budget->remaining_depth += 1U;
+    }
+}
+
 void argorix_step(argorix_budget *budget) {
     if (budget == NULL || budget->remaining_steps == 0U) {
         argorix_trap("STEP_LIMIT");
@@ -432,3 +445,54 @@ DEFINE_SIGNED_CHECKED(8, int8_t, INT8_MIN, INT8_MAX)
 DEFINE_SIGNED_CHECKED(16, int16_t, INT16_MIN, INT16_MAX)
 DEFINE_SIGNED_CHECKED(32, int32_t, INT32_MIN, INT32_MAX)
 DEFINE_SIGNED_CHECKED(64, int64_t, INT64_MIN, INT64_MAX)
+
+#define DEFINE_UNSIGNED_SHIFTS(width, type)                                    \
+    type argorix_u##width##_shl(type left, type right) {                       \
+        if (right >= (type)(width)) {                                          \
+            argorix_trap("SHIFT_OUT_OF_RANGE");                                \
+        }                                                                      \
+        return (type)((uint64_t)left << right);                                \
+    }                                                                          \
+    type argorix_u##width##_shr(type left, type right) {                       \
+        if (right >= (type)(width)) {                                          \
+            argorix_trap("SHIFT_OUT_OF_RANGE");                                \
+        }                                                                      \
+        return (type)(left >> right);                                          \
+    }
+
+#define DEFINE_SIGNED_SHIFTS(width, type, utype, minimum)                      \
+    type argorix_i##width##_shl(type left, type right) {                       \
+        if (right < 0 || right >= (type)(width)) {                             \
+            argorix_trap("SHIFT_OUT_OF_RANGE");                                \
+        }                                                                      \
+        /* Shifting through the unsigned representation is defined for every   \
+           input, including a negative left operand. */                        \
+        return (type)(utype)((utype)left << (utype)right);                     \
+    }                                                                          \
+    type argorix_i##width##_shr(type left, type right) {                       \
+        if (right < 0 || right >= (type)(width)) {                             \
+            argorix_trap("SHIFT_OUT_OF_RANGE");                                \
+        }                                                                      \
+        if (left >= 0) {                                                       \
+            return (type)((utype)left >> (utype)right);                        \
+        }                                                                      \
+        /* Arithmetic shift written out, so the sign is kept whatever the      \
+           implementation does with `>>` on a negative value. */               \
+        return (type)~(utype)((utype)~(utype)left >> (utype)right);            \
+    }                                                                          \
+    type argorix_i##width##_neg(type value) {                                  \
+        if (value == (minimum)) {                                              \
+            argorix_trap("INTEGER_OVERFLOW");                                  \
+        }                                                                      \
+        return (type)(-value);                                                 \
+    }
+
+DEFINE_UNSIGNED_SHIFTS(8, uint8_t)
+DEFINE_UNSIGNED_SHIFTS(16, uint16_t)
+DEFINE_UNSIGNED_SHIFTS(32, uint32_t)
+DEFINE_UNSIGNED_SHIFTS(64, uint64_t)
+
+DEFINE_SIGNED_SHIFTS(8, int8_t, uint8_t, INT8_MIN)
+DEFINE_SIGNED_SHIFTS(16, int16_t, uint16_t, INT16_MIN)
+DEFINE_SIGNED_SHIFTS(32, int32_t, uint32_t, INT32_MIN)
+DEFINE_SIGNED_SHIFTS(64, int64_t, uint64_t, INT64_MIN)

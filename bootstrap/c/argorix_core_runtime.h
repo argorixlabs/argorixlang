@@ -10,6 +10,7 @@
 
 typedef struct argorix_budget {
     uint64_t remaining_steps;
+    uint64_t remaining_depth;
 } argorix_budget;
 
 typedef struct argorix_bytes {
@@ -72,6 +73,16 @@ typedef struct argorix_arena {
 
 _Noreturn void argorix_trap(const char *code);
 void argorix_step(argorix_budget *budget);
+
+/* Call depth is a declared resource like steps: running out of it is a typed
+   trap, never a native stack overflow. */
+void argorix_enter(argorix_budget *budget);
+void argorix_leave(argorix_budget *budget);
+
+/* Call depth is a declared resource like steps: exhausting it is a typed
+   trap, never a native stack overflow. */
+void argorix_enter(argorix_budget *budget);
+void argorix_leave(argorix_budget *budget);
 size_t argorix_bounds(uint64_t index, uint64_t length);
 argorix_string argorix_decode_utf8(argorix_bytes value);
 argorix_buffer argorix_buffer_new(uint64_t element_size, uint64_t byte_limit);
@@ -145,5 +156,31 @@ int64_t argorix_i64_sub(int64_t left, int64_t right);
 int64_t argorix_i64_mul(int64_t left, int64_t right);
 int64_t argorix_i64_div(int64_t left, int64_t right);
 int64_t argorix_i64_rem(int64_t left, int64_t right);
+
+/* Shifts trap when the amount reaches the width, as spec/core/evaluation.md
+   requires. Signed shifts go through the unsigned representation so no C
+   undefined behaviour is relied on, and the right shift keeps the sign. */
+uint8_t argorix_u8_shl(uint8_t left, uint8_t right);
+uint8_t argorix_u8_shr(uint8_t left, uint8_t right);
+uint16_t argorix_u16_shl(uint16_t left, uint16_t right);
+uint16_t argorix_u16_shr(uint16_t left, uint16_t right);
+uint32_t argorix_u32_shl(uint32_t left, uint32_t right);
+uint32_t argorix_u32_shr(uint32_t left, uint32_t right);
+uint64_t argorix_u64_shl(uint64_t left, uint64_t right);
+uint64_t argorix_u64_shr(uint64_t left, uint64_t right);
+int8_t argorix_i8_shl(int8_t left, int8_t right);
+int8_t argorix_i8_shr(int8_t left, int8_t right);
+int16_t argorix_i16_shl(int16_t left, int16_t right);
+int16_t argorix_i16_shr(int16_t left, int16_t right);
+int32_t argorix_i32_shl(int32_t left, int32_t right);
+int32_t argorix_i32_shr(int32_t left, int32_t right);
+int64_t argorix_i64_shl(int64_t left, int64_t right);
+int64_t argorix_i64_shr(int64_t left, int64_t right);
+
+/* Negating the minimum has no representable result, so it traps. */
+int8_t argorix_i8_neg(int8_t value);
+int16_t argorix_i16_neg(int16_t value);
+int32_t argorix_i32_neg(int32_t value);
+int64_t argorix_i64_neg(int64_t value);
 
 #endif
