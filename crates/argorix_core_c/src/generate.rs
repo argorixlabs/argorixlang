@@ -1607,7 +1607,7 @@ impl Generator {
         for _ in 0..=self.rng.below(2) {
             let name = self.rng.pick(mutable).clone();
             if self.rng.chance(50) {
-                let value = self.value(names, 1, functions, true);
+                let value = self.assigned_value(&name, names, functions);
                 body.push(Stmt::Assign { name, value });
             } else {
                 let op = *self.rng.pick(&["+", "-", "*"]);
@@ -1693,7 +1693,7 @@ impl Generator {
                 }
             } else if choice < 70 {
                 let name = self.rng.pick(mutable).clone();
-                let value = self.value(names, 2, functions, true);
+                let value = self.assigned_value(&name, names, functions);
                 body.push(Stmt::Assign { name, value });
             } else if choice < 80 {
                 let name = self.rng.pick(mutable).clone();
@@ -1737,7 +1737,7 @@ impl Generator {
             let target = self.rng.pick(mutable).clone();
             let mut visible = names.clone();
             visible.push(counter.clone());
-            let value = self.value(&visible, 1, functions, true);
+            let value = self.assigned_value(&target, &visible, functions);
             inner.push(Stmt::Assign {
                 name: target,
                 value,
@@ -2423,6 +2423,20 @@ impl Generator {
             ],
             read,
         )
+    }
+
+    /// The right-hand side of an assignment, never the target by itself.
+    ///
+    /// `x = x;` is valid Core, but its C is a self-assignment that clang
+    /// rejects under the declared `-Werror` profile (gap g23). The generator
+    /// avoids shapes that only upset the warning profile, so that a failure
+    /// stays a real divergence.
+    fn assigned_value(&mut self, target: &str, names: &[String], functions: &[Function]) -> Expr {
+        let value = self.value(names, 2, functions, true);
+        if value == Expr::Var(target.to_string()) {
+            return Expr::Arith("^", Box::new(value), Box::new(self.literal()));
+        }
+        value
     }
 
     /// An index into something of this length: inside it most of the time,

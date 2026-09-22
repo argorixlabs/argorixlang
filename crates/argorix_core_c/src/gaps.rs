@@ -17,6 +17,7 @@ use crate::policy::Policy;
 pub const STILL_OPEN: &str = "STILL_OPEN";
 pub const FIXED: &str = "FIXED";
 pub const CHANGED: &str = "CHANGED";
+pub const SKIPPED: &str = "SKIPPED";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GapManifest {
@@ -39,6 +40,14 @@ pub struct Gap {
     pub observed_exit: Option<i32>,
     #[serde(default)]
     pub note: String,
+    /// Compilers this gap is recorded for, empty meaning every one of them.
+    ///
+    /// A defect of the declared `-Werror` profile can belong to one compiler
+    /// alone: GCC does not implement `-Wself-assign`, so g23 is invisible to
+    /// it. Checking such a gap with the wrong compiler would report it fixed
+    /// on every run, which is why it is skipped instead.
+    #[serde(default)]
+    pub compilers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -71,10 +80,23 @@ pub struct GapReport {
     pub argorixc: ToolRecord,
     pub gaps_total: usize,
     pub still_open: usize,
+    pub skipped: usize,
     pub fixed: usize,
     pub changed: usize,
     pub gaps: Vec<GapResult>,
     pub overall_pass: bool,
+}
+
+/// Whether this gap is recorded for the compiler in hand.
+///
+/// The compiler is matched by name inside the resolved executable, so `clang`
+/// covers `clang-14` and `/usr/bin/clang` alike.
+pub fn applies_to(gap: &Gap, compiler_id: &str) -> bool {
+    gap.compilers.is_empty()
+        || gap
+            .compilers
+            .iter()
+            .any(|name| compiler_id.contains(name.as_str()))
 }
 
 /// Compare one gap's observed behaviour with what the manifest recorded.
@@ -223,8 +245,22 @@ pub fn check(argorixc: &Path, root: &Path, compiler_name: &str, work: &Path) -> 
     let compiler = harness::resolve_compiler(compiler_name, &toolchain)?;
     std::fs::create_dir_all(work)?;
 
+    let compiler_id = compiler
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
     let mut results = Vec::new();
     for gap in &manifest.gaps {
+        if !applies_to(gap, &compiler_id) {
+            results.push(GapResult {
+                id: gap.id.clone(),
+                kind: gap.kind.clone(),
+                status: SKIPPED.to_string(),
+                detail: format!("recorded for {} only", gap.compilers.join(", ")),
+                observed: Outcome::default(),
+            });
+            continue;
+        }
         let outcome = observe(gap, argorixc, root, work, &compiler, &toolchain, &policy)?;
         let (status, detail) = classify(gap, &outcome);
         results.push(GapResult {
@@ -258,6 +294,7 @@ passing must be promoted into tests/selfhost/runtime/cases.json."
         },
         gaps_total: results.len(),
         still_open: count(STILL_OPEN),
+        skipped: count(SKIPPED),
         fixed: count(FIXED),
         changed,
         gaps: results,
@@ -270,7 +307,7 @@ passing must be promoted into tests/selfhost/runtime/cases.json."
 pub fn print_summary(report: &GapReport, annotate: bool) {
     for item in &report.gaps {
         println!("{:<10} {}: {}", item.status, item.id, item.detail);
-        if annotate && item.status != STILL_OPEN {
+        if annotate && item.status != STILL_OPEN && item.status != SKIPPED {
             let title = if item.status == FIXED {
                 "Core C gap fixed"
             } else {
@@ -280,11 +317,12 @@ pub fn print_summary(report: &GapReport, annotate: bool) {
         }
     }
     println!(
-        "gaps {}: {} still open, {} fixed, {} changed; recorded at {}; overall_pass={}",
+        "gaps {}: {} still open, {} fixed, {} changed, {} skipped; recorded at {}; overall_pass={}",
         report.gaps_total,
         report.still_open,
         report.fixed,
         report.changed,
+        report.skipped,
         report
             .recorded_commit
             .clone()
@@ -312,6 +350,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_gap_recorded_for_one_compiler_is_skipped_by_the_others() {
+        let mut clang_only = gap("compile_error");
+        clang_only.compilers = vec!["clang".into()];
+        assert!(applies_to(&clang_only, "clang-14"));
+        assert!(applies_to(&clang_only, "clang"));
+        assert!(!applies_to(&clang_only, "x86_64-linux-gnu-gcc-12"));
+        // With no compiler recorded, every one of them checks the gap.
+        assert!(applies_to(&gap("compile_error"), "x86_64-linux-gnu-gcc-12"));
+    }
+
     fn gap(kind: &str) -> Gap {
         Gap {
             id: "g".into(),
@@ -329,6 +378,7 @@ mod tests {
                 "crash" => Some(139),
                 _ => None,
             },
+            compilers: Vec::new(),
             note: "note".into(),
         }
     }

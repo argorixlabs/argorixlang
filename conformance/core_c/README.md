@@ -86,10 +86,17 @@ Every program is accepted by `argorixc core-check`, and the expected output
 comes from `spec/core/evaluation.md`.
 
 The sixteen of issue #27 were fixed in PR #37 and moved to `regression/`. The
-six there now are g17–g22 of [issue #39](https://github.com/argorixlabs/argorixlang/issues/39):
+seven there now are g17–g23 of [issue #39](https://github.com/argorixlabs/argorixlang/issues/39):
 `loop` as a statement, `loop` with a value break, `match` on a bool, a module
-`const`, `match` on an integer with `_`, and a match guard. All six are
-rejected at emission, so none of them can produce a wrong result today.
+`const`, `match` on an integer with `_`, a match guard, and `x = x;`. The
+first six are rejected at emission and the seventh at compilation, so none of
+them can produce a wrong result today.
+
+A gap can belong to one compiler: `x = x;` lowers to a C self-assignment,
+which clang rejects under the declared `-Werror` profile and GCC does not
+diagnose at all. Such a record carries a `compilers` list, and a run with any
+other compiler reports it `SKIPPED` instead of announcing it fixed. The CI job
+runs the corpus with both.
 
 ```sh
 ./target/debug/core-c-harness gaps --argorixc target/debug/argorixc --cc gcc
@@ -100,6 +107,7 @@ rejected at emission, so none of them can produce a wrong result today.
 | `STILL_OPEN` | the recorded defect is reproduced | expected; exit 0 |
 | `FIXED` | it now behaves as the spec requires | reported as a notice; promote it into `tests/selfhost/runtime/cases.json` (Codex lane) and remove it from `gaps.json` |
 | `CHANGED` | it fails in a different way | **exit 1**: the record is stale and someone must look |
+| `SKIPPED` | it is recorded for another compiler | nothing is run for it; exit 0 |
 
 A fixed gap is not a build failure, so fixing the backend never breaks CI. Only
 an unexplained change does. The corpus is not a substitute for the runtime
@@ -128,8 +136,9 @@ support, avoiding every shape recorded in `gaps/`. What it avoids today is
 short: an aggregate declared inside an `if` or a loop body, which is gap g06,
 and unused locals, parameters or functions, which are valid Core whose C fails
 the `-Werror` profile. It also avoids shapes that only upset the C compiler's
-warning profile, such as `unsigned < 0` or a literal `^` pair that GCC reads as
-a mistyped power. **A failure is therefore a real divergence between the
+warning profile, such as `unsigned < 0`, a literal `^` pair that GCC reads as
+a mistyped power, or `x = x`, whose C clang rejects as a self-assignment
+(gap g23, found by this generator in 2 of 120 programs). **A failure is therefore a real divergence between the
 backend and the specification, not a known gap.**
 
 The sixteen defects of issue #27 were fixed in PR #37, so the shapes the

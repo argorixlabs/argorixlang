@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "recorded_commit": "9c77061",
-  "recorded_with": "gcc 12.2.0, -std=c11 -Wall -Wextra -Werror",
-  "purpose": "Known defects of the transitional C backend, each with the behaviour it reproduces today, so a fix is noticed and can be promoted. The sixteen defects of issue #27 were fixed in ESP-009.B and now live as regression cases in ../regression/cases.json; the six recorded here were found by the ESP-009.C differential work and reported as issue #39. Each program is valid Core 0.1 that argorixc core-check accepts.",
+  "recorded_with": "gcc 12.2.0 and clang 14.0.6, -std=c11 -Wall -Wextra -Werror",
+  "purpose": "Known defects of the transitional C backend, each with the behaviour it reproduces today, so a fix is noticed and can be promoted. The sixteen defects of issue #27 were fixed in ESP-009.B and now live as regression cases in ../regression/cases.json; the seven recorded here were found by the ESP-009.C differential work and reported as issue #39. Each program is valid Core 0.1 that argorixc core-check accepts.",
   "gaps": [
     {
       "id": "g17_loop_statement",
@@ -51,6 +51,17 @@
       "spec_expected_stdout": "ARGORIX_RESULT:48",
       "signature": "match guards are not implemented in the C profile yet",
       "note": "An arm with `if p0 > 3u32`. spec/core/evaluation.md names guards explicitly (\"guards no cuentan para exhaustividad\"), so they are part of Core 0.1."
+    },
+    {
+      "id": "g23_self_assignment",
+      "file": "g23_self_assignment.argx",
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "signature": "-Wself-assign",
+      "compilers": [
+        "clang"
+      ],
+      "note": "`x = x;` is a valid Core assignment and lowers to `argorix_v_x = argorix_v_x;`, which clang rejects under the declared -Werror profile. GCC has no -Wself-assign, so the same program builds there: this gap is recorded for clang alone. Found by the differential generator, which produced the shape by chance in 2 of 120 programs."
     }
   ]
 }
