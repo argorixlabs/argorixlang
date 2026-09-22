@@ -1484,6 +1484,29 @@ impl Rng {
 // --------------------------------------------------------------------------
 // Generation
 
+/// The byte sequences a UTF-8 validator is most likely to get wrong: the
+/// ends of each range, the overlong forms, the surrogate block and the first
+/// value past U+10FFFF. Half are well-formed and half are not; the oracle
+/// decides which by validating, so the table never has to say.
+const UTF8_BOUNDARIES: [&[u8]; 16] = [
+    &[0xC2, 0xA9],             // U+00A9, the shortest two-byte form
+    &[0xDF, 0xBF],             // U+07FF, the longest
+    &[0xE0, 0xA0, 0x80],       // U+0800, the shortest three-byte form
+    &[0xED, 0x9F, 0xBF],       // U+D7FF, just below the surrogates
+    &[0xEE, 0x80, 0x80],       // U+E000, just above them
+    &[0xF0, 0x90, 0x80, 0x80], // U+10000, the shortest four-byte form
+    &[0xF4, 0x8F, 0xBF, 0xBF], // U+10FFFF, the last code point
+    &[0xEF, 0xBF, 0xBD],       // U+FFFD
+    &[0xC0, 0x80],             // an overlong NUL
+    &[0xC1, 0xBF],             // an overlong U+007F
+    &[0xE0, 0x9F, 0x80],       // an overlong three-byte form
+    &[0xF0, 0x8F, 0xBF, 0xBF], // an overlong four-byte form
+    &[0xED, 0xA0, 0x80],       // U+D800, a surrogate
+    &[0xED, 0xBF, 0xBF],       // U+DFFF, the last surrogate
+    &[0xF4, 0x90, 0x80, 0x80], // U+110000, past the last code point
+    &[0xF5, 0x80, 0x80, 0x80], // no code point starts here
+];
+
 const ARITH: [&str; 8] = ["+", "-", "*", "/", "%", "&", "|", "^"];
 const COMPARE: [&str; 6] = ["==", "!=", "<", "<=", ">", ">="];
 
@@ -2206,7 +2229,10 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     // fits a program of that width.
     if kind.name == "u64" && generator.rng.chance(60) {
         let (statement, expression) = generator.text();
-        body.push(statement);
+        // First in the body: the decode traps where it stands, so behind
+        // other statements most of its programs would trap before reaching
+        // it. It depends on no local, so the position is free.
+        body.insert(0, statement);
         reads.push(expression);
     }
     let mut enums = Vec::new();
@@ -2566,9 +2592,14 @@ impl Generator {
         let text = self.fresh("s");
         let mut values = Vec::new();
         for _ in 0..=self.rng.below(3) {
-            self.encode_code_point(&mut values);
+            if self.rng.chance(35) {
+                // Aim at the ends of the ranges, where a validator fails.
+                values.extend_from_slice(self.rng.pick(&UTF8_BOUNDARIES));
+            } else {
+                self.encode_code_point(&mut values);
+            }
         }
-        if self.rng.chance(45) {
+        if self.rng.chance(35) {
             self.break_utf8(&mut values);
         }
         if values.is_empty() {
@@ -3186,6 +3217,129 @@ mod tests {
         assert!(returns > 0, "no `return` was generated");
         assert!(continues > 0, "no `continue` was generated");
         assert!(recursions > 0, "no recursive function was generated");
+    }
+
+    /// A `u64` program carries the text vertical often enough to matter, and
+    /// no program of another width carries it at all.
+    #[test]
+    fn only_u64_programs_decode_text() {
+        let mut with_text = 0;
+        let mut invalid = 0;
+        for index in 1..120 {
+            for seed in [21u64, 24] {
+                let program = generate_program(seed, index);
+                let source = render_program(&program);
+                if !source.contains("decode_utf8_or_trap") {
+                    continue;
+                }
+                assert_eq!(
+                    program.kind.name, "u64",
+                    "text in a {} program",
+                    program.kind.name
+                );
+                with_text += 1;
+                if let Some((_, stderr, _)) = expected_case(&program) {
+                    invalid += usize::from(stderr.contains("UTF8_INVALID"));
+                }
+            }
+        }
+        assert!(with_text > 0, "no program decoded any text");
+        assert!(invalid > 0, "no invalid sequence reached the decode");
+    }
+
+    /// The oracle's UTF-8 validator, against Table 3-7 of the Unicode
+    /// Standard. These are the cases a validator gets wrong.
+    #[test]
+    fn the_utf8_validator_follows_table_3_7() {
+        let valid: [&[u8]; 8] = [
+            b"",
+            b"A",
+            b"ascii text",
+            &[0xC2, 0xA9],             // U+00A9, the shortest two-byte form
+            &[0xDF, 0xBF],             // U+07FF, the longest
+            &[0xE0, 0xA0, 0x80],       // U+0800, the shortest three-byte form
+            &[0xED, 0x9F, 0xBF],       // U+D7FF, just below the surrogates
+            &[0xF4, 0x8F, 0xBF, 0xBF], // U+10FFFF, the last code point
+        ];
+        for bytes in valid {
+            assert!(well_formed_utf8(bytes), "rejected valid {bytes:02X?}");
+        }
+
+        let invalid: [&[u8]; 12] = [
+            &[0x80],                   // a lone continuation
+            &[0xBF],                   // the last continuation byte
+            &[0xC0, 0x80],             // an overlong NUL
+            &[0xC1, 0xBF],             // an overlong U+007F
+            &[0xC2],                   // a truncated two-byte sequence
+            &[0xE0, 0x9F, 0x80],       // an overlong three-byte form
+            &[0xE2, 0x82],             // a truncated three-byte sequence
+            &[0xED, 0xA0, 0x80],       // U+D800, a surrogate
+            &[0xED, 0xBF, 0xBF],       // U+DFFF, the last surrogate
+            &[0xF0, 0x8F, 0xBF, 0xBF], // an overlong four-byte form
+            &[0xF4, 0x90, 0x80, 0x80], // U+110000, past the last code point
+            &[0xF5, 0x80, 0x80, 0x80], // no code point starts here
+        ];
+        for bytes in invalid {
+            assert!(!well_formed_utf8(bytes), "accepted invalid {bytes:02X?}");
+        }
+    }
+
+    /// Every code point the generator encodes is well-formed, and the
+    /// mutations it plants are mostly not.
+    #[test]
+    fn generated_text_is_valid_until_it_is_broken() {
+        let mut generator = Generator {
+            rng: Rng::new(4),
+            kind: TYPES[3],
+            counter: 0,
+        };
+        for _ in 0..200 {
+            let mut values = Vec::new();
+            generator.encode_code_point(&mut values);
+            assert!(
+                well_formed_utf8(&values),
+                "encoded an invalid sequence: {values:02X?}"
+            );
+        }
+        let mut broken = 0;
+        for _ in 0..200 {
+            let mut values = Vec::new();
+            generator.encode_code_point(&mut values);
+            generator.break_utf8(&mut values);
+            broken += usize::from(!well_formed_utf8(&values));
+        }
+        // A mutation can land on a sequence that stays valid; the oracle
+        // decides by validating, so this only has to be the common case.
+        assert!(
+            broken > 100,
+            "only {broken} of 200 mutations broke the text"
+        );
+    }
+
+    /// The decode traps where the statement is, and the length the spec gives
+    /// `stdlib.text` is a byte count.
+    #[test]
+    fn a_decoded_string_has_the_byte_length() {
+        let program = |values: Vec<u8>| {
+            program_with(
+                vec![Stmt::LetText {
+                    array: "a1".into(),
+                    bytes: "c2".into(),
+                    text: "s3".into(),
+                    values,
+                }],
+                Expr::TextLength { text: "s3".into() },
+            )
+        };
+        // Two bytes for U+00A9, one for `A`.
+        assert_eq!(
+            evaluate_program(&program(vec![0xC2, 0xA9, 0x41])).ok(),
+            Some(3)
+        );
+        assert!(matches!(
+            evaluate_program(&program(vec![0xC2, 0x41])),
+            Err(Failure::Trapped(Trap::Utf8Invalid))
+        ));
     }
 
     /// `break`, `else if` chains and one nested loop are generated too.
