@@ -2,6 +2,25 @@
 
 ## Current claim
 
+- Task: ESP-009.F — backend gaps g17–g23 (issue #39) and cross-module
+  symbol resolution (issue #45). Subtask of ESP-009 (§10 of the master plan).
+- State: IN PROGRESS.
+- Branch: `claude/esp009f-unblock`, base `59f70b0`.
+- Started: 2026-09-22.
+- Ficha: `tasks/espada/ESP-009.F.md`.
+- Paths: the Core frontend, IR and C backend crates, the C1 runtime,
+  `conformance/core_c/**`, `.github/workflows/core-c.yml`, the ficha.
+- Overlap: `core_c.rs` and `bootstrap/c/**` are also listed in the ESP-009
+  row, as they were for ESP-009.B. No `stdlib/**`, `spec/core/stdlib.md`,
+  `tests/selfhost/**` or `tasks/espada/ESP-009.md` file is touched.
+- Out of scope: issue #38, which needs a language decision.
+
+---
+
+# Previous claim: ESP-009.E (PR #42)
+
+## Claim
+
 - Task: ESP-009.E — repeated execution must be byte-identical, which
   `spec/core/stdlib.md` requires and nothing checked. Subtask of ESP-009
   under the master plan's subdivision rule (§10).
