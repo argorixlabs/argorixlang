@@ -2,6 +2,65 @@
 
 ## Current claim
 
+- Task: ESP-009.D — differential coverage of the parts of ESP-009 that
+  already execute: bytes/UTF-8 and the resource ceilings of `Buffer` and
+  `Arena`. Subtask of ESP-009 under the master plan's subdivision rule
+  (§10).
+- State: DONE (pending review).
+- Branch: `claude/differential-text`, stacked on `claude/differential-bitwise`
+  (PR #40). It retargets to `main` once that lands.
+- Base: `bcac7e3`.
+- Started: 2026-09-22.
+- Ficha: `tasks/espada/ESP-009.D.md`.
+- Exclusive paths: `crates/argorix_core_c/**`, `conformance/core_c/**`,
+  `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.D.md`.
+- Not touched: `stdlib/**`, `spec/**`, `tests/selfhost/**`,
+  `crates/argorix_ir/**`, `bootstrap/c/**` — every Codex ESP-009 path.
+
+## Intended result
+
+The generator produces byte arrays decoded as UTF-8, aimed at the boundaries
+a validator gets wrong, and programs that reach the declared ceilings of
+`Buffer` and `Arena`. The oracle validates UTF-8 from Table 3-7 of the Unicode
+Standard and models the ceilings from `spec/core/stdlib.md`, never from the
+runtime.
+
+## Handoff
+
+- **Bytes and UTF-8 are generated**, from random code points across all four
+  widths and from a table of the ends a validator gets wrong, with a planted
+  mistake on top part of the time. 38 invalid sequences reached the decode
+  and every one trapped `UTF8_INVALID` where the oracle said it would. The
+  oracle's validator comes from Table 3-7 of the Unicode Standard and has its
+  own tests.
+- **The resource ceilings are generated**: a `Buffer<u64>` filled past the
+  profile's byte ceiling and an arena allocated past its 1024 slots, 41
+  `RESOURCE_LIMIT` traps in all. A unit test pins the exact push the buffer
+  refuses and the exact slot the arena refuses.
+- **960 programs, zero divergences**: 720 with GCC 12.2 (seeds 301–306 ×
+  120), 160 with clang 14.0.6, 80 under AddressSanitizer and UBSan. Runtime
+  cases 15/15, regression 16/16, gap corpus unchanged, workspace 515 tests.
+- **A defect of my own, found and fixed here:** a loop body was not a scope in
+  the oracle, so a `let` inside it piled up a binding per iteration and
+  lookups past it went linear; with the loop budget raised to 300,000 for the
+  buffer fill, generating seed 312 stopped finishing. It now marks and
+  restores per iteration, which also fixes a shadowing semantics no generated
+  program had reached.
+- Limits: the arena's byte ceiling is modelled but unreachable, since its slot
+  limit binds first; the text vertical only fits a `u64` program; the oracle
+  charges loops and depth but not calls, which is safe while the generated
+  call graph stays small.
+- For Codex: nothing here touches an ESP-009 path. When the stdlib grows maps,
+  paths, the file boundary and the JSON subset, this harness is where their
+  adversarial cases belong — duplicate keys, canonical order, traversal and
+  oversized input.
+
+---
+
+# Previous claim: ESP-009.C (PR #40)
+
+## Claim
+
 - Task: ESP-009.C — differential coverage for the constructs ESP-009.B
   unlocked: shifts, signed negation, `if` as a statement, scoped blocks and
   nested aggregates. Subtask of ESP-009 under the master plan's subdivision

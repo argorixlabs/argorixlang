@@ -20,7 +20,13 @@ use serde::Serialize;
 
 use crate::harness::Case;
 
-pub const MAX_LOOP_ITERATIONS: u32 = 10_000;
+/// Loop iterations the oracle follows before declaring the program unusable.
+///
+/// Filling a `Buffer<u64>` to its byte ceiling takes 131,073 pushes, so the
+/// budget has to clear that. It stays well under the runtime's own
+/// `ARGORIX_STEP_LIMIT` of 1,000,000, which charges one step per iteration:
+/// a program the oracle accepts never runs out of steps instead.
+pub const MAX_LOOP_ITERATIONS: u32 = 300_000;
 
 /// How deep the oracle follows calls before it declares the program unusable.
 ///
@@ -28,6 +34,15 @@ pub const MAX_LOOP_ITERATIONS: u32 = 10_000;
 /// evaluates on the host stack. A program that goes deeper is skipped rather
 /// than risked: the corpus loses one program, not the run.
 pub const MAX_CALL_DEPTH: u32 = 200;
+
+/// The ceilings of the execution profile the transitional backend compiles
+/// in, as `crates/argorix_ir/src/core_c.rs` defines them for every emitted
+/// program. `spec/core/stdlib.md` says the profile supplies them and that
+/// exceeding one traps `RESOURCE_LIMIT`; these are the numbers it supplies
+/// today, and a corpus that models a limit has to move when they do.
+pub const BUFFER_LIMIT_BYTES: u64 = 1_048_576;
+pub const ARENA_LIMIT_BYTES: u64 = 1_048_576;
+pub const ARENA_SLOT_LIMIT: u64 = 1_024;
 
 /// What a single evaluation may still spend.
 #[derive(Debug, Clone, Copy)]
@@ -134,6 +149,8 @@ pub enum Trap {
     IndexOutOfBounds,
     ArenaReleased,
     ShiftOutOfRange,
+    Utf8Invalid,
+    ResourceLimit,
 }
 
 impl Trap {
@@ -144,6 +161,8 @@ impl Trap {
             Trap::IndexOutOfBounds => "INDEX_OUT_OF_BOUNDS",
             Trap::ArenaReleased => "ARENA_RELEASED",
             Trap::ShiftOutOfRange => "SHIFT_OUT_OF_RANGE",
+            Trap::Utf8Invalid => "UTF8_INVALID",
+            Trap::ResourceLimit => "RESOURCE_LIMIT",
         }
     }
 }
@@ -212,6 +231,10 @@ pub enum Expr {
     Block {
         body: Vec<Stmt>,
         tail: Box<Expr>,
+    },
+    /// `text.length()`, the byte length of a decoded `string`.
+    TextLength {
+        text: String,
     },
     /// `readN(local)`: the generated reader function whose body is an
     /// exhaustive `match` over the enum this local holds.
@@ -320,6 +343,23 @@ pub enum Stmt {
     /// `arena.release();`, after which its handles must trap.
     Release {
         arena: String,
+    },
+    /// The three declarations that turn a fixed byte array into a decoded
+    /// `string`:
+    ///
+    /// ```text
+    /// let a: Array<u8, N> = [..];
+    /// let c: bytes = a.as_bytes();
+    /// let s: string = c.decode_utf8_or_trap();
+    /// ```
+    ///
+    /// Generated only for a `u64` program, because `length()` is a `u64` and
+    /// Core has no casts.
+    LetText {
+        array: String,
+        bytes: String,
+        text: String,
+        values: Vec<u8>,
     },
     /// `let name: EN = EN::Variant { p0: .. };`
     LetEnum {
@@ -477,6 +517,49 @@ pub fn negate(value: i128, kind: IntType) -> Result<i128, Failure> {
     Ok(-value)
 }
 
+/// Whether these bytes are well-formed UTF-8.
+///
+/// Written from Table 3-7 of the Unicode Standard, the definition
+/// `spec/core/stdlib.md` points at with "UTF-8 validation": no overlong
+/// encoding, no surrogate, nothing above U+10FFFF, and no truncated
+/// sequence. The runtime has its own implementation; this one exists to
+/// disagree with it when one of them is wrong.
+pub fn well_formed_utf8(bytes: &[u8]) -> bool {
+    let continuation = |byte: Option<&u8>, low: u8, high: u8| matches!(byte, Some(value) if *value >= low && *value <= high);
+    let mut index = 0;
+    while index < bytes.len() {
+        let first = bytes[index];
+        let width = match first {
+            0x00..=0x7F => 1,
+            0xC2..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF4 => 4,
+            // 0x80..=0xC1 is a lone continuation or an overlong two-byte
+            // start; 0xF5 and above are beyond U+10FFFF.
+            _ => return false,
+        };
+        // The second byte carries the range that rules out overlongs, the
+        // surrogate block and the values past U+10FFFF.
+        let (low, high) = match first {
+            0xE0 => (0xA0, 0xBF),
+            0xED => (0x80, 0x9F),
+            0xF0 => (0x90, 0xBF),
+            0xF4 => (0x80, 0x8F),
+            _ => (0x80, 0xBF),
+        };
+        if width > 1 && !continuation(bytes.get(index + 1), low, high) {
+            return false;
+        }
+        for offset in 2..width {
+            if !continuation(bytes.get(index + offset), 0x80, 0xBF) {
+                return false;
+            }
+        }
+        index += width;
+    }
+    true
+}
+
 #[derive(Default)]
 struct Environment {
     values: Vec<(String, i128)>,
@@ -490,10 +573,18 @@ struct Environment {
     indexes: Vec<(String, u64)>,
     /// Enum locals, as (name, variant index, payload when the variant has one).
     enums: Vec<(String, usize, Option<i128>)>,
-    /// Arenas by name, with whether they have been released.
-    arenas: Vec<(String, bool)>,
+    /// Arenas by name: whether they have been released, how many slots they
+    /// have handed out, and how many bytes those slots hold.
+    arenas: Vec<(String, ArenaState)>,
     /// Handles, as (name, owning arena, field values).
     handles: Vec<(String, String, Vec<i128>)>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ArenaState {
+    released: bool,
+    slots: u64,
+    bytes: u64,
 }
 
 /// The lengths of every binding list, so a block can drop exactly what it
@@ -592,7 +683,7 @@ impl Environment {
             .iter()
             .rev()
             .find(|(key, _)| key == arena)
-            .map(|(_, released)| *released)
+            .map(|(_, state)| state.released)
             .unwrap_or(false);
         (!released).then_some(fields.as_slice())
     }
@@ -679,13 +770,38 @@ fn execute(
             }
             env.nested.push((name.clone(), computed));
         }
+        Stmt::LetText { text, values, .. } => {
+            // The decode traps here, where the statement is, and not where
+            // the length is read.
+            if !well_formed_utf8(values) {
+                return Err(Failure::Trapped(Trap::Utf8Invalid));
+            }
+            // `spec/core/stdlib.md` gives `stdlib.text` a byte length.
+            env.declare(text, values.len() as i128);
+        }
         Stmt::LetIndex { name, value } => env.indexes.push((name.clone(), *value)),
         Stmt::LetBuffer { name } => env.aggregates.push((name.clone(), Vec::new())),
         Stmt::Push { name, value } => {
             let computed = evaluate(value, env, program, fuel)?.int();
+            // `spec/core/stdlib.md`: capacity grows by powers of two from
+            // four elements, and passing the byte ceiling traps. Capacity is
+            // a function of the length, so it needs no state of its own.
+            let length = env.aggregate(name).len() as u64;
+            let capacity = if length == 0 {
+                0
+            } else {
+                length.next_power_of_two().max(4)
+            };
+            if length == capacity {
+                let next = if capacity == 0 { 4 } else { capacity * 2 };
+                let element = u64::from(width(program.kind) / 8);
+                if next.saturating_mul(element) > BUFFER_LIMIT_BYTES {
+                    return Err(Failure::Trapped(Trap::ResourceLimit));
+                }
+            }
             env.push(name, computed);
         }
-        Stmt::LetArena { name, .. } => env.arenas.push((name.clone(), false)),
+        Stmt::LetArena { name, .. } => env.arenas.push((name.clone(), ArenaState::default())),
         Stmt::Alloc {
             handle,
             arena,
@@ -696,11 +812,26 @@ fn execute(
             for field in fields {
                 values.push(evaluate(field, env, program, fuel)?.int());
             }
+            // The arena is bounded: it runs out of slots, or of bytes for
+            // one more element, and either way the failure is a typed trap
+            // that publishes no handle.
+            let element = fields.len() as u64 * u64::from(width(program.kind) / 8);
+            if let Some(entry) = env.arenas.iter_mut().rev().find(|(key, _)| key == arena) {
+                if entry.1.released {
+                    return Err(Failure::Trapped(Trap::ArenaReleased));
+                }
+                if entry.1.slots >= ARENA_SLOT_LIMIT || entry.1.bytes + element > ARENA_LIMIT_BYTES
+                {
+                    return Err(Failure::Trapped(Trap::ResourceLimit));
+                }
+                entry.1.slots += 1;
+                entry.1.bytes += element;
+            }
             env.handles.push((handle.clone(), arena.clone(), values));
         }
         Stmt::Release { arena } => {
             if let Some(entry) = env.arenas.iter_mut().rev().find(|(key, _)| key == arena) {
-                entry.1 = true;
+                entry.1.released = true;
             }
         }
         Stmt::LetEnum {
@@ -752,17 +883,32 @@ fn execute(
                     return Err(Failure::Unusable(Unusable::DoesNotFinish));
                 }
                 fuel.steps -= 1;
+                // The body is a block: what it declares belongs to the
+                // iteration. Without this a `let` inside a loop would pile
+                // up one binding per turn, which is both wrong and quadratic
+                // to look past.
+                let scope = env.mark();
                 for inner in body {
                     match execute(inner, env, program, fuel)? {
                         Flow::Normal => {}
                         // A `return` leaves the loop and the function.
-                        Flow::Returned(value) => return Ok(Flow::Returned(value)),
+                        Flow::Returned(value) => {
+                            env.restore(scope);
+                            return Ok(Flow::Returned(value));
+                        }
                         // A `continue` only ends this iteration.
-                        Flow::Continued => continue 'iterations,
+                        Flow::Continued => {
+                            env.restore(scope);
+                            continue 'iterations;
+                        }
                         // A `break` reaches the loop it is lexically inside.
-                        Flow::Broke => break 'iterations,
+                        Flow::Broke => {
+                            env.restore(scope);
+                            break 'iterations;
+                        }
                     }
                 }
+                env.restore(scope);
             }
         }
         Stmt::Return { value } => {
@@ -899,6 +1045,7 @@ fn evaluate(
                 None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
             }
         }
+        Expr::TextLength { text } => Value::Int(env.get(text)),
         Expr::Field { value, field } => Value::Int(
             env.aggregate(value)
                 .get(*field)
@@ -1010,6 +1157,7 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
             lines.push(render_expr(tail, kind));
             format!("{{ {} }}", lines.join(" "))
         }
+        Expr::TextLength { text } => format!("{text}.length()"),
         Expr::Index { array, index } => format!("{array}[{index}]"),
         Expr::NestedIndex {
             array,
@@ -1197,6 +1345,26 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
             }
             Stmt::Continue => lines.push(format!("{indent}continue;")),
             Stmt::Break => lines.push(format!("{indent}break;")),
+            Stmt::LetText {
+                array,
+                bytes,
+                text,
+                values,
+            } => {
+                let elements = values
+                    .iter()
+                    .map(|value| format!("{value}u8"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{indent}let {array}: Array<u8, {}> = [{elements}];",
+                    values.len()
+                ));
+                lines.push(format!("{indent}let {bytes}: bytes = {array}.as_bytes();"));
+                lines.push(format!(
+                    "{indent}let {text}: string = {bytes}.decode_utf8_or_trap();"
+                ));
+            }
             Stmt::LetIndex { name, value } => {
                 lines.push(format!("{indent}let {name}: u64 = {value}u64;"))
             }
@@ -1386,6 +1554,29 @@ impl Rng {
 
 // --------------------------------------------------------------------------
 // Generation
+
+/// The byte sequences a UTF-8 validator is most likely to get wrong: the
+/// ends of each range, the overlong forms, the surrogate block and the first
+/// value past U+10FFFF. Half are well-formed and half are not; the oracle
+/// decides which by validating, so the table never has to say.
+const UTF8_BOUNDARIES: [&[u8]; 16] = [
+    &[0xC2, 0xA9],             // U+00A9, the shortest two-byte form
+    &[0xDF, 0xBF],             // U+07FF, the longest
+    &[0xE0, 0xA0, 0x80],       // U+0800, the shortest three-byte form
+    &[0xED, 0x9F, 0xBF],       // U+D7FF, just below the surrogates
+    &[0xEE, 0x80, 0x80],       // U+E000, just above them
+    &[0xF0, 0x90, 0x80, 0x80], // U+10000, the shortest four-byte form
+    &[0xF4, 0x8F, 0xBF, 0xBF], // U+10FFFF, the last code point
+    &[0xEF, 0xBF, 0xBD],       // U+FFFD
+    &[0xC0, 0x80],             // an overlong NUL
+    &[0xC1, 0xBF],             // an overlong U+007F
+    &[0xE0, 0x9F, 0x80],       // an overlong three-byte form
+    &[0xF0, 0x8F, 0xBF, 0xBF], // an overlong four-byte form
+    &[0xED, 0xA0, 0x80],       // U+D800, a surrogate
+    &[0xED, 0xBF, 0xBF],       // U+DFFF, the last surrogate
+    &[0xF4, 0x90, 0x80, 0x80], // U+110000, past the last code point
+    &[0xF5, 0x80, 0x80, 0x80], // no code point starts here
+];
 
 const ARITH: [&str; 8] = ["+", "-", "*", "/", "%", "&", "|", "^"];
 const COMPARE: [&str; 6] = ["==", "!=", "<", "<=", ">", ">="];
@@ -1841,6 +2032,9 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
         Expr::NestedField { value, .. } => {
             seen.insert(value.clone());
         }
+        Expr::TextLength { text } => {
+            seen.insert(text.clone());
+        }
         Expr::IndexedField { array, index, .. } => {
             seen.insert(array.clone());
             seen.insert(index.clone());
@@ -1879,6 +2073,12 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
             if let Some(value) = payload {
                 reads(value, seen);
             }
+        }
+        Stmt::LetText { array, bytes, .. } => {
+            // The array and the bytes exist only to be decoded; naming them
+            // here keeps the unused-local fold from touching them.
+            seen.insert(array.clone());
+            seen.insert(bytes.clone());
         }
         Stmt::Return { value } => reads(value, seen),
         Stmt::Continue | Stmt::Break => {}
@@ -1954,6 +2154,7 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
         | Expr::NestedIndex { .. }
         | Expr::NestedField { .. }
         | Expr::IndexedField { .. }
+        | Expr::TextLength { .. }
         | Expr::HandleField { .. }
         // The reader is generated with the enum, not through the call graph.
         | Expr::ReadEnum { .. } => {}
@@ -1977,6 +2178,7 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
             .flatten()
             .for_each(|element| calls(element, seen)),
         Stmt::Push { value, .. } => calls(value, seen),
+        Stmt::LetText { .. } => {}
         Stmt::Return { value } => calls(value, seen),
         Stmt::Continue | Stmt::Break => {}
         Stmt::LetIndex { .. }
@@ -2084,14 +2286,37 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
         reads.push(expression);
     }
     if generator.rng.chance(40) {
-        let (statements, expression) = generator.buffer(&names, &functions);
+        // One program in eight fills the buffer to the profile's ceiling
+        // instead, which needs an eight-byte element to stay inside the
+        // oracle's loop budget.
+        if width(kind) == 64 && generator.rng.chance(20) {
+            body.extend(generator.buffer_to_the_ceiling());
+        } else {
+            let (statements, expression) = generator.buffer(&names, &functions);
+            body.extend(statements);
+            reads.push(expression);
+        }
+    }
+    if generator.rng.chance(35) {
+        // The slot limit is 1024, so an eight-bit counter never reaches it.
+        let (declaration, statements, expression) = if width(kind) >= 16 && generator.rng.chance(20)
+        {
+            generator.arena_to_the_slot_limit()
+        } else {
+            generator.arena(&names, &functions)
+        };
+        structs.push(declaration);
         body.extend(statements);
         reads.push(expression);
     }
-    if generator.rng.chance(35) {
-        let (declaration, statements, expression) = generator.arena(&names, &functions);
-        structs.push(declaration);
-        body.extend(statements);
+    // `length()` is a `u64` and Core has no casts, so the text vertical only
+    // fits a program of that width.
+    if kind.name == "u64" && generator.rng.chance(60) {
+        let (statement, expression) = generator.text();
+        // First in the body: the decode traps where it stands, so behind
+        // other statements most of its programs would trap before reaching
+        // it. It depends on no local, so the position is free.
+        body.insert(0, statement);
         reads.push(expression);
     }
     let mut enums = Vec::new();
@@ -2212,6 +2437,97 @@ impl Generator {
                 index: index_name,
             },
         )
+    }
+
+    /// A buffer filled until it passes the profile's byte ceiling.
+    ///
+    /// Only for an eight-byte element: the ceiling is 1 MiB, so a narrower
+    /// one would need more pushes than the oracle follows.
+    fn buffer_to_the_ceiling(&mut self) -> Vec<Stmt> {
+        let name = self.fresh("b");
+        let counter = self.fresh("i");
+        let limit = (BUFFER_LIMIT_BYTES / 8 + 100) as i128;
+        vec![
+            Stmt::LetBuffer { name: name.clone() },
+            Stmt::Let {
+                name: counter.clone(),
+                mutable: true,
+                value: Expr::Literal(0),
+            },
+            Stmt::While {
+                condition: Expr::Compare(
+                    "<",
+                    Box::new(Expr::Var(counter.clone())),
+                    Box::new(Expr::Literal(limit)),
+                ),
+                body: vec![
+                    Stmt::Push {
+                        name,
+                        value: Expr::Var(counter.clone()),
+                    },
+                    Stmt::Compound {
+                        name: counter,
+                        op: "+",
+                        value: Expr::Literal(1),
+                    },
+                ],
+            },
+        ]
+    }
+
+    /// An arena allocated in a loop until it runs out of slots.
+    ///
+    /// The profile gives it 1024, so the counter's type has to reach past
+    /// that: an eight-bit program never gets there.
+    fn arena_to_the_slot_limit(&mut self) -> ((String, usize), Vec<Stmt>, Expr) {
+        let type_name = format!("N{}", self.counter + 1);
+        let arena = self.fresh("r");
+        let handle = self.fresh("h");
+        let counter = self.fresh("i");
+        let seen = self.fresh("v");
+        let limit = (ARENA_SLOT_LIMIT + 100) as i128;
+        let statements = vec![
+            Stmt::LetArena {
+                name: arena.clone(),
+                type_name: type_name.clone(),
+            },
+            Stmt::Let {
+                name: counter.clone(),
+                mutable: true,
+                value: Expr::Literal(0),
+            },
+            Stmt::Let {
+                name: seen.clone(),
+                mutable: true,
+                value: Expr::Literal(0),
+            },
+            Stmt::While {
+                condition: Expr::Compare(
+                    "<",
+                    Box::new(Expr::Var(counter.clone())),
+                    Box::new(Expr::Literal(limit)),
+                ),
+                body: vec![
+                    Stmt::Alloc {
+                        handle: handle.clone(),
+                        arena,
+                        type_name: type_name.clone(),
+                        fields: vec![Expr::Var(counter.clone())],
+                    },
+                    // The handle is read, so its C local is used.
+                    Stmt::Assign {
+                        name: seen.clone(),
+                        value: Expr::HandleField { handle, field: 0 },
+                    },
+                    Stmt::Compound {
+                        name: counter,
+                        op: "+",
+                        value: Expr::Literal(1),
+                    },
+                ],
+            },
+        ];
+        ((type_name, 1), statements, Expr::Var(seen))
     }
 
     /// An arena, one allocation, and a read through its handle. The arena is
@@ -2437,6 +2753,117 @@ impl Generator {
             return Expr::Arith("^", Box::new(value), Box::new(self.literal()));
         }
         value
+    }
+
+    /// A fixed byte array decoded as UTF-8 and read back by its byte length.
+    ///
+    /// Most of the time the bytes are well-formed by construction, encoding
+    /// random code points; the rest of the time one of the classic mistakes
+    /// is planted, and the oracle decides which of the two it turned out to
+    /// be by validating the bytes it actually produced.
+    fn text(&mut self) -> (Stmt, Expr) {
+        let array = self.fresh("a");
+        let bytes = self.fresh("c");
+        let text = self.fresh("s");
+        let mut values = Vec::new();
+        for _ in 0..=self.rng.below(3) {
+            if self.rng.chance(35) {
+                // Aim at the ends of the ranges, where a validator fails.
+                values.extend_from_slice(self.rng.pick(&UTF8_BOUNDARIES));
+            } else {
+                self.encode_code_point(&mut values);
+            }
+        }
+        if self.rng.chance(35) {
+            self.break_utf8(&mut values);
+        }
+        if values.is_empty() {
+            values.push(0x41);
+        }
+        (
+            Stmt::LetText {
+                array,
+                bytes,
+                text: text.clone(),
+                values,
+            },
+            Expr::TextLength { text },
+        )
+    }
+
+    /// Append one code point as UTF-8, across all four widths and never in
+    /// the surrogate block.
+    fn encode_code_point(&mut self, values: &mut Vec<u8>) {
+        let point = match self.rng.below(4) {
+            0 => self.rng.range(0x00, 0x7F) as u32,
+            1 => self.rng.range(0x80, 0x7FF) as u32,
+            2 => {
+                let point = self.rng.range(0x800, 0xFFFF) as u32;
+                // D800..DFFF is not a character, so it never encodes.
+                if (0xD800..=0xDFFF).contains(&point) {
+                    0xFFFD
+                } else {
+                    point
+                }
+            }
+            _ => self.rng.range(0x10000, 0x10FFFF) as u32,
+        };
+        match point {
+            0x00..=0x7F => values.push(point as u8),
+            0x80..=0x7FF => {
+                values.push(0xC0 | (point >> 6) as u8);
+                values.push(0x80 | (point & 0x3F) as u8);
+            }
+            0x800..=0xFFFF => {
+                values.push(0xE0 | (point >> 12) as u8);
+                values.push(0x80 | ((point >> 6) & 0x3F) as u8);
+                values.push(0x80 | (point & 0x3F) as u8);
+            }
+            _ => {
+                values.push(0xF0 | (point >> 18) as u8);
+                values.push(0x80 | ((point >> 12) & 0x3F) as u8);
+                values.push(0x80 | ((point >> 6) & 0x3F) as u8);
+                values.push(0x80 | (point & 0x3F) as u8);
+            }
+        }
+    }
+
+    /// Plant one of the mistakes a validator has to catch.
+    fn break_utf8(&mut self, values: &mut Vec<u8>) {
+        match self.rng.below(6) {
+            // A truncated sequence: the last byte of a multi-byte character
+            // goes missing.
+            0 if values.len() > 1 => {
+                values.pop();
+            }
+            // A lone continuation byte.
+            1 => values.push(self.rng.range(0x80, 0xBF) as u8),
+            // An overlong: `C0 80` and `C1 BF` encode what one byte already
+            // encodes.
+            2 => {
+                values.push(if self.rng.chance(50) { 0xC0 } else { 0xC1 });
+                values.push(self.rng.range(0x80, 0xBF) as u8);
+            }
+            // A surrogate, which UTF-8 never encodes: ED A0 80 is U+D800.
+            3 => {
+                values.push(0xED);
+                values.push(self.rng.range(0xA0, 0xBF) as u8);
+                values.push(self.rng.range(0x80, 0xBF) as u8);
+            }
+            // Past U+10FFFF: F5 and above have no code points left.
+            4 => {
+                values.push(self.rng.range(0xF5, 0xFF) as u8);
+                values.push(self.rng.range(0x80, 0xBF) as u8);
+            }
+            // A continuation byte that is not one.
+            _ => {
+                if let Some(last) = values.last_mut() {
+                    *last = 0x41;
+                } else {
+                    values.push(0x80);
+                }
+            }
+        }
     }
 
     /// An index into something of this length: inside it most of the time,
@@ -2967,6 +3394,129 @@ mod tests {
         assert!(recursions > 0, "no recursive function was generated");
     }
 
+    /// A `u64` program carries the text vertical often enough to matter, and
+    /// no program of another width carries it at all.
+    #[test]
+    fn only_u64_programs_decode_text() {
+        let mut with_text = 0;
+        let mut invalid = 0;
+        for index in 1..120 {
+            for seed in [21u64, 24] {
+                let program = generate_program(seed, index);
+                let source = render_program(&program);
+                if !source.contains("decode_utf8_or_trap") {
+                    continue;
+                }
+                assert_eq!(
+                    program.kind.name, "u64",
+                    "text in a {} program",
+                    program.kind.name
+                );
+                with_text += 1;
+                if let Some((_, stderr, _)) = expected_case(&program) {
+                    invalid += usize::from(stderr.contains("UTF8_INVALID"));
+                }
+            }
+        }
+        assert!(with_text > 0, "no program decoded any text");
+        assert!(invalid > 0, "no invalid sequence reached the decode");
+    }
+
+    /// The oracle's UTF-8 validator, against Table 3-7 of the Unicode
+    /// Standard. These are the cases a validator gets wrong.
+    #[test]
+    fn the_utf8_validator_follows_table_3_7() {
+        let valid: [&[u8]; 8] = [
+            b"",
+            b"A",
+            b"ascii text",
+            &[0xC2, 0xA9],             // U+00A9, the shortest two-byte form
+            &[0xDF, 0xBF],             // U+07FF, the longest
+            &[0xE0, 0xA0, 0x80],       // U+0800, the shortest three-byte form
+            &[0xED, 0x9F, 0xBF],       // U+D7FF, just below the surrogates
+            &[0xF4, 0x8F, 0xBF, 0xBF], // U+10FFFF, the last code point
+        ];
+        for bytes in valid {
+            assert!(well_formed_utf8(bytes), "rejected valid {bytes:02X?}");
+        }
+
+        let invalid: [&[u8]; 12] = [
+            &[0x80],                   // a lone continuation
+            &[0xBF],                   // the last continuation byte
+            &[0xC0, 0x80],             // an overlong NUL
+            &[0xC1, 0xBF],             // an overlong U+007F
+            &[0xC2],                   // a truncated two-byte sequence
+            &[0xE0, 0x9F, 0x80],       // an overlong three-byte form
+            &[0xE2, 0x82],             // a truncated three-byte sequence
+            &[0xED, 0xA0, 0x80],       // U+D800, a surrogate
+            &[0xED, 0xBF, 0xBF],       // U+DFFF, the last surrogate
+            &[0xF0, 0x8F, 0xBF, 0xBF], // an overlong four-byte form
+            &[0xF4, 0x90, 0x80, 0x80], // U+110000, past the last code point
+            &[0xF5, 0x80, 0x80, 0x80], // no code point starts here
+        ];
+        for bytes in invalid {
+            assert!(!well_formed_utf8(bytes), "accepted invalid {bytes:02X?}");
+        }
+    }
+
+    /// Every code point the generator encodes is well-formed, and the
+    /// mutations it plants are mostly not.
+    #[test]
+    fn generated_text_is_valid_until_it_is_broken() {
+        let mut generator = Generator {
+            rng: Rng::new(4),
+            kind: TYPES[3],
+            counter: 0,
+        };
+        for _ in 0..200 {
+            let mut values = Vec::new();
+            generator.encode_code_point(&mut values);
+            assert!(
+                well_formed_utf8(&values),
+                "encoded an invalid sequence: {values:02X?}"
+            );
+        }
+        let mut broken = 0;
+        for _ in 0..200 {
+            let mut values = Vec::new();
+            generator.encode_code_point(&mut values);
+            generator.break_utf8(&mut values);
+            broken += usize::from(!well_formed_utf8(&values));
+        }
+        // A mutation can land on a sequence that stays valid; the oracle
+        // decides by validating, so this only has to be the common case.
+        assert!(
+            broken > 100,
+            "only {broken} of 200 mutations broke the text"
+        );
+    }
+
+    /// The decode traps where the statement is, and the length the spec gives
+    /// `stdlib.text` is a byte count.
+    #[test]
+    fn a_decoded_string_has_the_byte_length() {
+        let program = |values: Vec<u8>| {
+            program_with(
+                vec![Stmt::LetText {
+                    array: "a1".into(),
+                    bytes: "c2".into(),
+                    text: "s3".into(),
+                    values,
+                }],
+                Expr::TextLength { text: "s3".into() },
+            )
+        };
+        // Two bytes for U+00A9, one for `A`.
+        assert_eq!(
+            evaluate_program(&program(vec![0xC2, 0xA9, 0x41])).ok(),
+            Some(3)
+        );
+        assert!(matches!(
+            evaluate_program(&program(vec![0xC2, 0x41])),
+            Err(Failure::Trapped(Trap::Utf8Invalid))
+        ));
+    }
+
     /// `break`, `else if` chains and one nested loop are generated too.
     #[test]
     fn generated_programs_cover_breaks_chains_and_nested_loops() {
@@ -2987,6 +3537,47 @@ mod tests {
         assert!(breaks > 0, "no `break` was generated");
         assert!(chains > 0, "no `else if` chain was generated");
         assert!(nested_loops > 0, "no nested loop was generated");
+    }
+
+    /// A loop body is a block: what it declares dies with the iteration, so
+    /// a local it shadows comes back afterwards.
+    #[test]
+    fn a_loop_body_local_does_not_outlive_its_iteration() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "v1".into(),
+                    mutable: false,
+                    value: Expr::Literal(5),
+                },
+                Stmt::Let {
+                    name: "i2".into(),
+                    mutable: true,
+                    value: Expr::Literal(0),
+                },
+                Stmt::While {
+                    condition: Expr::Compare(
+                        "<",
+                        Box::new(Expr::Var("i2".into())),
+                        Box::new(Expr::Literal(3)),
+                    ),
+                    body: vec![
+                        Stmt::Let {
+                            name: "v1".into(),
+                            mutable: false,
+                            value: Expr::Literal(9),
+                        },
+                        Stmt::Compound {
+                            name: "i2".into(),
+                            op: "+",
+                            value: Expr::Literal(1),
+                        },
+                    ],
+                },
+            ],
+            Expr::Var("v1".into()),
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(5));
     }
 
     /// A `break` ends the loop it is inside, and only that one.
@@ -3612,6 +4203,78 @@ mod memory_tests {
         assert!(source.contains("let mut r1: Arena<N1> = Arena::new();"));
         assert!(source.contains("let h1: Handle<N1> = r1.alloc(N1 { f0: 41u32, f1: 42u32 });"));
         assert!(source.contains("r1.release();"));
+    }
+
+    /// The buffer's capacity doubles from four, and the push that would
+    /// pass the profile's byte ceiling traps instead of growing.
+    #[test]
+    fn a_buffer_traps_exactly_at_the_byte_ceiling() {
+        let elements = BUFFER_LIMIT_BYTES / 8;
+        let fill = |pushes: u64| {
+            let mut body = vec![Stmt::LetBuffer { name: "b1".into() }];
+            for _ in 0..pushes {
+                body.push(Stmt::Push {
+                    name: "b1".into(),
+                    value: Expr::Literal(1),
+                });
+            }
+            let mut program = program(Vec::new(), body, Expr::Literal(0));
+            // Eight bytes an element: the width the ceiling is reached at.
+            program.kind = TYPES[3];
+            program
+        };
+        assert_eq!(evaluate_program(&fill(elements)).ok(), Some(0));
+        assert!(matches!(
+            evaluate_program(&fill(elements + 1)),
+            Err(Failure::Trapped(Trap::ResourceLimit))
+        ));
+    }
+
+    /// The arena hands out the slots the profile gives it and no more.
+    #[test]
+    fn an_arena_traps_when_its_slots_run_out() {
+        let allocate = |count: u64| {
+            let mut body = vec![Stmt::LetArena {
+                name: "r1".into(),
+                type_name: "N1".into(),
+            }];
+            for _ in 0..count {
+                body.push(Stmt::Alloc {
+                    handle: "h2".into(),
+                    arena: "r1".into(),
+                    type_name: "N1".into(),
+                    fields: vec![Expr::Literal(7)],
+                });
+            }
+            program(
+                vec![("N1".into(), 1)],
+                body,
+                Expr::HandleField {
+                    handle: "h2".into(),
+                    field: 0,
+                },
+            )
+        };
+        assert_eq!(evaluate_program(&allocate(ARENA_SLOT_LIMIT)).ok(), Some(7));
+        assert!(matches!(
+            evaluate_program(&allocate(ARENA_SLOT_LIMIT + 1)),
+            Err(Failure::Trapped(Trap::ResourceLimit))
+        ));
+    }
+
+    /// A program that fills a container to its ceiling is generated, not
+    /// only written by hand in `tests/selfhost/runtime`.
+    #[test]
+    fn generated_programs_reach_the_resource_ceilings() {
+        let mut limits = 0;
+        for index in 1..120 {
+            for seed in [31u64, 32, 33] {
+                if let Some((_, stderr, _)) = expected_case(&generate_program(seed, index)) {
+                    limits += usize::from(stderr.contains("RESOURCE_LIMIT"));
+                }
+            }
+        }
+        assert!(limits > 0, "no program reached a resource ceiling");
     }
 
     #[test]
