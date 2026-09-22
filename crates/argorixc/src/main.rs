@@ -9,11 +9,11 @@ use argorix_parser::{
     parse_source, Diagnostic, Program,
 };
 use argorix_semantics::{
-    check_core_program, check_program_with_options, verify_core_program, CheckOptions,
-    CoreCheckOptions,
+    check_core_program, check_program_with_options, core_link_order, link_core_program,
+    verify_core_program, CheckOptions, CoreCheckOptions, CoreLinkError,
 };
 use clap::{Parser, Subcommand};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -96,25 +96,26 @@ fn run() -> Result<()> {
         Command::CoreCheck { file } => {
             let compiled = compile_core(&file)?;
             let functions = compiled
-                .program
+                .root
                 .items
                 .iter()
                 .filter(|item| matches!(item.kind, CoreItemKind::Function(_)))
                 .count();
-            let types = compiled.program.items.len() - functions;
+            let types = compiled.root.items.len() - functions;
             println!(
                 "Argorix Core stage0 frontend v{}\n",
-                compiled.program.version.value
+                compiled.root.version.value
             );
             println!("File: {}", file.display());
             println!("Status: OK\n");
-            println!("Module: {}", compiled.program.module.value);
-            println!("Imports: {}", compiled.program.imports.len());
+            println!("Module: {}", compiled.root.module.value);
+            println!("Imports: {}", compiled.root.imports.len());
+            println!("Linked modules: {}", compiled.linked_modules);
             println!("Types/constants: {types}");
             println!("Functions: {functions}");
             println!("Semantic checks: passed");
             println!("Core IR: available through core-emit-ir");
-            println!("Execution: unavailable until ESP-008");
+            println!("Execution: available through core-emit-c");
         }
         Command::CoreEmitIr { file } => {
             let compiled = compile_core(&file)?;
@@ -352,9 +353,14 @@ fn compile(path: &Path, options: CheckOptions) -> Result<CompiledSource> {
 }
 
 struct CheckedCoreSource {
+    /// The root module linked with every module it imports, ready to lower.
     program: CoreProgram,
+    /// The root module as written, for the summary `core-check` prints.
+    root: CoreProgram,
     source: String,
     available_modules: BTreeSet<String>,
+    /// How many modules went into `program`, the root included.
+    linked_modules: usize,
 }
 
 fn compile_core(path: &Path) -> Result<CheckedCoreSource> {
@@ -366,38 +372,88 @@ fn compile_core(path: &Path) -> Result<CheckedCoreSource> {
     let file = path.display().to_string();
     let program = parse_core_source(&source)
         .map_err(|diagnostics| core_diagnostics_error(&diagnostics, &file, &source))?;
-    let mut available_modules = BTreeSet::from([program.module.value.clone()]);
-    if let Some(directory) = path.parent() {
-        for entry in fs::read_dir(directory)
-            .with_context(|| format!("failed to enumerate `{}`", directory.display()))?
+    let root_name = program.module.value.clone();
+
+    // The locked compilation set is the directory the root lives in. A bare
+    // file name has an empty parent, which means the current directory.
+    let directory = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let root_identity = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut modules: BTreeMap<String, CoreProgram> = BTreeMap::new();
+    let mut files: BTreeMap<String, (String, String)> = BTreeMap::new();
+    let mut duplicates = BTreeSet::new();
+    files.insert(root_name.clone(), (file.clone(), source.clone()));
+    for entry in fs::read_dir(&directory)
+        .with_context(|| format!("failed to enumerate `{}`", directory.display()))?
+    {
+        let candidate = entry?.path();
+        if candidate
+            .extension()
+            .and_then(|extension| extension.to_str())
+            != Some("argx")
         {
-            let candidate = entry?.path();
-            if candidate == path
-                || candidate
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    != Some("argx")
-            {
-                continue;
-            }
-            if let Ok(candidate_source) = fs::read_to_string(&candidate) {
-                if let Ok(candidate_program) = parse_core_source(&candidate_source) {
-                    available_modules.insert(candidate_program.module.value);
-                }
-            }
+            continue;
         }
+        if fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.clone()) == root_identity {
+            continue;
+        }
+        let Ok(candidate_source) = fs::read_to_string(&candidate) else {
+            continue;
+        };
+        // A sibling that does not parse cannot be imported; it is only an
+        // error if something imports the module it meant to declare.
+        let Ok(candidate_program) = parse_core_source(&candidate_source) else {
+            continue;
+        };
+        let name = candidate_program.module.value.clone();
+        if name == root_name || modules.contains_key(&name) {
+            duplicates.insert(name);
+            continue;
+        }
+        files.insert(
+            name.clone(),
+            (candidate.display().to_string(), candidate_source),
+        );
+        modules.insert(name, candidate_program);
     }
-    check_core_program(
-        &program,
-        &CoreCheckOptions {
-            available_modules: available_modules.clone(),
-        },
-    )
-    .map_err(|diagnostics| core_diagnostics_error(&diagnostics, &file, &source))?;
+    if duplicates.contains(&root_name) {
+        bail!(
+            "{file}: module `{root_name}` is declared by more than one file in `{}`",
+            directory.display()
+        );
+    }
+    let mut available_modules: BTreeSet<String> = modules.keys().cloned().collect();
+    available_modules.insert(root_name.clone());
+    let options = CoreCheckOptions {
+        available_modules: available_modules.clone(),
+    };
+    let link_error = |error: CoreLinkError| -> anyhow::Error {
+        let (file, source) = &files[&error.module];
+        core_diagnostics_error(&error.diagnostics, file, source)
+    };
+
+    // Dependencies are checked first, each linked as a root of its own, so a
+    // diagnostic is always rendered against the file that contains it.
+    let order = core_link_order(&program, &modules, &duplicates).map_err(link_error)?;
+    for name in order.iter().filter(|name| **name != root_name) {
+        let linked =
+            link_core_program(&modules[name], &modules, &duplicates).map_err(link_error)?;
+        check_core_program(&linked, &options).map_err(|diagnostics| {
+            let (file, source) = &files[name];
+            core_diagnostics_error(&diagnostics, file, source)
+        })?;
+    }
+    let linked = link_core_program(&program, &modules, &duplicates).map_err(link_error)?;
+    check_core_program(&linked, &options)
+        .map_err(|diagnostics| core_diagnostics_error(&diagnostics, &file, &source))?;
     Ok(CheckedCoreSource {
-        program,
+        program: linked,
+        root: program,
         source,
         available_modules,
+        linked_modules: order.len(),
     })
 }
 

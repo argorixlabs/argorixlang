@@ -2,7 +2,7 @@
   "schema_version": 1,
   "core_version": "0.1",
   "task": "ESP-009.B, ESP-009.F",
-  "purpose": "Programs that the transitional C backend once got wrong, kept as regression cases, and the adversarial cases added when the constructs were fixed. Each one is valid Core 0.1 that argorixc core-check accepts, and every expectation comes from spec/core/evaluation.md. g01-g16 were issue #27 (ESP-009.B); g17-g23 were issue #39 and f01-f07 cover the same constructs (ESP-009.F).",
+  "purpose": "Programs that the transitional C backend once got wrong, kept as regression cases, and the adversarial cases added when the constructs were fixed. Each one is valid Core 0.1 that argorixc core-check accepts, and every expectation comes from spec/core/evaluation.md. g01-g16 were issue #27 (ESP-009.B); g17-g23 were issue #39 and f01-f07 cover the same constructs; m01-m02 are programs of two modules, issue #45 (ESP-009.F). Files without a case of their own are modules those programs import.",
   "cases": [
     {
       "id": "g01_nested_array",
@@ -240,6 +240,22 @@
       "id": "f07_constant_shadowed",
       "file": "f07_constant_shadowed.argx",
       "was": "A local shadows a module constant of the same name. Added with ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "m01_imports",
+      "file": "m01_imports.argx",
+      "was": "Issue #45: an import brought no symbols into scope, so no multi-module program compiled. This one calls a public function and reads a public constant through two bindings of the same module, and both modules define a private `bump`. Fixed in ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "m02_shared_types",
+      "file": "m02_shared_types.argx",
+      "was": "Issue #45: public struct and enum types of an imported module, named by their bare name, constructed by the importer and matched on; both modules define a private `Cursor`. Fixed in ESP-009.F.",
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:42",
       "expected_stderr": ""

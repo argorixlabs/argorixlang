@@ -1,0 +1,14 @@
+core 0.1;
+module regression.m01_helper;
+
+const OFFSET: u32 = 2u32;
+
+pub const SCALE: u32 = 20u32;
+
+pub fn twice(value: u32) -> u32 {
+    bump(value) + value - OFFSET
+}
+
+fn bump(value: u32) -> u32 {
+    value + OFFSET
+}
