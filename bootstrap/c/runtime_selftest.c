@@ -9,7 +9,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     if (strcmp(argv[1], "ok") == 0) {
-        argorix_budget budget = {2U};
+        argorix_budget budget = {2U, 4U};
         argorix_step(&budget);
         argorix_step(&budget);
         uint32_t value = argorix_u32_mul(argorix_u32_add(20U, 1U), 2U);
@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
         return 3;
     }
     if (strcmp(argv[1], "budget") == 0) {
-        argorix_budget budget = {0U};
+        argorix_budget budget = {0U, 4U};
         argorix_step(&budget);
         return 3;
     }
