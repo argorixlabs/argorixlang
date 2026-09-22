@@ -1474,9 +1474,11 @@ impl Generator {
     fn condition(&mut self, names: &[String], depth: u32, functions: &[Function]) -> Expr {
         let choice = self.rng.below(100);
         if choice < 60 || depth == 0 {
-            // No `if` inside a comparison operand: that is gap g16.
-            let mut left = self.value(names, depth, functions, false);
-            let mut right = self.value(names, depth, functions, false);
+            // An `if` inside a comparison operand was gap g16, fixed in PR
+            // #37, so operands are generated with the whole expression
+            // grammar available.
+            let mut left = self.value(names, depth, functions, true);
+            let mut right = self.value(names, depth, functions, true);
             if render_expr(&left, self.kind) == render_expr(&right, self.kind) {
                 right = Expr::Arith("+", Box::new(right), Box::new(Expr::Literal(1)));
             }
@@ -1944,7 +1946,7 @@ impl Generator {
         let index_name = self.fresh("x");
         let length = 1 + self.rng.below(4) as usize;
         let elements = (0..length)
-            .map(|_| self.value(names, 1, functions, false))
+            .map(|_| self.value(names, 1, functions, true))
             .collect();
         let index = if self.rng.chance(20) {
             length as u64 + self.rng.below(3)
@@ -1978,7 +1980,7 @@ impl Generator {
         for _ in 0..pushes {
             statements.push(Stmt::Push {
                 name: name.clone(),
-                value: self.value(names, 1, functions, false),
+                value: self.value(names, 1, functions, true),
             });
         }
         let index = if self.rng.chance(20) {
@@ -2011,7 +2013,7 @@ impl Generator {
         let handle = self.fresh("h");
         let count = 1 + self.rng.below(2) as usize;
         let fields = (0..count)
-            .map(|_| self.value(names, 1, functions, false))
+            .map(|_| self.value(names, 1, functions, true))
             .collect();
         let mut statements = vec![
             Stmt::LetArena {
@@ -2070,7 +2072,7 @@ impl Generator {
         };
         let payload = declaration.variants[chosen]
             .is_none()
-            .then(|| self.value(names, 1, functions, false));
+            .then(|| self.value(names, 1, functions, true));
         let statement = Stmt::LetEnum {
             name: local.clone(),
             type_name: name,
@@ -2099,7 +2101,7 @@ impl Generator {
         for _ in 0..height {
             let mut row = Vec::with_capacity(width);
             for _ in 0..width {
-                row.push(self.value(names, 1, functions, false));
+                row.push(self.value(names, 1, functions, true));
             }
             rows.push(row);
         }
@@ -2144,7 +2146,7 @@ impl Generator {
         for _ in 0..outer_fields {
             let mut row = Vec::with_capacity(inner_fields);
             for _ in 0..inner_fields {
-                row.push(self.value(names, 1, functions, false));
+                row.push(self.value(names, 1, functions, true));
             }
             rows.push(row);
         }
@@ -2183,7 +2185,7 @@ impl Generator {
         for _ in 0..length {
             let mut row = Vec::with_capacity(fields);
             for _ in 0..fields {
-                row.push(self.value(names, 1, functions, false));
+                row.push(self.value(names, 1, functions, true));
             }
             rows.push(row);
         }
@@ -2229,7 +2231,7 @@ impl Generator {
         let name = self.fresh("s");
         let count = 1 + self.rng.below(3) as usize;
         let fields = (0..count)
-            .map(|_| self.value(names, 1, functions, false))
+            .map(|_| self.value(names, 1, functions, true))
             .collect();
         let read = Expr::Field {
             value: name.clone(),
