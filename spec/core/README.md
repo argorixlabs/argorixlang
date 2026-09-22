@@ -1,6 +1,6 @@
 # Argorix Core 0.1
 
-Estado: especificación normativa de bootstrap ESP-004, implementada para análisis en el frontend Rust stage0 por ESP-006. `argorixc core-check` reconoce esta sintaxis y la valida; ESP-007 añade lowering y verificación del IR estructurado, mientras ESP-008 añadirá ejecución mediante el backend C y el runtime mínimo. ESP-010–013 reemplazarán el frontend y el lowering transitorios por fuentes Argorix.
+Estado: especificación normativa de bootstrap ESP-004, implementada para análisis en el frontend Rust stage0 por ESP-006. `argorixc core-check` reconoce esta sintaxis y la valida; ESP-007 añadió lowering y verificación del IR estructurado, y ESP-008 añadió ejecución mediante el backend C transitorio y el runtime mínimo C1, con lo que un programa Core se compila y se ejecuta hoy (ver [c-backend.md](c-backend.md) y `conformance/core_c/`). ESP-009 está en curso sobre la biblioteca estándar mínima. ESP-010–013 reemplazarán el frontend y el lowering transitorios por fuentes Argorix.
 
 Core 0.1 es un subconjunto de sistemas dentro de ArgorixLang, no un lenguaje separado. Todo archivo empieza con `core 0.1;`; sin esa cabecera, el parser histórico conserva la gramática de agentes 1.0. Una versión Core desconocida se rechaza y nunca se interpreta como otra versión.
 
