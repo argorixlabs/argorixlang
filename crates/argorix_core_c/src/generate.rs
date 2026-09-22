@@ -157,6 +157,25 @@ pub enum Expr {
         value: String,
         field: usize,
     },
+    /// `array[outer][inner]` on an `Array<Array<T, N>, M>`. Either index may
+    /// be out of range, which must trap. Nested arrays were gap g01.
+    NestedIndex {
+        array: String,
+        outer: String,
+        inner: String,
+    },
+    /// `value.fO.fI` on a struct that holds structs, which was gap g02.
+    NestedField {
+        value: String,
+        outer: usize,
+        inner: usize,
+    },
+    /// `array[index].fN` on an `Array<S, N>`, which was gap g03.
+    IndexedField {
+        array: String,
+        index: String,
+        field: usize,
+    },
     /// `handle.fN`. Reading a handle whose arena was released must trap.
     HandleField {
         handle: String,
@@ -222,6 +241,25 @@ pub enum Stmt {
         type_name: String,
         fields: Vec<Expr>,
     },
+    /// `let name: Array<Array<T, N>, M> = [[..], ..];`. Every row has the
+    /// same length, as the type demands.
+    LetNestedArray {
+        name: String,
+        rows: Vec<Vec<Expr>>,
+    },
+    /// `let name: O = O { f0: I { .. }, .. };` for a struct of structs.
+    LetNestedStruct {
+        name: String,
+        type_name: String,
+        inner_type: String,
+        rows: Vec<Vec<Expr>>,
+    },
+    /// `let name: Array<I, N> = [I { .. }, ..];` for an array of structs.
+    LetStructArray {
+        name: String,
+        type_name: String,
+        rows: Vec<Vec<Expr>>,
+    },
     /// `let mut name: Buffer<T> = Buffer::new();`
     LetBuffer {
         name: String,
@@ -284,6 +322,9 @@ pub struct Program {
     /// Flat struct declarations, as (name, field count). Structs holding
     /// structs, and arrays of structs, are gaps g02 and g03.
     pub structs: Vec<(String, usize)>,
+    /// Structs that hold structs, as (outer name, inner type, field count).
+    /// Their inner type is declared in `structs`.
+    pub nested_structs: Vec<(String, String, usize)>,
     pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
     pub main: Function,
@@ -385,6 +426,9 @@ struct Environment {
     values: Vec<(String, i128)>,
     /// Array and struct locals, each held as its element or field values.
     aggregates: Vec<(String, Vec<i128>)>,
+    /// Two-level locals: a nested array, a struct of structs, or an array of
+    /// structs, each held as its rows.
+    nested: Vec<(String, Vec<Vec<i128>>)>,
     /// `u64` index locals, kept apart because they are not of the program's
     /// integer type.
     indexes: Vec<(String, u64)>,
@@ -402,6 +446,7 @@ struct Environment {
 struct Scope {
     values: usize,
     aggregates: usize,
+    nested: usize,
     indexes: usize,
     enums: usize,
     arenas: usize,
@@ -413,6 +458,7 @@ impl Environment {
         Scope {
             values: self.values.len(),
             aggregates: self.aggregates.len(),
+            nested: self.nested.len(),
             indexes: self.indexes.len(),
             enums: self.enums.len(),
             arenas: self.arenas.len(),
@@ -422,6 +468,7 @@ impl Environment {
     fn restore(&mut self, scope: Scope) {
         self.values.truncate(scope.values);
         self.aggregates.truncate(scope.aggregates);
+        self.nested.truncate(scope.nested);
         self.indexes.truncate(scope.indexes);
         self.enums.truncate(scope.enums);
         self.arenas.truncate(scope.arenas);
@@ -453,6 +500,14 @@ impl Environment {
             .rev()
             .find(|(key, _)| key == name)
             .map(|(_, items)| items.as_slice())
+            .unwrap_or(&[])
+    }
+    fn rows(&self, name: &str) -> &[Vec<i128>] {
+        self.nested
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, rows)| rows.as_slice())
             .unwrap_or(&[])
     }
     fn index(&self, name: &str) -> u64 {
@@ -546,6 +601,20 @@ fn execute(
                 values.push(evaluate(field, env, program, fuel)?.int());
             }
             env.aggregates.push((name.clone(), values));
+        }
+        Stmt::LetNestedArray { name, rows }
+        | Stmt::LetNestedStruct { name, rows, .. }
+        | Stmt::LetStructArray { name, rows, .. } => {
+            // Rows run strictly left to right, and so do the values in each.
+            let mut computed = Vec::with_capacity(rows.len());
+            for row in rows {
+                let mut values = Vec::with_capacity(row.len());
+                for element in row {
+                    values.push(evaluate(element, env, program, fuel)?.int());
+                }
+                computed.push(values);
+            }
+            env.nested.push((name.clone(), computed));
         }
         Stmt::LetIndex { name, value } => env.indexes.push((name.clone(), *value)),
         Stmt::LetBuffer { name } => env.aggregates.push((name.clone(), Vec::new())),
@@ -697,6 +766,47 @@ fn evaluate(
                 None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
             }
         }
+        Expr::NestedIndex {
+            array,
+            outer,
+            inner,
+        } => {
+            let rows = env.rows(array);
+            let outer = env.index(outer) as usize;
+            let inner = env.index(inner) as usize;
+            // Either index may be past the end; both are typed traps.
+            match rows.get(outer).and_then(|row| row.get(inner)) {
+                Some(value) => Value::Int(*value),
+                None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
+            }
+        }
+        Expr::NestedField {
+            value,
+            outer,
+            inner,
+        } => Value::Int(
+            env.rows(value)
+                .get(*outer)
+                .and_then(|row| row.get(*inner))
+                .copied()
+                .expect("a generated field index is in range"),
+        ),
+        Expr::IndexedField {
+            array,
+            index,
+            field,
+        } => {
+            let rows = env.rows(array);
+            let position = env.index(index) as usize;
+            match rows.get(position) {
+                Some(row) => Value::Int(
+                    row.get(*field)
+                        .copied()
+                        .expect("a generated field index is in range"),
+                ),
+                None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
+            }
+        }
         Expr::Field { value, field } => Value::Int(
             env.aggregate(value)
                 .get(*field)
@@ -803,6 +913,21 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
             format!("{{ {} }}", lines.join(" "))
         }
         Expr::Index { array, index } => format!("{array}[{index}]"),
+        Expr::NestedIndex {
+            array,
+            outer,
+            inner,
+        } => format!("{array}[{outer}][{inner}]"),
+        Expr::NestedField {
+            value,
+            outer,
+            inner,
+        } => format!("{value}.f{outer}.f{inner}"),
+        Expr::IndexedField {
+            array,
+            index,
+            field,
+        } => format!("{array}[{index}].f{field}"),
         Expr::Field { value, field } => format!("{value}.f{field}"),
         Expr::HandleField { handle, field } => format!("{handle}.f{field}"),
         Expr::ReadEnum { reader, value, .. } => format!("{reader}({value})"),
@@ -819,6 +944,16 @@ pub fn render_literal(value: i128, kind: IntType) -> String {
         return format!("(0{name} - {}{name} - 1{name})", kind.high);
     }
     format!("(0{name} - {}{name})", -value)
+}
+
+fn render_struct_value(type_name: &str, fields: &[Expr], kind: IntType) -> String {
+    let rendered = fields
+        .iter()
+        .enumerate()
+        .map(|(position, field)| format!("f{position}: {}", render_expr(field, kind)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{type_name} {{ {rendered} }}")
 }
 
 fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec<String>) {
@@ -881,6 +1016,62 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                     .collect::<Vec<_>>()
                     .join(", ")
             )),
+            Stmt::LetNestedArray { name, rows } => {
+                let inner = rows.first().map(Vec::len).unwrap_or(0);
+                let rendered = rows
+                    .iter()
+                    .map(|row| {
+                        let values = row
+                            .iter()
+                            .map(|element| render_expr(element, kind))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("[{values}]")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{indent}let {name}: Array<Array<{}, {inner}>, {}> = [{rendered}];",
+                    kind.name,
+                    rows.len()
+                ));
+            }
+            Stmt::LetNestedStruct {
+                name,
+                type_name,
+                inner_type,
+                rows,
+            } => {
+                let rendered = rows
+                    .iter()
+                    .enumerate()
+                    .map(|(position, row)| {
+                        format!(
+                            "f{position}: {}",
+                            render_struct_value(inner_type, row, kind)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{indent}let {name}: {type_name} = {type_name} {{ {rendered} }};"
+                ));
+            }
+            Stmt::LetStructArray {
+                name,
+                type_name,
+                rows,
+            } => {
+                let rendered = rows
+                    .iter()
+                    .map(|row| render_struct_value(type_name, row, kind))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{indent}let {name}: Array<{type_name}, {}> = [{rendered}];",
+                    rows.len()
+                ));
+            }
             Stmt::LetIndex { name, value } => {
                 lines.push(format!("{indent}let {name}: u64 = {value}u64;"))
             }
@@ -954,6 +1145,14 @@ pub fn render_program(program: &Program) -> String {
     for (name, fields) in &program.structs {
         let declared = (0..*fields)
             .map(|position| format!("f{position}: {}", kind.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("struct {name} {{ {declared}, }}"));
+        lines.push(String::new());
+    }
+    for (name, inner, fields) in &program.nested_structs {
+        let declared = (0..*fields)
+            .map(|position| format!("f{position}: {inner}"))
             .collect::<Vec<_>>()
             .join(", ");
         lines.push(format!("struct {name} {{ {declared}, }}"));
@@ -1435,6 +1634,22 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
         Expr::Field { value, .. } => {
             seen.insert(value.clone());
         }
+        Expr::NestedIndex {
+            array,
+            outer,
+            inner,
+        } => {
+            seen.insert(array.clone());
+            seen.insert(outer.clone());
+            seen.insert(inner.clone());
+        }
+        Expr::NestedField { value, .. } => {
+            seen.insert(value.clone());
+        }
+        Expr::IndexedField { array, index, .. } => {
+            seen.insert(array.clone());
+            seen.insert(index.clone());
+        }
         Expr::HandleField { handle, .. } => {
             seen.insert(handle.clone());
         }
@@ -1452,6 +1667,12 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
         }
         | Stmt::LetStruct { fields: items, .. }
         | Stmt::Alloc { fields: items, .. } => items.iter().for_each(|item| reads(item, seen)),
+        Stmt::LetNestedArray { rows, .. }
+        | Stmt::LetNestedStruct { rows, .. }
+        | Stmt::LetStructArray { rows, .. } => rows
+            .iter()
+            .flatten()
+            .for_each(|element| reads(element, seen)),
         Stmt::Push { name, value } => {
             seen.insert(name.clone());
             reads(value, seen);
@@ -1529,6 +1750,9 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
         | Expr::Var(_)
         | Expr::Index { .. }
         | Expr::Field { .. }
+        | Expr::NestedIndex { .. }
+        | Expr::NestedField { .. }
+        | Expr::IndexedField { .. }
         | Expr::HandleField { .. }
         // The reader is generated with the enum, not through the call graph.
         | Expr::ReadEnum { .. } => {}
@@ -1545,6 +1769,12 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
         }
         | Stmt::LetStruct { fields: items, .. }
         | Stmt::Alloc { fields: items, .. } => items.iter().for_each(|item| calls(item, seen)),
+        Stmt::LetNestedArray { rows, .. }
+        | Stmt::LetNestedStruct { rows, .. }
+        | Stmt::LetStructArray { rows, .. } => rows
+            .iter()
+            .flatten()
+            .for_each(|element| calls(element, seen)),
         Stmt::Push { value, .. } => calls(value, seen),
         Stmt::LetIndex { .. }
         | Stmt::LetBuffer { .. }
@@ -1612,8 +1842,9 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     let mut body = generator.statements(&mut names, &mut mutable, &functions, true);
 
     // Aggregates are declared at function level only: inside an `if` or a loop
-    // body they hit gap g06, and nesting them hits g01, g02 and g03.
+    // body they hit gap g06.
     let mut structs = Vec::new();
+    let mut nested_structs = Vec::new();
     let mut reads: Vec<Expr> = Vec::new();
     if generator.rng.chance(55) {
         let (statements, expression) = generator.array(&names, &functions);
@@ -1624,6 +1855,25 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
         let (declaration, statement, expression) = generator.flat_struct(&names, &functions);
         structs.push(declaration);
         body.push(statement);
+        reads.push(expression);
+    }
+    // The nested shapes were gaps g01, g02 and g03 until PR #37.
+    if generator.rng.chance(35) {
+        let (statements, expression) = generator.nested_array(&names, &functions);
+        body.extend(statements);
+        reads.push(expression);
+    }
+    if generator.rng.chance(30) {
+        let (inner, outer, statement, expression) = generator.nested_struct(&names, &functions);
+        structs.push(inner);
+        nested_structs.push(outer);
+        body.push(statement);
+        reads.push(expression);
+    }
+    if generator.rng.chance(30) {
+        let (declaration, statements, expression) = generator.struct_array(&names, &functions);
+        structs.push(declaration);
+        body.extend(statements);
         reads.push(expression);
     }
     if generator.rng.chance(40) {
@@ -1672,6 +1922,7 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     tail = use_every_local(&body, tail);
     Program {
         id: format!("fuzz_{seed}_{index:04}"),
+        nested_structs,
         kind,
         structs,
         enums,
@@ -1835,6 +2086,140 @@ impl Generator {
     }
 
     /// A struct of scalar fields, and a read of one of them.
+    /// `Array<Array<T, N>, M>` and the two `u64` locals that read it. Either
+    /// index may be past the end, which must trap. Nested arrays were gap
+    /// g01, where the inner typedef was emitted after the outer one.
+    fn nested_array(&mut self, names: &[String], functions: &[Function]) -> (Vec<Stmt>, Expr) {
+        let name = self.fresh("g");
+        let outer_name = self.fresh("x");
+        let inner_name = self.fresh("x");
+        let height = 1 + self.rng.below(3) as usize;
+        let width = 1 + self.rng.below(3) as usize;
+        let mut rows = Vec::with_capacity(height);
+        for _ in 0..height {
+            let mut row = Vec::with_capacity(width);
+            for _ in 0..width {
+                row.push(self.value(names, 1, functions, false));
+            }
+            rows.push(row);
+        }
+        let outer = self.position(height as u64);
+        let inner = self.position(width as u64);
+        (
+            vec![
+                Stmt::LetNestedArray {
+                    name: name.clone(),
+                    rows,
+                },
+                Stmt::LetIndex {
+                    name: outer_name.clone(),
+                    value: outer,
+                },
+                Stmt::LetIndex {
+                    name: inner_name.clone(),
+                    value: inner,
+                },
+            ],
+            Expr::NestedIndex {
+                array: name,
+                outer: outer_name,
+                inner: inner_name,
+            },
+        )
+    }
+
+    /// A struct that holds structs, read through `value.fO.fI`. It was gap
+    /// g02, where the two definitions were emitted in the wrong order.
+    fn nested_struct(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+    ) -> ((String, usize), (String, String, usize), Stmt, Expr) {
+        let inner_type = format!("P{}", self.counter + 1);
+        let outer_type = format!("Q{}", self.counter + 1);
+        let name = self.fresh("q");
+        let outer_fields = 1 + self.rng.below(2) as usize;
+        let inner_fields = 1 + self.rng.below(2) as usize;
+        let mut rows = Vec::with_capacity(outer_fields);
+        for _ in 0..outer_fields {
+            let mut row = Vec::with_capacity(inner_fields);
+            for _ in 0..inner_fields {
+                row.push(self.value(names, 1, functions, false));
+            }
+            rows.push(row);
+        }
+        let read = Expr::NestedField {
+            value: name.clone(),
+            outer: self.rng.below(outer_fields as u64) as usize,
+            inner: self.rng.below(inner_fields as u64) as usize,
+        };
+        let statement = Stmt::LetNestedStruct {
+            name,
+            type_name: outer_type.clone(),
+            inner_type: inner_type.clone(),
+            rows,
+        };
+        (
+            (inner_type.clone(), inner_fields),
+            (outer_type, inner_type, outer_fields),
+            statement,
+            read,
+        )
+    }
+
+    /// An array of structs, read through `array[index].fN`. It was gap g03,
+    /// where the array typedef preceded the struct it holds.
+    fn struct_array(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+    ) -> ((String, usize), Vec<Stmt>, Expr) {
+        let type_name = format!("T{}", self.counter + 1);
+        let name = self.fresh("t");
+        let index_name = self.fresh("x");
+        let length = 1 + self.rng.below(3) as usize;
+        let fields = 1 + self.rng.below(2) as usize;
+        let mut rows = Vec::with_capacity(length);
+        for _ in 0..length {
+            let mut row = Vec::with_capacity(fields);
+            for _ in 0..fields {
+                row.push(self.value(names, 1, functions, false));
+            }
+            rows.push(row);
+        }
+        let index = self.position(length as u64);
+        let read = Expr::IndexedField {
+            array: name.clone(),
+            index: index_name.clone(),
+            field: self.rng.below(fields as u64) as usize,
+        };
+        (
+            (type_name.clone(), fields),
+            vec![
+                Stmt::LetStructArray {
+                    name,
+                    type_name,
+                    rows,
+                },
+                Stmt::LetIndex {
+                    name: index_name,
+                    value: index,
+                },
+            ],
+            read,
+        )
+    }
+
+    /// An index into something of this length: inside it most of the time,
+    /// past the end sometimes, which must trap.
+    fn position(&mut self, length: u64) -> u64 {
+        if self.rng.chance(15) {
+            length + self.rng.below(2)
+        } else {
+            self.rng.below(length)
+        }
+    }
+
     fn flat_struct(
         &mut self,
         names: &[String],
@@ -2027,6 +2412,7 @@ mod tests {
             id: "t".into(),
             kind: I32,
             structs: Vec::new(),
+            nested_structs: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -2177,21 +2563,6 @@ mod tests {
         let second = render_program(&generate_program(9, 3));
         assert_eq!(first, second);
         assert_ne!(first, render_program(&generate_program(9, 4)));
-    }
-
-    #[test]
-    fn generated_programs_avoid_the_known_gap_shapes() {
-        for index in 1..40 {
-            let program = generate_program(5, index);
-            let source = render_program(&program);
-            // Flat arrays and flat structs are generated; the nested forms
-            // are not generated yet.
-            assert!(
-                !source.contains("Array<Array"),
-                "nested array in {}",
-                program.id
-            );
-        }
     }
 
     /// `if` as a statement and a block with its own scope were gaps g12 and
@@ -2413,6 +2784,7 @@ mod aggregate_tests {
             id: "t".into(),
             kind: U32,
             structs,
+            nested_structs: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -2520,38 +2892,95 @@ mod aggregate_tests {
         assert!(source.contains("a1[x1]"));
     }
 
+    /// Aggregates stay at function level: declared inside an `if` or a loop
+    /// body they hit gap g06, which is not fixed.
     #[test]
-    fn generated_programs_keep_aggregates_flat_and_out_of_blocks() {
+    fn generated_aggregates_stay_out_of_blocks() {
         for index in 1..60 {
             let program = generate_program(7, index);
             let source = render_program(&program);
-            assert!(
-                !source.contains("Array<Array"),
-                "nested array in {}",
-                program.id
-            );
             for line in source.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("struct ") {
-                    // A struct of scalars only: no field takes another struct.
-                    assert!(
-                        !program
-                            .structs
-                            .iter()
-                            .any(|(name, _)| trimmed.contains(&format!(": {name}"))),
-                        "struct inside struct in {}: {line}",
-                        program.id
-                    );
-                }
-                if trimmed.starts_with("let a") && trimmed.contains("Array<") {
+                let declares_aggregate = trimmed.contains("Array<")
+                    || trimmed.contains("Buffer<")
+                    || trimmed.contains("Arena<");
+                if trimmed.starts_with("let ") && declares_aggregate {
                     assert!(
                         !line.starts_with("        "),
-                        "array declared inside a block in {}: {line}",
+                        "aggregate declared inside a block in {}: {line}",
                         program.id
                     );
                 }
             }
         }
+    }
+
+    /// The nested shapes were gaps g01, g02 and g03 until PR #37. All three
+    /// have to appear in the corpus.
+    #[test]
+    fn generated_programs_cover_the_nested_shapes() {
+        let mut nested_arrays = 0;
+        let mut nested_structs = 0;
+        let mut struct_arrays = 0;
+        for index in 1..60 {
+            for seed in [7u64, 19] {
+                let program = generate_program(seed, index);
+                let source = render_program(&program);
+                nested_arrays += usize::from(source.contains("Array<Array<"));
+                nested_structs += program.nested_structs.len();
+                struct_arrays += source
+                    .lines()
+                    .filter(|line| {
+                        line.contains("Array<T") && line.trim_start().starts_with("let ")
+                    })
+                    .count();
+            }
+        }
+        assert!(nested_arrays > 0, "no nested array was generated");
+        assert!(nested_structs > 0, "no struct of structs was generated");
+        assert!(struct_arrays > 0, "no array of structs was generated");
+    }
+
+    /// Reading past either dimension of a nested array is a typed trap, not a
+    /// wrong value.
+    #[test]
+    fn a_nested_index_past_the_end_traps() {
+        let program = |outer: u64, inner: u64| {
+            program(
+                Vec::new(),
+                vec![
+                    Stmt::LetNestedArray {
+                        name: "g1".into(),
+                        rows: vec![
+                            vec![Expr::Literal(1), Expr::Literal(2)],
+                            vec![Expr::Literal(3), Expr::Literal(4)],
+                        ],
+                    },
+                    Stmt::LetIndex {
+                        name: "x1".into(),
+                        value: outer,
+                    },
+                    Stmt::LetIndex {
+                        name: "x2".into(),
+                        value: inner,
+                    },
+                ],
+                Expr::NestedIndex {
+                    array: "g1".into(),
+                    outer: "x1".into(),
+                    inner: "x2".into(),
+                },
+            )
+        };
+        assert_eq!(evaluate_program(&program(1, 0)).ok(), Some(3));
+        assert!(matches!(
+            evaluate_program(&program(2, 0)),
+            Err(Failure::Trapped(Trap::IndexOutOfBounds))
+        ));
+        assert!(matches!(
+            evaluate_program(&program(0, 2)),
+            Err(Failure::Trapped(Trap::IndexOutOfBounds))
+        ));
     }
 }
 
@@ -2566,6 +2995,7 @@ mod memory_tests {
             id: "t".into(),
             kind: U32,
             structs,
+            nested_structs: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -2724,6 +3154,7 @@ mod enum_tests {
             id: "t".into(),
             kind: U32,
             structs: Vec::new(),
+            nested_structs: Vec::new(),
             enums: vec![declaration],
             functions: Vec::new(),
             main: Function {
