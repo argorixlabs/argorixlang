@@ -46,7 +46,11 @@ them, a check that never fails would still look green:
 - the inspector must flag a sensor binary that defines `__rust_alloc`;
 - the inspector must flag a sensor binary linked against `librust_sensor.so`.
 
-Sensor binaries are compiled but never executed.
+A fifth joins them with `--repeat` above 1: the repeated run must see a
+difference in a sensor that prints its own process id.
+
+Sensor binaries are compiled and never executed, except that one: a check on
+repeated execution has nothing to prove without running something twice.
 
 ## Usage
 
@@ -179,9 +183,51 @@ early `return`, `continue` and `break` after a loop's counter has advanced, a
 nested counted loop, and a self-recursive function whose literal argument
 always reaches its base case. All of it across all eight integer widths.
 
+Since ESP-009.D it also covers the parts of the standard library that already
+execute:
+
+- **Bytes and UTF-8.** A fixed byte array, `as_bytes()`,
+  `decode_utf8_or_trap()` and the byte length `spec/core/stdlib.md` gives
+  `stdlib.text`. Sequences are drawn both from random code points across all
+  four widths and from a table of the ends a validator gets wrong — the
+  shortest and longest form of each width, both ends of the surrogate block,
+  the overlong encodings, and the first value past U+10FFFF — and half the
+  time a mistake is planted on top: a truncated sequence, a lone
+  continuation, or a continuation byte that is not one. The oracle validates
+  from Table 3-7 of the Unicode Standard, not from the runtime, and an
+  invalid sequence must trap `UTF8_INVALID`. Only a `u64` program carries it,
+  because `length()` is a `u64` and Core has no casts.
+- **Resource ceilings.** A `Buffer<u64>` filled until it passes the profile's
+  byte ceiling and an arena allocated until its slots run out, both trapping
+  `RESOURCE_LIMIT`. The oracle models the rule from the spec — capacity
+  doubles from four elements; a push that would pass the ceiling traps
+  instead of growing — with the numbers
+  `crates/argorix_ir/src/core_c.rs` compiles into every program (1 MiB and
+  1024 slots). If the profile changes, this corpus has to change with it.
+
 Running the generated corpus with `--sanitize` is worth doing for the memory
 constructs in particular: it is the combination that would have caught the
 `Buffer` leak on the first run.
+
+## Repeated runs
+
+`spec/core/stdlib.md` requires that "repeated execution with gcc and clang
+produce byte-identical output". `--repeat N` runs each executable N times and
+fails the case if any run differs from the first in stdout, stderr or exit
+status.
+
+```sh
+./target/debug/core-c-harness run --bundle target/core-c/bundle --cc gcc --repeat 3
+```
+
+With `--repeat` above 1 the run adds a negative control of its own,
+`repeat_detects_nondeterminism`: a sensor that prints its own process id, so
+the check has something it must catch. A run whose controls are enabled fails
+if that sensor comes back identical twice.
+
+Identity *between* compilers needs no separate check: every case declares its
+expected output, so gcc and clang agreeing with the manifest is the same as
+agreeing with each other.
 
 ## Sanitized runs
 
@@ -261,13 +307,16 @@ of the two exists, the job fails.
   toolchain. The harness binary itself is built from Rust beforehand and copied
   in, exactly like `argorixc`: this is stage0 tooling, not evidence of
   toolchain independence (ESP-024).
-- The generator does not produce `bytes`, `string`, `Slice`, module
-  constants, `match` on anything but a generated enum, match guards, `loop`,
-  a value `break`, or an aggregate declared inside an `if` or a loop body.
-  Everything in that list except the first three is a recorded gap (g17–g22,
+- The generator does not produce `Slice`, string comparison or escaping,
+  module constants, `match` on anything but a generated enum, match guards,
+  `loop`, a value `break`, or an aggregate declared inside an `if` or a loop
+  body. Everything from "module constants" on is a recorded gap (g17–g22,
   issue #39) rather than a choice: the backend refuses them today. Handle
   mutation and arena slot reuse are exercised by the runtime cases, not by
   the generator.
+- The arena's byte ceiling is modelled but unreachable from a generated
+  program: its slot limit of 1024 binds first for every element the
+  generator builds. Only the slot path is exercised end to end.
 - The oracle evaluates on the host stack, so it stops at `MAX_CALL_DEPTH`
   (200 frames) and marks a deeper program unusable. The runtime's own limit
   is far higher, so a program that recurses between those two depths is
