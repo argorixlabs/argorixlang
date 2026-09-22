@@ -39,7 +39,9 @@ compiler and runtime can ultimately be implemented in Argorix itself.
 | Compiler and VM | Rust implementation |
 | Agent language | Parser, semantic checks, IR, bytecode, verification, and deterministic VM |
 | Runtime profiles | `dry_run`, `simulated`, and governed `sandboxed_external` planning |
-| Core bootstrap | Core 0.1 parsing and semantic checking in Rust stage0 |
+| Core bootstrap | Core 0.1 parses, type-checks, lowers to verified IR, and executes through the transitional C backend and the C1 runtime |
+| Core standard library | ESP-009 in progress: `Buffer<T>` and `Arena<T>`/`Handle<T>` execute; the collections and serialization written in `.argx` are pending |
+| Conformance | Runtime cases, a regression corpus, a known-gap corpus, and a differential generator checked against a spec-derived oracle, on GCC and clang |
 | Self-hosting | In progress; not achieved yet |
 | Rust independence | Planned and gated; not achieved yet |
 

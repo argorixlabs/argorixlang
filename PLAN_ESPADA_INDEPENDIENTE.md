@@ -2,8 +2,9 @@
 
 > Plan rector: [Plan maestro de ArgorixLang](PLAN_MAESTRO_ARGORIXLANG.md). Este documento desarrolla la entrega R1 de independencia; no acredita por sí solo la madurez final. Aplicar las dependencias cruzadas del maestro. ESP-026 queda sustituida por fichas MAT independientes.
 
-Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. Self-hosting e independencia completa siguen pendientes.
+Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. ESP-009 está EN_CURSO. Self-hosting e independencia completa siguen pendientes.
 Fecha: 2026-09-17. Base inspeccionada: `5d73d66`, workspace `1.0.0`.
+Última actualización de estado: 2026-09-22 sobre `main@9c77061`. El estado operativo del día (quién tiene cada carril, ramas, PRs e issues abiertos) vive en [WORKBOARD.md](WORKBOARD.md) y en los registros de `coordination/`; esta tabla solo cambia al reclamar o cerrar una tarea.
 Este plan reemplazó la prioridad del backlog AL: self-hosting deja de estar diferido. El plan maestro vigente añade funcionalidad completa y producción como entregas obligatorias posteriores.
 
 ## 1. Mandato para el modelo ejecutor
@@ -84,7 +85,9 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`; ESP-009 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está EN_CURSO en el carril de Codex, con dos subtareas ya cerradas por el carril de Claude —ESP-009.B (defectos del backend C que impedían escribir Core, PR #37) y ESP-009.C (cobertura diferencial de esas construcciones, PR #40)—; ESP-010 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+
+Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
 | ID | Entregable | Depende de | Estado |
 | --- | --- | --- | --- |
@@ -96,7 +99,9 @@ ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectu
 | ESP-006 | Frontend Core temporal en stage0 | 004, 005 | HECHA |
 | ESP-007 | IR ejecutable y verificador Core | 006 | HECHA |
 | ESP-008 | Backend C temporal y runtime mínimo | 007 | HECHA |
-| ESP-009 | Biblioteca estándar mínima | 008 | PENDIENTE |
+| ESP-009 | Biblioteca estándar mínima | 008 | EN_CURSO |
+| ESP-009.B | Defectos del backend C que bloqueaban escribir Core | 008 | HECHA |
+| ESP-009.C | Cobertura diferencial de esas construcciones | 009.B | HECHA |
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | PENDIENTE |
 | ESP-011 | Parser y AST en Argorix | 010 | PENDIENTE |
 | ESP-012 | Resolución, tipos y módulos en Argorix | 011 | PENDIENTE |
@@ -213,6 +218,40 @@ ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectu
 **Pasos:** implementar bytes/texto, vectores, mapas deterministas, resultados, arenas, rutas y acceso acotado a archivos; añadir serialización de los formatos realmente usados; usar orden estable para emisión. Probar Unicode inválido, números límite, claves duplicadas, paths y tamaños excesivos.
 **Entregables:** biblioteca con API documentada y ejemplos de tokenización/árbol de símbolos.
 **Aceptación:** lógica de colecciones y serialización escrita en Argorix; no un wrapper a serde o utilidades Rust. Rendimiento y memoria suficientes para procesar una muestra representativa del compilador; registrar medidas.
+
+**Estado (2026-09-22):** EN_CURSO en el carril de Codex, rama
+`codex/stdlib-esp009`. Cerrado hasta ahora: la API/frontera S1 congelada en
+[`spec/core/stdlib.md`](spec/core/stdlib.md) y dos verticales ejecutables,
+`Buffer<T>` acotado con crecimiento comprobado y `Arena<T>`/`Handle<T>` con
+identidad sin punteros, liberación y reclamación de slots
+([PR #26](https://github.com/argorixlabs/argorixlang/pull/26)). Falta lo
+demás de la ficha: bytes/texto, vectores, mapas deterministas, resultados,
+rutas, frontera de archivos del compilador y la serialización JSON que
+consume el bootstrap, todo en `.argx`.
+
+Subtareas cerradas por el carril de Claude, ninguna recorta criterios del
+padre:
+
+- **ESP-009.B** ([ficha](tasks/espada/ESP-009.B.md),
+  [PR #37](https://github.com/argorixlabs/argorixlang/pull/37)): los dieciséis
+  defectos del issue #27 que impedían escribir Core —`if` como sentencia,
+  bloques con ámbito, tipos anidados, shifts, negación con signo, dos
+  resultados silenciosamente incorrectos y un SIGSEGV donde la especificación
+  exige un trap tipado— están cerrados y conservados como corpus de regresión
+  en `conformance/core_c/regression/`.
+- **ESP-009.C** ([ficha](tasks/espada/ESP-009.C.md),
+  [PR #40](https://github.com/argorixlabs/argorixlang/pull/40)): el generador
+  diferencial produce ya esas construcciones en vez de evitarlas y las juzga
+  contra un oráculo derivado de `spec/core/evaluation.md`. 1200 programas con
+  gcc 12.2, clang 14.0.6 y sanitizers sin una sola divergencia. Dejó siete
+  defectos registrados con repro mínimo en `conformance/core_c/gaps/`
+  (issues [#38](https://github.com/argorixlabs/argorixlang/issues/38) y
+  [#39](https://github.com/argorixlabs/argorixlang/issues/39)): `loop` como
+  sentencia, `break` con valor, `match` sobre bool y sobre entero, guardas,
+  constantes de módulo y `x = x;`.
+
+Ninguna de las dos subtareas escribe `.argx` de biblioteca: ESP-009 sigue
+abierta hasta que sus colecciones y su serialización existan en Argorix.
 
 ### ESP-010 — Lexer y diagnósticos en Argorix
 
