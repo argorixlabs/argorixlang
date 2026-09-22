@@ -81,9 +81,22 @@ case passes and every negative control is detected.
 ## Known-gap corpus
 
 `gaps/` holds valid Core programs that the backend gets wrong today, recorded
-in [`gaps/gaps.json`](gaps/gaps.json) with the defect each one reproduces
-(issue #27). Every program is accepted by `argorixc core-check`, and the
-expected output comes from `spec/core/evaluation.md`.
+in [`gaps/gaps.json`](gaps/gaps.json) with the defect each one reproduces.
+Every program is accepted by `argorixc core-check`, and the expected output
+comes from `spec/core/evaluation.md`.
+
+The sixteen of issue #27 were fixed in PR #37 and moved to `regression/`. The
+seven there now are g17–g23 of [issue #39](https://github.com/argorixlabs/argorixlang/issues/39):
+`loop` as a statement, `loop` with a value break, `match` on a bool, a module
+`const`, `match` on an integer with `_`, a match guard, and `x = x;`. The
+first six are rejected at emission and the seventh at compilation, so none of
+them can produce a wrong result today.
+
+A gap can belong to one compiler: `x = x;` lowers to a C self-assignment,
+which clang rejects under the declared `-Werror` profile and GCC does not
+diagnose at all. Such a record carries a `compilers` list, and a run with any
+other compiler reports it `SKIPPED` instead of announcing it fixed. The CI job
+runs the corpus with both.
 
 ```sh
 ./target/debug/core-c-harness gaps --argorixc target/debug/argorixc --cc gcc
@@ -94,6 +107,7 @@ expected output comes from `spec/core/evaluation.md`.
 | `STILL_OPEN` | the recorded defect is reproduced | expected; exit 0 |
 | `FIXED` | it now behaves as the spec requires | reported as a notice; promote it into `tests/selfhost/runtime/cases.json` (Codex lane) and remove it from `gaps.json` |
 | `CHANGED` | it fails in a different way | **exit 1**: the record is stale and someone must look |
+| `SKIPPED` | it is recorded for another compiler | nothing is run for it; exit 0 |
 
 A fixed gap is not a build failure, so fixing the backend never breaks CI. Only
 an unexplained change does. The corpus is not a substitute for the runtime
@@ -118,15 +132,31 @@ comparison and dependency inspection all reuse the pipeline above. A seed
 reproduces its corpus exactly.
 
 The generator deliberately stays inside the subset the backend claims to
-support, avoiding every shape recorded in `gaps/`: no shadowing, no block
-operands, no shifts, no signed negation, no `if` statements, no unused locals,
-parameters or functions, no recursion, and no `if` expression anywhere inside a
-comparison operand. Aggregates stay flat and at function level for the same
-reason: nested arrays, structs holding structs, arrays of structs and arrays
-declared inside a block are gaps g01, g02, g03 and g06. It also avoids shapes that only upset the C compiler's
-warning profile, such as `unsigned < 0` or a literal `^` pair that GCC reads as
-a mistyped power. **A failure is therefore a real divergence between the
+support, avoiding every shape recorded in `gaps/`. What it avoids today is
+short: an aggregate declared inside an `if` or a loop body, which is gap g06,
+and unused locals, parameters or functions, which are valid Core whose C fails
+the `-Werror` profile. It also avoids shapes that only upset the C compiler's
+warning profile, such as `unsigned < 0`, a literal `^` pair that GCC reads as
+a mistyped power, or `x = x`, whose C clang rejects as a self-assignment
+(gap g23, found by this generator in 2 of 120 programs). **A failure is therefore a real divergence between the
 backend and the specification, not a known gap.**
+
+The sixteen defects of issue #27 were fixed in PR #37, so the shapes the
+generator used to steer around are now generated on purpose: shifts, signed
+negation, `if` used as a statement, blocks whose local shadows an outer name,
+`if` expressions inside comparison operands and inside aggregate literals, and
+the nested aggregates that were gaps g01, g02 and g03. Alongside them the
+generator gained the control flow the backend already supported and no
+generated program had used: `else if` chains, `return` inside a branch,
+`continue` and `break` inside a loop, one nested loop, and a function that
+calls itself.
+
+One shape is spelt a particular way for a reason. A final `if` statement is
+rendered with the `;` that `expression_stmt` spells out in the grammar,
+because the frontend parses `if c { .. } (tail)` as a call of the `if` and
+rejects the program; the `;`-less form is still generated wherever another
+statement follows it. That divergence is [issue #38](https://github.com/argorixlabs/argorixlang/issues/38),
+not a silent workaround.
 
 Coverage: exact-width arithmetic with overflow traps, trapping division by zero
 and `MIN / -1`, truncating `/` and `%`, bitwise operators, comparisons,
@@ -137,8 +167,17 @@ must trap `INDEX_OUT_OF_BOUNDS`), reads of flat struct fields, buffers filled
 by `push` and read the same way, and arenas with one allocation read through a
 handle — sometimes after `release()`, which must trap `ARENA_RELEASED` — and
 enums read back through a function whose body is an exhaustive `match`, with
-both a variant that carries a field and a fieldless one. All of
-it across all eight integer widths.
+both a variant that carries a field and a fieldless one. Since ESP-009.C it
+also covers `<<` and `>>` with amounts inside and past the width (which must
+trap `SHIFT_OUT_OF_RANGE`), signed negation including the minimum (which must
+trap `INTEGER_OVERFLOW`), `if` used as a statement with and without `else`,
+block expressions whose local shadows an outer name, nested arrays read
+through two `u64` indexes that may each point past the end, structs that hold
+structs read through `q.f0.f1`, and arrays of structs read through
+`t[i].f0`. Control flow covers `else if` chains of up to three links, an
+early `return`, `continue` and `break` after a loop's counter has advanced, a
+nested counted loop, and a self-recursive function whose literal argument
+always reaches its base case. All of it across all eight integer widths.
 
 Running the generated corpus with `--sanitize` is worth doing for the memory
 constructs in particular: it is the combination that would have caught the
@@ -222,5 +261,14 @@ of the two exists, the job fails.
   toolchain. The harness binary itself is built from Rust beforehand and copied
   in, exactly like `argorixc`: this is stage0 tooling, not evidence of
   toolchain independence (ESP-024).
-- The generator covers scalars only. Arrays, structs, enums, buffers, arenas,
-  bytes and UTF-8 are not generated yet.
+- The generator does not produce `bytes`, `string`, `Slice`, module
+  constants, `match` on anything but a generated enum, match guards, `loop`,
+  a value `break`, or an aggregate declared inside an `if` or a loop body.
+  Everything in that list except the first three is a recorded gap (g17–g22,
+  issue #39) rather than a choice: the backend refuses them today. Handle
+  mutation and arena slot reuse are exercised by the runtime cases, not by
+  the generator.
+- The oracle evaluates on the host stack, so it stops at `MAX_CALL_DEPTH`
+  (200 frames) and marks a deeper program unusable. The runtime's own limit
+  is far higher, so a program that recurses between those two depths is
+  skipped rather than compared.

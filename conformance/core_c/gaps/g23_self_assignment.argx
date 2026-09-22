@@ -1,0 +1,8 @@
+core 0.1;
+module gap.g23_self_assignment;
+
+pub fn argorix_main() -> u32 {
+    let mut x: u32 = 42u32;
+    x = x;
+    x
+}

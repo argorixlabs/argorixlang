@@ -22,6 +22,31 @@ use crate::harness::Case;
 
 pub const MAX_LOOP_ITERATIONS: u32 = 10_000;
 
+/// How deep the oracle follows calls before it declares the program unusable.
+///
+/// The runtime's own limit is far higher (`CALL_DEPTH_LIMIT`), but the oracle
+/// evaluates on the host stack. A program that goes deeper is skipped rather
+/// than risked: the corpus loses one program, not the run.
+pub const MAX_CALL_DEPTH: u32 = 200;
+
+/// What a single evaluation may still spend.
+#[derive(Debug, Clone, Copy)]
+pub struct Budget {
+    /// Loop iterations left, across the whole program.
+    pub steps: u32,
+    /// Call frames still open.
+    pub depth: u32,
+}
+
+impl Budget {
+    fn new() -> Self {
+        Budget {
+            steps: MAX_LOOP_ITERATIONS,
+            depth: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntType {
     pub name: &'static str,
@@ -76,12 +101,39 @@ pub fn unsigned(kind: IntType) -> bool {
     kind.name.starts_with('u')
 }
 
+/// The exact width of the type, taken from its own name: `u8` is 8 bits.
+pub fn width(kind: IntType) -> u32 {
+    kind.name[1..]
+        .parse()
+        .expect("every declared type name ends in its width")
+}
+
+/// Fit a value into the type's two's-complement representation.
+///
+/// Only the shifts use this. `spec/core/evaluation.md` gives a shift one
+/// rule, an amount below the width, and keeps the modular forms for the
+/// explicit `wrapping_*` intrinsics. Bits that leave the width are therefore
+/// dropped rather than counted as an overflow: the spec states no second
+/// rule for a shift, and inventing one would make this oracle a third
+/// semantics instead of a reading of the first.
+fn truncate(value: i128, kind: IntType) -> i128 {
+    let bits = width(kind);
+    let modulus = 1i128 << bits;
+    let wrapped = value.rem_euclid(modulus);
+    if unsigned(kind) || wrapped <= kind.high {
+        wrapped
+    } else {
+        wrapped - modulus
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Trap {
     IntegerOverflow,
     DivisionByZero,
     IndexOutOfBounds,
     ArenaReleased,
+    ShiftOutOfRange,
 }
 
 impl Trap {
@@ -91,6 +143,7 @@ impl Trap {
             Trap::DivisionByZero => "DIVISION_BY_ZERO",
             Trap::IndexOutOfBounds => "INDEX_OUT_OF_BOUNDS",
             Trap::ArenaReleased => "ARENA_RELEASED",
+            Trap::ShiftOutOfRange => "SHIFT_OUT_OF_RANGE",
         }
     }
 }
@@ -106,6 +159,13 @@ pub enum Expr {
     Literal(i128),
     Var(String),
     Arith(&'static str, Box<Expr>, Box<Expr>),
+    /// `left << right` or `left >> right`. Both operands carry the program's
+    /// integer type, as the frontend requires, and an amount that reaches the
+    /// width traps.
+    Shift(&'static str, Box<Expr>, Box<Expr>),
+    /// `-value`, generated only for a signed program: the backend has no
+    /// representable result for an unsigned one.
+    Negate(Box<Expr>),
     Compare(&'static str, Box<Expr>, Box<Expr>),
     And(Box<Expr>, Box<Expr>),
     Or(Box<Expr>, Box<Expr>),
@@ -123,10 +183,35 @@ pub enum Expr {
         value: String,
         field: usize,
     },
+    /// `array[outer][inner]` on an `Array<Array<T, N>, M>`. Either index may
+    /// be out of range, which must trap. Nested arrays were gap g01.
+    NestedIndex {
+        array: String,
+        outer: String,
+        inner: String,
+    },
+    /// `value.fO.fI` on a struct that holds structs, which was gap g02.
+    NestedField {
+        value: String,
+        outer: usize,
+        inner: usize,
+    },
+    /// `array[index].fN` on an `Array<S, N>`, which was gap g03.
+    IndexedField {
+        array: String,
+        index: String,
+        field: usize,
+    },
     /// `handle.fN`. Reading a handle whose arena was released must trap.
     HandleField {
         handle: String,
         field: usize,
+    },
+    /// `{ let ..; tail }` used as a value. Its locals belong to the block
+    /// alone and may shadow an outer name, which was gap g04.
+    Block {
+        body: Vec<Stmt>,
+        tail: Box<Expr>,
     },
     /// `readN(local)`: the generated reader function whose body is an
     /// exhaustive `match` over the enum this local holds.
@@ -157,6 +242,23 @@ pub enum Stmt {
         condition: Expr,
         body: Vec<Stmt>,
     },
+    /// `return value;`, generated inside a branch so the tail stays
+    /// reachable.
+    Return {
+        value: Expr,
+    },
+    /// `continue;`, generated after a loop's counter has already advanced, so
+    /// the loop still finishes.
+    Continue,
+    /// `break;`, which ends the innermost loop.
+    Break,
+    /// `if condition { .. } else { .. }` used as a statement, with no value
+    /// and no `else` required. It was gap g12.
+    IfStatement {
+        condition: Expr,
+        then_body: Vec<Stmt>,
+        else_body: Option<ElseBranch>,
+    },
     /// `let name: Array<T, N> = [..];`, declared at function level only:
     /// an array declared inside an `if` or a loop body hits gap g06.
     LetArray {
@@ -174,6 +276,25 @@ pub enum Stmt {
         name: String,
         type_name: String,
         fields: Vec<Expr>,
+    },
+    /// `let name: Array<Array<T, N>, M> = [[..], ..];`. Every row has the
+    /// same length, as the type demands.
+    LetNestedArray {
+        name: String,
+        rows: Vec<Vec<Expr>>,
+    },
+    /// `let name: O = O { f0: I { .. }, .. };` for a struct of structs.
+    LetNestedStruct {
+        name: String,
+        type_name: String,
+        inner_type: String,
+        rows: Vec<Vec<Expr>>,
+    },
+    /// `let name: Array<I, N> = [I { .. }, ..];` for an array of structs.
+    LetStructArray {
+        name: String,
+        type_name: String,
+        rows: Vec<Vec<Expr>>,
     },
     /// `let mut name: Buffer<T> = Buffer::new();`
     LetBuffer {
@@ -209,6 +330,16 @@ pub enum Stmt {
     },
 }
 
+/// What follows the `else` of an `if` statement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ElseBranch {
+    Block(Vec<Stmt>),
+    /// `else if ..`. The backend lowers this through its own path, which
+    /// keeps the scope without an extra brace level, so it is worth
+    /// generating as a chain rather than as a block holding an `if`.
+    Chain(Box<Stmt>),
+}
+
 /// An enum, its variants, and the function that reads one back.
 ///
 /// Each variant carries at most one field, and the reader's `match` lists
@@ -237,6 +368,9 @@ pub struct Program {
     /// Flat struct declarations, as (name, field count). Structs holding
     /// structs, and arrays of structs, are gaps g02 and g03.
     pub structs: Vec<(String, usize)>,
+    /// Structs that hold structs, as (outer name, inner type, field count).
+    /// Their inner type is declared in `structs`.
+    pub nested_structs: Vec<(String, String, usize)>,
     pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
     pub main: Function,
@@ -264,6 +398,16 @@ impl Value {
             Value::Int(value) => value != 0,
         }
     }
+}
+
+/// What a statement left behind: nothing, a value the function returns, the
+/// end of this iteration, or the end of the loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Flow {
+    Normal,
+    Returned(i128),
+    Continued,
+    Broke,
 }
 
 pub enum Failure {
@@ -309,11 +453,38 @@ pub fn arithmetic(op: &str, left: i128, right: i128, kind: IntType) -> Result<i1
     }
 }
 
+/// `left << right` and `left >> right` by the rules of
+/// `spec/core/evaluation.md`: the amount must be below the width, and the
+/// signed right shift keeps the sign.
+pub fn shift(op: &str, left: i128, right: i128, kind: IntType) -> Result<i128, Failure> {
+    if right < 0 || right >= i128::from(width(kind)) {
+        return Err(Failure::Trapped(Trap::ShiftOutOfRange));
+    }
+    let amount = right as u32;
+    match op {
+        "<<" => Ok(truncate(left << amount, kind)),
+        ">>" => Ok(left >> amount),
+        other => panic!("unsupported shift {other}"),
+    }
+}
+
+/// `-value`. The minimum of a signed type has no positive counterpart, so it
+/// is the one input that overflows.
+pub fn negate(value: i128, kind: IntType) -> Result<i128, Failure> {
+    if value == kind.low {
+        return Err(Failure::Trapped(Trap::IntegerOverflow));
+    }
+    Ok(-value)
+}
+
 #[derive(Default)]
 struct Environment {
     values: Vec<(String, i128)>,
     /// Array and struct locals, each held as its element or field values.
     aggregates: Vec<(String, Vec<i128>)>,
+    /// Two-level locals: a nested array, a struct of structs, or an array of
+    /// structs, each held as its rows.
+    nested: Vec<(String, Vec<Vec<i128>>)>,
     /// `u64` index locals, kept apart because they are not of the program's
     /// integer type.
     indexes: Vec<(String, u64)>,
@@ -325,7 +496,45 @@ struct Environment {
     handles: Vec<(String, String, Vec<i128>)>,
 }
 
+/// The lengths of every binding list, so a block can drop exactly what it
+/// declared and leave assignments to outer locals in place.
+#[derive(Clone, Copy)]
+struct Scope {
+    values: usize,
+    aggregates: usize,
+    nested: usize,
+    indexes: usize,
+    enums: usize,
+    arenas: usize,
+    handles: usize,
+}
+
 impl Environment {
+    fn mark(&self) -> Scope {
+        Scope {
+            values: self.values.len(),
+            aggregates: self.aggregates.len(),
+            nested: self.nested.len(),
+            indexes: self.indexes.len(),
+            enums: self.enums.len(),
+            arenas: self.arenas.len(),
+            handles: self.handles.len(),
+        }
+    }
+    fn restore(&mut self, scope: Scope) {
+        self.values.truncate(scope.values);
+        self.aggregates.truncate(scope.aggregates);
+        self.nested.truncate(scope.nested);
+        self.indexes.truncate(scope.indexes);
+        self.enums.truncate(scope.enums);
+        self.arenas.truncate(scope.arenas);
+        self.handles.truncate(scope.handles);
+    }
+    /// `let name = ..`: always a new binding, so an inner one shadows an
+    /// outer of the same name instead of overwriting it.
+    fn declare(&mut self, name: &str, value: i128) {
+        self.values.push((name.to_string(), value));
+    }
     fn get(&self, name: &str) -> i128 {
         self.values
             .iter()
@@ -347,6 +556,14 @@ impl Environment {
             .rev()
             .find(|(key, _)| key == name)
             .map(|(_, items)| items.as_slice())
+            .unwrap_or(&[])
+    }
+    fn rows(&self, name: &str) -> &[Vec<i128>] {
+        self.nested
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, rows)| rows.as_slice())
             .unwrap_or(&[])
     }
     fn index(&self, name: &str) -> u64 {
@@ -382,7 +599,7 @@ impl Environment {
 }
 
 pub fn evaluate_program(program: &Program) -> Result<i128, Failure> {
-    let mut fuel = MAX_LOOP_ITERATIONS;
+    let mut fuel = Budget::new();
     let mut env = Environment::default();
     let value = run_body(
         &program.main.body,
@@ -399,10 +616,17 @@ fn run_body(
     tail: &Expr,
     env: &mut Environment,
     program: &Program,
-    fuel: &mut u32,
+    fuel: &mut Budget,
 ) -> Result<Value, Failure> {
     for statement in body {
-        execute(statement, env, program, fuel)?;
+        match execute(statement, env, program, fuel)? {
+            Flow::Normal => {}
+            // A `return` ends the function: its tail is never evaluated.
+            Flow::Returned(value) => return Ok(Value::Int(value)),
+            Flow::Continued | Flow::Broke => {
+                unreachable!("`continue` and `break` are generated inside a loop body only")
+            }
+        }
     }
     evaluate(tail, env, program, fuel)
 }
@@ -411,10 +635,14 @@ fn execute(
     statement: &Stmt,
     env: &mut Environment,
     program: &Program,
-    fuel: &mut u32,
-) -> Result<(), Failure> {
+    fuel: &mut Budget,
+) -> Result<Flow, Failure> {
     match statement {
-        Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {
+        Stmt::Let { name, value, .. } => {
+            let computed = evaluate(value, env, program, fuel)?.int();
+            env.declare(name, computed);
+        }
+        Stmt::Assign { name, value } => {
             let computed = evaluate(value, env, program, fuel)?.int();
             env.set(name, computed);
         }
@@ -436,6 +664,20 @@ fn execute(
                 values.push(evaluate(field, env, program, fuel)?.int());
             }
             env.aggregates.push((name.clone(), values));
+        }
+        Stmt::LetNestedArray { name, rows }
+        | Stmt::LetNestedStruct { name, rows, .. }
+        | Stmt::LetStructArray { name, rows, .. } => {
+            // Rows run strictly left to right, and so do the values in each.
+            let mut computed = Vec::with_capacity(rows.len());
+            for row in rows {
+                let mut values = Vec::with_capacity(row.len());
+                for element in row {
+                    values.push(evaluate(element, env, program, fuel)?.int());
+                }
+                computed.push(values);
+            }
+            env.nested.push((name.clone(), computed));
         }
         Stmt::LetIndex { name, value } => env.indexes.push((name.clone(), *value)),
         Stmt::LetBuffer { name } => env.aggregates.push((name.clone(), Vec::new())),
@@ -473,26 +715,71 @@ fn execute(
             };
             env.enums.push((name.clone(), *variant, carried));
         }
-        Stmt::While { condition, body } => {
-            while evaluate(condition, env, program, fuel)?.truthy() {
-                if *fuel == 0 {
-                    return Err(Failure::Unusable(Unusable::DoesNotFinish));
+        Stmt::IfStatement {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            let taken = evaluate(condition, env, program, fuel)?.truthy();
+            let branch = match (taken, else_body) {
+                (true, _) => Some(then_body),
+                (false, Some(ElseBranch::Block(body))) => Some(body),
+                // `else if` is not a scope of its own: the nested statement
+                // runs where this one does.
+                (false, Some(ElseBranch::Chain(next))) => return execute(next, env, program, fuel),
+                (false, None) => None,
+            };
+            if let Some(branch) = branch {
+                // The branch has its own scope; what it assigns to an outer
+                // local stays assigned.
+                let scope = env.mark();
+                let mut flow = Flow::Normal;
+                for inner in branch {
+                    flow = execute(inner, env, program, fuel)?;
+                    if flow != Flow::Normal {
+                        break;
+                    }
                 }
-                *fuel -= 1;
-                for inner in body {
-                    execute(inner, env, program, fuel)?;
+                env.restore(scope);
+                if flow != Flow::Normal {
+                    return Ok(flow);
                 }
             }
         }
+        Stmt::While { condition, body } => {
+            'iterations: while evaluate(condition, env, program, fuel)?.truthy() {
+                if fuel.steps == 0 {
+                    return Err(Failure::Unusable(Unusable::DoesNotFinish));
+                }
+                fuel.steps -= 1;
+                for inner in body {
+                    match execute(inner, env, program, fuel)? {
+                        Flow::Normal => {}
+                        // A `return` leaves the loop and the function.
+                        Flow::Returned(value) => return Ok(Flow::Returned(value)),
+                        // A `continue` only ends this iteration.
+                        Flow::Continued => continue 'iterations,
+                        // A `break` reaches the loop it is lexically inside.
+                        Flow::Broke => break 'iterations,
+                    }
+                }
+            }
+        }
+        Stmt::Return { value } => {
+            let computed = evaluate(value, env, program, fuel)?.int();
+            return Ok(Flow::Returned(computed));
+        }
+        Stmt::Continue => return Ok(Flow::Continued),
+        Stmt::Break => return Ok(Flow::Broke),
     }
-    Ok(())
+    Ok(Flow::Normal)
 }
 
 fn evaluate(
     expr: &Expr,
     env: &mut Environment,
     program: &Program,
-    fuel: &mut u32,
+    fuel: &mut Budget,
 ) -> Result<Value, Failure> {
     Ok(match expr {
         Expr::Literal(value) => Value::Int(*value),
@@ -531,6 +818,29 @@ fn evaluate(
             let right = evaluate(right, env, program, fuel)?.int();
             Value::Int(arithmetic(op, left, right, program.kind)?)
         }
+        Expr::Shift(op, left, right) => {
+            let left = evaluate(left, env, program, fuel)?.int();
+            let right = evaluate(right, env, program, fuel)?.int();
+            Value::Int(shift(op, left, right, program.kind)?)
+        }
+        Expr::Negate(inner) => {
+            let value = evaluate(inner, env, program, fuel)?.int();
+            Value::Int(negate(value, program.kind)?)
+        }
+        Expr::Block { body, tail } => {
+            let scope = env.mark();
+            for statement in body {
+                let flow = execute(statement, env, program, fuel)?;
+                debug_assert_eq!(
+                    flow,
+                    Flow::Normal,
+                    "a block expression's body only declares locals"
+                );
+            }
+            let value = evaluate(tail, env, program, fuel)?;
+            env.restore(scope);
+            value
+        }
         Expr::If(condition, then_branch, else_branch) => {
             let branch = if evaluate(condition, env, program, fuel)?.truthy() {
                 then_branch
@@ -545,6 +855,47 @@ fn evaluate(
             // Reading past the end is a typed trap, never a wrong value.
             match items.get(position as usize) {
                 Some(value) => Value::Int(*value),
+                None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
+            }
+        }
+        Expr::NestedIndex {
+            array,
+            outer,
+            inner,
+        } => {
+            let rows = env.rows(array);
+            let outer = env.index(outer) as usize;
+            let inner = env.index(inner) as usize;
+            // Either index may be past the end; both are typed traps.
+            match rows.get(outer).and_then(|row| row.get(inner)) {
+                Some(value) => Value::Int(*value),
+                None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
+            }
+        }
+        Expr::NestedField {
+            value,
+            outer,
+            inner,
+        } => Value::Int(
+            env.rows(value)
+                .get(*outer)
+                .and_then(|row| row.get(*inner))
+                .copied()
+                .expect("a generated field index is in range"),
+        ),
+        Expr::IndexedField {
+            array,
+            index,
+            field,
+        } => {
+            let rows = env.rows(array);
+            let position = env.index(index) as usize;
+            match rows.get(position) {
+                Some(row) => Value::Int(
+                    row.get(*field)
+                        .copied()
+                        .expect("a generated field index is in range"),
+                ),
                 None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
             }
         }
@@ -594,7 +945,13 @@ fn evaluate(
             for (parameter, value) in function.params.iter().zip(values) {
                 local.set(parameter, value);
             }
-            run_body(&function.body, &function.tail, &mut local, program, fuel)?
+            if fuel.depth == MAX_CALL_DEPTH {
+                return Err(Failure::Unusable(Unusable::DoesNotFinish));
+            }
+            fuel.depth += 1;
+            let result = run_body(&function.body, &function.tail, &mut local, program, fuel)?;
+            fuel.depth -= 1;
+            result
         }
     })
 }
@@ -621,7 +978,10 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
                 render_expr(right, kind)
             )
         }
-        Expr::Compare(op, left, right) | Expr::Arith(op, left, right) => {
+        Expr::Negate(inner) => format!("-({})", render_expr(inner, kind)),
+        Expr::Compare(op, left, right)
+        | Expr::Arith(op, left, right)
+        | Expr::Shift(op, left, right) => {
             format!(
                 "({} {op} {})",
                 render_expr(left, kind),
@@ -642,7 +1002,30 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        Expr::Block { body, tail } => {
+            // Rendered on one line: a block used as a value is small, and the
+            // statement renderer already ends each statement with `;`.
+            let mut lines = Vec::new();
+            render_statements(body, kind, "", &mut lines);
+            lines.push(render_expr(tail, kind));
+            format!("{{ {} }}", lines.join(" "))
+        }
         Expr::Index { array, index } => format!("{array}[{index}]"),
+        Expr::NestedIndex {
+            array,
+            outer,
+            inner,
+        } => format!("{array}[{outer}][{inner}]"),
+        Expr::NestedField {
+            value,
+            outer,
+            inner,
+        } => format!("{value}.f{outer}.f{inner}"),
+        Expr::IndexedField {
+            array,
+            index,
+            field,
+        } => format!("{array}[{index}].f{field}"),
         Expr::Field { value, field } => format!("{value}.f{field}"),
         Expr::HandleField { handle, field } => format!("{handle}.f{field}"),
         Expr::ReadEnum { reader, value, .. } => format!("{reader}({value})"),
@@ -661,8 +1044,54 @@ pub fn render_literal(value: i128, kind: IntType) -> String {
     format!("(0{name} - {}{name})", -value)
 }
 
+/// `if .. { } else if .. { } else { }`, rendered as one chain.
+fn render_if_chain(
+    statement: &Stmt,
+    kind: IntType,
+    indent: &str,
+    terminator: &str,
+    lines: &mut Vec<String>,
+) {
+    let Stmt::IfStatement {
+        condition,
+        then_body,
+        else_body,
+    } = statement
+    else {
+        unreachable!("only an `if` statement starts a chain")
+    };
+    lines.push(format!("{indent}if {} {{", render_expr(condition, kind)));
+    render_statements(then_body, kind, &format!("{indent}    "), lines);
+    match else_body {
+        None => lines.push(format!("{indent}}}{terminator}")),
+        Some(ElseBranch::Block(body)) => {
+            lines.push(format!("{indent}}} else {{"));
+            render_statements(body, kind, &format!("{indent}    "), lines);
+            lines.push(format!("{indent}}}{terminator}"));
+        }
+        Some(ElseBranch::Chain(next)) => {
+            let mut chain = Vec::new();
+            render_if_chain(next, kind, indent, terminator, &mut chain);
+            let head = chain.remove(0);
+            lines.push(format!("{indent}}} else {}", head.trim_start()));
+            lines.extend(chain);
+        }
+    }
+}
+
+fn render_struct_value(type_name: &str, fields: &[Expr], kind: IntType) -> String {
+    let rendered = fields
+        .iter()
+        .enumerate()
+        .map(|(position, field)| format!("f{position}: {}", render_expr(field, kind)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{type_name} {{ {rendered} }}")
+}
+
 fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec<String>) {
-    for statement in body {
+    for (position, statement) in body.iter().enumerate() {
+        let last = position + 1 == body.len();
         match statement {
             Stmt::Let {
                 name,
@@ -686,6 +1115,17 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                 render_statements(body, kind, &format!("{indent}    "), lines);
                 lines.push(format!("{indent}}}"));
             }
+            Stmt::IfStatement { .. } => {
+                // The last statement of a body is followed by the block's
+                // tail expression, which usually starts with `(`. The
+                // frontend then parses `if c { .. } (tail)` as a call of the
+                // `if` and rejects the program, so that position takes the
+                // `;` form the grammar's `expression_stmt` spells out. Both
+                // forms are generated, and the divergence between them is
+                // reported (issue #38), not worked around silently.
+                let terminator = if last { ";" } else { "" };
+                render_if_chain(statement, kind, indent, terminator, lines);
+            }
             Stmt::LetArray { name, elements } => lines.push(format!(
                 "{indent}let {name}: Array<{}, {}> = [{}];",
                 kind.name,
@@ -696,6 +1136,67 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                     .collect::<Vec<_>>()
                     .join(", ")
             )),
+            Stmt::LetNestedArray { name, rows } => {
+                let inner = rows.first().map(Vec::len).unwrap_or(0);
+                let rendered = rows
+                    .iter()
+                    .map(|row| {
+                        let values = row
+                            .iter()
+                            .map(|element| render_expr(element, kind))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("[{values}]")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{indent}let {name}: Array<Array<{}, {inner}>, {}> = [{rendered}];",
+                    kind.name,
+                    rows.len()
+                ));
+            }
+            Stmt::LetNestedStruct {
+                name,
+                type_name,
+                inner_type,
+                rows,
+            } => {
+                let rendered = rows
+                    .iter()
+                    .enumerate()
+                    .map(|(position, row)| {
+                        format!(
+                            "f{position}: {}",
+                            render_struct_value(inner_type, row, kind)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{indent}let {name}: {type_name} = {type_name} {{ {rendered} }};"
+                ));
+            }
+            Stmt::LetStructArray {
+                name,
+                type_name,
+                rows,
+            } => {
+                let rendered = rows
+                    .iter()
+                    .map(|row| render_struct_value(type_name, row, kind))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{indent}let {name}: Array<{type_name}, {}> = [{rendered}];",
+                    rows.len()
+                ));
+            }
+            Stmt::Return { value } => {
+                lines.push(format!("{indent}return {};", render_expr(value, kind)))
+            }
+            Stmt::Continue => lines.push(format!("{indent}continue;")),
+            Stmt::Break => lines.push(format!("{indent}break;")),
             Stmt::LetIndex { name, value } => {
                 lines.push(format!("{indent}let {name}: u64 = {value}u64;"))
             }
@@ -769,6 +1270,14 @@ pub fn render_program(program: &Program) -> String {
     for (name, fields) in &program.structs {
         let declared = (0..*fields)
             .map(|position| format!("f{position}: {}", kind.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("struct {name} {{ {declared}, }}"));
+        lines.push(String::new());
+    }
+    for (name, inner, fields) in &program.nested_structs {
+        let declared = (0..*fields)
+            .map(|position| format!("f{position}: {inner}"))
             .collect::<Vec<_>>()
             .join(", ");
         lines.push(format!("struct {name} {{ {declared}, }}"));
@@ -917,6 +1426,15 @@ impl Generator {
             return self.literal();
         }
         let choice = self.rng.below(100);
+        if choice < 7 {
+            return self.shift(names, depth, functions, allow_if);
+        }
+        if choice < 12 && !unsigned(self.kind) {
+            return self.negation(names, depth, functions, allow_if);
+        }
+        if choice < 17 && allow_if && !names.is_empty() {
+            return self.block_value(names);
+        }
         if choice < 55 {
             let op = *self.rng.pick(&ARITH);
             let left = self.value(names, depth - 1, functions, allow_if);
@@ -956,12 +1474,164 @@ impl Generator {
         self.literal()
     }
 
+    /// `left << amount` or `left >> amount`.
+    ///
+    /// The amount is usually inside the width, and sometimes past it, which
+    /// `spec/core/evaluation.md` makes a trap rather than a wrapped amount.
+    fn shift(
+        &mut self,
+        names: &[String],
+        depth: u32,
+        functions: &[Function],
+        allow_if: bool,
+    ) -> Expr {
+        let op = if self.rng.chance(50) { "<<" } else { ">>" };
+        let left = self.value(names, depth - 1, functions, allow_if);
+        let bits = i128::from(width(self.kind));
+        let amount = if self.rng.chance(82) {
+            Expr::Literal(self.rng.range(0, bits - 1))
+        } else if self.rng.chance(50) {
+            Expr::Literal(self.rng.range(bits, bits + 8))
+        } else {
+            // A computed amount, which the oracle and the runtime must judge
+            // by its value and not by its shape.
+            self.value(names, depth - 1, functions, allow_if)
+        };
+        Expr::Shift(op, Box::new(left), Box::new(amount))
+    }
+
+    /// `-value`, only in a signed program. The backend has no representable
+    /// result for an unsigned one, and the minimum is the single input that
+    /// overflows.
+    fn negation(
+        &mut self,
+        names: &[String],
+        depth: u32,
+        functions: &[Function],
+        allow_if: bool,
+    ) -> Expr {
+        if self.rng.chance(15) {
+            return Expr::Negate(Box::new(Expr::Literal(self.kind.low)));
+        }
+        Expr::Negate(Box::new(self.value(names, depth - 1, functions, allow_if)))
+    }
+
+    /// `{ let x: T = x + k; x }` used as a value.
+    ///
+    /// The local shadows an outer name and is initialised from it: the shape
+    /// of gap g04, where the block's local used to land in the enclosing C
+    /// scope and outlive the block. Initialising from the shadowed name also
+    /// keeps that outer local genuinely read.
+    fn block_value(&mut self, names: &[String]) -> Expr {
+        let shadowed = self.rng.pick(names).clone();
+        let op = *self.rng.pick(&["+", "-", "^"]);
+        let value = Expr::Arith(
+            op,
+            Box::new(Expr::Var(shadowed.clone())),
+            Box::new(self.literal()),
+        );
+        // The tail always reads the block's local: an unused one is valid
+        // Core, but its C fails the declared -Werror profile.
+        let tail = if self.rng.chance(50) {
+            Expr::Var(shadowed.clone())
+        } else {
+            Expr::Arith(
+                self.rng.pick(&["+", "-", "^"]),
+                Box::new(Expr::Var(shadowed.clone())),
+                Box::new(self.literal()),
+            )
+        };
+        Expr::Block {
+            body: vec![Stmt::Let {
+                name: shadowed,
+                mutable: false,
+                value,
+            }],
+            tail: Box::new(tail),
+        }
+    }
+
+    /// `if condition { .. }`, with an `else` part of the time: gap g12, where
+    /// an `if` with no value was rejected outright.
+    fn if_statement(
+        &mut self,
+        names: &[String],
+        mutable: &[String],
+        functions: &[Function],
+    ) -> Stmt {
+        let links = 1 + self.rng.below(3) as usize;
+        self.if_chain(names, mutable, functions, links)
+    }
+
+    /// One `if`, and up to `remaining - 1` `else if` links after it.
+    fn if_chain(
+        &mut self,
+        names: &[String],
+        mutable: &[String],
+        functions: &[Function],
+        remaining: usize,
+    ) -> Stmt {
+        let condition = self.condition(names, 1, functions);
+        let then_body = self.branch_body(names, mutable, functions);
+        let else_body = if remaining > 1 && self.rng.chance(45) {
+            Some(ElseBranch::Chain(Box::new(self.if_chain(
+                names,
+                mutable,
+                functions,
+                remaining - 1,
+            ))))
+        } else if self.rng.chance(40) {
+            Some(ElseBranch::Block(
+                self.branch_body(names, mutable, functions),
+            ))
+        } else {
+            None
+        };
+        Stmt::IfStatement {
+            condition,
+            then_body,
+            else_body,
+        }
+    }
+
+    /// The body of a branch: assignments to locals that already exist, so the
+    /// branch has an observable effect without declaring anything that would
+    /// escape its scope.
+    fn branch_body(
+        &mut self,
+        names: &[String],
+        mutable: &[String],
+        functions: &[Function],
+    ) -> Vec<Stmt> {
+        let mut body = Vec::new();
+        for _ in 0..=self.rng.below(2) {
+            let name = self.rng.pick(mutable).clone();
+            if self.rng.chance(50) {
+                let value = self.assigned_value(&name, names, functions);
+                body.push(Stmt::Assign { name, value });
+            } else {
+                let op = *self.rng.pick(&["+", "-", "*"]);
+                let value = self.literal();
+                body.push(Stmt::Compound { name, op, value });
+            }
+        }
+        if self.rng.chance(20) {
+            // An early `return`. It sits inside a branch, so the function's
+            // tail stays reachable when the branch is not taken.
+            let value = self.value(names, 1, functions, true);
+            body.push(Stmt::Return { value });
+        }
+        body
+    }
+
     fn condition(&mut self, names: &[String], depth: u32, functions: &[Function]) -> Expr {
         let choice = self.rng.below(100);
         if choice < 60 || depth == 0 {
-            // No `if` inside a comparison operand: that is gap g16.
-            let mut left = self.value(names, depth, functions, false);
-            let mut right = self.value(names, depth, functions, false);
+            // An `if` inside a comparison operand was gap g16, fixed in PR
+            // #37, so operands are generated with the whole expression
+            // grammar available.
+            let mut left = self.value(names, depth, functions, true);
+            let mut right = self.value(names, depth, functions, true);
             if render_expr(&left, self.kind) == render_expr(&right, self.kind) {
                 right = Expr::Arith("+", Box::new(right), Box::new(Expr::Literal(1)));
             }
@@ -1023,13 +1693,16 @@ impl Generator {
                 }
             } else if choice < 70 {
                 let name = self.rng.pick(mutable).clone();
-                let value = self.value(names, 2, functions, true);
+                let value = self.assigned_value(&name, names, functions);
                 body.push(Stmt::Assign { name, value });
-            } else if choice < 85 || !allow_loop {
+            } else if choice < 80 {
                 let name = self.rng.pick(mutable).clone();
                 let op = *self.rng.pick(&["+", "-", "*"]);
                 let value = self.literal();
                 body.push(Stmt::Compound { name, op, value });
+            } else if choice < 82 || !allow_loop {
+                let statement = self.if_statement(names, mutable, functions);
+                body.push(statement);
             } else {
                 body.extend(self.loop_statement(names, mutable, functions));
             }
@@ -1044,6 +1717,19 @@ impl Generator {
         mutable: &mut Vec<String>,
         functions: &[Function],
     ) -> Vec<Stmt> {
+        self.counted_loop(names, mutable, functions, true)
+    }
+
+    /// The loop itself. `outermost` allows one nested loop inside the body;
+    /// the nested counter belongs to that body and never joins the names the
+    /// rest of the function can see.
+    fn counted_loop(
+        &mut self,
+        names: &mut Vec<String>,
+        mutable: &mut Vec<String>,
+        functions: &[Function],
+        outermost: bool,
+    ) -> Vec<Stmt> {
         let counter = self.fresh("i");
         let limit = self.rng.range(1, 6);
         let mut inner = Vec::new();
@@ -1051,7 +1737,7 @@ impl Generator {
             let target = self.rng.pick(mutable).clone();
             let mut visible = names.clone();
             visible.push(counter.clone());
-            let value = self.value(&visible, 1, functions, true);
+            let value = self.assigned_value(&target, &visible, functions);
             inner.push(Stmt::Assign {
                 name: target,
                 value,
@@ -1062,6 +1748,33 @@ impl Generator {
             op: "+",
             value: Expr::Literal(1),
         });
+        if outermost && self.rng.chance(30) {
+            // A nested loop, with its own counter scoped to this body.
+            let mut visible = names.clone();
+            visible.push(counter.clone());
+            let mut visible_mutable = mutable.clone();
+            visible_mutable.push(counter.clone());
+            let nested = self.counted_loop(&mut visible, &mut visible_mutable, functions, false);
+            inner.extend(nested);
+        }
+        let jump = self.rng.below(100);
+        if jump < 50 {
+            // `continue` or `break` after the counter has already advanced,
+            // so the loop still finishes either way.
+            let mut visible = names.clone();
+            visible.push(counter.clone());
+            let condition = self.condition(&visible, 1, functions);
+            let jump = if jump < 25 {
+                Stmt::Continue
+            } else {
+                Stmt::Break
+            };
+            inner.push(Stmt::IfStatement {
+                condition,
+                then_body: vec![jump],
+                else_body: None,
+            });
+        }
         names.push(counter.clone());
         mutable.push(counter.clone());
         vec![
@@ -1088,13 +1801,20 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
             seen.insert(name.clone());
         }
         Expr::Literal(_) => {}
-        Expr::Not(inner) => reads(inner, seen),
+        Expr::Not(inner) | Expr::Negate(inner) => reads(inner, seen),
         Expr::And(left, right)
         | Expr::Or(left, right)
         | Expr::Arith(_, left, right)
+        | Expr::Shift(_, left, right)
         | Expr::Compare(_, left, right) => {
             reads(left, seen);
             reads(right, seen);
+        }
+        Expr::Block { body, tail } => {
+            // A block local that shadows an outer name is always initialised
+            // from it, so counting the outer name as read is exact.
+            body.iter().for_each(|inner| statement_reads(inner, seen));
+            reads(tail, seen);
         }
         Expr::If(condition, then_branch, else_branch) => {
             reads(condition, seen);
@@ -1108,6 +1828,22 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
         }
         Expr::Field { value, .. } => {
             seen.insert(value.clone());
+        }
+        Expr::NestedIndex {
+            array,
+            outer,
+            inner,
+        } => {
+            seen.insert(array.clone());
+            seen.insert(outer.clone());
+            seen.insert(inner.clone());
+        }
+        Expr::NestedField { value, .. } => {
+            seen.insert(value.clone());
+        }
+        Expr::IndexedField { array, index, .. } => {
+            seen.insert(array.clone());
+            seen.insert(index.clone());
         }
         Expr::HandleField { handle, .. } => {
             seen.insert(handle.clone());
@@ -1126,6 +1862,12 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
         }
         | Stmt::LetStruct { fields: items, .. }
         | Stmt::Alloc { fields: items, .. } => items.iter().for_each(|item| reads(item, seen)),
+        Stmt::LetNestedArray { rows, .. }
+        | Stmt::LetNestedStruct { rows, .. }
+        | Stmt::LetStructArray { rows, .. } => rows
+            .iter()
+            .flatten()
+            .for_each(|element| reads(element, seen)),
         Stmt::Push { name, value } => {
             seen.insert(name.clone());
             reads(value, seen);
@@ -1138,6 +1880,8 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
                 reads(value, seen);
             }
         }
+        Stmt::Return { value } => reads(value, seen),
+        Stmt::Continue | Stmt::Break => {}
         Stmt::LetIndex { .. } | Stmt::LetBuffer { .. } | Stmt::LetArena { .. } => {}
         Stmt::Compound { name, value, .. } => {
             seen.insert(name.clone());
@@ -1146,6 +1890,23 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
         Stmt::While { condition, body } => {
             reads(condition, seen);
             body.iter().for_each(|inner| statement_reads(inner, seen));
+        }
+        Stmt::IfStatement {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            reads(condition, seen);
+            then_body
+                .iter()
+                .for_each(|inner| statement_reads(inner, seen));
+            match else_body {
+                None => {}
+                Some(ElseBranch::Block(body)) => {
+                    body.iter().for_each(|inner| statement_reads(inner, seen));
+                }
+                Some(ElseBranch::Chain(next)) => statement_reads(next, seen),
+            }
         }
     }
 }
@@ -1166,13 +1927,20 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
             seen.insert(name.clone());
             arguments.iter().for_each(|argument| calls(argument, seen));
         }
-        Expr::Not(inner) => calls(inner, seen),
+        Expr::Not(inner) | Expr::Negate(inner) => calls(inner, seen),
         Expr::And(left, right)
         | Expr::Or(left, right)
         | Expr::Arith(_, left, right)
+        | Expr::Shift(_, left, right)
         | Expr::Compare(_, left, right) => {
             calls(left, seen);
             calls(right, seen);
+        }
+        Expr::Block { body, tail } => {
+            // A block local that shadows an outer name is always initialised
+            // from it, so counting the outer name as read is exact.
+            body.iter().for_each(|inner| statement_calls(inner, seen));
+            calls(tail, seen);
         }
         Expr::If(condition, then_branch, else_branch) => {
             calls(condition, seen);
@@ -1183,6 +1951,9 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
         | Expr::Var(_)
         | Expr::Index { .. }
         | Expr::Field { .. }
+        | Expr::NestedIndex { .. }
+        | Expr::NestedField { .. }
+        | Expr::IndexedField { .. }
         | Expr::HandleField { .. }
         // The reader is generated with the enum, not through the call graph.
         | Expr::ReadEnum { .. } => {}
@@ -1199,7 +1970,15 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
         }
         | Stmt::LetStruct { fields: items, .. }
         | Stmt::Alloc { fields: items, .. } => items.iter().for_each(|item| calls(item, seen)),
+        Stmt::LetNestedArray { rows, .. }
+        | Stmt::LetNestedStruct { rows, .. }
+        | Stmt::LetStructArray { rows, .. } => rows
+            .iter()
+            .flatten()
+            .for_each(|element| calls(element, seen)),
         Stmt::Push { value, .. } => calls(value, seen),
+        Stmt::Return { value } => calls(value, seen),
+        Stmt::Continue | Stmt::Break => {}
         Stmt::LetIndex { .. }
         | Stmt::LetBuffer { .. }
         | Stmt::LetArena { .. }
@@ -1212,6 +1991,23 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
         Stmt::While { condition, body } => {
             calls(condition, seen);
             body.iter().for_each(|inner| statement_calls(inner, seen));
+        }
+        Stmt::IfStatement {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            calls(condition, seen);
+            then_body
+                .iter()
+                .for_each(|inner| statement_calls(inner, seen));
+            match else_body {
+                None => {}
+                Some(ElseBranch::Block(body)) => {
+                    body.iter().for_each(|inner| statement_calls(inner, seen));
+                }
+                Some(ElseBranch::Chain(next)) => statement_calls(next, seen),
+            }
         }
     }
 }
@@ -1253,8 +2049,9 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     let mut body = generator.statements(&mut names, &mut mutable, &functions, true);
 
     // Aggregates are declared at function level only: inside an `if` or a loop
-    // body they hit gap g06, and nesting them hits g01, g02 and g03.
+    // body they hit gap g06.
     let mut structs = Vec::new();
+    let mut nested_structs = Vec::new();
     let mut reads: Vec<Expr> = Vec::new();
     if generator.rng.chance(55) {
         let (statements, expression) = generator.array(&names, &functions);
@@ -1265,6 +2062,25 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
         let (declaration, statement, expression) = generator.flat_struct(&names, &functions);
         structs.push(declaration);
         body.push(statement);
+        reads.push(expression);
+    }
+    // The nested shapes were gaps g01, g02 and g03 until PR #37.
+    if generator.rng.chance(35) {
+        let (statements, expression) = generator.nested_array(&names, &functions);
+        body.extend(statements);
+        reads.push(expression);
+    }
+    if generator.rng.chance(30) {
+        let (inner, outer, statement, expression) = generator.nested_struct(&names, &functions);
+        structs.push(inner);
+        nested_structs.push(outer);
+        body.push(statement);
+        reads.push(expression);
+    }
+    if generator.rng.chance(30) {
+        let (declaration, statements, expression) = generator.struct_array(&names, &functions);
+        structs.push(declaration);
+        body.extend(statements);
         reads.push(expression);
     }
     if generator.rng.chance(40) {
@@ -1290,6 +2106,14 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     for expression in reads {
         tail = Expr::Arith("^", Box::new(tail), Box::new(expression));
     }
+    // The recursive function joins the program only after the tail is built,
+    // so no random call site can hand it an argument that recurses for as
+    // long as the type is wide.
+    if generator.rng.chance(35) {
+        let (function, call) = generator.recursive_function(functions.len() as u64);
+        functions.push(function);
+        tail = Expr::Arith("^", Box::new(tail), Box::new(call));
+    }
 
     let mut called = BTreeSet::new();
     body.iter()
@@ -1313,6 +2137,7 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     tail = use_every_local(&body, tail);
     Program {
         id: format!("fuzz_{seed}_{index:04}"),
+        nested_structs,
         kind,
         structs,
         enums,
@@ -1334,7 +2159,7 @@ impl Generator {
         let index_name = self.fresh("x");
         let length = 1 + self.rng.below(4) as usize;
         let elements = (0..length)
-            .map(|_| self.value(names, 1, functions, false))
+            .map(|_| self.value(names, 1, functions, true))
             .collect();
         let index = if self.rng.chance(20) {
             length as u64 + self.rng.below(3)
@@ -1368,7 +2193,7 @@ impl Generator {
         for _ in 0..pushes {
             statements.push(Stmt::Push {
                 name: name.clone(),
-                value: self.value(names, 1, functions, false),
+                value: self.value(names, 1, functions, true),
             });
         }
         let index = if self.rng.chance(20) {
@@ -1401,7 +2226,7 @@ impl Generator {
         let handle = self.fresh("h");
         let count = 1 + self.rng.below(2) as usize;
         let fields = (0..count)
-            .map(|_| self.value(names, 1, functions, false))
+            .map(|_| self.value(names, 1, functions, true))
             .collect();
         let mut statements = vec![
             Stmt::LetArena {
@@ -1460,7 +2285,7 @@ impl Generator {
         };
         let payload = declaration.variants[chosen]
             .is_none()
-            .then(|| self.value(names, 1, functions, false));
+            .then(|| self.value(names, 1, functions, true));
         let statement = Stmt::LetEnum {
             name: local.clone(),
             type_name: name,
@@ -1476,6 +2301,154 @@ impl Generator {
     }
 
     /// A struct of scalar fields, and a read of one of them.
+    /// `Array<Array<T, N>, M>` and the two `u64` locals that read it. Either
+    /// index may be past the end, which must trap. Nested arrays were gap
+    /// g01, where the inner typedef was emitted after the outer one.
+    fn nested_array(&mut self, names: &[String], functions: &[Function]) -> (Vec<Stmt>, Expr) {
+        let name = self.fresh("g");
+        let outer_name = self.fresh("x");
+        let inner_name = self.fresh("x");
+        let rows_count = 1 + self.rng.below(3) as usize;
+        let columns = 1 + self.rng.below(3) as usize;
+        let mut rows = Vec::with_capacity(rows_count);
+        for _ in 0..rows_count {
+            let mut row = Vec::with_capacity(columns);
+            for _ in 0..columns {
+                row.push(self.value(names, 1, functions, true));
+            }
+            rows.push(row);
+        }
+        let outer = self.position(rows_count as u64);
+        let inner = self.position(columns as u64);
+        (
+            vec![
+                Stmt::LetNestedArray {
+                    name: name.clone(),
+                    rows,
+                },
+                Stmt::LetIndex {
+                    name: outer_name.clone(),
+                    value: outer,
+                },
+                Stmt::LetIndex {
+                    name: inner_name.clone(),
+                    value: inner,
+                },
+            ],
+            Expr::NestedIndex {
+                array: name,
+                outer: outer_name,
+                inner: inner_name,
+            },
+        )
+    }
+
+    /// A struct that holds structs, read through `value.fO.fI`. It was gap
+    /// g02, where the two definitions were emitted in the wrong order.
+    fn nested_struct(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+    ) -> ((String, usize), (String, String, usize), Stmt, Expr) {
+        let inner_type = format!("P{}", self.counter + 1);
+        let outer_type = format!("Q{}", self.counter + 1);
+        let name = self.fresh("q");
+        let outer_fields = 1 + self.rng.below(2) as usize;
+        let inner_fields = 1 + self.rng.below(2) as usize;
+        let mut rows = Vec::with_capacity(outer_fields);
+        for _ in 0..outer_fields {
+            let mut row = Vec::with_capacity(inner_fields);
+            for _ in 0..inner_fields {
+                row.push(self.value(names, 1, functions, true));
+            }
+            rows.push(row);
+        }
+        let read = Expr::NestedField {
+            value: name.clone(),
+            outer: self.rng.below(outer_fields as u64) as usize,
+            inner: self.rng.below(inner_fields as u64) as usize,
+        };
+        let statement = Stmt::LetNestedStruct {
+            name,
+            type_name: outer_type.clone(),
+            inner_type: inner_type.clone(),
+            rows,
+        };
+        (
+            (inner_type.clone(), inner_fields),
+            (outer_type, inner_type, outer_fields),
+            statement,
+            read,
+        )
+    }
+
+    /// An array of structs, read through `array[index].fN`. It was gap g03,
+    /// where the array typedef preceded the struct it holds.
+    fn struct_array(
+        &mut self,
+        names: &[String],
+        functions: &[Function],
+    ) -> ((String, usize), Vec<Stmt>, Expr) {
+        let type_name = format!("T{}", self.counter + 1);
+        let name = self.fresh("t");
+        let index_name = self.fresh("x");
+        let length = 1 + self.rng.below(3) as usize;
+        let fields = 1 + self.rng.below(2) as usize;
+        let mut rows = Vec::with_capacity(length);
+        for _ in 0..length {
+            let mut row = Vec::with_capacity(fields);
+            for _ in 0..fields {
+                row.push(self.value(names, 1, functions, true));
+            }
+            rows.push(row);
+        }
+        let index = self.position(length as u64);
+        let read = Expr::IndexedField {
+            array: name.clone(),
+            index: index_name.clone(),
+            field: self.rng.below(fields as u64) as usize,
+        };
+        (
+            (type_name.clone(), fields),
+            vec![
+                Stmt::LetStructArray {
+                    name,
+                    type_name,
+                    rows,
+                },
+                Stmt::LetIndex {
+                    name: index_name,
+                    value: index,
+                },
+            ],
+            read,
+        )
+    }
+
+    /// The right-hand side of an assignment, never the target by itself.
+    ///
+    /// `x = x;` is valid Core, but its C is a self-assignment that clang
+    /// rejects under the declared `-Werror` profile (gap g23). The generator
+    /// avoids shapes that only upset the warning profile, so that a failure
+    /// stays a real divergence.
+    fn assigned_value(&mut self, target: &str, names: &[String], functions: &[Function]) -> Expr {
+        let value = self.value(names, 2, functions, true);
+        if value == Expr::Var(target.to_string()) {
+            return Expr::Arith("^", Box::new(value), Box::new(self.literal()));
+        }
+        value
+    }
+
+    /// An index into something of this length: inside it most of the time,
+    /// past the end sometimes, which must trap.
+    fn position(&mut self, length: u64) -> u64 {
+        if self.rng.chance(15) {
+            length + self.rng.below(2)
+        } else {
+            self.rng.below(length)
+        }
+    }
+
     fn flat_struct(
         &mut self,
         names: &[String],
@@ -1485,7 +2458,7 @@ impl Generator {
         let name = self.fresh("s");
         let count = 1 + self.rng.below(3) as usize;
         let fields = (0..count)
-            .map(|_| self.value(names, 1, functions, false))
+            .map(|_| self.value(names, 1, functions, true))
             .collect();
         let read = Expr::Field {
             value: name.clone(),
@@ -1499,6 +2472,51 @@ impl Generator {
                 fields,
             },
             read,
+        )
+    }
+
+    /// A function that calls itself, with a base case that its literal
+    /// argument always reaches. Recursion is what the C backend charges its
+    /// call-depth budget for, and no generated program had any.
+    ///
+    /// The call site passes a small non-negative literal, so the depth is
+    /// bounded by construction: an arbitrary argument could recurse for as
+    /// long as the type is wide.
+    fn recursive_function(&mut self, index: u64) -> (Function, Expr) {
+        let name = format!("recurse{index}");
+        let parameter = format!("r{index}_0");
+        let base = self.literal();
+        let op = *self.rng.pick(&["+", "-", "^"]);
+        let body = vec![Stmt::IfStatement {
+            condition: Expr::Compare(
+                "==",
+                Box::new(Expr::Var(parameter.clone())),
+                Box::new(Expr::Literal(0)),
+            ),
+            then_body: vec![Stmt::Return { value: base }],
+            else_body: None,
+        }];
+        let tail = Expr::Arith(
+            op,
+            Box::new(Expr::Call(
+                name.clone(),
+                vec![Expr::Arith(
+                    "-",
+                    Box::new(Expr::Var(parameter.clone())),
+                    Box::new(Expr::Literal(1)),
+                )],
+            )),
+            Box::new(Expr::Var(parameter.clone())),
+        );
+        let call = Expr::Call(name.clone(), vec![Expr::Literal(self.rng.range(0, 5))]);
+        (
+            Function {
+                name,
+                params: vec![parameter],
+                body,
+                tail,
+            },
+            call,
         )
     }
 
@@ -1668,6 +2686,7 @@ mod tests {
             id: "t".into(),
             kind: I32,
             structs: Vec::new(),
+            nested_structs: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -1820,32 +2839,417 @@ mod tests {
         assert_ne!(first, render_program(&generate_program(9, 4)));
     }
 
+    /// `if` as a statement and a block with its own scope were gaps g12 and
+    /// g04. The generator has to produce both.
     #[test]
-    fn generated_programs_avoid_the_known_gap_shapes() {
-        for index in 1..40 {
-            let program = generate_program(5, index);
+    fn generated_programs_cover_if_statements_and_blocks() {
+        let mut if_statements = 0;
+        let mut blocks = 0;
+        for index in 1..60 {
+            for seed in [5u64, 23] {
+                let source = render_program(&generate_program(seed, index));
+                for line in source.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("if ") && trimmed.ends_with('{') {
+                        if_statements += 1;
+                    }
+                }
+                blocks += source.matches("{ let ").count();
+            }
+        }
+        assert!(if_statements > 0, "no `if` statement was generated");
+        assert!(blocks > 0, "no block expression was generated");
+    }
+
+    /// A block's local shadows an outer one; the outer value must come back
+    /// once the block ends.
+    #[test]
+    fn a_block_local_does_not_outlive_its_block() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "v1".into(),
+                    mutable: false,
+                    value: Expr::Literal(10),
+                },
+                Stmt::Let {
+                    name: "v2".into(),
+                    mutable: false,
+                    value: Expr::Block {
+                        body: vec![Stmt::Let {
+                            name: "v1".into(),
+                            mutable: false,
+                            value: Expr::Literal(7),
+                        }],
+                        tail: Box::new(Expr::Var("v1".into())),
+                    },
+                },
+            ],
+            Expr::Arith(
+                "+",
+                Box::new(Expr::Var("v1".into())),
+                Box::new(Expr::Var("v2".into())),
+            ),
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(17));
+    }
+
+    /// A branch assigns to an outer local; the assignment survives the
+    /// branch, and the branch not taken changes nothing.
+    #[test]
+    fn an_if_statement_keeps_what_its_branch_assigned() {
+        let taken = |condition: bool| {
+            program_with(
+                vec![
+                    Stmt::Let {
+                        name: "v1".into(),
+                        mutable: true,
+                        value: Expr::Literal(1),
+                    },
+                    Stmt::IfStatement {
+                        condition: Expr::Compare(
+                            "==",
+                            Box::new(Expr::Literal(i128::from(condition))),
+                            Box::new(Expr::Literal(1)),
+                        ),
+                        then_body: vec![Stmt::Assign {
+                            name: "v1".into(),
+                            value: Expr::Literal(42),
+                        }],
+                        else_body: None,
+                    },
+                ],
+                Expr::Var("v1".into()),
+            )
+        };
+        assert_eq!(evaluate_program(&taken(true)).ok(), Some(42));
+        assert_eq!(evaluate_program(&taken(false)).ok(), Some(1));
+    }
+
+    /// Shifts and signed negation were gaps g13 and g14 until #37. The
+    /// generator now has to produce them, so a regression is caught by the
+    /// oracle and not only by the fixed corpus.
+    #[test]
+    fn generated_programs_cover_shifts_and_negation() {
+        let mut shifts_left = 0;
+        let mut shifts_right = 0;
+        let mut negations = 0;
+        for index in 1..60 {
+            for seed in [5u64, 23] {
+                let source = render_program(&generate_program(seed, index));
+                shifts_left += source.matches("<<").count();
+                shifts_right += source.matches(">>").count();
+                negations += source.matches("-(").count();
+            }
+        }
+        assert!(shifts_left > 0, "no left shift was generated");
+        assert!(shifts_right > 0, "no right shift was generated");
+        assert!(negations > 0, "no negation was generated");
+    }
+
+    /// `return`, `continue` and a self-recursive function are generated:
+    /// none of them appeared in the corpus before ESP-009.C.
+    #[test]
+    fn generated_programs_cover_returns_continues_and_recursion() {
+        let mut returns = 0;
+        let mut continues = 0;
+        let mut recursions = 0;
+        for index in 1..60 {
+            for seed in [5u64, 23, 55] {
+                let source = render_program(&generate_program(seed, index));
+                returns += source.matches("return ").count();
+                continues += source.matches("continue;").count();
+                recursions += source.matches("fn recurse").count();
+            }
+        }
+        assert!(returns > 0, "no `return` was generated");
+        assert!(continues > 0, "no `continue` was generated");
+        assert!(recursions > 0, "no recursive function was generated");
+    }
+
+    /// `break`, `else if` chains and one nested loop are generated too.
+    #[test]
+    fn generated_programs_cover_breaks_chains_and_nested_loops() {
+        let mut breaks = 0;
+        let mut chains = 0;
+        let mut nested_loops = 0;
+        for index in 1..60 {
+            for seed in [99u64, 100, 101] {
+                let source = render_program(&generate_program(seed, index));
+                breaks += source.matches("break;").count();
+                chains += source.matches("} else if ").count();
+                nested_loops += source
+                    .lines()
+                    .filter(|line| line.starts_with("        while "))
+                    .count();
+            }
+        }
+        assert!(breaks > 0, "no `break` was generated");
+        assert!(chains > 0, "no `else if` chain was generated");
+        assert!(nested_loops > 0, "no nested loop was generated");
+    }
+
+    /// A `break` ends the loop it is inside, and only that one.
+    #[test]
+    fn a_break_ends_the_innermost_loop() {
+        let count_to = |limit: i128| {
+            program_with(
+                vec![
+                    Stmt::Let {
+                        name: "i1".into(),
+                        mutable: true,
+                        value: Expr::Literal(0),
+                    },
+                    Stmt::Let {
+                        name: "v2".into(),
+                        mutable: true,
+                        value: Expr::Literal(0),
+                    },
+                    Stmt::While {
+                        condition: Expr::Compare(
+                            "<",
+                            Box::new(Expr::Var("i1".into())),
+                            Box::new(Expr::Literal(10)),
+                        ),
+                        body: vec![
+                            Stmt::Compound {
+                                name: "i1".into(),
+                                op: "+",
+                                value: Expr::Literal(1),
+                            },
+                            Stmt::IfStatement {
+                                condition: Expr::Compare(
+                                    ">",
+                                    Box::new(Expr::Var("i1".into())),
+                                    Box::new(Expr::Literal(limit)),
+                                ),
+                                then_body: vec![Stmt::Break],
+                                else_body: None,
+                            },
+                            Stmt::Compound {
+                                name: "v2".into(),
+                                op: "+",
+                                value: Expr::Literal(1),
+                            },
+                        ],
+                    },
+                ],
+                Expr::Var("v2".into()),
+            )
+        };
+        assert_eq!(evaluate_program(&count_to(3)).ok(), Some(3));
+        assert_eq!(evaluate_program(&count_to(20)).ok(), Some(10));
+    }
+
+    /// An `else if` link runs where the `if` does: it is not a scope.
+    #[test]
+    fn an_else_if_link_runs_in_the_enclosing_scope() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "v1".into(),
+                    mutable: true,
+                    value: Expr::Literal(5),
+                },
+                Stmt::IfStatement {
+                    condition: Expr::Compare(
+                        ">",
+                        Box::new(Expr::Var("v1".into())),
+                        Box::new(Expr::Literal(9)),
+                    ),
+                    then_body: vec![Stmt::Assign {
+                        name: "v1".into(),
+                        value: Expr::Literal(1),
+                    }],
+                    else_body: Some(ElseBranch::Chain(Box::new(Stmt::IfStatement {
+                        condition: Expr::Compare(
+                            ">",
+                            Box::new(Expr::Var("v1".into())),
+                            Box::new(Expr::Literal(3)),
+                        ),
+                        then_body: vec![Stmt::Assign {
+                            name: "v1".into(),
+                            value: Expr::Literal(42),
+                        }],
+                        else_body: Some(ElseBranch::Block(vec![Stmt::Assign {
+                            name: "v1".into(),
+                            value: Expr::Literal(0),
+                        }])),
+                    }))),
+                },
+            ],
+            Expr::Var("v1".into()),
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(42));
+    }
+
+    /// A `return` inside a branch ends the function: the tail never runs.
+    #[test]
+    fn a_return_inside_a_branch_ends_the_function() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "v1".into(),
+                    mutable: true,
+                    value: Expr::Literal(1),
+                },
+                Stmt::IfStatement {
+                    condition: Expr::Compare(
+                        "==",
+                        Box::new(Expr::Var("v1".into())),
+                        Box::new(Expr::Literal(1)),
+                    ),
+                    then_body: vec![Stmt::Return {
+                        value: Expr::Literal(42),
+                    }],
+                    else_body: None,
+                },
+            ],
+            Expr::Literal(7),
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(42));
+    }
+
+    /// A `continue` ends the iteration, not the loop.
+    #[test]
+    fn a_continue_skips_the_rest_of_the_iteration() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "i1".into(),
+                    mutable: true,
+                    value: Expr::Literal(0),
+                },
+                Stmt::Let {
+                    name: "v2".into(),
+                    mutable: true,
+                    value: Expr::Literal(0),
+                },
+                Stmt::While {
+                    condition: Expr::Compare(
+                        "<",
+                        Box::new(Expr::Var("i1".into())),
+                        Box::new(Expr::Literal(4)),
+                    ),
+                    body: vec![
+                        Stmt::Compound {
+                            name: "i1".into(),
+                            op: "+",
+                            value: Expr::Literal(1),
+                        },
+                        Stmt::IfStatement {
+                            condition: Expr::Compare(
+                                "==",
+                                Box::new(Expr::Var("i1".into())),
+                                Box::new(Expr::Literal(2)),
+                            ),
+                            then_body: vec![Stmt::Continue],
+                            else_body: None,
+                        },
+                        Stmt::Compound {
+                            name: "v2".into(),
+                            op: "+",
+                            value: Expr::Literal(10),
+                        },
+                    ],
+                },
+            ],
+            Expr::Var("v2".into()),
+        );
+        // Four iterations, one of them cut short: 30, not 40.
+        assert_eq!(evaluate_program(&program).ok(), Some(30));
+    }
+
+    /// The oracle runs on the host stack, so a program that recurses past its
+    /// own limit is skipped instead of taking the harness down.
+    #[test]
+    fn a_program_deeper_than_the_call_budget_is_unusable() {
+        let mut program = program_with(Vec::new(), Expr::Call("deep".into(), vec![]));
+        program.functions.push(Function {
+            name: "deep".into(),
+            params: Vec::new(),
+            body: Vec::new(),
+            tail: Expr::Call("deep".into(), vec![]),
+        });
+        assert!(matches!(
+            evaluate_program(&program),
+            Err(Failure::Unusable(Unusable::DoesNotFinish))
+        ));
+    }
+
+    /// An unsigned program never negates: the backend has no representable
+    /// result for it, and the frontend would accept the program.
+    #[test]
+    fn unsigned_programs_never_negate() {
+        for index in 1..80 {
+            let program = generate_program(31, index);
+            if !unsigned(program.kind) {
+                continue;
+            }
             let source = render_program(&program);
-            assert!(
-                !source.contains("<<") && !source.contains(">>"),
-                "shift in {}",
-                program.id
-            );
-            // Flat arrays and flat structs are generated on purpose; the
-            // nested forms are gaps g01, g02 and g03.
-            assert!(
-                !source.contains("Array<Array"),
-                "nested array in {}",
-                program.id
-            );
             for line in source.lines() {
-                let trimmed = line.trim();
                 assert!(
-                    !(trimmed.starts_with("if ") && trimmed.ends_with('}')),
-                    "if statement in {}: {line}",
+                    !line.contains("-("),
+                    "unsigned negation in {}: {line}",
                     program.id
                 );
             }
         }
+    }
+
+    #[test]
+    fn shifts_trap_only_on_the_amount() {
+        // `spec/core/evaluation.md`: the amount must be below the width.
+        assert_eq!(shift("<<", 1, 7, TYPES[0]).ok(), Some(128));
+        assert!(matches!(
+            shift("<<", 1, 8, TYPES[0]),
+            Err(Failure::Trapped(Trap::ShiftOutOfRange))
+        ));
+        assert!(matches!(
+            shift(">>", 1, 64, TYPES[3]),
+            Err(Failure::Trapped(Trap::ShiftOutOfRange))
+        ));
+        assert!(matches!(
+            shift("<<", 1, -1, TYPES[6]),
+            Err(Failure::Trapped(Trap::ShiftOutOfRange))
+        ));
+        // Bits that leave the width are dropped; they are not an overflow.
+        assert_eq!(shift("<<", 255, 1, TYPES[0]).ok(), Some(254));
+        assert_eq!(shift("<<", 1, 7, TYPES[4]).ok(), Some(-128));
+        // The signed right shift keeps the sign.
+        assert_eq!(shift(">>", -8, 2, TYPES[6]).ok(), Some(-2));
+        assert_eq!(shift(">>", -1, 63, TYPES[7]).ok(), Some(-1));
+        // The unsigned right shift does not.
+        assert_eq!(shift(">>", 255, 4, TYPES[0]).ok(), Some(15));
+    }
+
+    #[test]
+    fn negation_overflows_only_at_the_minimum() {
+        assert_eq!(negate(42, TYPES[6]).ok(), Some(-42));
+        assert_eq!(negate(0, TYPES[6]).ok(), Some(0));
+        assert!(matches!(
+            negate(-128, TYPES[4]),
+            Err(Failure::Trapped(Trap::IntegerOverflow))
+        ));
+        assert!(matches!(
+            negate(i64::MIN.into(), TYPES[7]),
+            Err(Failure::Trapped(Trap::IntegerOverflow))
+        ));
+    }
+
+    #[test]
+    fn a_shift_amount_reaching_the_width_is_a_trap_in_a_whole_program() {
+        let program = program_with(
+            vec![],
+            Expr::Shift(
+                "<<",
+                Box::new(Expr::Literal(1)),
+                Box::new(Expr::Literal(32)),
+            ),
+        );
+        let (_, stderr, exit) = expected_case(&program).expect("the program finishes");
+        assert_eq!(exit, 70);
+        assert_eq!(stderr, "ARGORIX_TRAP:SHIFT_OUT_OF_RANGE");
     }
 
     #[test]
@@ -1884,6 +3288,7 @@ mod aggregate_tests {
             id: "t".into(),
             kind: U32,
             structs,
+            nested_structs: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -1991,38 +3396,95 @@ mod aggregate_tests {
         assert!(source.contains("a1[x1]"));
     }
 
+    /// Aggregates stay at function level: declared inside an `if` or a loop
+    /// body they hit gap g06, which is not fixed.
     #[test]
-    fn generated_programs_keep_aggregates_flat_and_out_of_blocks() {
+    fn generated_aggregates_stay_out_of_blocks() {
         for index in 1..60 {
             let program = generate_program(7, index);
             let source = render_program(&program);
-            assert!(
-                !source.contains("Array<Array"),
-                "nested array in {}",
-                program.id
-            );
             for line in source.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("struct ") {
-                    // A struct of scalars only: no field takes another struct.
-                    assert!(
-                        !program
-                            .structs
-                            .iter()
-                            .any(|(name, _)| trimmed.contains(&format!(": {name}"))),
-                        "struct inside struct in {}: {line}",
-                        program.id
-                    );
-                }
-                if trimmed.starts_with("let a") && trimmed.contains("Array<") {
+                let declares_aggregate = trimmed.contains("Array<")
+                    || trimmed.contains("Buffer<")
+                    || trimmed.contains("Arena<");
+                if trimmed.starts_with("let ") && declares_aggregate {
                     assert!(
                         !line.starts_with("        "),
-                        "array declared inside a block in {}: {line}",
+                        "aggregate declared inside a block in {}: {line}",
                         program.id
                     );
                 }
             }
         }
+    }
+
+    /// The nested shapes were gaps g01, g02 and g03 until PR #37. All three
+    /// have to appear in the corpus.
+    #[test]
+    fn generated_programs_cover_the_nested_shapes() {
+        let mut nested_arrays = 0;
+        let mut nested_structs = 0;
+        let mut struct_arrays = 0;
+        for index in 1..60 {
+            for seed in [7u64, 19] {
+                let program = generate_program(seed, index);
+                let source = render_program(&program);
+                nested_arrays += usize::from(source.contains("Array<Array<"));
+                nested_structs += program.nested_structs.len();
+                struct_arrays += source
+                    .lines()
+                    .filter(|line| {
+                        line.contains("Array<T") && line.trim_start().starts_with("let ")
+                    })
+                    .count();
+            }
+        }
+        assert!(nested_arrays > 0, "no nested array was generated");
+        assert!(nested_structs > 0, "no struct of structs was generated");
+        assert!(struct_arrays > 0, "no array of structs was generated");
+    }
+
+    /// Reading past either dimension of a nested array is a typed trap, not a
+    /// wrong value.
+    #[test]
+    fn a_nested_index_past_the_end_traps() {
+        let program = |outer: u64, inner: u64| {
+            program(
+                Vec::new(),
+                vec![
+                    Stmt::LetNestedArray {
+                        name: "g1".into(),
+                        rows: vec![
+                            vec![Expr::Literal(1), Expr::Literal(2)],
+                            vec![Expr::Literal(3), Expr::Literal(4)],
+                        ],
+                    },
+                    Stmt::LetIndex {
+                        name: "x1".into(),
+                        value: outer,
+                    },
+                    Stmt::LetIndex {
+                        name: "x2".into(),
+                        value: inner,
+                    },
+                ],
+                Expr::NestedIndex {
+                    array: "g1".into(),
+                    outer: "x1".into(),
+                    inner: "x2".into(),
+                },
+            )
+        };
+        assert_eq!(evaluate_program(&program(1, 0)).ok(), Some(3));
+        assert!(matches!(
+            evaluate_program(&program(2, 0)),
+            Err(Failure::Trapped(Trap::IndexOutOfBounds))
+        ));
+        assert!(matches!(
+            evaluate_program(&program(0, 2)),
+            Err(Failure::Trapped(Trap::IndexOutOfBounds))
+        ));
     }
 }
 
@@ -2037,6 +3499,7 @@ mod memory_tests {
             id: "t".into(),
             kind: U32,
             structs,
+            nested_structs: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -2195,6 +3658,7 @@ mod enum_tests {
             id: "t".into(),
             kind: U32,
             structs: Vec::new(),
+            nested_structs: Vec::new(),
             enums: vec![declaration],
             functions: Vec::new(),
             main: Function {

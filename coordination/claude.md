@@ -2,10 +2,89 @@
 
 ## Current claim
 
+- Task: ESP-009.C — differential coverage for the constructs ESP-009.B
+  unlocked: shifts, signed negation, `if` as a statement, scoped blocks and
+  nested aggregates. Subtask of ESP-009 under the master plan's subdivision
+  rule (§10): it cuts none of the parent's criteria, it raises the evidence
+  behind them.
+- State: DONE (pending review).
+- Branch: `claude/differential-bitwise`.
+- Base: `9c77061` (`origin/main`, "Close the backend defects that blocked
+  writing Core (ESP-009.B) (#37)").
+- Started: 2026-09-22.
+- Ficha: `tasks/espada/ESP-009.C.md`.
+- Exclusive paths: `crates/argorix_core_c/**`, `conformance/core_c/**`,
+  `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.C.md`.
+- Not touched: `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/**`,
+  `tasks/espada/ESP-009.md`, `bootstrap/c/**`, `crates/argorix_ir/**` — every
+  Codex ESP-009 path and every path ESP-009.B already closed. If the generator
+  finds a backend defect, it is recorded in `gaps/gaps.json` and reported as an
+  issue, not fixed here.
+
+## Intended result
+
+The differential generator emits the constructs that were gaps until #37, so
+they are checked against the spec oracle on every run instead of resting on
+the 16 fixed regression fixtures. Concretely: `<<` and `>>` with in-range and
+out-of-range amounts (`SHIFT_OUT_OF_RANGE`), signed negation including `MIN`
+(`INTEGER_OVERFLOW`), `if` used as a statement, scoped blocks, and nested
+arrays and structs. The oracle derives each expectation from
+`spec/core/evaluation.md` and `spec/core/types.md`, never from the backend.
+
+## Handoff
+
+- **Every shape the generator used to avoid is now generated**, and its tests
+  changed from prohibitions to coverage: shifts, signed negation, `if` as a
+  statement, `else if` chains, scoped blocks that shadow, nested arrays,
+  structs holding structs, arrays of structs, `if` inside comparison operands
+  and aggregate literals, `return`, `continue`, `break`, one nested loop and a
+  self-recursive function.
+- The oracle gained what those need: real scoping (a `let` shadows instead of
+  overwriting; a block or branch drops exactly what it declared), the control
+  flow of `return`/`continue`/`break`, the shift and negation rules of
+  `spec/core/evaluation.md`, two-level aggregates, and a call-depth budget of
+  its own, because it evaluates on the host stack.
+- **1200 generated programs, zero divergences**: 960 with GCC 12.2 (seeds
+  101–108 × 120), 160 with clang 14.0.6 (seeds 6 and 201 × 80), 80 under
+  AddressSanitizer and UBSan. 357 of them return a value and 843 trap, across
+  `INTEGER_OVERFLOW`, `INDEX_OUT_OF_BOUNDS`, `SHIFT_OUT_OF_RANGE`,
+  `DIVISION_BY_ZERO` and `ARENA_RELEASED`.
+- No regression: runtime cases 15/15 with both compilers and 4/4 negative
+  controls each, regression corpus 16/16, workspace 507 tests, formatting and
+  Clippy clean.
+- The same seed produces the same corpus on Windows and Linux: seed 7 with 20
+  programs hashes to `3000d6a2…` on both.
+- **Two findings, reported rather than worked around.** Issue #38: an `if`
+  used as a statement followed by an expression starting with `(` is parsed as
+  a call of the `if`, so `if c { .. } (x)` is rejected while `if c { .. } x`
+  is accepted; the grammar is ambiguous about `;`-less block statements and
+  the maintainers have to pick a reading. Issue #39: seven programs
+  `core-check` accepts and the backend refuses, recorded as g17–g23.
+- g23 (`x = x;`, a C self-assignment clang rejects under `-Werror` and GCC
+  does not diagnose) made the gap corpus compiler-aware: a gap can name its
+  compilers and is reported `SKIPPED` elsewhere, instead of being announced
+  fixed on every GCC run.
+- CI: the differential job runs four GCC seeds of 80, one clang seed and one
+  sanitized seed; the gap job runs both compilers.
+- For Codex: nothing here touches `stdlib/**`, `spec/**`,
+  `tests/selfhost/**`, `crates/argorix_ir/**` or `bootstrap/c/**`. If the
+  stdlib wants `loop`, `match` on a bool or an integer, guards or module
+  constants, issue #39 has a minimal repro for each.
+- Limits: the oracle stops at 200 call frames and skips deeper programs; the
+  shift reading (bits leaving the width are dropped, not an overflow) is a
+  documented decision, since the spec states only the amount rule; `bytes`,
+  `string` and `Slice` are not generated.
+
+---
+
+# Previous claim: ESP-009.C predecessor — ESP-009.B (merged in PR #37)
+
+## Claim
+
 - Task: ESP-009.B — defects of the transitional C backend that blocked writing
   Core. Subtask of ESP-009, under the master plan's subdivision rule (§10):
   it cuts none of the parent's criteria, it enables them.
-- State: DONE (pending review).
+- State: DONE, merged in PR #37.
 - Branch: `claude/esp009b-backend-defects`.
 - Base: `06b489b` (`origin/main`).
 - Started: 2026-09-20.

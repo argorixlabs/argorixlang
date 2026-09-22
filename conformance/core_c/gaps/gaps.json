@@ -1,7 +1,67 @@
 {
   "schema_version": 1,
-  "recorded_commit": "06b489b",
-  "recorded_with": "gcc 12.2.0 / 15.2.0, -std=c11 -Wall -Wextra -Werror",
-  "purpose": "Known defects of the transitional C backend, each with the behaviour it reproduces today, so a fix is noticed and can be promoted. The list is empty: the sixteen defects of issue #27 were fixed in ESP-009.B and now live as regression cases in ../regression/cases.json. Record the next defect here rather than leaving it only in an issue.",
-  "gaps": []
+  "recorded_commit": "9c77061",
+  "recorded_with": "gcc 12.2.0 and clang 14.0.6, -std=c11 -Wall -Wextra -Werror",
+  "purpose": "Known defects of the transitional C backend, each with the behaviour it reproduces today, so a fix is noticed and can be promoted. The sixteen defects of issue #27 were fixed in ESP-009.B and now live as regression cases in ../regression/cases.json; the seven recorded here were found by the ESP-009.C differential work and reported as issue #39. Each program is valid Core 0.1 that argorixc core-check accepts.",
+  "gaps": [
+    {
+      "id": "g17_loop_statement",
+      "file": "g17_loop_statement.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:6",
+      "signature": "value block needs an expected scalar type",
+      "note": "`loop { .. break; }` used as a statement. spec/core/evaluation.md says `while` and `loop` are statements unless every `break value` of a `loop` agrees, so the statement form needs no value at all. The emitter asks the loop's block for a scalar type anyway."
+    },
+    {
+      "id": "g18_loop_break_value",
+      "file": "g18_loop_break_value.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "signature": "value block needs an expected scalar type",
+      "note": "`let total: u32 = loop { .. break i * 7u32; };`. The backend documents value breaks as outside the scalar C profile (core_c.rs: \"value breaks are not in scalar C profile\"), and fails earlier than that message. Recorded so the day the profile grows, the corpus says so."
+    },
+    {
+      "id": "g19_match_bool",
+      "file": "g19_match_bool.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:40",
+      "signature": "this C profile currently matches enum values only",
+      "note": "`match` on a `bool`. spec/core/evaluation.md requires `match` to be exhaustive for bool and enum alike, so the bool scrutinee is specified, not an extension."
+    },
+    {
+      "id": "g20_module_constant",
+      "file": "g20_module_constant.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "signature": "constant lowering is not implemented yet",
+      "note": "`const LIMIT: u32 = 40u32;` at module level. spec/core/grammar.ebnf has `const_decl` among the items, and spec/core/evaluation.md only forbids executable global initialisers, not constants."
+    },
+    {
+      "id": "g21_match_integer",
+      "file": "g21_match_integer.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "signature": "this C profile currently matches enum values only",
+      "note": "`match` on an integer with a literal arm and `_`. The grammar's `pattern` production lists both a literal and `_`, and `_` is what makes a non-enum scrutinee exhaustive. Same message as g19_match_bool, different pattern kind: a fix for one need not cover the other."
+    },
+    {
+      "id": "g22_match_guard",
+      "file": "g22_match_guard.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:48",
+      "signature": "match guards are not implemented in the C profile yet",
+      "note": "An arm with `if p0 > 3u32`. spec/core/evaluation.md names guards explicitly (\"guards no cuentan para exhaustividad\"), so they are part of Core 0.1."
+    },
+    {
+      "id": "g23_self_assignment",
+      "file": "g23_self_assignment.argx",
+      "kind": "compile_error",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "signature": "-Wself-assign",
+      "compilers": [
+        "clang"
+      ],
+      "note": "`x = x;` is a valid Core assignment and lowers to `argorix_v_x = argorix_v_x;`, which clang rejects under the declared -Werror profile. GCC has no -Wself-assign, so the same program builds there: this gap is recorded for clang alone. Found by the differential generator, which produced the shape by chance in 2 of 120 programs."
+    }
+  ]
 }

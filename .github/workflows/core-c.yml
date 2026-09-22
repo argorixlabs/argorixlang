@@ -141,8 +141,15 @@ jobs:
           if-no-files-found: ignore
 
   gap-corpus:
-    name: Known-gap corpus (issue #27)
+    name: Known-gap corpus (${{ matrix.compiler }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # A gap can belong to one compiler alone: g23 is a -Wself-assign
+        # error that GCC does not implement, and the harness skips a gap
+        # recorded for a compiler it is not running.
+        compiler: [gcc, clang]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -155,14 +162,14 @@ jobs:
         run: >-
           ./target/debug/core-c-harness gaps
           --argorixc target/debug/argorixc
-          --cc gcc
+          --cc ${{ matrix.compiler }}
           --github-annotations
-          --report target/core-c/gaps-report.json
+          --report target/core-c/gaps-report-${{ matrix.compiler }}.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: core-c-gaps-report
-          path: target/core-c/gaps-report.json
+          name: core-c-gaps-report-${{ matrix.compiler }}
+          path: target/core-c/gaps-report-${{ matrix.compiler }}.json
           if-no-files-found: ignore
 
   differential:
@@ -177,8 +184,8 @@ jobs:
       - name: Generate programs and compare against the oracle
         run: |
           set -eu
-          for seed in 1 2 3; do
-            ./target/debug/core-c-harness generate --seed "$seed" --count 60 \
+          for seed in 1 2 3 4; do
+            ./target/debug/core-c-harness generate --seed "$seed" --count 80 \
               --out "target/core-c/fuzz-$seed"
             ./target/debug/core-c-harness all \
               --argorixc target/debug/argorixc --cc gcc \
@@ -187,6 +194,36 @@ jobs:
               --work-dir "target/core-c/fuzz-work-$seed" \
               --report "target/core-c/fuzz-report-$seed.json"
           done
+      - name: Compare one seed with clang
+        # The declared -Werror profile is not the same on both
+        # compilers: a self-assignment is an error for clang and
+        # invisible to GCC (gap g23), and that showed up first in a
+        # generated program, not in a fixture.
+        run: |
+          set -eu
+          ./target/debug/core-c-harness generate --seed 6 --count 80 \
+            --out target/core-c/fuzz-6
+          ./target/debug/core-c-harness all \
+            --argorixc target/debug/argorixc --cc clang \
+            --cases target/core-c/fuzz-6/cases.json \
+            --bundle target/core-c/fuzz-bundle-6 \
+            --work-dir target/core-c/fuzz-work-6 \
+            --report target/core-c/fuzz-report-6.json
+      - name: Run one seed under the sanitizers
+        # A generated corpus is where a leak in a construct shows up
+        # first: the Buffer storage that was never released was found
+        # that way, and the constructs ESP-009.C added reach the same
+        # allocator and the same handle registry.
+        run: |
+          set -eu
+          ./target/debug/core-c-harness generate --seed 5 --count 80 \
+            --out target/core-c/fuzz-5
+          ./target/debug/core-c-harness all \
+            --argorixc target/debug/argorixc --cc gcc --sanitize \
+            --cases target/core-c/fuzz-5/cases.json \
+            --bundle target/core-c/fuzz-bundle-5 \
+            --work-dir target/core-c/fuzz-work-5 \
+            --report target/core-c/fuzz-report-5.json
       - uses: actions/upload-artifact@v7
         # The generated programs go with the report so any failure can be
         # reproduced exactly from the artifact.

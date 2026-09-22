@@ -1,0 +1,16 @@
+core 0.1;
+module gap.g22_match_guard;
+
+enum E { A { p0: u32, }, B, }
+
+fn read(v: E) -> u32 {
+    match v {
+        E::A { p0 } if p0 > 3u32 => p0,
+        E::A { p0 } => p0 + 1u32,
+        E::B => 7u32,
+    }
+}
+
+pub fn argorix_main() -> u32 {
+    read(E::A { p0: 41u32 }) + read(E::B)
+}
