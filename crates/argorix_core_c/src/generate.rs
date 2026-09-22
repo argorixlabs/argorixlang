@@ -1212,7 +1212,7 @@ impl Generator {
             Expr::Var(shadowed.clone())
         } else {
             Expr::Arith(
-                *self.rng.pick(&["+", "-", "^"]),
+                self.rng.pick(&["+", "-", "^"]),
                 Box::new(Expr::Var(shadowed.clone())),
                 Box::new(self.literal()),
             )
