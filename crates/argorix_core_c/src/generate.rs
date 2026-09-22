@@ -134,6 +134,7 @@ pub enum Trap {
     IndexOutOfBounds,
     ArenaReleased,
     ShiftOutOfRange,
+    Utf8Invalid,
 }
 
 impl Trap {
@@ -144,6 +145,7 @@ impl Trap {
             Trap::IndexOutOfBounds => "INDEX_OUT_OF_BOUNDS",
             Trap::ArenaReleased => "ARENA_RELEASED",
             Trap::ShiftOutOfRange => "SHIFT_OUT_OF_RANGE",
+            Trap::Utf8Invalid => "UTF8_INVALID",
         }
     }
 }
@@ -212,6 +214,10 @@ pub enum Expr {
     Block {
         body: Vec<Stmt>,
         tail: Box<Expr>,
+    },
+    /// `text.length()`, the byte length of a decoded `string`.
+    TextLength {
+        text: String,
     },
     /// `readN(local)`: the generated reader function whose body is an
     /// exhaustive `match` over the enum this local holds.
@@ -320,6 +326,23 @@ pub enum Stmt {
     /// `arena.release();`, after which its handles must trap.
     Release {
         arena: String,
+    },
+    /// The three declarations that turn a fixed byte array into a decoded
+    /// `string`:
+    ///
+    /// ```text
+    /// let a: Array<u8, N> = [..];
+    /// let c: bytes = a.as_bytes();
+    /// let s: string = c.decode_utf8_or_trap();
+    /// ```
+    ///
+    /// Generated only for a `u64` program, because `length()` is a `u64` and
+    /// Core has no casts.
+    LetText {
+        array: String,
+        bytes: String,
+        text: String,
+        values: Vec<u8>,
     },
     /// `let name: EN = EN::Variant { p0: .. };`
     LetEnum {
@@ -475,6 +498,49 @@ pub fn negate(value: i128, kind: IntType) -> Result<i128, Failure> {
         return Err(Failure::Trapped(Trap::IntegerOverflow));
     }
     Ok(-value)
+}
+
+/// Whether these bytes are well-formed UTF-8.
+///
+/// Written from Table 3-7 of the Unicode Standard, the definition
+/// `spec/core/stdlib.md` points at with "UTF-8 validation": no overlong
+/// encoding, no surrogate, nothing above U+10FFFF, and no truncated
+/// sequence. The runtime has its own implementation; this one exists to
+/// disagree with it when one of them is wrong.
+pub fn well_formed_utf8(bytes: &[u8]) -> bool {
+    let continuation = |byte: Option<&u8>, low: u8, high: u8| matches!(byte, Some(value) if *value >= low && *value <= high);
+    let mut index = 0;
+    while index < bytes.len() {
+        let first = bytes[index];
+        let width = match first {
+            0x00..=0x7F => 1,
+            0xC2..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF4 => 4,
+            // 0x80..=0xC1 is a lone continuation or an overlong two-byte
+            // start; 0xF5 and above are beyond U+10FFFF.
+            _ => return false,
+        };
+        // The second byte carries the range that rules out overlongs, the
+        // surrogate block and the values past U+10FFFF.
+        let (low, high) = match first {
+            0xE0 => (0xA0, 0xBF),
+            0xED => (0x80, 0x9F),
+            0xF0 => (0x90, 0xBF),
+            0xF4 => (0x80, 0x8F),
+            _ => (0x80, 0xBF),
+        };
+        if width > 1 && !continuation(bytes.get(index + 1), low, high) {
+            return false;
+        }
+        for offset in 2..width {
+            if !continuation(bytes.get(index + offset), 0x80, 0xBF) {
+                return false;
+            }
+        }
+        index += width;
+    }
+    true
 }
 
 #[derive(Default)]
@@ -678,6 +744,15 @@ fn execute(
                 computed.push(values);
             }
             env.nested.push((name.clone(), computed));
+        }
+        Stmt::LetText { text, values, .. } => {
+            // The decode traps here, where the statement is, and not where
+            // the length is read.
+            if !well_formed_utf8(values) {
+                return Err(Failure::Trapped(Trap::Utf8Invalid));
+            }
+            // `spec/core/stdlib.md` gives `stdlib.text` a byte length.
+            env.declare(text, values.len() as i128);
         }
         Stmt::LetIndex { name, value } => env.indexes.push((name.clone(), *value)),
         Stmt::LetBuffer { name } => env.aggregates.push((name.clone(), Vec::new())),
@@ -899,6 +974,7 @@ fn evaluate(
                 None => return Err(Failure::Trapped(Trap::IndexOutOfBounds)),
             }
         }
+        Expr::TextLength { text } => Value::Int(env.get(text)),
         Expr::Field { value, field } => Value::Int(
             env.aggregate(value)
                 .get(*field)
@@ -1010,6 +1086,7 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
             lines.push(render_expr(tail, kind));
             format!("{{ {} }}", lines.join(" "))
         }
+        Expr::TextLength { text } => format!("{text}.length()"),
         Expr::Index { array, index } => format!("{array}[{index}]"),
         Expr::NestedIndex {
             array,
@@ -1197,6 +1274,26 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
             }
             Stmt::Continue => lines.push(format!("{indent}continue;")),
             Stmt::Break => lines.push(format!("{indent}break;")),
+            Stmt::LetText {
+                array,
+                bytes,
+                text,
+                values,
+            } => {
+                let elements = values
+                    .iter()
+                    .map(|value| format!("{value}u8"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!(
+                    "{indent}let {array}: Array<u8, {}> = [{elements}];",
+                    values.len()
+                ));
+                lines.push(format!("{indent}let {bytes}: bytes = {array}.as_bytes();"));
+                lines.push(format!(
+                    "{indent}let {text}: string = {bytes}.decode_utf8_or_trap();"
+                ));
+            }
             Stmt::LetIndex { name, value } => {
                 lines.push(format!("{indent}let {name}: u64 = {value}u64;"))
             }
@@ -1841,6 +1938,9 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
         Expr::NestedField { value, .. } => {
             seen.insert(value.clone());
         }
+        Expr::TextLength { text } => {
+            seen.insert(text.clone());
+        }
         Expr::IndexedField { array, index, .. } => {
             seen.insert(array.clone());
             seen.insert(index.clone());
@@ -1879,6 +1979,12 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
             if let Some(value) = payload {
                 reads(value, seen);
             }
+        }
+        Stmt::LetText { array, bytes, .. } => {
+            // The array and the bytes exist only to be decoded; naming them
+            // here keeps the unused-local fold from touching them.
+            seen.insert(array.clone());
+            seen.insert(bytes.clone());
         }
         Stmt::Return { value } => reads(value, seen),
         Stmt::Continue | Stmt::Break => {}
@@ -1954,6 +2060,7 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
         | Expr::NestedIndex { .. }
         | Expr::NestedField { .. }
         | Expr::IndexedField { .. }
+        | Expr::TextLength { .. }
         | Expr::HandleField { .. }
         // The reader is generated with the enum, not through the call graph.
         | Expr::ReadEnum { .. } => {}
@@ -1977,6 +2084,7 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
             .flatten()
             .for_each(|element| calls(element, seen)),
         Stmt::Push { value, .. } => calls(value, seen),
+        Stmt::LetText { .. } => {}
         Stmt::Return { value } => calls(value, seen),
         Stmt::Continue | Stmt::Break => {}
         Stmt::LetIndex { .. }
@@ -2092,6 +2200,13 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
         let (declaration, statements, expression) = generator.arena(&names, &functions);
         structs.push(declaration);
         body.extend(statements);
+        reads.push(expression);
+    }
+    // `length()` is a `u64` and Core has no casts, so the text vertical only
+    // fits a program of that width.
+    if kind.name == "u64" && generator.rng.chance(60) {
+        let (statement, expression) = generator.text();
+        body.push(statement);
         reads.push(expression);
     }
     let mut enums = Vec::new();
@@ -2437,6 +2552,112 @@ impl Generator {
             return Expr::Arith("^", Box::new(value), Box::new(self.literal()));
         }
         value
+    }
+
+    /// A fixed byte array decoded as UTF-8 and read back by its byte length.
+    ///
+    /// Most of the time the bytes are well-formed by construction, encoding
+    /// random code points; the rest of the time one of the classic mistakes
+    /// is planted, and the oracle decides which of the two it turned out to
+    /// be by validating the bytes it actually produced.
+    fn text(&mut self) -> (Stmt, Expr) {
+        let array = self.fresh("a");
+        let bytes = self.fresh("c");
+        let text = self.fresh("s");
+        let mut values = Vec::new();
+        for _ in 0..=self.rng.below(3) {
+            self.encode_code_point(&mut values);
+        }
+        if self.rng.chance(45) {
+            self.break_utf8(&mut values);
+        }
+        if values.is_empty() {
+            values.push(0x41);
+        }
+        (
+            Stmt::LetText {
+                array,
+                bytes,
+                text: text.clone(),
+                values,
+            },
+            Expr::TextLength { text },
+        )
+    }
+
+    /// Append one code point as UTF-8, across all four widths and never in
+    /// the surrogate block.
+    fn encode_code_point(&mut self, values: &mut Vec<u8>) {
+        let point = match self.rng.below(4) {
+            0 => self.rng.range(0x00, 0x7F) as u32,
+            1 => self.rng.range(0x80, 0x7FF) as u32,
+            2 => {
+                let point = self.rng.range(0x800, 0xFFFF) as u32;
+                // D800..DFFF is not a character, so it never encodes.
+                if (0xD800..=0xDFFF).contains(&point) {
+                    0xFFFD
+                } else {
+                    point
+                }
+            }
+            _ => self.rng.range(0x10000, 0x10FFFF) as u32,
+        };
+        match point {
+            0x00..=0x7F => values.push(point as u8),
+            0x80..=0x7FF => {
+                values.push(0xC0 | (point >> 6) as u8);
+                values.push(0x80 | (point & 0x3F) as u8);
+            }
+            0x800..=0xFFFF => {
+                values.push(0xE0 | (point >> 12) as u8);
+                values.push(0x80 | ((point >> 6) & 0x3F) as u8);
+                values.push(0x80 | (point & 0x3F) as u8);
+            }
+            _ => {
+                values.push(0xF0 | (point >> 18) as u8);
+                values.push(0x80 | ((point >> 12) & 0x3F) as u8);
+                values.push(0x80 | ((point >> 6) & 0x3F) as u8);
+                values.push(0x80 | (point & 0x3F) as u8);
+            }
+        }
+    }
+
+    /// Plant one of the mistakes a validator has to catch.
+    fn break_utf8(&mut self, values: &mut Vec<u8>) {
+        match self.rng.below(6) {
+            // A truncated sequence: the last byte of a multi-byte character
+            // goes missing.
+            0 if values.len() > 1 => {
+                values.pop();
+            }
+            // A lone continuation byte.
+            1 => values.push(self.rng.range(0x80, 0xBF) as u8),
+            // An overlong: `C0 80` and `C1 BF` encode what one byte already
+            // encodes.
+            2 => {
+                values.push(if self.rng.chance(50) { 0xC0 } else { 0xC1 });
+                values.push(self.rng.range(0x80, 0xBF) as u8);
+            }
+            // A surrogate, which UTF-8 never encodes: ED A0 80 is U+D800.
+            3 => {
+                values.push(0xED);
+                values.push(self.rng.range(0xA0, 0xBF) as u8);
+                values.push(self.rng.range(0x80, 0xBF) as u8);
+            }
+            // Past U+10FFFF: F5 and above have no code points left.
+            4 => {
+                values.push(self.rng.range(0xF5, 0xFF) as u8);
+                values.push(self.rng.range(0x80, 0xBF) as u8);
+            }
+            // A continuation byte that is not one.
+            _ => {
+                if let Some(last) = values.last_mut() {
+                    *last = 0x41;
+                } else {
+                    values.push(0x80);
+                }
+            }
+        }
     }
 
     /// An index into something of this length: inside it most of the time,
