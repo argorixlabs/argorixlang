@@ -883,17 +883,32 @@ fn execute(
                     return Err(Failure::Unusable(Unusable::DoesNotFinish));
                 }
                 fuel.steps -= 1;
+                // The body is a block: what it declares belongs to the
+                // iteration. Without this a `let` inside a loop would pile
+                // up one binding per turn, which is both wrong and quadratic
+                // to look past.
+                let scope = env.mark();
                 for inner in body {
                     match execute(inner, env, program, fuel)? {
                         Flow::Normal => {}
                         // A `return` leaves the loop and the function.
-                        Flow::Returned(value) => return Ok(Flow::Returned(value)),
+                        Flow::Returned(value) => {
+                            env.restore(scope);
+                            return Ok(Flow::Returned(value));
+                        }
                         // A `continue` only ends this iteration.
-                        Flow::Continued => continue 'iterations,
+                        Flow::Continued => {
+                            env.restore(scope);
+                            continue 'iterations;
+                        }
                         // A `break` reaches the loop it is lexically inside.
-                        Flow::Broke => break 'iterations,
+                        Flow::Broke => {
+                            env.restore(scope);
+                            break 'iterations;
+                        }
                     }
                 }
+                env.restore(scope);
             }
         }
         Stmt::Return { value } => {
@@ -3522,6 +3537,47 @@ mod tests {
         assert!(breaks > 0, "no `break` was generated");
         assert!(chains > 0, "no `else if` chain was generated");
         assert!(nested_loops > 0, "no nested loop was generated");
+    }
+
+    /// A loop body is a block: what it declares dies with the iteration, so
+    /// a local it shadows comes back afterwards.
+    #[test]
+    fn a_loop_body_local_does_not_outlive_its_iteration() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "v1".into(),
+                    mutable: false,
+                    value: Expr::Literal(5),
+                },
+                Stmt::Let {
+                    name: "i2".into(),
+                    mutable: true,
+                    value: Expr::Literal(0),
+                },
+                Stmt::While {
+                    condition: Expr::Compare(
+                        "<",
+                        Box::new(Expr::Var("i2".into())),
+                        Box::new(Expr::Literal(3)),
+                    ),
+                    body: vec![
+                        Stmt::Let {
+                            name: "v1".into(),
+                            mutable: false,
+                            value: Expr::Literal(9),
+                        },
+                        Stmt::Compound {
+                            name: "i2".into(),
+                            op: "+",
+                            value: Expr::Literal(1),
+                        },
+                    ],
+                },
+            ],
+            Expr::Var("v1".into()),
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(5));
     }
 
     /// A `break` ends the loop it is inside, and only that one.
