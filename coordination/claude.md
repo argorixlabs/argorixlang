@@ -2,6 +2,35 @@
 
 ## Current claim
 
+- Task: ESP-009.D — differential coverage of the parts of ESP-009 that
+  already execute: bytes/UTF-8 and the resource ceilings of `Buffer` and
+  `Arena`. Subtask of ESP-009 under the master plan's subdivision rule
+  (§10).
+- State: IN PROGRESS.
+- Branch: `claude/differential-text`, stacked on `claude/differential-bitwise`
+  (PR #40). It retargets to `main` once that lands.
+- Base: `bcac7e3`.
+- Started: 2026-09-22.
+- Ficha: `tasks/espada/ESP-009.D.md`.
+- Exclusive paths: `crates/argorix_core_c/**`, `conformance/core_c/**`,
+  `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.D.md`.
+- Not touched: `stdlib/**`, `spec/**`, `tests/selfhost/**`,
+  `crates/argorix_ir/**`, `bootstrap/c/**` — every Codex ESP-009 path.
+
+## Intended result
+
+The generator produces byte arrays decoded as UTF-8, aimed at the boundaries
+a validator gets wrong, and programs that reach the declared ceilings of
+`Buffer` and `Arena`. The oracle validates UTF-8 from Table 3-7 of the Unicode
+Standard and models the ceilings from `spec/core/stdlib.md`, never from the
+runtime.
+
+---
+
+# Previous claim: ESP-009.C (PR #40)
+
+## Claim
+
 - Task: ESP-009.C — differential coverage for the constructs ESP-009.B
   unlocked: shifts, signed negation, `if` as a statement, scoped blocks and
   nested aggregates. Subtask of ESP-009 under the master plan's subdivision
