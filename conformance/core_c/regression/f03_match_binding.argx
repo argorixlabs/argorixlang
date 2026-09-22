@@ -1,0 +1,10 @@
+core 0.1;
+module regression.f03_match_binding;
+
+pub fn argorix_main() -> u32 {
+    let x: u32 = 40u32;
+    match x {
+        0u32 => 0u32,
+        other => other + 2u32,
+    }
+}

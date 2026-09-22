@@ -1,0 +1,16 @@
+core 0.1;
+module regression.f04_loop_value_with_inner_while;
+
+pub fn argorix_main() -> u32 {
+    let mut i: u32 = 0u32;
+    let found: u32 = loop {
+        i += 1u32;
+        let mut j: u32 = 0u32;
+        while j < 10u32 {
+            j += 1u32;
+            if j == 3u32 { break; }
+        }
+        if i * j >= 12u32 { break i * 10u32 + j; }
+    };
+    found
+}

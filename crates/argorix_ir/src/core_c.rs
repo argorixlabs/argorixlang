@@ -193,6 +193,19 @@ struct Emitter<'a> {
     signatures: BTreeMap<String, Signature>,
     structs: BTreeMap<String, StructLayout>,
     enums: BTreeMap<String, EnumLayout>,
+    constants: BTreeMap<String, Constant>,
+}
+
+/// A module constant: its type and the initializer every use evaluates.
+///
+/// Core has no executable global initializers, so a constant is lowered by
+/// evaluating its initializer where it is read. The initializer has no
+/// effects, which makes that indistinguishable from reading a stored value,
+/// and it keeps checked arithmetic in the initializer checked.
+#[derive(Debug, Clone)]
+struct Constant {
+    ty: ScalarType,
+    value: CoreIrExpr,
 }
 
 impl<'a> Emitter<'a> {
@@ -202,6 +215,7 @@ impl<'a> Emitter<'a> {
             signatures: BTreeMap::new(),
             structs: BTreeMap::new(),
             enums: BTreeMap::new(),
+            constants: BTreeMap::new(),
         }
     }
 
@@ -230,10 +244,14 @@ impl<'a> Emitter<'a> {
                 CoreIrItemKind::Enum(value) => {
                     self.enums.insert(value.name.clone(), enum_layout(value)?);
                 }
-                CoreIrItemKind::Const(_) => {
-                    return Err(CoreCError::unsupported(
-                        "constant lowering is not implemented yet",
-                    ));
+                CoreIrItemKind::Const(value) => {
+                    self.constants.insert(
+                        value.name.clone(),
+                        Constant {
+                            ty: ScalarType::from_ir(&value.ty)?,
+                            value: value.value.clone(),
+                        },
+                    );
                 }
             }
         }
@@ -326,8 +344,14 @@ impl<'a> Emitter<'a> {
         source.push('\n');
         for item in &program.items {
             if let CoreIrItemKind::Function(function) = &item.kind {
-                FunctionEmitter::new(&self.signatures, &self.structs, &self.enums, function)
-                    .emit(&mut source)?;
+                FunctionEmitter::new(
+                    &self.signatures,
+                    &self.structs,
+                    &self.enums,
+                    &self.constants,
+                    function,
+                )
+                .emit(&mut source)?;
             }
         }
         self.emit_main(entry, &mut source)?;
@@ -536,9 +560,14 @@ struct FunctionEmitter<'a> {
     signatures: &'a BTreeMap<String, Signature>,
     structs: &'a BTreeMap<String, StructLayout>,
     enums: &'a BTreeMap<String, EnumLayout>,
+    constants: &'a BTreeMap<String, Constant>,
     function: &'a CoreIrFunction,
     locals: BTreeMap<String, ScalarType>,
     temporary: usize,
+    /// The loops around the statement being emitted, innermost last: the
+    /// result temporary and its type for a `loop` used as a value, `None` for
+    /// a `while` or a `loop` in statement position.
+    loops: Vec<Option<(String, ScalarType)>>,
 }
 
 impl<'a> FunctionEmitter<'a> {
@@ -546,6 +575,7 @@ impl<'a> FunctionEmitter<'a> {
         signatures: &'a BTreeMap<String, Signature>,
         structs: &'a BTreeMap<String, StructLayout>,
         enums: &'a BTreeMap<String, EnumLayout>,
+        constants: &'a BTreeMap<String, Constant>,
         function: &'a CoreIrFunction,
     ) -> Self {
         let locals = function
@@ -562,9 +592,11 @@ impl<'a> FunctionEmitter<'a> {
             signatures,
             structs,
             enums,
+            constants,
             function,
             locals,
             temporary: 0,
+            loops: Vec::new(),
         }
     }
 
@@ -701,7 +733,13 @@ impl<'a> FunctionEmitter<'a> {
                         )
                     }
                 };
-                line(source, indent, &format!("argorix_v_{name} = {assignment};"));
+                if assignment == format!("argorix_v_{name}") {
+                    // `x = x;` is valid Core with no effect, and its C is a
+                    // self-assignment clang rejects under -Werror (gap g23).
+                    line(source, indent, &format!("(void)argorix_v_{name};"));
+                } else {
+                    line(source, indent, &format!("argorix_v_{name} = {assignment};"));
+                }
             }
             CoreIrStatement::While { condition, body } => {
                 line(source, indent, "while (true) {");
@@ -713,7 +751,10 @@ impl<'a> FunctionEmitter<'a> {
                     indent + 1,
                     &format!("if (!{}) {{ break; }}", condition.0),
                 );
-                self.emit_scoped_block(body, indent + 1, source)?;
+                self.loops.push(None);
+                let emitted = self.emit_scoped_block(body, indent + 1, source);
+                self.loops.pop();
+                emitted?;
                 line(source, indent, "}");
             }
             CoreIrStatement::Return { value } => {
@@ -751,10 +792,15 @@ impl<'a> FunctionEmitter<'a> {
             }
             CoreIrStatement::Break { value: None } => line(source, indent, "break;"),
             CoreIrStatement::Continue => line(source, indent, "continue;"),
-            CoreIrStatement::Break { value: Some(_) } => {
-                return Err(CoreCError::unsupported(
-                    "value breaks are not in scalar C profile",
-                ));
+            CoreIrStatement::Break { value: Some(value) } => {
+                let Some(Some((result, ty))) = self.loops.last().cloned() else {
+                    return Err(CoreCError::unsupported(
+                        "a value `break` needs an enclosing `loop` used as a value",
+                    ));
+                };
+                let value = self.emit_expr(value, Some(&ty), indent, source)?;
+                line(source, indent, &format!("{result} = {};", value.0));
+                line(source, indent, "break;");
             }
         }
         Ok(())
@@ -809,10 +855,17 @@ impl<'a> FunctionEmitter<'a> {
                     return Ok((temp, ty));
                 }
                 let name = single_path(segments)?;
-                let ty = self.locals.get(name).cloned().ok_or_else(|| {
-                    CoreCError::unsupported(format!("path `{name}` is not a scalar local"))
-                })?;
-                Ok((format!("argorix_v_{name}"), ty))
+                if let Some(ty) = self.locals.get(name).cloned() {
+                    return Ok((format!("argorix_v_{name}"), ty));
+                }
+                // A local shadows a constant of the same name, so constants
+                // are only consulted once no local matches.
+                if let Some(constant) = self.constants.get(name).cloned() {
+                    return self.emit_expr(&constant.value, Some(&constant.ty), indent, source);
+                }
+                Err(CoreCError::unsupported(format!(
+                    "path `{name}` is not a scalar local"
+                )))
             }
             CoreIrExpr::Aggregate { path, fields } => {
                 let (name, variant) = match path.as_slice() {
@@ -1203,60 +1256,123 @@ impl<'a> FunctionEmitter<'a> {
                 self.bind_temp(call, signature.result, indent, source)
             }
             CoreIrExpr::Match { value, arms } => {
-                let result_ty = expected.cloned().ok_or_else(|| {
-                    CoreCError::unsupported("match expression needs an expected result type")
-                })?;
+                // In statement position the arms run for their effects and
+                // there is no result temporary.
+                let result_ty = expected.cloned().filter(|ty| *ty != ScalarType::Unit);
                 let scrutinee = self.emit_expr(value, None, indent, source)?;
-                let ScalarType::User(enum_name) = &scrutinee.1 else {
-                    return Err(CoreCError::unsupported(
-                        "this C profile currently matches enum values only",
-                    ));
-                };
-                let enum_name = enum_name.clone();
-                let layout = self.enums.get(&enum_name).cloned().ok_or_else(|| {
-                    CoreCError::unsupported(format!("`{enum_name}` is not a lowered enum"))
-                })?;
-                let result = self.next_temp();
-                let matched = self.next_temp();
-                line(source, indent, &format!("{} {result};", result_ty.c_name()));
-                line(source, indent, &format!("bool {matched} = false;"));
-                for arm in arms {
-                    if arm.guard.is_some() {
+                let enum_layout = match &scrutinee.1 {
+                    ScalarType::User(name) => {
+                        let layout = self.enums.get(name).cloned().ok_or_else(|| {
+                            CoreCError::unsupported(format!("`{name}` is not a lowered enum"))
+                        })?;
+                        Some((name.clone(), layout))
+                    }
+                    // `spec/core/evaluation.md`: a match is exhaustive for
+                    // bool and enum, and `_` makes an integer one exhaustive.
+                    ScalarType::Bool | ScalarType::Integer(_) => None,
+                    _ => {
                         return Err(CoreCError::unsupported(
-                            "match guards are not implemented in the C profile yet",
+                            "match scrutinee must be a bool, an integer or an enum",
                         ));
                     }
-                    let (condition, variant, fields) = match &arm.pattern {
+                };
+                let result = self.next_temp();
+                let matched = self.next_temp();
+                if let Some(ty) = &result_ty {
+                    line(source, indent, &format!("{} {result};", ty.c_name()));
+                }
+                line(source, indent, &format!("bool {matched} = false;"));
+                for arm in arms {
+                    // Each binding is (name, type, C expression it copies).
+                    let mut bindings: Vec<(String, ScalarType, String)> = Vec::new();
+                    let condition = match &arm.pattern {
                         CoreIrPattern::Variant { path, fields } => {
+                            let Some((enum_name, layout)) = &enum_layout else {
+                                return Err(CoreCError::unsupported(
+                                    "variant pattern on a scrutinee that is not an enum",
+                                ));
+                            };
                             let [pattern_enum, variant] = path.as_slice() else {
                                 return Err(CoreCError::unsupported(
                                     "variant match path must contain enum and variant",
                                 ));
                             };
-                            if pattern_enum != &enum_name {
+                            if pattern_enum != enum_name {
                                 return Err(CoreCError::unsupported(
                                     "variant pattern enum does not match scrutinee",
                                 ));
                             }
-                            if !layout.variants.contains_key(variant) {
-                                return Err(CoreCError::unsupported(format!(
+                            let variant_layout = layout.variants.get(variant).ok_or_else(|| {
+                                CoreCError::unsupported(format!(
                                     "unknown variant `{enum_name}::{variant}`"
-                                )));
+                                ))
+                            })?;
+                            for field in fields {
+                                let field_ty =
+                                    variant_layout.get(&field.name).cloned().ok_or_else(|| {
+                                        CoreCError::unsupported(format!(
+                                            "unknown pattern field `{}`",
+                                            field.name
+                                        ))
+                                    })?;
+                                let binding = match field.nested.as_deref() {
+                                    None => Some(field.name.as_str()),
+                                    Some(CoreIrPattern::Binding { name }) => Some(name.as_str()),
+                                    Some(CoreIrPattern::Wildcard) => None,
+                                    Some(_) => {
+                                        return Err(CoreCError::unsupported(
+                                            "nested non-binding patterns are not implemented yet",
+                                        ));
+                                    }
+                                };
+                                if let Some(binding) = binding {
+                                    bindings.push((
+                                        binding.to_string(),
+                                        field_ty,
+                                        format!(
+                                            "{}.data.{}.argorix_f_{}",
+                                            scrutinee.0, variant, field.name
+                                        ),
+                                    ));
+                                }
                             }
-                            (
-                                format!(
-                                    "{}.tag == argorix_tag_{}_{}",
-                                    scrutinee.0, enum_name, variant
-                                ),
-                                Some(variant.as_str()),
-                                fields.as_slice(),
+                            format!(
+                                "{}.tag == argorix_tag_{}_{}",
+                                scrutinee.0, enum_name, variant
                             )
                         }
-                        CoreIrPattern::Wildcard => ("true".into(), None, &[][..]),
-                        _ => {
-                            return Err(CoreCError::unsupported(
-                                "this C profile supports variant and wildcard match arms",
-                            ));
+                        CoreIrPattern::Wildcard => "true".into(),
+                        CoreIrPattern::Binding { name } => {
+                            bindings.push((name.clone(), scrutinee.1.clone(), scrutinee.0.clone()));
+                            "true".into()
+                        }
+                        CoreIrPattern::Bool { value } => {
+                            if scrutinee.1 != ScalarType::Bool {
+                                return Err(CoreCError::unsupported(
+                                    "bool pattern on a scrutinee that is not a bool",
+                                ));
+                            }
+                            if *value {
+                                scrutinee.0.clone()
+                            } else {
+                                format!("!{}", scrutinee.0)
+                            }
+                        }
+                        CoreIrPattern::Integer { value } => {
+                            if !matches!(scrutinee.1, ScalarType::Integer(_)) {
+                                return Err(CoreCError::unsupported(
+                                    "integer pattern on a scrutinee that is not an integer",
+                                ));
+                            }
+                            // The cast keeps both sides one type, so no
+                            // signedness warning reaches the -Werror profile.
+                            format!(
+                                "{} == ({}){}{}",
+                                scrutinee.0,
+                                scrutinee.1.c_name(),
+                                value,
+                                integer_literal_suffix(&scrutinee.1)?
+                            )
                         }
                     };
                     line(
@@ -1265,49 +1381,43 @@ impl<'a> FunctionEmitter<'a> {
                         &format!("if (!{matched} && ({condition})) {{"),
                     );
                     let mut previous = Vec::new();
-                    if let Some(variant) = variant {
-                        let variant_layout = &layout.variants[variant];
-                        for field in fields {
-                            let field_ty =
-                                variant_layout.get(&field.name).cloned().ok_or_else(|| {
-                                    CoreCError::unsupported(format!(
-                                        "unknown pattern field `{}`",
-                                        field.name
-                                    ))
-                                })?;
-                            let binding = match field.nested.as_deref() {
-                                None => Some(field.name.as_str()),
-                                Some(CoreIrPattern::Binding { name }) => Some(name.as_str()),
-                                Some(CoreIrPattern::Wildcard) => None,
-                                Some(_) => {
-                                    return Err(CoreCError::unsupported(
-                                        "nested non-binding patterns are not implemented yet",
-                                    ));
-                                }
-                            };
-                            if let Some(binding) = binding {
-                                previous.push((
-                                    binding.to_string(),
-                                    self.locals.insert(binding.to_string(), field_ty.clone()),
-                                ));
-                                line(
-                                    source,
-                                    indent + 1,
-                                    &format!(
-                                        "{} argorix_v_{} = {}.data.{}.argorix_f_{};",
-                                        field_ty.c_name(),
-                                        binding,
-                                        scrutinee.0,
-                                        variant,
-                                        field.name
-                                    ),
-                                );
-                            }
-                        }
+                    for (name, ty, expression) in bindings {
+                        line(
+                            source,
+                            indent + 1,
+                            &format!("{} argorix_v_{} = {};", ty.c_name(), name, expression),
+                        );
+                        previous.push((name.clone(), self.locals.insert(name, ty)));
                     }
-                    let value = self.emit_expr(&arm.value, Some(&result_ty), indent + 1, source)?;
-                    line(source, indent + 1, &format!("{result} = {};", value.0));
-                    line(source, indent + 1, &format!("{matched} = true;"));
+                    // A guard runs after the bindings it may read; if it is
+                    // false the next arm is tried, exactly as if this pattern
+                    // had not matched.
+                    let body_indent = if let Some(guard) = &arm.guard {
+                        let guard =
+                            self.emit_expr(guard, Some(&ScalarType::Bool), indent + 1, source)?;
+                        line(source, indent + 1, &format!("if ({}) {{", guard.0));
+                        indent + 2
+                    } else {
+                        indent + 1
+                    };
+                    match &result_ty {
+                        Some(ty) => {
+                            let value =
+                                self.emit_expr(&arm.value, Some(ty), body_indent, source)?;
+                            line(source, body_indent, &format!("{result} = {};", value.0));
+                        }
+                        None => self.emit_statement(
+                            &CoreIrStatement::Expr {
+                                value: arm.value.clone(),
+                            },
+                            body_indent,
+                            source,
+                        )?,
+                    }
+                    line(source, body_indent, &format!("{matched} = true;"));
+                    if arm.guard.is_some() {
+                        line(source, indent + 1, "}");
+                    }
                     line(source, indent, "}");
                     for (name, old) in previous {
                         if let Some(old) = old {
@@ -1322,7 +1432,10 @@ impl<'a> FunctionEmitter<'a> {
                     indent,
                     &format!("if (!{matched}) {{ argorix_trap(\"NON_EXHAUSTIVE_MATCH\"); }}"),
                 );
-                Ok((result, result_ty))
+                Ok(match result_ty {
+                    Some(ty) => (result, ty),
+                    None => ("0".into(), ScalarType::Unit),
+                })
             }
             CoreIrExpr::If {
                 condition,
@@ -1357,12 +1470,27 @@ impl<'a> FunctionEmitter<'a> {
                 Ok((temp, ty))
             }
             CoreIrExpr::Loop { body } => {
+                // A `loop` used as a value leaves through `break value`, which
+                // assigns this temporary; in statement position it has none.
+                let slot = match expected {
+                    Some(ty) if *ty != ScalarType::Unit => {
+                        let temp = self.next_temp();
+                        line(source, indent, &format!("{} {temp};", ty.c_name()));
+                        Some((temp, ty.clone()))
+                    }
+                    _ => None,
+                };
                 line(source, indent, "while (true) {");
                 line(source, indent + 1, "argorix_step(budget);");
-                self.emit_block(body, indent + 1, None, source)?;
+                self.loops.push(slot.clone());
+                let emitted = self.emit_scoped_block(body, indent + 1, source);
+                self.loops.pop();
+                emitted?;
                 line(source, indent, "}");
-                let ty = expected.cloned().unwrap_or(ScalarType::Unit);
-                Ok(("0".into(), ty))
+                Ok(match slot {
+                    Some((temp, ty)) => (temp, ty),
+                    None => ("0".into(), expected.cloned().unwrap_or(ScalarType::Unit)),
+                })
             }
             CoreIrExpr::Unit => Ok(("0".into(), ScalarType::Unit)),
             _ => Err(CoreCError::unsupported(format!(
@@ -1592,8 +1720,15 @@ impl<'a> FunctionEmitter<'a> {
             self.emit_statement(statement, indent, source)?;
         }
         if let Some(tail) = &block.tail {
-            // A tail in statement position is evaluated for its effects.
-            let _ = self.emit_expr(tail, None, indent, source)?;
+            // A tail in statement position is evaluated for its effects, and
+            // an `if` or `match` there is control flow, not a value.
+            self.emit_statement(
+                &CoreIrStatement::Expr {
+                    value: (**tail).clone(),
+                },
+                indent,
+                source,
+            )?;
         }
         self.locals = saved;
         Ok(())

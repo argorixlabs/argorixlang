@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "core_version": "0.1",
-  "task": "ESP-009.B",
-  "purpose": "Programs that the transitional C backend once got wrong, kept as regression cases. Each one is valid Core 0.1 that argorixc core-check accepts, and every expectation comes from spec/core/evaluation.md. They were the known-gap corpus of issue #27 until the defects were fixed.",
+  "task": "ESP-009.B, ESP-009.F",
+  "purpose": "Programs that the transitional C backend once got wrong, kept as regression cases, and the adversarial cases added when the constructs were fixed. Each one is valid Core 0.1 that argorixc core-check accepts, and every expectation comes from spec/core/evaluation.md. g01-g16 were issue #27 (ESP-009.B); g17-g23 were issue #39 and f01-f07 cover the same constructs (ESP-009.F).",
   "cases": [
     {
       "id": "g01_nested_array",
@@ -128,6 +128,118 @@
       "id": "g16_if_inside_comparison_operand",
       "file": "g16_if_inside_comparison_operand.argx",
       "was": "Arithmetic containing an `if` was rejected when it was a comparison operand.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g17_loop_statement",
+      "file": "g17_loop_statement.argx",
+      "was": "`loop` used as a statement asked its body for a scalar type and was rejected at emission. Fixed in ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:6",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g18_loop_break_value",
+      "file": "g18_loop_break_value.argx",
+      "was": "A `loop` used as a value and its `break value` were outside the C profile. Fixed in ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g19_match_bool",
+      "file": "g19_match_bool.argx",
+      "was": "`match` on a bool was rejected: only enum scrutinees were lowered. Fixed in ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:40",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g20_module_constant",
+      "file": "g20_module_constant.argx",
+      "was": "Module constants were not lowered at all. Fixed in ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g21_match_integer",
+      "file": "g21_match_integer.argx",
+      "was": "`match` on an integer with a literal arm and `_` was rejected. Fixed in ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g22_match_guard",
+      "file": "g22_match_guard.argx",
+      "was": "Match guards were rejected at emission. Fixed in ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:48",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g23_self_assignment",
+      "file": "g23_self_assignment.argx",
+      "was": "`x = x;` became a C self-assignment that clang rejects under -Werror. Fixed in ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "f01_guard_falls_through",
+      "file": "f01_guard_falls_through.argx",
+      "was": "A false guard must fall through to the next arm, and a later arm of the same variant must still match. Added with ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:1044",
+      "expected_stderr": ""
+    },
+    {
+      "id": "f02_match_signed_integer",
+      "file": "f02_match_signed_integer.argx",
+      "was": "A negative scrutinee must not match the literal of its magnitude; it reaches `_`. Added with ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:60",
+      "expected_stderr": ""
+    },
+    {
+      "id": "f03_match_binding",
+      "file": "f03_match_binding.argx",
+      "was": "A binding pattern is a catch-all that copies the scrutinee into a new local. Added with ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "f04_loop_value_with_inner_while",
+      "file": "f04_loop_value_with_inner_while.argx",
+      "was": "A plain `break` inside a `while` nested in a value `loop` ends the `while`, not the `loop`. Added with ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:43",
+      "expected_stderr": ""
+    },
+    {
+      "id": "f05_match_statement",
+      "file": "f05_match_statement.argx",
+      "was": "A `match` in statement position runs its arm for effects and has no result. Added with ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "f06_constant_from_constant",
+      "file": "f06_constant_from_constant.argx",
+      "was": "A constant whose initializer reads another constant. Added with ESP-009.F.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "f07_constant_shadowed",
+      "file": "f07_constant_shadowed.argx",
+      "was": "A local shadows a module constant of the same name. Added with ESP-009.F.",
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:42",
       "expected_stderr": ""
