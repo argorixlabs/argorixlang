@@ -2,6 +2,39 @@
 
 ## Current claim
 
+- Task: ESP-009.E — repeated execution must be byte-identical, which
+  `spec/core/stdlib.md` requires and nothing checked. Subtask of ESP-009
+  under the master plan's subdivision rule (§10).
+- State: DONE (pending review).
+- Branch: `claude/harness-determinism`, stacked on `claude/differential-text`
+  (PR #41).
+- Started: 2026-09-22.
+- Ficha: `tasks/espada/ESP-009.E.md`.
+- Exclusive paths: `crates/argorix_core_c/**`, `conformance/core_c/**`,
+  `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.E.md`.
+
+## Handoff
+
+- `--repeat N` runs each executable N times and fails the case if any run
+  differs from the first in stdout, stderr or exit status. CI uses 3 on both
+  compilers, which is the sentence from the spec word for word.
+- A fifth negative control, `repeat_detects_nondeterminism`, proves the check
+  can fail: a sensor that prints its own process id. It is the only sensor
+  that is executed rather than only compiled.
+- Evidence: runtime cases 15/15 three times each with GCC 12.2 and clang
+  14.0.6, a generated corpus 60/60 twice each, and the control detected every
+  time.
+- Limits: three runs catch an unstable output, they do not prove stability;
+  nothing here compares hosts or compiler versions, only runs of the same
+  binary.
+
+---
+
+
+# Previous claim: ESP-009.D (PR #41)
+
+## Claim
+
 - Task: ESP-009.D — differential coverage of the parts of ESP-009 that
   already execute: bytes/UTF-8 and the resource ceilings of `Buffer` and
   `Arena`. Subtask of ESP-009 under the master plan's subdivision rule

@@ -103,6 +103,7 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-009.B | Defectos del backend C que bloqueaban escribir Core | 008 | HECHA |
 | ESP-009.C | Cobertura diferencial de esas construcciones | 009.B | HECHA |
 | ESP-009.D | Cobertura diferencial de texto y techos de recursos | 009.C | HECHA |
+| ESP-009.E | Ejecución repetida byte a byte idéntica | 009.D | HECHA |
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | PENDIENTE |
 | ESP-011 | Parser y AST en Argorix | 010 | PENDIENTE |
 | ESP-012 | Resolución, tipos y módulos en Argorix | 011 | PENDIENTE |
@@ -259,7 +260,14 @@ padre:
   `UTF8_INVALID` y 41 `RESOURCE_LIMIT`; el validador UTF-8 del oráculo sale de
   la tabla 3-7 del estándar Unicode, no del runtime.
 
-Ninguna de las tres subtareas escribe `.argx` de biblioteca: ESP-009 sigue
+- **ESP-009.E** ([ficha](tasks/espada/ESP-009.E.md)): `spec/core/stdlib.md`
+  exige que la ejecución repetida con gcc y clang produzca una salida idéntica
+  byte a byte, y nadie lo comprobaba: cada caso se ejecutaba una vez. Ahora
+  `--repeat` compara cada corrida con la primera, CI usa tres en los dos
+  compiladores, y un control negativo que se ejecuta demuestra que la
+  comprobación puede fallar.
+
+Ninguna de las cuatro subtareas escribe `.argx` de biblioteca: ESP-009 sigue
 abierta hasta que sus colecciones y su serialización existan en Argorix. Lo
 que falta por cubrir en el arnés depende de que existan: mapas (claves
 duplicadas, orden canónico), rutas, la frontera de archivos y el JSON.
