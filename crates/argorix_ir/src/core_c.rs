@@ -1259,7 +1259,10 @@ impl<'a> FunctionEmitter<'a> {
                 // In statement position the arms run for their effects and
                 // there is no result temporary.
                 let result_ty = expected.cloned().filter(|ty| *ty != ScalarType::Unit);
-                let scrutinee = self.emit_expr(value, None, indent, source)?;
+                // The scrutinee has no type from its context, so an `if` or a
+                // block there takes the type it produces.
+                let hint = self.infer_type(value);
+                let scrutinee = self.emit_expr(value, hint.as_ref(), indent, source)?;
                 let enum_layout = match &scrutinee.1 {
                     ScalarType::User(name) => {
                         let layout = self.enums.get(name).cloned().ok_or_else(|| {
