@@ -4,7 +4,7 @@
 
 - Task: ESP-009.F — backend gaps g17–g23 (issue #39) and cross-module
   symbol resolution (issue #45). Subtask of ESP-009 (§10 of the master plan).
-- State: IN PROGRESS.
+- State: DONE (pending review).
 - Branch: `claude/esp009f-unblock`, base `59f70b0`.
 - Started: 2026-09-22.
 - Ficha: `tasks/espada/ESP-009.F.md`.
@@ -14,6 +14,24 @@
   row, as they were for ESP-009.B. No `stdlib/**`, `spec/core/stdlib.md`,
   `tests/selfhost/**` or `tasks/espada/ESP-009.md` file is touched.
 - Out of scope: issue #38, which needs a language decision.
+
+## Handoff
+
+- Issue #39: `loop` as a statement and as a value with `break value`,
+  `match` on bools and integers with literal, binding and wildcard patterns
+  and guards, module constants, and `x = x;`. g17-g23 moved to
+  `regression/` with eight adversarial cases; the gap corpus is empty.
+- Issue #45: a new linker (`argorix_semantics::core_link`) merges the module
+  graph; `b.f(..)` and `b.C` reach public items, public types are named by
+  bare name, and private, unknown, missing, duplicate and cyclic imports are
+  resolution errors rendered against their own file. Two multi-module
+  programs run through the C backend.
+- The differential generator now produces the constructs of #39 and found a
+  defect in the new match lowering, fixed and kept as `f08`.
+- Evidence: regression 33/33 on GCC, clang and the sanitizers; 500
+  generated programs; 526 workspace tests.
+- Open: the bare-name visibility of imported public types is a language
+  decision to write into `spec/core/modules.md`; issue #38 is unchanged.
 
 ---
 

@@ -183,6 +183,12 @@ early `return`, `continue` and `break` after a loop's counter has advanced, a
 nested counted loop, and a self-recursive function whose literal argument
 always reaches its base case. All of it across all eight integer widths.
 
+Since ESP-009.F it also generates what issue #39 kept out of the backend:
+module constants, `match` on the program's integer type with literal arms,
+guards and a default, `match` on a bool, `loop` used as a value and `loop` in
+statement position. The oracle tries arms in order and runs a guard only once
+its literal has matched.
+
 Since ESP-009.D it also covers the parts of the standard library that already
 execute:
 

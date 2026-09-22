@@ -104,6 +104,7 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-009.C | Cobertura diferencial de esas construcciones | 009.B | HECHA |
 | ESP-009.D | Cobertura diferencial de texto y techos de recursos | 009.C | HECHA |
 | ESP-009.E | Ejecución repetida byte a byte idéntica | 009.D | HECHA |
+| ESP-009.F | Gaps del backend (#39) e imports entre módulos (#45) | 009.B | HECHA |
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | PENDIENTE |
 | ESP-011 | Parser y AST en Argorix | 010 | PENDIENTE |
 | ESP-012 | Resolución, tipos y módulos en Argorix | 011 | PENDIENTE |
@@ -267,7 +268,14 @@ padre:
   compiladores, y un control negativo que se ejecuta demuestra que la
   comprobación puede fallar.
 
-Ninguna de las cuatro subtareas escribe `.argx` de biblioteca: ESP-009 sigue
+- **ESP-009.F** ([ficha](tasks/espada/ESP-009.F.md)): el backend acepta ya
+  `loop` como sentencia y con valor, `match` sobre bool y enteros con
+  guardas, y constantes de módulo (issue #39), y un programa repartido en
+  varios módulos se chequea y se ejecuta (issue #45), con un linker que
+  resuelve `b.f(..)`, `b.C` y los tipos públicos importados. Es lo que hacía
+  falta para escribir la stdlib en Core modular.
+
+Ninguna de las cinco subtareas escribe `.argx` de biblioteca: ESP-009 sigue
 abierta hasta que sus colecciones y su serialización existan en Argorix. Lo
 que falta por cubrir en el arnés depende de que existan: mapas (claves
 duplicadas, orden canónico), rutas, la frontera de archivos y el JSON.
