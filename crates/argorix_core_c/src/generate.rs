@@ -249,6 +249,8 @@ pub enum Stmt {
     /// `continue;`, generated after a loop's counter has already advanced, so
     /// the loop still finishes.
     Continue,
+    /// `break;`, which ends the innermost loop.
+    Break,
     /// `if condition { .. } else { .. }` used as a statement, with no value
     /// and no `else` required. It was gap g12.
     IfStatement {
@@ -404,6 +406,7 @@ enum Flow {
     Normal,
     Returned(i128),
     Continued,
+    Broke,
 }
 
 pub enum Failure {
@@ -619,8 +622,8 @@ fn run_body(
             Flow::Normal => {}
             // A `return` ends the function: its tail is never evaluated.
             Flow::Returned(value) => return Ok(Value::Int(value)),
-            Flow::Continued => {
-                unreachable!("`continue` is generated inside a loop body only")
+            Flow::Continued | Flow::Broke => {
+                unreachable!("`continue` and `break` are generated inside a loop body only")
             }
         }
     }
@@ -743,7 +746,7 @@ fn execute(
             }
         }
         Stmt::While { condition, body } => {
-            while evaluate(condition, env, program, fuel)?.truthy() {
+            'iterations: while evaluate(condition, env, program, fuel)?.truthy() {
                 if fuel.steps == 0 {
                     return Err(Failure::Unusable(Unusable::DoesNotFinish));
                 }
@@ -754,7 +757,9 @@ fn execute(
                         // A `return` leaves the loop and the function.
                         Flow::Returned(value) => return Ok(Flow::Returned(value)),
                         // A `continue` only ends this iteration.
-                        Flow::Continued => break,
+                        Flow::Continued => continue 'iterations,
+                        // A `break` reaches the loop it is lexically inside.
+                        Flow::Broke => break 'iterations,
                     }
                 }
             }
@@ -764,6 +769,7 @@ fn execute(
             return Ok(Flow::Returned(computed));
         }
         Stmt::Continue => return Ok(Flow::Continued),
+        Stmt::Break => return Ok(Flow::Broke),
     }
     Ok(Flow::Normal)
 }
@@ -1189,6 +1195,7 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                 lines.push(format!("{indent}return {};", render_expr(value, kind)))
             }
             Stmt::Continue => lines.push(format!("{indent}continue;")),
+            Stmt::Break => lines.push(format!("{indent}break;")),
             Stmt::LetIndex { name, value } => {
                 lines.push(format!("{indent}let {name}: u64 = {value}u64;"))
             }
@@ -1692,7 +1699,7 @@ impl Generator {
                 let op = *self.rng.pick(&["+", "-", "*"]);
                 let value = self.literal();
                 body.push(Stmt::Compound { name, op, value });
-            } else if choice < 90 || !allow_loop {
+            } else if choice < 82 || !allow_loop {
                 let statement = self.if_statement(names, mutable, functions);
                 body.push(statement);
             } else {
@@ -1708,6 +1715,19 @@ impl Generator {
         names: &mut Vec<String>,
         mutable: &mut Vec<String>,
         functions: &[Function],
+    ) -> Vec<Stmt> {
+        self.counted_loop(names, mutable, functions, true)
+    }
+
+    /// The loop itself. `outermost` allows one nested loop inside the body;
+    /// the nested counter belongs to that body and never joins the names the
+    /// rest of the function can see.
+    fn counted_loop(
+        &mut self,
+        names: &mut Vec<String>,
+        mutable: &mut Vec<String>,
+        functions: &[Function],
+        outermost: bool,
     ) -> Vec<Stmt> {
         let counter = self.fresh("i");
         let limit = self.rng.range(1, 6);
@@ -1727,15 +1747,30 @@ impl Generator {
             op: "+",
             value: Expr::Literal(1),
         });
-        if self.rng.chance(25) {
-            // `continue` after the counter has already advanced, so the loop
-            // still finishes.
+        if outermost && self.rng.chance(30) {
+            // A nested loop, with its own counter scoped to this body.
+            let mut visible = names.clone();
+            visible.push(counter.clone());
+            let mut visible_mutable = mutable.clone();
+            visible_mutable.push(counter.clone());
+            let nested = self.counted_loop(&mut visible, &mut visible_mutable, functions, false);
+            inner.extend(nested);
+        }
+        let jump = self.rng.below(100);
+        if jump < 50 {
+            // `continue` or `break` after the counter has already advanced,
+            // so the loop still finishes either way.
             let mut visible = names.clone();
             visible.push(counter.clone());
             let condition = self.condition(&visible, 1, functions);
+            let jump = if jump < 25 {
+                Stmt::Continue
+            } else {
+                Stmt::Break
+            };
             inner.push(Stmt::IfStatement {
                 condition,
-                then_body: vec![Stmt::Continue],
+                then_body: vec![jump],
                 else_body: None,
             });
         }
@@ -1845,7 +1880,7 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
             }
         }
         Stmt::Return { value } => reads(value, seen),
-        Stmt::Continue => {}
+        Stmt::Continue | Stmt::Break => {}
         Stmt::LetIndex { .. } | Stmt::LetBuffer { .. } | Stmt::LetArena { .. } => {}
         Stmt::Compound { name, value, .. } => {
             seen.insert(name.clone());
@@ -1942,7 +1977,7 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
             .for_each(|element| calls(element, seen)),
         Stmt::Push { value, .. } => calls(value, seen),
         Stmt::Return { value } => calls(value, seen),
-        Stmt::Continue => {}
+        Stmt::Continue | Stmt::Break => {}
         Stmt::LetIndex { .. }
         | Stmt::LetBuffer { .. }
         | Stmt::LetArena { .. }
@@ -2915,6 +2950,122 @@ mod tests {
         assert!(returns > 0, "no `return` was generated");
         assert!(continues > 0, "no `continue` was generated");
         assert!(recursions > 0, "no recursive function was generated");
+    }
+
+    /// `break`, `else if` chains and one nested loop are generated too.
+    #[test]
+    fn generated_programs_cover_breaks_chains_and_nested_loops() {
+        let mut breaks = 0;
+        let mut chains = 0;
+        let mut nested_loops = 0;
+        for index in 1..60 {
+            for seed in [99u64, 100, 101] {
+                let source = render_program(&generate_program(seed, index));
+                breaks += source.matches("break;").count();
+                chains += source.matches("} else if ").count();
+                nested_loops += source
+                    .lines()
+                    .filter(|line| line.starts_with("        while "))
+                    .count();
+            }
+        }
+        assert!(breaks > 0, "no `break` was generated");
+        assert!(chains > 0, "no `else if` chain was generated");
+        assert!(nested_loops > 0, "no nested loop was generated");
+    }
+
+    /// A `break` ends the loop it is inside, and only that one.
+    #[test]
+    fn a_break_ends_the_innermost_loop() {
+        let count_to = |limit: i128| {
+            program_with(
+                vec![
+                    Stmt::Let {
+                        name: "i1".into(),
+                        mutable: true,
+                        value: Expr::Literal(0),
+                    },
+                    Stmt::Let {
+                        name: "v2".into(),
+                        mutable: true,
+                        value: Expr::Literal(0),
+                    },
+                    Stmt::While {
+                        condition: Expr::Compare(
+                            "<",
+                            Box::new(Expr::Var("i1".into())),
+                            Box::new(Expr::Literal(10)),
+                        ),
+                        body: vec![
+                            Stmt::Compound {
+                                name: "i1".into(),
+                                op: "+",
+                                value: Expr::Literal(1),
+                            },
+                            Stmt::IfStatement {
+                                condition: Expr::Compare(
+                                    ">",
+                                    Box::new(Expr::Var("i1".into())),
+                                    Box::new(Expr::Literal(limit)),
+                                ),
+                                then_body: vec![Stmt::Break],
+                                else_body: None,
+                            },
+                            Stmt::Compound {
+                                name: "v2".into(),
+                                op: "+",
+                                value: Expr::Literal(1),
+                            },
+                        ],
+                    },
+                ],
+                Expr::Var("v2".into()),
+            )
+        };
+        assert_eq!(evaluate_program(&count_to(3)).ok(), Some(3));
+        assert_eq!(evaluate_program(&count_to(20)).ok(), Some(10));
+    }
+
+    /// An `else if` link runs where the `if` does: it is not a scope.
+    #[test]
+    fn an_else_if_link_runs_in_the_enclosing_scope() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "v1".into(),
+                    mutable: true,
+                    value: Expr::Literal(5),
+                },
+                Stmt::IfStatement {
+                    condition: Expr::Compare(
+                        ">",
+                        Box::new(Expr::Var("v1".into())),
+                        Box::new(Expr::Literal(9)),
+                    ),
+                    then_body: vec![Stmt::Assign {
+                        name: "v1".into(),
+                        value: Expr::Literal(1),
+                    }],
+                    else_body: Some(ElseBranch::Chain(Box::new(Stmt::IfStatement {
+                        condition: Expr::Compare(
+                            ">",
+                            Box::new(Expr::Var("v1".into())),
+                            Box::new(Expr::Literal(3)),
+                        ),
+                        then_body: vec![Stmt::Assign {
+                            name: "v1".into(),
+                            value: Expr::Literal(42),
+                        }],
+                        else_body: Some(ElseBranch::Block(vec![Stmt::Assign {
+                            name: "v1".into(),
+                            value: Expr::Literal(0),
+                        }])),
+                    }))),
+                },
+            ],
+            Expr::Var("v1".into()),
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(42));
     }
 
     /// A `return` inside a branch ends the function: the tail never runs.
