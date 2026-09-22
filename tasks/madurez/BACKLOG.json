@@ -50,9 +50,41 @@
       "file": "tasks/espada/ESP-008.md",
       "evidence": "bootstrap/ESP-008-validation.json",
       "scope": "Ejecucion Core mediante backend C transitorio y runtime C1; no self-hosting, backend nativo ni independencia completa"
+    },
+    "ESP-009": {
+      "status": "EN_CURSO",
+      "file": "tasks/espada/ESP-009.md",
+      "evidence": "pendiente; la parte cerrada tiene evidencia por subtarea",
+      "scope": "Biblioteca estandar minima; API S1 congelada y Buffer/Arena ejecutables en main; colecciones y serializacion en .argx pendientes",
+      "subtasks": {
+        "ESP-009.B": {
+          "status": "HECHA",
+          "file": "tasks/espada/ESP-009.B.md",
+          "evidence": "conformance/core_c/regression/cases.json",
+          "scope": "Defectos del backend C que impedian escribir Core (issue 27); 16/16 como corpus de regresion"
+        },
+        "ESP-009.C": {
+          "status": "HECHA",
+          "file": "tasks/espada/ESP-009.C.md",
+          "evidence": "conformance/core_c/README.md y los informes del arnes",
+          "scope": "Cobertura diferencial de esas construcciones; 1200 programas sin divergencia"
+        },
+        "ESP-009.D": {
+          "status": "HECHA",
+          "file": "tasks/espada/ESP-009.D.md",
+          "evidence": "conformance/core_c/README.md y los informes del arnes",
+          "scope": "Bytes/UTF-8 y techos de recursos generados; 960 programas sin divergencia"
+        },
+        "ESP-009.E": {
+          "status": "HECHA",
+          "file": "tasks/espada/ESP-009.E.md",
+          "evidence": "job de ejecucion con --repeat 3 en .github/workflows/core-c.yml",
+          "scope": "Ejecucion repetida byte a byte identica en gcc y clang"
+        }
+      }
     }
   },
-  "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad.",
+  "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad. esp_progress se actualiza al reclamar o cerrar una tarea ESP; el estado operativo del día vive en WORKBOARD.md.",
   "additional_dependencies": {
     "ESP-003": [
       "MAT-002"
@@ -420,5 +452,6 @@
       ],
       "file": "tasks/madurez/MAT-030.md"
     }
-  ]
+  ],
+  "updated": "2026-09-22"
 }
