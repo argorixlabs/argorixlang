@@ -162,6 +162,12 @@ pub enum Expr {
         handle: String,
         field: usize,
     },
+    /// `{ let ..; tail }` used as a value. Its locals belong to the block
+    /// alone and may shadow an outer name, which was gap g04.
+    Block {
+        body: Vec<Stmt>,
+        tail: Box<Expr>,
+    },
     /// `readN(local)`: the generated reader function whose body is an
     /// exhaustive `match` over the enum this local holds.
     ReadEnum {
@@ -190,6 +196,13 @@ pub enum Stmt {
     While {
         condition: Expr,
         body: Vec<Stmt>,
+    },
+    /// `if condition { .. } else { .. }` used as a statement, with no value
+    /// and no `else` required. It was gap g12.
+    IfStatement {
+        condition: Expr,
+        then_body: Vec<Stmt>,
+        else_body: Option<Vec<Stmt>>,
     },
     /// `let name: Array<T, N> = [..];`, declared at function level only:
     /// an array declared inside an `if` or a loop body hits gap g06.
@@ -383,7 +396,42 @@ struct Environment {
     handles: Vec<(String, String, Vec<i128>)>,
 }
 
+/// The lengths of every binding list, so a block can drop exactly what it
+/// declared and leave assignments to outer locals in place.
+#[derive(Clone, Copy)]
+struct Scope {
+    values: usize,
+    aggregates: usize,
+    indexes: usize,
+    enums: usize,
+    arenas: usize,
+    handles: usize,
+}
+
 impl Environment {
+    fn mark(&self) -> Scope {
+        Scope {
+            values: self.values.len(),
+            aggregates: self.aggregates.len(),
+            indexes: self.indexes.len(),
+            enums: self.enums.len(),
+            arenas: self.arenas.len(),
+            handles: self.handles.len(),
+        }
+    }
+    fn restore(&mut self, scope: Scope) {
+        self.values.truncate(scope.values);
+        self.aggregates.truncate(scope.aggregates);
+        self.indexes.truncate(scope.indexes);
+        self.enums.truncate(scope.enums);
+        self.arenas.truncate(scope.arenas);
+        self.handles.truncate(scope.handles);
+    }
+    /// `let name = ..`: always a new binding, so an inner one shadows an
+    /// outer of the same name instead of overwriting it.
+    fn declare(&mut self, name: &str, value: i128) {
+        self.values.push((name.to_string(), value));
+    }
     fn get(&self, name: &str) -> i128 {
         self.values
             .iter()
@@ -472,7 +520,11 @@ fn execute(
     fuel: &mut u32,
 ) -> Result<(), Failure> {
     match statement {
-        Stmt::Let { name, value, .. } | Stmt::Assign { name, value } => {
+        Stmt::Let { name, value, .. } => {
+            let computed = evaluate(value, env, program, fuel)?.int();
+            env.declare(name, computed);
+        }
+        Stmt::Assign { name, value } => {
             let computed = evaluate(value, env, program, fuel)?.int();
             env.set(name, computed);
         }
@@ -530,6 +582,27 @@ fn execute(
                 None => None,
             };
             env.enums.push((name.clone(), *variant, carried));
+        }
+        Stmt::IfStatement {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            let taken = evaluate(condition, env, program, fuel)?.truthy();
+            let branch = if taken {
+                Some(then_body)
+            } else {
+                else_body.as_ref()
+            };
+            if let Some(branch) = branch {
+                // The branch has its own scope; what it assigns to an outer
+                // local stays assigned.
+                let scope = env.mark();
+                for inner in branch {
+                    execute(inner, env, program, fuel)?;
+                }
+                env.restore(scope);
+            }
         }
         Stmt::While { condition, body } => {
             while evaluate(condition, env, program, fuel)?.truthy() {
@@ -597,6 +670,15 @@ fn evaluate(
         Expr::Negate(inner) => {
             let value = evaluate(inner, env, program, fuel)?.int();
             Value::Int(negate(value, program.kind)?)
+        }
+        Expr::Block { body, tail } => {
+            let scope = env.mark();
+            for statement in body {
+                execute(statement, env, program, fuel)?;
+            }
+            let value = evaluate(tail, env, program, fuel)?;
+            env.restore(scope);
+            value
         }
         Expr::If(condition, then_branch, else_branch) => {
             let branch = if evaluate(condition, env, program, fuel)?.truthy() {
@@ -712,6 +794,14 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        Expr::Block { body, tail } => {
+            // Rendered on one line: a block used as a value is small, and the
+            // statement renderer already ends each statement with `;`.
+            let mut lines = Vec::new();
+            render_statements(body, kind, "", &mut lines);
+            lines.push(render_expr(tail, kind));
+            format!("{{ {} }}", lines.join(" "))
+        }
         Expr::Index { array, index } => format!("{array}[{index}]"),
         Expr::Field { value, field } => format!("{value}.f{field}"),
         Expr::HandleField { handle, field } => format!("{handle}.f{field}"),
@@ -732,7 +822,8 @@ pub fn render_literal(value: i128, kind: IntType) -> String {
 }
 
 fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec<String>) {
-    for statement in body {
+    for (position, statement) in body.iter().enumerate() {
+        let last = position + 1 == body.len();
         match statement {
             Stmt::Let {
                 name,
@@ -755,6 +846,30 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                 lines.push(format!("{indent}while {} {{", render_expr(condition, kind)));
                 render_statements(body, kind, &format!("{indent}    "), lines);
                 lines.push(format!("{indent}}}"));
+            }
+            Stmt::IfStatement {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                // The last statement of a body is followed by the block's
+                // tail expression, which usually starts with `(`. The
+                // frontend then parses `if c { .. } (tail)` as a call of the
+                // `if` and rejects the program, so that position takes the
+                // `;` form the grammar's `expression_stmt` spells out. Both
+                // forms are generated, and the divergence between them is
+                // reported, not worked around silently.
+                let terminator = if last { ";" } else { "" };
+                lines.push(format!("{indent}if {} {{", render_expr(condition, kind)));
+                render_statements(then_body, kind, &format!("{indent}    "), lines);
+                match else_body {
+                    None => lines.push(format!("{indent}}}{terminator}")),
+                    Some(body) => {
+                        lines.push(format!("{indent}}} else {{"));
+                        render_statements(body, kind, &format!("{indent}    "), lines);
+                        lines.push(format!("{indent}}}{terminator}"));
+                    }
+                }
             }
             Stmt::LetArray { name, elements } => lines.push(format!(
                 "{indent}let {name}: Array<{}, {}> = [{}];",
@@ -993,6 +1108,9 @@ impl Generator {
         if choice < 12 && !unsigned(self.kind) {
             return self.negation(names, depth, functions, allow_if);
         }
+        if choice < 17 && allow_if && !names.is_empty() {
+            return self.block_value(names);
+        }
         if choice < 55 {
             let op = *self.rng.pick(&ARITH);
             let left = self.value(names, depth - 1, functions, allow_if);
@@ -1074,6 +1192,86 @@ impl Generator {
         Expr::Negate(Box::new(self.value(names, depth - 1, functions, allow_if)))
     }
 
+    /// `{ let x: T = x + k; x }` used as a value.
+    ///
+    /// The local shadows an outer name and is initialised from it: the shape
+    /// of gap g04, where the block's local used to land in the enclosing C
+    /// scope and outlive the block. Initialising from the shadowed name also
+    /// keeps that outer local genuinely read.
+    fn block_value(&mut self, names: &[String]) -> Expr {
+        let shadowed = self.rng.pick(names).clone();
+        let op = *self.rng.pick(&["+", "-", "^"]);
+        let value = Expr::Arith(
+            op,
+            Box::new(Expr::Var(shadowed.clone())),
+            Box::new(self.literal()),
+        );
+        // The tail always reads the block's local: an unused one is valid
+        // Core, but its C fails the declared -Werror profile.
+        let tail = if self.rng.chance(50) {
+            Expr::Var(shadowed.clone())
+        } else {
+            Expr::Arith(
+                *self.rng.pick(&["+", "-", "^"]),
+                Box::new(Expr::Var(shadowed.clone())),
+                Box::new(self.literal()),
+            )
+        };
+        Expr::Block {
+            body: vec![Stmt::Let {
+                name: shadowed,
+                mutable: false,
+                value,
+            }],
+            tail: Box::new(tail),
+        }
+    }
+
+    /// `if condition { .. }`, with an `else` part of the time: gap g12, where
+    /// an `if` with no value was rejected outright.
+    fn if_statement(
+        &mut self,
+        names: &[String],
+        mutable: &[String],
+        functions: &[Function],
+    ) -> Stmt {
+        let condition = self.condition(names, 1, functions);
+        let then_body = self.branch_body(names, mutable, functions);
+        let else_body = self
+            .rng
+            .chance(40)
+            .then(|| self.branch_body(names, mutable, functions));
+        Stmt::IfStatement {
+            condition,
+            then_body,
+            else_body,
+        }
+    }
+
+    /// The body of a branch: assignments to locals that already exist, so the
+    /// branch has an observable effect without declaring anything that would
+    /// escape its scope.
+    fn branch_body(
+        &mut self,
+        names: &[String],
+        mutable: &[String],
+        functions: &[Function],
+    ) -> Vec<Stmt> {
+        let mut body = Vec::new();
+        for _ in 0..=self.rng.below(2) {
+            let name = self.rng.pick(mutable).clone();
+            if self.rng.chance(50) {
+                let value = self.value(names, 1, functions, true);
+                body.push(Stmt::Assign { name, value });
+            } else {
+                let op = *self.rng.pick(&["+", "-", "*"]);
+                let value = self.literal();
+                body.push(Stmt::Compound { name, op, value });
+            }
+        }
+        body
+    }
+
     fn condition(&mut self, names: &[String], depth: u32, functions: &[Function]) -> Expr {
         let choice = self.rng.below(100);
         if choice < 60 || depth == 0 {
@@ -1143,11 +1341,14 @@ impl Generator {
                 let name = self.rng.pick(mutable).clone();
                 let value = self.value(names, 2, functions, true);
                 body.push(Stmt::Assign { name, value });
-            } else if choice < 85 || !allow_loop {
+            } else if choice < 80 {
                 let name = self.rng.pick(mutable).clone();
                 let op = *self.rng.pick(&["+", "-", "*"]);
                 let value = self.literal();
                 body.push(Stmt::Compound { name, op, value });
+            } else if choice < 90 || !allow_loop {
+                let statement = self.if_statement(names, mutable, functions);
+                body.push(statement);
             } else {
                 body.extend(self.loop_statement(names, mutable, functions));
             }
@@ -1215,6 +1416,12 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
             reads(left, seen);
             reads(right, seen);
         }
+        Expr::Block { body, tail } => {
+            // A block local that shadows an outer name is always initialised
+            // from it, so counting the outer name as read is exact.
+            body.iter().for_each(|inner| statement_reads(inner, seen));
+            reads(tail, seen);
+        }
         Expr::If(condition, then_branch, else_branch) => {
             reads(condition, seen);
             reads(then_branch, seen);
@@ -1266,6 +1473,19 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
             reads(condition, seen);
             body.iter().for_each(|inner| statement_reads(inner, seen));
         }
+        Stmt::IfStatement {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            reads(condition, seen);
+            then_body
+                .iter()
+                .for_each(|inner| statement_reads(inner, seen));
+            if let Some(body) = else_body {
+                body.iter().for_each(|inner| statement_reads(inner, seen));
+            }
+        }
     }
 }
 
@@ -1293,6 +1513,12 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
         | Expr::Compare(_, left, right) => {
             calls(left, seen);
             calls(right, seen);
+        }
+        Expr::Block { body, tail } => {
+            // A block local that shadows an outer name is always initialised
+            // from it, so counting the outer name as read is exact.
+            body.iter().for_each(|inner| statement_calls(inner, seen));
+            calls(tail, seen);
         }
         Expr::If(condition, then_branch, else_branch) => {
             calls(condition, seen);
@@ -1332,6 +1558,19 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
         Stmt::While { condition, body } => {
             calls(condition, seen);
             body.iter().for_each(|inner| statement_calls(inner, seen));
+        }
+        Stmt::IfStatement {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            calls(condition, seen);
+            then_body
+                .iter()
+                .for_each(|inner| statement_calls(inner, seen));
+            if let Some(body) = else_body {
+                body.iter().for_each(|inner| statement_calls(inner, seen));
+            }
         }
     }
 }
@@ -1945,22 +2184,101 @@ mod tests {
         for index in 1..40 {
             let program = generate_program(5, index);
             let source = render_program(&program);
-            // Flat arrays and flat structs are generated on purpose; the
-            // nested forms are gaps g01, g02 and g03.
+            // Flat arrays and flat structs are generated; the nested forms
+            // are not generated yet.
             assert!(
                 !source.contains("Array<Array"),
                 "nested array in {}",
                 program.id
             );
-            for line in source.lines() {
-                let trimmed = line.trim();
-                assert!(
-                    !(trimmed.starts_with("if ") && trimmed.ends_with('}')),
-                    "if statement in {}: {line}",
-                    program.id
-                );
+        }
+    }
+
+    /// `if` as a statement and a block with its own scope were gaps g12 and
+    /// g04. The generator has to produce both.
+    #[test]
+    fn generated_programs_cover_if_statements_and_blocks() {
+        let mut if_statements = 0;
+        let mut blocks = 0;
+        for index in 1..60 {
+            for seed in [5u64, 23] {
+                let source = render_program(&generate_program(seed, index));
+                for line in source.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("if ") && trimmed.ends_with('{') {
+                        if_statements += 1;
+                    }
+                }
+                blocks += source.matches("{ let ").count();
             }
         }
+        assert!(if_statements > 0, "no `if` statement was generated");
+        assert!(blocks > 0, "no block expression was generated");
+    }
+
+    /// A block's local shadows an outer one; the outer value must come back
+    /// once the block ends.
+    #[test]
+    fn a_block_local_does_not_outlive_its_block() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "v1".into(),
+                    mutable: false,
+                    value: Expr::Literal(10),
+                },
+                Stmt::Let {
+                    name: "v2".into(),
+                    mutable: false,
+                    value: Expr::Block {
+                        body: vec![Stmt::Let {
+                            name: "v1".into(),
+                            mutable: false,
+                            value: Expr::Literal(7),
+                        }],
+                        tail: Box::new(Expr::Var("v1".into())),
+                    },
+                },
+            ],
+            Expr::Arith(
+                "+",
+                Box::new(Expr::Var("v1".into())),
+                Box::new(Expr::Var("v2".into())),
+            ),
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(17));
+    }
+
+    /// A branch assigns to an outer local; the assignment survives the
+    /// branch, and the branch not taken changes nothing.
+    #[test]
+    fn an_if_statement_keeps_what_its_branch_assigned() {
+        let taken = |condition: bool| {
+            program_with(
+                vec![
+                    Stmt::Let {
+                        name: "v1".into(),
+                        mutable: true,
+                        value: Expr::Literal(1),
+                    },
+                    Stmt::IfStatement {
+                        condition: Expr::Compare(
+                            "==",
+                            Box::new(Expr::Literal(i128::from(condition))),
+                            Box::new(Expr::Literal(1)),
+                        ),
+                        then_body: vec![Stmt::Assign {
+                            name: "v1".into(),
+                            value: Expr::Literal(42),
+                        }],
+                        else_body: None,
+                    },
+                ],
+                Expr::Var("v1".into()),
+            )
+        };
+        assert_eq!(evaluate_program(&taken(true)).ok(), Some(42));
+        assert_eq!(evaluate_program(&taken(false)).ok(), Some(1));
     }
 
     /// Shifts and signed negation were gaps g13 and g14 until #37. The
