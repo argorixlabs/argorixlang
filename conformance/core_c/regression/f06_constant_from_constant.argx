@@ -1,0 +1,9 @@
+core 0.1;
+module regression.f06_constant_from_constant;
+
+const BASE: u32 = 40u32;
+const TOTAL: u32 = BASE + 2u32;
+
+pub fn argorix_main() -> u32 {
+    TOTAL
+}

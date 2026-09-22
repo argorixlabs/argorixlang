@@ -1,0 +1,21 @@
+core 0.1;
+module regression.m02_shared_types;
+
+import regression.m02_lexer as lexer;
+
+struct Cursor { at: u32, }
+
+fn value_of(token: Token) -> u32 {
+    match token.kind {
+        TokenKind::Number { value } => value,
+        TokenKind::Plus => 1u32,
+        TokenKind::End => 0u32,
+    }
+}
+
+pub fn argorix_main() -> u32 {
+    let cursor: Cursor = Cursor { at: 0u32 };
+    let first: Token = lexer.token_at(cursor.at);
+    let second: Token = lexer.token_at(first.width);
+    value_of(first) + value_of(second) + second.width + lexer.token_at(9u32).width
+}

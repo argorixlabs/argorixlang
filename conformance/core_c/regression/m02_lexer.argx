@@ -1,0 +1,19 @@
+core 0.1;
+module regression.m02_lexer;
+
+pub enum TokenKind { Number { value: u32, }, Plus, End, }
+
+pub struct Token { kind: TokenKind, width: u32, }
+
+struct Cursor { at: u32, }
+
+pub fn token_at(position: u32) -> Token {
+    let cursor: Cursor = Cursor { at: position };
+    if cursor.at == 0u32 {
+        Token { kind: TokenKind::Number { value: 40u32 }, width: 2u32 }
+    } else if cursor.at == 2u32 {
+        Token { kind: TokenKind::Plus, width: 1u32 }
+    } else {
+        Token { kind: TokenKind::End, width: 0u32 }
+    }
+}

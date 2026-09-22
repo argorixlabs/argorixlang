@@ -89,12 +89,12 @@ in [`gaps/gaps.json`](gaps/gaps.json) with the defect each one reproduces.
 Every program is accepted by `argorixc core-check`, and the expected output
 comes from `spec/core/evaluation.md`.
 
-The sixteen of issue #27 were fixed in PR #37 and moved to `regression/`. The
-seven there now are g17–g23 of [issue #39](https://github.com/argorixlabs/argorixlang/issues/39):
+The sixteen of issue #27 were fixed in PR #37 and the seven of
+[issue #39](https://github.com/argorixlabs/argorixlang/issues/39) (g17–g23:
 `loop` as a statement, `loop` with a value break, `match` on a bool, a module
-`const`, `match` on an integer with `_`, a match guard, and `x = x;`. The
-first six are rejected at emission and the seventh at compilation, so none of
-them can produce a wrong result today.
+`const`, `match` on an integer with `_`, a match guard, and `x = x;`) in
+ESP-009.F. All twenty-three now live in `regression/`, so the gap corpus is
+empty until the next defect is found.
 
 A gap can belong to one compiler: `x = x;` lowers to a C self-assignment,
 which clang rejects under the declared `-Werror` profile and GCC does not
@@ -182,6 +182,12 @@ structs read through `q.f0.f1`, and arrays of structs read through
 early `return`, `continue` and `break` after a loop's counter has advanced, a
 nested counted loop, and a self-recursive function whose literal argument
 always reaches its base case. All of it across all eight integer widths.
+
+Since ESP-009.F it also generates what issue #39 kept out of the backend:
+module constants, `match` on the program's integer type with literal arms,
+guards and a default, `match` on a bool, `loop` used as a value and `loop` in
+statement position. The oracle tries arms in order and runs a guard only once
+its literal has matched.
 
 Since ESP-009.D it also covers the parts of the standard library that already
 execute:
@@ -308,12 +314,10 @@ of the two exists, the job fails.
   in, exactly like `argorixc`: this is stage0 tooling, not evidence of
   toolchain independence (ESP-024).
 - The generator does not produce `Slice`, string comparison or escaping,
-  module constants, `match` on anything but a generated enum, match guards,
-  `loop`, a value `break`, or an aggregate declared inside an `if` or a loop
-  body. Everything from "module constants" on is a recorded gap (g17–g22,
-  issue #39) rather than a choice: the backend refuses them today. Handle
-  mutation and arena slot reuse are exercised by the runtime cases, not by
-  the generator.
+  or an aggregate declared inside an `if` or a loop body (gap g06). Programs
+  of more than one module are covered by the regression corpus
+  (`m01_imports`, `m02_shared_types`), not by the generator. Handle mutation
+  and arena slot reuse are exercised by the runtime cases.
 - The arena's byte ceiling is modelled but unreachable from a generated
   program: its slot limit of 1024 binds first for every element the
   generator builds. Only the slot path is exercised end to end.

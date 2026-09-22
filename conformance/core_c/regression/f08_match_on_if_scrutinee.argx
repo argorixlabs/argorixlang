@@ -1,0 +1,10 @@
+core 0.1;
+module regression.f08_match_on_if_scrutinee;
+
+pub fn argorix_main() -> u32 {
+    let c: bool = 1u32 < 2u32;
+    match (if c { 5u32 } else { 7u32 }) {
+        5u32 => 42u32,
+        _ => 0u32,
+    }
+}

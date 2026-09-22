@@ -1,0 +1,15 @@
+core 0.1;
+module regression.f02_match_signed_integer;
+
+fn classify(x: i32) -> i32 {
+    match x {
+        0i32 => 10i32,
+        7i32 => 20i32,
+        _ => 30i32,
+    }
+}
+
+pub fn argorix_main() -> i32 {
+    let n: i32 = 0i32 - 7i32;
+    classify(0i32) + classify(7i32) + classify(n)
+}

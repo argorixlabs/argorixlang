@@ -236,6 +236,32 @@ pub enum Expr {
     TextLength {
         text: String,
     },
+    /// A module constant, `K1`. Gap g20 until ESP-009.F.
+    Const(String),
+    /// `(match scrutinee { 3u8 => a, 5u8 if cond => b, _ => d, })`: literal
+    /// arms in order, each with an optional guard, then the default. Gaps g21
+    /// and g22 until ESP-009.F.
+    MatchInt {
+        scrutinee: Box<Expr>,
+        arms: Vec<(i128, Option<Expr>, Expr)>,
+        default: Box<Expr>,
+    },
+    /// `(match condition { true => a, false => b, })`, in either arm order.
+    /// Gap g19 until ESP-009.F.
+    MatchBool {
+        condition: Box<Expr>,
+        when_true: Box<Expr>,
+        when_false: Box<Expr>,
+        true_first: bool,
+    },
+    /// `loop { c += 1; if (c >= limit) { break result; } }` used as a value.
+    /// The counter is a fresh local declared just before. Gap g18 until
+    /// ESP-009.F.
+    LoopValue {
+        counter: String,
+        limit: i128,
+        result: Box<Expr>,
+    },
     /// `readN(local)`: the generated reader function whose body is an
     /// exhaustive `match` over the enum this local holds.
     ReadEnum {
@@ -275,6 +301,14 @@ pub enum Stmt {
     Continue,
     /// `break;`, which ends the innermost loop.
     Break,
+    /// `loop { c += 1; assign; if (c >= limit) { break; } }` in statement
+    /// position, with a fresh counter declared just before. Gap g17 until
+    /// ESP-009.F.
+    LoopStatement {
+        counter: String,
+        limit: i128,
+        body: Vec<Stmt>,
+    },
     /// `if condition { .. } else { .. }` used as a statement, with no value
     /// and no `else` required. It was gap g12.
     IfStatement {
@@ -411,6 +445,8 @@ pub struct Program {
     /// Structs that hold structs, as (outer name, inner type, field count).
     /// Their inner type is declared in `structs`.
     pub nested_structs: Vec<(String, String, usize)>,
+    /// Module constants, as (name, value).
+    pub constants: Vec<(String, i128)>,
     pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
     pub main: Function,
@@ -915,6 +951,27 @@ fn execute(
             let computed = evaluate(value, env, program, fuel)?.int();
             return Ok(Flow::Returned(computed));
         }
+        Stmt::LoopStatement {
+            counter,
+            limit,
+            body,
+        } => loop {
+            if fuel.steps == 0 {
+                return Err(Failure::Unusable(Unusable::DoesNotFinish));
+            }
+            fuel.steps -= 1;
+            let next = arithmetic("+", env.get(counter), 1, program.kind)?;
+            env.set(counter, next);
+            let scope = env.mark();
+            for inner in body {
+                let flow = execute(inner, env, program, fuel)?;
+                debug_assert_eq!(flow, Flow::Normal, "a loop statement body only assigns");
+            }
+            env.restore(scope);
+            if env.get(counter) >= *limit {
+                break;
+            }
+        },
         Stmt::Continue => return Ok(Flow::Continued),
         Stmt::Break => return Ok(Flow::Broke),
     }
@@ -1046,6 +1103,66 @@ fn evaluate(
             }
         }
         Expr::TextLength { text } => Value::Int(env.get(text)),
+        Expr::Const(name) => Value::Int(
+            program
+                .constants
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| *value)
+                .expect("a generated constant is declared"),
+        ),
+        Expr::MatchInt {
+            scrutinee,
+            arms,
+            default,
+        } => {
+            // The scrutinee runs once; arms are tried in order, and a guard
+            // runs only once its literal has matched.
+            let value = evaluate(scrutinee, env, program, fuel)?.int();
+            let mut chosen = None;
+            for (literal, guard, arm) in arms {
+                if value != *literal {
+                    continue;
+                }
+                let admitted = match guard {
+                    Some(guard) => evaluate(guard, env, program, fuel)?.truthy(),
+                    None => true,
+                };
+                if admitted {
+                    chosen = Some(arm);
+                    break;
+                }
+            }
+            evaluate(chosen.unwrap_or(default), env, program, fuel)?
+        }
+        Expr::MatchBool {
+            condition,
+            when_true,
+            when_false,
+            ..
+        } => {
+            let branch = if evaluate(condition, env, program, fuel)?.truthy() {
+                when_true
+            } else {
+                when_false
+            };
+            evaluate(branch, env, program, fuel)?
+        }
+        Expr::LoopValue {
+            counter,
+            limit,
+            result,
+        } => loop {
+            if fuel.steps == 0 {
+                return Err(Failure::Unusable(Unusable::DoesNotFinish));
+            }
+            fuel.steps -= 1;
+            let next = arithmetic("+", env.get(counter), 1, program.kind)?;
+            env.set(counter, next);
+            if next >= *limit {
+                break evaluate(result, env, program, fuel)?;
+            }
+        },
         Expr::Field { value, field } => Value::Int(
             env.aggregate(value)
                 .get(*field)
@@ -1158,6 +1275,50 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
             format!("{{ {} }}", lines.join(" "))
         }
         Expr::TextLength { text } => format!("{text}.length()"),
+        Expr::Const(name) => name.clone(),
+        Expr::MatchInt {
+            scrutinee,
+            arms,
+            default,
+        } => {
+            let mut rendered = format!("(match {} {{", render_expr(scrutinee, kind));
+            for (literal, guard, arm) in arms {
+                let guard = guard
+                    .as_ref()
+                    .map(|guard| format!(" if {}", render_expr(guard, kind)))
+                    .unwrap_or_default();
+                rendered.push_str(&format!(
+                    " {literal}{}{guard} => {},",
+                    kind.name,
+                    render_expr(arm, kind)
+                ));
+            }
+            rendered.push_str(&format!(" _ => {}, }})", render_expr(default, kind)));
+            rendered
+        }
+        Expr::MatchBool {
+            condition,
+            when_true,
+            when_false,
+            true_first,
+        } => {
+            let yes = format!("true => {},", render_expr(when_true, kind));
+            let no = format!("false => {},", render_expr(when_false, kind));
+            let (first, second) = if *true_first { (yes, no) } else { (no, yes) };
+            format!(
+                "(match {} {{ {first} {second} }})",
+                render_expr(condition, kind)
+            )
+        }
+        Expr::LoopValue {
+            counter,
+            limit,
+            result,
+        } => format!(
+            "loop {{ {counter} += 1{k}; if ({counter} >= {limit}{k}) {{ break {}; }} }}",
+            render_expr(result, kind),
+            k = kind.name
+        ),
         Expr::Index { array, index } => format!("{array}[{index}]"),
         Expr::NestedIndex {
             array,
@@ -1344,6 +1505,22 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                 lines.push(format!("{indent}return {};", render_expr(value, kind)))
             }
             Stmt::Continue => lines.push(format!("{indent}continue;")),
+            Stmt::LoopStatement {
+                counter,
+                limit,
+                body,
+            } => {
+                lines.push(format!("{indent}loop {{"));
+                lines.push(format!("{indent}    {counter} += 1{};", kind.name));
+                render_statements(body, kind, &format!("{indent}    "), lines);
+                // The `if` is the loop's last statement, so it takes the `;`
+                // form (issue #38) for the same reason as any final `if`.
+                lines.push(format!(
+                    "{indent}    if ({counter} >= {limit}{}) {{ break; }};",
+                    kind.name
+                ));
+                lines.push(format!("{indent}}}"));
+            }
             Stmt::Break => lines.push(format!("{indent}break;")),
             Stmt::LetText {
                 array,
@@ -1441,6 +1618,14 @@ pub fn render_program(program: &Program) -> String {
             .collect::<Vec<_>>()
             .join(", ");
         lines.push(format!("struct {name} {{ {declared}, }}"));
+        lines.push(String::new());
+    }
+    for (name, value) in &program.constants {
+        lines.push(format!(
+            "const {name}: {} = {};",
+            kind.name,
+            render_literal(*value, kind)
+        ));
         lines.push(String::new());
     }
     for (name, inner, fields) in &program.nested_structs {
@@ -1585,6 +1770,8 @@ struct Generator {
     rng: Rng,
     kind: IntType,
     counter: usize,
+    /// Module constants every function can read, as (name, value).
+    constants: Vec<(String, i128)>,
 }
 
 impl Generator {
@@ -1625,6 +1812,12 @@ impl Generator {
         }
         if choice < 17 && allow_if && !names.is_empty() {
             return self.block_value(names);
+        }
+        if choice < 20 && !self.constants.is_empty() {
+            return Expr::Const(self.rng.pick(&self.constants).0.clone());
+        }
+        if choice < 26 && allow_if {
+            return self.match_value(names, depth, functions);
         }
         if choice < 55 {
             let op = *self.rng.pick(&ARITH);
@@ -1740,6 +1933,120 @@ impl Generator {
             }],
             tail: Box::new(tail),
         }
+    }
+
+    /// A `match` used as a value: on the program's integer type with literal
+    /// arms, some guarded, and a default; or on a bool.
+    fn match_value(&mut self, names: &[String], depth: u32, functions: &[Function]) -> Expr {
+        if self.rng.chance(40) {
+            return Expr::MatchBool {
+                condition: Box::new(self.condition(names, depth - 1, functions)),
+                when_true: Box::new(self.value(names, depth - 1, functions, true)),
+                when_false: Box::new(self.value(names, depth - 1, functions, true)),
+                true_first: self.rng.chance(50),
+            };
+        }
+        let scrutinee = self.value(names, depth - 1, functions, true);
+        // Distinct literals: a repeated one would be an unreachable arm,
+        // which Core rejects. Small ones, so the scrutinee hits them.
+        let mut literals: Vec<i128> = Vec::new();
+        for _ in 0..=self.rng.below(3) {
+            let literal = self.rng.range(0, 9.min(self.kind.high));
+            if !literals.contains(&literal) {
+                literals.push(literal);
+            }
+        }
+        let arms = literals
+            .into_iter()
+            .map(|literal| {
+                let guard = self
+                    .rng
+                    .chance(30)
+                    .then(|| self.condition(names, 1, functions));
+                (
+                    literal,
+                    guard,
+                    self.value(names, depth - 1, functions, true),
+                )
+            })
+            .collect();
+        Expr::MatchInt {
+            scrutinee: Box::new(scrutinee),
+            arms,
+            default: Box::new(self.value(names, depth - 1, functions, true)),
+        }
+    }
+
+    /// `let v = loop { c += 1; if c >= limit { break result; } };` after a
+    /// fresh counter: a `loop` used as a value.
+    fn value_loop(
+        &mut self,
+        names: &mut Vec<String>,
+        mutable: &mut Vec<String>,
+        functions: &[Function],
+    ) -> Vec<Stmt> {
+        let counter = self.fresh("i");
+        let name = self.fresh("v");
+        let limit = self.rng.range(1, 5);
+        let mut visible = names.clone();
+        visible.push(counter.clone());
+        let result = self.value(&visible, 1, functions, true);
+        names.push(counter.clone());
+        names.push(name.clone());
+        mutable.push(counter.clone());
+        vec![
+            Stmt::Let {
+                name: counter.clone(),
+                mutable: true,
+                value: Expr::Literal(0),
+            },
+            Stmt::Let {
+                name,
+                mutable: false,
+                value: Expr::LoopValue {
+                    counter,
+                    limit,
+                    result: Box::new(result),
+                },
+            },
+        ]
+    }
+
+    /// `loop { c += 1; assign; if c >= limit { break; } }` after a fresh
+    /// counter: a `loop` in statement position.
+    fn statement_loop(
+        &mut self,
+        names: &mut Vec<String>,
+        mutable: &mut Vec<String>,
+        functions: &[Function],
+    ) -> Vec<Stmt> {
+        let counter = self.fresh("i");
+        let limit = self.rng.range(1, 5);
+        let mut body = Vec::new();
+        if !mutable.is_empty() {
+            let target = self.rng.pick(mutable).clone();
+            let mut visible = names.clone();
+            visible.push(counter.clone());
+            let value = self.assigned_value(&target, &visible, functions);
+            body.push(Stmt::Assign {
+                name: target,
+                value,
+            });
+        }
+        names.push(counter.clone());
+        mutable.push(counter.clone());
+        vec![
+            Stmt::Let {
+                name: counter.clone(),
+                mutable: true,
+                value: Expr::Literal(0),
+            },
+            Stmt::LoopStatement {
+                counter,
+                limit,
+                body,
+            },
+        ]
     }
 
     /// `if condition { .. }`, with an `else` part of the time: gap g12, where
@@ -1895,7 +2202,14 @@ impl Generator {
                 let statement = self.if_statement(names, mutable, functions);
                 body.push(statement);
             } else {
-                body.extend(self.loop_statement(names, mutable, functions));
+                let shape = self.rng.below(100);
+                if shape < 30 {
+                    body.extend(self.value_loop(names, mutable, functions));
+                } else if shape < 50 {
+                    body.extend(self.statement_loop(names, mutable, functions));
+                } else {
+                    body.extend(self.loop_statement(names, mutable, functions));
+                }
             }
         }
         body
@@ -2007,6 +2321,37 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
             body.iter().for_each(|inner| statement_reads(inner, seen));
             reads(tail, seen);
         }
+        Expr::Const(_) => {}
+        Expr::MatchInt {
+            scrutinee,
+            arms,
+            default,
+        } => {
+            reads(scrutinee, seen);
+            for (_, guard, arm) in arms {
+                if let Some(guard) = guard {
+                    reads(guard, seen);
+                }
+                reads(arm, seen);
+            }
+            reads(default, seen);
+        }
+        Expr::MatchBool {
+            condition,
+            when_true,
+            when_false,
+            ..
+        } => {
+            reads(condition, seen);
+            reads(when_true, seen);
+            reads(when_false, seen);
+        }
+        Expr::LoopValue {
+            counter, result, ..
+        } => {
+            seen.insert(counter.clone());
+            reads(result, seen);
+        }
         Expr::If(condition, then_branch, else_branch) => {
             reads(condition, seen);
             reads(then_branch, seen);
@@ -2082,6 +2427,10 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
         }
         Stmt::Return { value } => reads(value, seen),
         Stmt::Continue | Stmt::Break => {}
+        Stmt::LoopStatement { counter, body, .. } => {
+            seen.insert(counter.clone());
+            body.iter().for_each(|inner| statement_reads(inner, seen));
+        }
         Stmt::LetIndex { .. } | Stmt::LetBuffer { .. } | Stmt::LetArena { .. } => {}
         Stmt::Compound { name, value, .. } => {
             seen.insert(name.clone());
@@ -2142,6 +2491,35 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
             body.iter().for_each(|inner| statement_calls(inner, seen));
             calls(tail, seen);
         }
+        Expr::Const(_) => {}
+        Expr::MatchInt {
+            scrutinee,
+            arms,
+            default,
+        } => {
+            calls(scrutinee, seen);
+            for (_, guard, arm) in arms {
+                if let Some(guard) = guard {
+                    calls(guard, seen);
+                }
+                calls(arm, seen);
+            }
+            calls(default, seen);
+        }
+        Expr::MatchBool {
+            condition,
+            when_true,
+            when_false,
+            ..
+        } => {
+            calls(condition, seen);
+            calls(when_true, seen);
+            calls(when_false, seen);
+        }
+        Expr::LoopValue { counter, result, .. } => {
+            let _ = counter;
+            calls(result, seen);
+        }
         Expr::If(condition, then_branch, else_branch) => {
             calls(condition, seen);
             calls(then_branch, seen);
@@ -2181,6 +2559,10 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
         Stmt::LetText { .. } => {}
         Stmt::Return { value } => calls(value, seen),
         Stmt::Continue | Stmt::Break => {}
+        Stmt::LoopStatement { counter, body, .. } => {
+            let _ = counter;
+            body.iter().for_each(|inner| statement_calls(inner, seen));
+        }
         Stmt::LetIndex { .. }
         | Stmt::LetBuffer { .. }
         | Stmt::LetArena { .. }
@@ -2240,7 +2622,16 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
         rng,
         kind,
         counter: 0,
+        constants: Vec::new(),
     };
+    for _ in 0..generator.rng.below(3) {
+        let name = format!("K{}", generator.counter + 1);
+        generator.counter += 1;
+        let Expr::Literal(value) = generator.literal() else {
+            unreachable!("a literal is a literal")
+        };
+        generator.constants.push((name, value));
+    }
     let mut functions: Vec<Function> = Vec::new();
     for position in 0..generator.rng.below(3) {
         let function = generator.function(position, &functions.clone());
@@ -2363,6 +2754,7 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     Program {
         id: format!("fuzz_{seed}_{index:04}"),
         nested_structs,
+        constants: generator.constants.clone(),
         kind,
         structs,
         enums,
@@ -3114,6 +3506,7 @@ mod tests {
             kind: I32,
             structs: Vec::new(),
             nested_structs: Vec::new(),
+            constants: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -3467,6 +3860,7 @@ mod tests {
             rng: Rng::new(4),
             kind: TYPES[3],
             counter: 0,
+            constants: Vec::new(),
         };
         for _ in 0..200 {
             let mut values = Vec::new();
@@ -3515,6 +3909,89 @@ mod tests {
             evaluate_program(&program(vec![0xC2, 0x41])),
             Err(Failure::Trapped(Trap::Utf8Invalid))
         ));
+    }
+
+    /// Constants, integer and bool matches with guards, and both forms of
+    /// `loop` were gaps g17-g22 until ESP-009.F; the generator now produces
+    /// them all.
+    #[test]
+    fn generated_programs_cover_the_constructs_of_issue_39() {
+        let mut counts = [0usize; 5];
+        for index in 1..80 {
+            for seed in [601u64, 602] {
+                let source = render_program(&generate_program(seed, index));
+                counts[0] += source.matches("const K").count();
+                counts[1] += source.matches(" _ => ").count();
+                counts[2] += source.matches("true => ").count();
+                counts[3] += source.matches("= loop {").count();
+                counts[4] += source
+                    .lines()
+                    .filter(|line| line.trim() == "loop {")
+                    .count();
+            }
+        }
+        let names = [
+            "constants",
+            "integer matches",
+            "bool matches",
+            "value loops",
+            "loop statements",
+        ];
+        for (count, name) in counts.iter().zip(names) {
+            assert!(*count > 0, "no {name} were generated");
+        }
+    }
+
+    /// A guard runs only once its literal has matched, and a false one falls
+    /// through to the next arm or the default.
+    #[test]
+    fn an_integer_match_tries_arms_in_order_through_their_guards() {
+        let matching = |scrutinee: i128, guard: bool| {
+            program_with(
+                Vec::new(),
+                Expr::MatchInt {
+                    scrutinee: Box::new(Expr::Literal(scrutinee)),
+                    arms: vec![
+                        (
+                            3,
+                            Some(Expr::Compare(
+                                "==",
+                                Box::new(Expr::Literal(i128::from(guard))),
+                                Box::new(Expr::Literal(1)),
+                            )),
+                            Expr::Literal(10),
+                        ),
+                        (3, None, Expr::Literal(20)),
+                    ],
+                    default: Box::new(Expr::Literal(30)),
+                },
+            )
+        };
+        assert_eq!(evaluate_program(&matching(3, true)).ok(), Some(10));
+        assert_eq!(evaluate_program(&matching(3, false)).ok(), Some(20));
+        assert_eq!(evaluate_program(&matching(4, true)).ok(), Some(30));
+    }
+
+    /// A value `loop` counts to its limit and yields its result then.
+    #[test]
+    fn a_value_loop_breaks_with_its_result() {
+        let program = program_with(
+            vec![Stmt::Let {
+                name: "i1".into(),
+                mutable: true,
+                value: Expr::Literal(0),
+            }],
+            Expr::LoopValue {
+                counter: "i1".into(),
+                limit: 4,
+                result: Box::new(Expr::Arith(
+                    "*",
+                    Box::new(Expr::Var("i1".into())),
+                    Box::new(Expr::Literal(10)),
+                )),
+            },
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(40));
     }
 
     /// `break`, `else if` chains and one nested loop are generated too.
@@ -3880,6 +4357,7 @@ mod aggregate_tests {
             kind: U32,
             structs,
             nested_structs: Vec::new(),
+            constants: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -4091,6 +4569,7 @@ mod memory_tests {
             kind: U32,
             structs,
             nested_structs: Vec::new(),
+            constants: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
             main: Function {
@@ -4322,6 +4801,7 @@ mod enum_tests {
             kind: U32,
             structs: Vec::new(),
             nested_structs: Vec::new(),
+            constants: Vec::new(),
             enums: vec![declaration],
             functions: Vec::new(),
             main: Function {

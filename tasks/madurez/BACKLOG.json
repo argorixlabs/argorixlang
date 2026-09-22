@@ -80,6 +80,12 @@
           "file": "tasks/espada/ESP-009.E.md",
           "evidence": "job de ejecucion con --repeat 3 en .github/workflows/core-c.yml",
           "scope": "Ejecucion repetida byte a byte identica en gcc y clang"
+        },
+        "ESP-009.F": {
+          "status": "HECHA",
+          "file": "tasks/espada/ESP-009.F.md",
+          "evidence": "conformance/core_c/regression/cases.json (g17-g23, f01-f08, m01-m02)",
+          "scope": "Gaps del backend de issue 39 e imports entre modulos de issue 45; la stdlib puede escribirse en Core modular"
         }
       }
     }
