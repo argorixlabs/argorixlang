@@ -46,7 +46,11 @@ them, a check that never fails would still look green:
 - the inspector must flag a sensor binary that defines `__rust_alloc`;
 - the inspector must flag a sensor binary linked against `librust_sensor.so`.
 
-Sensor binaries are compiled but never executed.
+A fifth joins them with `--repeat` above 1: the repeated run must see a
+difference in a sensor that prints its own process id.
+
+Sensor binaries are compiled and never executed, except that one: a check on
+repeated execution has nothing to prove without running something twice.
 
 ## Usage
 
@@ -204,6 +208,26 @@ execute:
 Running the generated corpus with `--sanitize` is worth doing for the memory
 constructs in particular: it is the combination that would have caught the
 `Buffer` leak on the first run.
+
+## Repeated runs
+
+`spec/core/stdlib.md` requires that "repeated execution with gcc and clang
+produce byte-identical output". `--repeat N` runs each executable N times and
+fails the case if any run differs from the first in stdout, stderr or exit
+status.
+
+```sh
+./target/debug/core-c-harness run --bundle target/core-c/bundle --cc gcc --repeat 3
+```
+
+With `--repeat` above 1 the run adds a negative control of its own,
+`repeat_detects_nondeterminism`: a sensor that prints its own process id, so
+the check has something it must catch. A run whose controls are enabled fails
+if that sensor comes back identical twice.
+
+Identity *between* compilers needs no separate check: every case declares its
+expected output, so gcc and clang agreeing with the manifest is the same as
+agreeing with each other.
 
 ## Sanitized runs
 

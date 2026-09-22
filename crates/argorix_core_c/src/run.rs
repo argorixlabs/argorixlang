@@ -28,6 +28,9 @@ pub struct Report {
     pub execution_host: Host,
     pub rust_free_host_required: bool,
     pub sanitized: bool,
+    /// How many times each executable was run; more than one checks that the
+    /// output is byte-identical every time.
+    pub repeat: u32,
     pub emission_commit: Option<String>,
     pub emission_host: Host,
     pub emission_argorixc: ToolRecord,
@@ -51,6 +54,10 @@ pub struct RunOptions<'a> {
     pub require_rust_free: bool,
     /// Compile and run with AddressSanitizer and UndefinedBehaviorSanitizer.
     pub sanitize: bool,
+    /// How many times each executable runs. `spec/core/stdlib.md` requires
+    /// repeated execution to produce byte-identical output; more than one run
+    /// is what checks it.
+    pub repeat: u32,
 }
 
 pub fn load_bundle(bundle_dir: &Path, cases_path: &Path) -> Result<Bundle> {
@@ -105,7 +112,14 @@ pub fn run(options: RunOptions<'_>) -> Result<Report> {
         )?);
     }
     let controls = if options.with_controls {
-        negative_controls(&results, &cases, options.work, &compiler, &policy)?
+        negative_controls(
+            &results,
+            &cases,
+            options.work,
+            &compiler,
+            &policy,
+            options.repeat,
+        )?
     } else {
         Vec::new()
     };
@@ -140,6 +154,7 @@ pub fn run(options: RunOptions<'_>) -> Result<Report> {
         execution_host: host,
         rust_free_host_required: options.require_rust_free,
         sanitized: options.sanitize,
+        repeat: options.repeat,
         emission_commit: bundle.commit.clone(),
         emission_host: bundle.host.clone(),
         emission_argorixc: bundle.argorixc.clone(),
@@ -238,6 +253,38 @@ fn run_case(
         Duration::from_secs(policy.execution_timeout_seconds),
         env,
     )?;
+    // Determinism: the same binary, run again, must produce the same bytes.
+    // `spec/core/stdlib.md` requires it of repeated gcc and clang runs alike,
+    // and nothing checked it before.
+    for run in 1..options.repeat.max(1) {
+        let again = harness::execute_with_env(
+            &executable,
+            Duration::from_secs(policy.execution_timeout_seconds),
+            env,
+        )?;
+        if again.timed_out {
+            result
+                .failures
+                .push(format!("run {} of the same binary timed out", run + 1));
+            break;
+        }
+        if again.stdout != execution.stdout
+            || again.stderr != execution.stderr
+            || again.exit != execution.exit
+        {
+            result.failures.push(format!(
+                "run {} differs from run 1: exit {:?} vs {:?}, stdout {:?} vs {:?}, stderr {:?} vs {:?}",
+                run + 1,
+                again.exit,
+                execution.exit,
+                harness::strip_one_newline(&again.stdout),
+                harness::strip_one_newline(&execution.stdout),
+                harness::strip_one_newline(&again.stderr),
+                harness::strip_one_newline(&execution.stderr),
+            ));
+            break;
+        }
+    }
     if execution.timed_out {
         result.failures.push(format!(
             "timed out after {} s{}",
@@ -291,6 +338,16 @@ const SYMBOL_SENSOR: &str =
     "void __rust_alloc(void);\nvoid __rust_alloc(void) {}\nint main(void) { __rust_alloc(); return 0; }\n";
 const LIBRARY_SENSOR: &str =
     "int rust_sensor_value(void);\nint rust_sensor_value(void) { return 1; }\n";
+/// A program whose output differs every run, for the determinism check to
+/// catch. It prints its own process id: no clock, no entropy source and no
+/// dependence on address-space layout, so it varies on any host.
+const REPEAT_SENSOR: &str = r#"#include <stdio.h>
+#include <unistd.h>
+int main(void) {
+    printf("ARGORIX_RESULT:%ld\n", (long)getpid());
+    return 0;
+}
+"#;
 const LIBRARY_SENSOR_MAIN: &str =
     "int rust_sensor_value(void);\nint main(void) { return rust_sensor_value(); }\n";
 
@@ -323,6 +380,7 @@ fn negative_controls(
     work: &Path,
     compiler: &Path,
     policy: &Policy,
+    repeat: u32,
 ) -> Result<Vec<Control>> {
     let mut controls = Vec::new();
     match results.iter().find(|item| item.observed.is_some()) {
@@ -353,6 +411,25 @@ fn negative_controls(
 
     let sensors = work.join("sensors");
     std::fs::create_dir_all(&sensors)?;
+    if repeat > 1 {
+        // The repeated run has to be able to see a difference, so here is a
+        // program that always makes one. This sensor is executed, unlike the
+        // ones the inspector only compiles.
+        let sensor = sensor_binary("repeat_sensor", REPEAT_SENSOR, &sensors, compiler, &[])?;
+        let timeout = Duration::from_secs(policy.execution_timeout_seconds);
+        let first = harness::execute(&sensor, timeout)?;
+        let second = harness::execute(&sensor, timeout)?;
+        let differs = first.stdout != second.stdout;
+        controls.push(Control {
+            id: "repeat_detects_nondeterminism".into(),
+            detected: differs,
+            detail: vec![format!(
+                "run 1 {:?}, run 2 {:?}",
+                harness::strip_one_newline(&first.stdout),
+                harness::strip_one_newline(&second.stdout)
+            )],
+        });
+    }
     let spawn = harness::inspect_binary(
         &sensor_binary("spawn_sensor", SPAWN_SENSOR, &sensors, compiler, &[])?,
         policy,
@@ -430,8 +507,16 @@ pub fn print_summary(report: &Report) {
         );
     }
     println!(
-        "cases {}/{}; compiler {}; overall_pass={}",
-        report.cases_passed, report.cases_total, report.compiler.version, report.overall_pass
+        "cases {}/{}{}; compiler {}; overall_pass={}",
+        report.cases_passed,
+        report.cases_total,
+        if report.repeat > 1 {
+            format!(" (each run {} times)", report.repeat)
+        } else {
+            String::new()
+        },
+        report.compiler.version,
+        report.overall_pass
     );
 }
 

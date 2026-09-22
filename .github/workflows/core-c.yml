@@ -92,11 +92,15 @@ jobs:
           name: core-c-bundle
           path: target/core-c/bundle
       - name: Compile, execute and inspect
+        # --repeat 3 is the determinism requirement of spec/core/stdlib.md:
+        # "Repeated execution with gcc and clang must produce byte-identical
+        # output." Both compilers run here, and each binary three times.
         run: |
           chmod +x target/core-c/bundle/core-c-harness
           ./target/core-c/bundle/core-c-harness run \
             --bundle target/core-c/bundle \
             --cc ${{ matrix.compiler }} \
+            --repeat 3 \
             --report target/core-c/report-${{ matrix.compiler }}.json
       - uses: actions/upload-artifact@v7
         if: always()
