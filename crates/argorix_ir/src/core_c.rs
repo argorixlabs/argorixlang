@@ -260,6 +260,9 @@ impl<'a> Emitter<'a> {
              #ifndef ARGORIX_STEP_LIMIT\n\
              #define ARGORIX_STEP_LIMIT 1000000U\n\
              #endif\n\
+             #ifndef ARGORIX_DEPTH_LIMIT\n\
+             #define ARGORIX_DEPTH_LIMIT 50000U\n\
+             #endif\n\
              #ifndef ARGORIX_BUFFER_LIMIT_BYTES\n\
              #define ARGORIX_BUFFER_LIMIT_BYTES 1048576U\n\
              #endif\n\
@@ -304,61 +307,16 @@ impl<'a> Emitter<'a> {
         if !self.structs.is_empty() || !self.enums.is_empty() {
             source.push('\n');
         }
+        // A struct holding a struct, or an array of structs, needs the inner
+        // definition first: C only accepts a complete type there. Emitting in
+        // dependency order covers every nesting instead of hoping the names
+        // happen to sort the right way.
+        let mut emitted = BTreeMap::new();
+        for name in self.structs.keys().chain(self.enums.keys()) {
+            self.emit_named_type(name, &arrays, &mut emitted, &mut source)?;
+        }
         for ty in arrays.values() {
-            match ty {
-                ScalarType::Array { element, length } => {
-                    writeln!(
-                        source,
-                        "typedef struct {{ {} data[{}]; }} {};",
-                        element.c_name(),
-                        length,
-                        ty.c_name()
-                    )
-                    .unwrap();
-                }
-                ScalarType::Slice(element) => {
-                    writeln!(
-                        source,
-                        "typedef struct {{ const {} *data; uint64_t length; }} {};",
-                        element.c_name(),
-                        ty.c_name()
-                    )
-                    .unwrap();
-                }
-                _ => unreachable!(),
-            }
-        }
-        if !arrays.is_empty() {
-            source.push('\n');
-        }
-        for (name, layout) in &self.structs {
-            writeln!(source, "struct argorix_type_{name} {{").unwrap();
-            for (field, ty) in &layout.fields {
-                writeln!(source, "    {} {field};", ty.c_name()).unwrap();
-            }
-            source.push_str("};\n\n");
-        }
-        for (name, layout) in &self.enums {
-            writeln!(source, "typedef enum argorix_tag_{name} {{").unwrap();
-            for variant in layout.variants.keys() {
-                writeln!(source, "    argorix_tag_{name}_{variant},").unwrap();
-            }
-            writeln!(source, "}} argorix_tag_{name};").unwrap();
-            writeln!(source, "struct argorix_type_{name} {{").unwrap();
-            writeln!(source, "    argorix_tag_{name} tag;").unwrap();
-            source.push_str("    union {\n");
-            for (variant, fields) in &layout.variants {
-                source.push_str("        struct {\n");
-                if fields.is_empty() {
-                    source.push_str("            uint8_t _unit;\n");
-                } else {
-                    for (field, ty) in fields {
-                        writeln!(source, "            {} {field};", ty.c_name()).unwrap();
-                    }
-                }
-                writeln!(source, "        }} {variant};").unwrap();
-            }
-            source.push_str("    } data;\n};\n\n");
+            self.emit_aggregate_type(ty, &arrays, &mut emitted, &mut source)?;
         }
         for item in &program.items {
             if let CoreIrItemKind::Function(function) = &item.kind {
@@ -377,6 +335,135 @@ impl<'a> Emitter<'a> {
             source,
             entry_function: "argorix_main".into(),
         })
+    }
+
+    /// Emit a struct or enum definition, and whatever it holds, once.
+    ///
+    /// `emitted` doubles as the cycle guard: a type marked `false` is still
+    /// being written, so meeting it again means the program declares a type
+    /// that contains itself by value.
+    fn emit_named_type(
+        &self,
+        name: &str,
+        arrays: &BTreeMap<String, ScalarType>,
+        emitted: &mut BTreeMap<String, bool>,
+        source: &mut String,
+    ) -> Result<(), CoreCError> {
+        let key = format!("type:{name}");
+        match emitted.get(&key) {
+            Some(true) => return Ok(()),
+            Some(false) => {
+                return Err(CoreCError::unsupported(format!(
+                    "type `{name}` contains itself by value"
+                )))
+            }
+            None => {}
+        }
+        emitted.insert(key.clone(), false);
+
+        if let Some(layout) = self.structs.get(name) {
+            for ty in layout.fields.values() {
+                self.emit_dependencies(ty, arrays, emitted, source)?;
+            }
+            writeln!(source, "struct argorix_type_{name} {{").unwrap();
+            for (field, ty) in &layout.fields {
+                writeln!(source, "    {} argorix_f_{field};", ty.c_name()).unwrap();
+            }
+            source.push_str("};\n\n");
+        } else if let Some(layout) = self.enums.get(name) {
+            for fields in layout.variants.values() {
+                for ty in fields.values() {
+                    self.emit_dependencies(ty, arrays, emitted, source)?;
+                }
+            }
+            writeln!(source, "typedef enum argorix_tag_{name} {{").unwrap();
+            for variant in layout.variants.keys() {
+                writeln!(source, "    argorix_tag_{name}_{variant},").unwrap();
+            }
+            writeln!(source, "}} argorix_tag_{name};").unwrap();
+            writeln!(source, "struct argorix_type_{name} {{").unwrap();
+            writeln!(source, "    argorix_tag_{name} tag;").unwrap();
+            source.push_str("    union {\n");
+            for (variant, fields) in &layout.variants {
+                source.push_str("        struct {\n");
+                if fields.is_empty() {
+                    source.push_str("            uint8_t _unit;\n");
+                } else {
+                    for (field, ty) in fields {
+                        writeln!(source, "            {} argorix_f_{field};", ty.c_name()).unwrap();
+                    }
+                }
+                writeln!(source, "        }} {variant};").unwrap();
+            }
+            source.push_str("    } data;\n};\n\n");
+        }
+        emitted.insert(key, true);
+        Ok(())
+    }
+
+    /// Emit an array or slice typedef after the type it holds.
+    fn emit_aggregate_type(
+        &self,
+        ty: &ScalarType,
+        arrays: &BTreeMap<String, ScalarType>,
+        emitted: &mut BTreeMap<String, bool>,
+        source: &mut String,
+    ) -> Result<(), CoreCError> {
+        let key = format!("aggregate:{}", ty.c_name());
+        if emitted.contains_key(&key) {
+            return Ok(());
+        }
+        emitted.insert(key.clone(), false);
+        match ty {
+            ScalarType::Array { element, length } => {
+                self.emit_dependencies(element, arrays, emitted, source)?;
+                writeln!(
+                    source,
+                    "typedef struct {{ {} data[{}]; }} {};",
+                    element.c_name(),
+                    length,
+                    ty.c_name()
+                )
+                .unwrap();
+            }
+            ScalarType::Slice(element) => {
+                self.emit_dependencies(element, arrays, emitted, source)?;
+                writeln!(
+                    source,
+                    "typedef struct {{ const {} *data; uint64_t length; }} {};",
+                    element.c_name(),
+                    ty.c_name()
+                )
+                .unwrap();
+            }
+            _ => return Ok(()),
+        }
+        source.push('\n');
+        emitted.insert(key, true);
+        Ok(())
+    }
+
+    fn emit_dependencies(
+        &self,
+        ty: &ScalarType,
+        arrays: &BTreeMap<String, ScalarType>,
+        emitted: &mut BTreeMap<String, bool>,
+        source: &mut String,
+    ) -> Result<(), CoreCError> {
+        match ty {
+            ScalarType::User(name) => self.emit_named_type(name, arrays, emitted, source),
+            ScalarType::Array { .. } | ScalarType::Slice(_) => {
+                self.emit_aggregate_type(ty, arrays, emitted, source)
+            }
+            // Buffer, arena and handle are runtime structs declared in the C1
+            // header; only what they hold can need a definition here.
+            ScalarType::Buffer(element)
+            | ScalarType::Arena(element)
+            | ScalarType::Handle(element) => {
+                self.emit_dependencies(element, arrays, emitted, source)
+            }
+            _ => Ok(()),
+        }
     }
 
     fn emit_prototype(
@@ -400,7 +487,14 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_main(&self, entry: &Signature, source: &mut String) -> Result<(), CoreCError> {
-        source.push_str("int main(void) {\n    argorix_budget budget = {ARGORIX_STEP_LIMIT};\n");
+        source.push_str(
+            "int main(void) {\n    argorix_budget budget = {ARGORIX_STEP_LIMIT, ARGORIX_DEPTH_LIMIT};\n",
+        );
+        // Same reason as the parameters: a private function that nothing calls
+        // is valid Core, and -Wunused-function is an error in this profile.
+        for name in self.signatures.keys() {
+            writeln!(source, "    (void)argorix_fn_{name};").unwrap();
+        }
         writeln!(
             source,
             "    {} result = argorix_fn_argorix_main(&budget);",
@@ -486,7 +580,14 @@ impl<'a> FunctionEmitter<'a> {
         for (parameter, ty) in self.function.parameters.iter().zip(&signature.parameters) {
             write!(source, ", {} argorix_v_{}", ty.c_name(), parameter.name).unwrap();
         }
-        source.push_str(") {\n    argorix_step(budget);\n");
+        source.push_str(") {\n    argorix_step(budget);\n    argorix_enter(budget);\n");
+        // A parameter a Core function never reads is valid Core, but the
+        // declared profile compiles with -Wunused-parameter as an error. A
+        // cast to void marks it used in plain C11, without a compiler
+        // attribute.
+        for parameter in &self.function.parameters {
+            writeln!(source, "    (void)argorix_v_{};", parameter.name).unwrap();
+        }
         self.emit_block(&self.function.body, 1, Some(&signature.result), source)?;
         if signature.result == ScalarType::Unit {
             self.emit_buffer_drops(1, source);
@@ -512,7 +613,13 @@ impl<'a> FunctionEmitter<'a> {
             })?;
             let value = self.emit_expr(tail, Some(expected), indent, source)?;
             self.emit_buffer_drops(indent, source);
-            line(source, indent, &format!("return {};", value.0));
+            if *expected == ScalarType::Unit {
+                // A unit function returns nothing: its tail runs for effects,
+                // and `return <value>;` inside `void` is not valid C.
+                line(source, indent, "return;");
+            } else {
+                line(source, indent, &format!("return {};", value.0));
+            }
         }
         Ok(())
     }
@@ -534,6 +641,8 @@ impl<'a> FunctionEmitter<'a> {
                 );
             }
         }
+        // Give the call-depth budget back on the way out, on every exit path.
+        line(source, indent, "argorix_leave(budget);");
     }
 
     fn emit_statement(
@@ -604,7 +713,7 @@ impl<'a> FunctionEmitter<'a> {
                     indent + 1,
                     &format!("if (!{}) {{ break; }}", condition.0),
                 );
-                self.emit_block(body, indent + 1, None, source)?;
+                self.emit_scoped_block(body, indent + 1, source)?;
                 line(source, indent, "}");
             }
             CoreIrStatement::Return { value } => {
@@ -619,7 +728,26 @@ impl<'a> FunctionEmitter<'a> {
                 }
             }
             CoreIrStatement::Expr { value } => {
-                let _ = self.emit_expr(value, None, indent, source)?;
+                // In statement position an `if`, `match` or block produces no
+                // value, so it lowers to plain C control flow instead of an
+                // expression that needs a result type.
+                match value {
+                    CoreIrExpr::If {
+                        condition,
+                        then_block,
+                        else_expr,
+                    } => {
+                        self.emit_if_statement(condition, then_block, else_expr, indent, source)?
+                    }
+                    CoreIrExpr::Block { body } => {
+                        line(source, indent, "{");
+                        self.emit_scoped_block(body, indent + 1, source)?;
+                        line(source, indent, "}");
+                    }
+                    other => {
+                        let _ = self.emit_expr(other, None, indent, source)?;
+                    }
+                }
             }
             CoreIrStatement::Break { value: None } => line(source, indent, "break;"),
             CoreIrStatement::Continue => line(source, indent, "continue;"),
@@ -748,8 +876,8 @@ impl<'a> FunctionEmitter<'a> {
                     })?;
                     let value = self.emit_expr(&field.value, Some(field_ty), indent, source)?;
                     let access = variant
-                        .map(|variant| format!("data.{variant}.{}", field.name))
-                        .unwrap_or_else(|| field.name.clone());
+                        .map(|variant| format!("data.{variant}.argorix_f_{}", field.name))
+                        .unwrap_or_else(|| format!("argorix_f_{}", field.name));
                     line(source, indent, &format!("{temp}.{access} = {};", value.0));
                 }
                 Ok((temp, ty))
@@ -826,7 +954,9 @@ impl<'a> FunctionEmitter<'a> {
             CoreIrExpr::Field { value, name } => {
                 let value = self.emit_expr(value, None, indent, source)?;
                 let (type_name, access) = match &value.1 {
-                    ScalarType::User(type_name) => (type_name, format!("{}.{}", value.0, name)),
+                    ScalarType::User(type_name) => {
+                        (type_name, format!("{}.argorix_f_{}", value.0, name))
+                    }
                     ScalarType::Handle(element) => {
                         let ScalarType::User(type_name) = element.as_ref() else {
                             return Err(CoreCError::unsupported(
@@ -836,7 +966,7 @@ impl<'a> FunctionEmitter<'a> {
                         (
                             type_name,
                             format!(
-                                "((const {} *)argorix_handle_get({}, {}U, sizeof({}), false))->{}",
+                                "((const {} *)argorix_handle_get({}, {}U, sizeof({}), false))->argorix_f_{}",
                                 element.c_name(),
                                 value.0,
                                 core_type_id(element),
@@ -866,9 +996,15 @@ impl<'a> FunctionEmitter<'a> {
                 let text = match operator {
                     CoreIrUnaryOp::Not => format!("(!{})", value.0),
                     CoreIrUnaryOp::Negate => {
-                        return Err(CoreCError::unsupported(
-                            "checked signed negation is not implemented yet",
-                        ));
+                        let ScalarType::Integer(name) = &value.1 else {
+                            return Err(CoreCError::unsupported("negation requires an integer"));
+                        };
+                        if !name.starts_with('i') {
+                            return Err(CoreCError::unsupported(
+                                "negating an unsigned value has no representable result",
+                            ));
+                        }
+                        format!("argorix_{name}_neg({})", value.0)
                     }
                 };
                 self.bind_temp(text, value.1, indent, source)
@@ -1158,7 +1294,7 @@ impl<'a> FunctionEmitter<'a> {
                                     source,
                                     indent + 1,
                                     &format!(
-                                        "{} argorix_v_{} = {}.data.{}.{};",
+                                        "{} argorix_v_{} = {}.data.{}.argorix_f_{};",
                                         field_ty.c_name(),
                                         binding,
                                         scrutinee.0,
@@ -1235,6 +1371,84 @@ impl<'a> FunctionEmitter<'a> {
         }
     }
 
+    /// The type an expression produces, without emitting anything.
+    ///
+    /// Used where the expected type cannot come from the context, such as the
+    /// operands of a comparison, whose own result is `bool`. `None` means the
+    /// shape is outside this profile, and the caller reports that as usual.
+    fn infer_type(&self, expression: &CoreIrExpr) -> Option<ScalarType> {
+        match expression {
+            CoreIrExpr::Integer { suffix, .. } => suffix
+                .as_ref()
+                .map(|name| ScalarType::Integer(name.clone())),
+            CoreIrExpr::Bool { .. } => Some(ScalarType::Bool),
+            CoreIrExpr::String { .. } => Some(ScalarType::String),
+            CoreIrExpr::Unit => Some(ScalarType::Unit),
+            CoreIrExpr::Path { segments } => {
+                let [name] = segments.as_slice() else {
+                    return None;
+                };
+                self.locals.get(name).cloned()
+            }
+            CoreIrExpr::Aggregate { path, .. } => {
+                path.first().map(|name| ScalarType::User(name.clone()))
+            }
+            CoreIrExpr::Array { values } => {
+                let element = self.infer_type(values.first()?)?;
+                Some(ScalarType::Array {
+                    element: Box::new(element),
+                    length: values.len() as u64,
+                })
+            }
+            CoreIrExpr::Block { body } => self.infer_type(body.tail.as_ref()?),
+            CoreIrExpr::If { then_block, .. } => self.infer_type(then_block.tail.as_ref()?),
+            CoreIrExpr::Match { arms, .. } => self.infer_type(&arms.first()?.value),
+            CoreIrExpr::Call { callee, .. } => {
+                let CoreIrExpr::Path { segments } = callee.as_ref() else {
+                    return None;
+                };
+                let [name] = segments.as_slice() else {
+                    return None;
+                };
+                self.signatures.get(name).map(|item| item.result.clone())
+            }
+            CoreIrExpr::Index { value, .. } => match self.infer_type(value)? {
+                ScalarType::Array { element, .. }
+                | ScalarType::Slice(element)
+                | ScalarType::Buffer(element) => Some(*element),
+                ScalarType::Bytes => Some(ScalarType::Integer("u8".into())),
+                _ => None,
+            },
+            CoreIrExpr::Field { value, name } => {
+                let owner = match self.infer_type(value)? {
+                    ScalarType::User(owner) => owner,
+                    ScalarType::Handle(element) => match *element {
+                        ScalarType::User(owner) => owner,
+                        _ => return None,
+                    },
+                    _ => return None,
+                };
+                self.structs.get(&owner)?.fields.get(name).cloned()
+            }
+            CoreIrExpr::Unary { operator, value } => match operator {
+                CoreIrUnaryOp::Not => Some(ScalarType::Bool),
+                _ => self.infer_type(value),
+            },
+            CoreIrExpr::Binary {
+                left,
+                operator,
+                right,
+            } => {
+                if is_comparison(*operator) {
+                    Some(ScalarType::Bool)
+                } else {
+                    self.infer_type(left).or_else(|| self.infer_type(right))
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn emit_binary(
         &mut self,
         left: &CoreIrExpr,
@@ -1244,7 +1458,25 @@ impl<'a> FunctionEmitter<'a> {
         indent: usize,
         source: &mut String,
     ) -> Result<(String, ScalarType), CoreCError> {
-        let left = self.emit_expr(left, expected, indent, source)?;
+        // The spec evaluates operands strictly left to right. A bare variable
+        // read emits as the variable itself, so if the right operand runs
+        // statements that assign to it, the C expression would read the new
+        // value. Copy it first in that case.
+        let snapshot = matches!(left, CoreIrExpr::Path { .. }) && runs_statements(right);
+        // A comparison answers `bool`, but its operands do not: passing the
+        // expected type straight down made an `if` or block operand build a
+        // bool temporary and compare that.
+        let operand_expected = if is_comparison(operator) {
+            self.infer_type(left).or_else(|| self.infer_type(right))
+        } else {
+            expected.cloned()
+        };
+        let left = self.emit_expr(left, operand_expected.as_ref(), indent, source)?;
+        let left = if snapshot {
+            self.bind_temp(left.0, left.1, indent, source)?
+        } else {
+            left
+        };
         if matches!(operator, CoreIrBinaryOp::And | CoreIrBinaryOp::Or) {
             let temp = self.next_temp();
             line(source, indent, &format!("bool {temp} = {};", left.0));
@@ -1288,14 +1520,83 @@ impl<'a> FunctionEmitter<'a> {
                 format!("({} {} {})", left.0, bit_operator(operator), right.0),
                 left.1,
             ),
-            CoreIrBinaryOp::ShiftLeft | CoreIrBinaryOp::ShiftRight => {
-                return Err(CoreCError::unsupported(
-                    "checked shifts are not implemented yet",
-                ));
-            }
+            CoreIrBinaryOp::ShiftLeft | CoreIrBinaryOp::ShiftRight => (
+                format!(
+                    "argorix_{}_{}({}, {})",
+                    left.1.helper_suffix()?,
+                    if operator == CoreIrBinaryOp::ShiftLeft {
+                        "shl"
+                    } else {
+                        "shr"
+                    },
+                    left.0,
+                    right.0
+                ),
+                left.1,
+            ),
             CoreIrBinaryOp::And | CoreIrBinaryOp::Or => unreachable!(),
         };
         self.bind_temp(text, result, indent, source)
+    }
+
+    /// An `if` used as a statement: no result temporary, no `else` required.
+    fn emit_if_statement(
+        &mut self,
+        condition: &CoreIrExpr,
+        then_block: &CoreIrBlock,
+        else_expr: &Option<Box<CoreIrExpr>>,
+        indent: usize,
+        source: &mut String,
+    ) -> Result<(), CoreCError> {
+        let condition = self.emit_expr(condition, Some(&ScalarType::Bool), indent, source)?;
+        line(source, indent, &format!("if ({}) {{", condition.0));
+        self.emit_scoped_block(then_block, indent + 1, source)?;
+        match else_expr.as_deref() {
+            None => line(source, indent, "}"),
+            Some(CoreIrExpr::If {
+                condition,
+                then_block,
+                else_expr,
+            }) => {
+                // `else if` keeps its own scope without an extra brace level.
+                line(source, indent, "} else {");
+                self.emit_if_statement(condition, then_block, else_expr, indent + 1, source)?;
+                line(source, indent, "}");
+            }
+            Some(CoreIrExpr::Block { body }) => {
+                line(source, indent, "} else {");
+                self.emit_scoped_block(body, indent + 1, source)?;
+                line(source, indent, "}");
+            }
+            Some(other) => {
+                line(source, indent, "} else {");
+                let _ = self.emit_expr(other, None, indent + 1, source)?;
+                line(source, indent, "}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Emit a block's statements, restoring the local types that its own
+    /// declarations shadowed. C sees one scope per pair of braces; the emitter
+    /// has to undo the shadowing itself so a name does not keep the inner type
+    /// after the block closes.
+    fn emit_scoped_block(
+        &mut self,
+        block: &CoreIrBlock,
+        indent: usize,
+        source: &mut String,
+    ) -> Result<(), CoreCError> {
+        let saved = self.locals.clone();
+        for statement in &block.statements {
+            self.emit_statement(statement, indent, source)?;
+        }
+        if let Some(tail) = &block.tail {
+            // A tail in statement position is evaluated for its effects.
+            let _ = self.emit_expr(tail, None, indent, source)?;
+        }
+        self.locals = saved;
+        Ok(())
     }
 
     fn emit_block_assignment(
@@ -1306,15 +1607,22 @@ impl<'a> FunctionEmitter<'a> {
         indent: usize,
         source: &mut String,
     ) -> Result<(), CoreCError> {
+        // The braces give the block its own C scope, so its `let`s cannot
+        // collide with a name declared after it, and the saved map keeps a
+        // shadowed name from carrying the inner type out of the block.
+        let saved = self.locals.clone();
+        line(source, indent, "{");
         for statement in &block.statements {
-            self.emit_statement(statement, indent, source)?;
+            self.emit_statement(statement, indent + 1, source)?;
         }
         let tail = block
             .tail
             .as_ref()
             .ok_or_else(|| CoreCError::unsupported("value block has no tail expression"))?;
-        let value = self.emit_expr(tail, Some(ty), indent, source)?;
-        line(source, indent, &format!("{target} = {};", value.0));
+        let value = self.emit_expr(tail, Some(ty), indent + 1, source)?;
+        line(source, indent + 1, &format!("{target} = {};", value.0));
+        line(source, indent, "}");
+        self.locals = saved;
         Ok(())
     }
 
@@ -1395,16 +1703,129 @@ fn collect_block_array_types(
     arrays: &mut BTreeMap<String, ScalarType>,
 ) -> Result<(), CoreCError> {
     for statement in &block.statements {
-        match statement {
-            CoreIrStatement::Let {
-                annotation: Some(annotation),
-                ..
-            } => collect_array_type(&ScalarType::from_ir(annotation)?, arrays),
-            CoreIrStatement::While { body, .. } => collect_block_array_types(body, arrays)?,
-            _ => {}
-        }
+        collect_statement_array_types(statement, arrays)?;
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_array_types(tail, arrays)?;
     }
     Ok(())
+}
+
+fn collect_statement_array_types(
+    statement: &CoreIrStatement,
+    arrays: &mut BTreeMap<String, ScalarType>,
+) -> Result<(), CoreCError> {
+    match statement {
+        CoreIrStatement::Let {
+            annotation, value, ..
+        } => {
+            if let Some(annotation) = annotation {
+                collect_array_type(&ScalarType::from_ir(annotation)?, arrays);
+            }
+            collect_expr_array_types(value, arrays)?;
+        }
+        CoreIrStatement::Assign { target, value, .. } => {
+            collect_expr_array_types(target, arrays)?;
+            collect_expr_array_types(value, arrays)?;
+        }
+        CoreIrStatement::While { condition, body } => {
+            collect_expr_array_types(condition, arrays)?;
+            collect_block_array_types(body, arrays)?;
+        }
+
+        CoreIrStatement::Expr { value } => collect_expr_array_types(value, arrays)?,
+        CoreIrStatement::Return { value: Some(value) } => collect_expr_array_types(value, arrays)?,
+        CoreIrStatement::Break { value: Some(value) } => collect_expr_array_types(value, arrays)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Every nested block counts: an array declared inside an `if` branch, a
+/// `match` arm or a loop body needs its typedef just as much as a top-level
+/// one.
+fn collect_expr_array_types(
+    expression: &CoreIrExpr,
+    arrays: &mut BTreeMap<String, ScalarType>,
+) -> Result<(), CoreCError> {
+    match expression {
+        CoreIrExpr::Block { body } | CoreIrExpr::Loop { body } => {
+            collect_block_array_types(body, arrays)?
+        }
+        CoreIrExpr::If {
+            condition,
+            then_block,
+            else_expr,
+        } => {
+            collect_expr_array_types(condition, arrays)?;
+            collect_block_array_types(then_block, arrays)?;
+            if let Some(other) = else_expr {
+                collect_expr_array_types(other, arrays)?;
+            }
+        }
+        CoreIrExpr::Match { value, arms } => {
+            collect_expr_array_types(value, arrays)?;
+            for arm in arms {
+                collect_expr_array_types(&arm.value, arrays)?;
+            }
+        }
+        CoreIrExpr::Call { arguments, .. } => {
+            for argument in arguments {
+                collect_expr_array_types(argument, arrays)?;
+            }
+        }
+        CoreIrExpr::Binary { left, right, .. } => {
+            collect_expr_array_types(left, arrays)?;
+            collect_expr_array_types(right, arrays)?;
+        }
+        CoreIrExpr::Unary { value, .. } => collect_expr_array_types(value, arrays)?,
+        CoreIrExpr::Index { value, index } => {
+            collect_expr_array_types(value, arrays)?;
+            collect_expr_array_types(index, arrays)?;
+        }
+        CoreIrExpr::Field { value, .. } => collect_expr_array_types(value, arrays)?,
+        CoreIrExpr::Array { values } => {
+            for element in values {
+                collect_expr_array_types(element, arrays)?;
+            }
+        }
+        CoreIrExpr::Aggregate { fields, .. } => {
+            for field in fields {
+                collect_expr_array_types(&field.value, arrays)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn is_comparison(operator: CoreIrBinaryOp) -> bool {
+    matches!(
+        operator,
+        CoreIrBinaryOp::Equal
+            | CoreIrBinaryOp::NotEqual
+            | CoreIrBinaryOp::Less
+            | CoreIrBinaryOp::LessEqual
+            | CoreIrBinaryOp::Greater
+            | CoreIrBinaryOp::GreaterEqual
+    )
+}
+
+/// Whether emitting this expression runs C statements, which may assign to a
+/// local that an earlier operand still reads by name.
+fn runs_statements(expression: &CoreIrExpr) -> bool {
+    match expression {
+        CoreIrExpr::Block { .. }
+        | CoreIrExpr::If { .. }
+        | CoreIrExpr::Match { .. }
+        | CoreIrExpr::Loop { .. }
+        | CoreIrExpr::Call { .. } => true,
+        CoreIrExpr::Binary { left, right, .. } => runs_statements(left) || runs_statements(right),
+        CoreIrExpr::Unary { value, .. } => runs_statements(value),
+        CoreIrExpr::Index { value, index } => runs_statements(value) || runs_statements(index),
+        CoreIrExpr::Field { value, .. } => runs_statements(value),
+        _ => false,
+    }
 }
 
 fn single_path(segments: &[String]) -> Result<&str, CoreCError> {

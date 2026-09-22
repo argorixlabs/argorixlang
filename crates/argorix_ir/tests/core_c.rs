@@ -49,8 +49,10 @@ fn fixed_arrays_use_value_wrappers_and_checked_indexes() {
 fn structs_lower_to_typed_c_values() {
     let source = emit("struct_success.argx");
     assert!(source.contains("typedef struct argorix_type_Pair"));
-    assert!(source.contains(".first"));
-    assert!(source.contains(".second"));
+    // Fields carry the `argorix_f_` prefix so a name like `long` or `char`
+    // cannot collide with C (ESP-009.B).
+    assert!(source.contains(".argorix_f_first"));
+    assert!(source.contains(".argorix_f_second"));
 }
 
 #[test]
@@ -235,5 +237,122 @@ fn buffers_are_released_before_every_return() {
             .lines()
             .all(|line| !line.contains("argorix_buffer_push")),
         "nothing may use the buffer after it is dropped:\n{source}"
+    );
+}
+
+/// The programs behind these tests are the regression corpus in
+/// `conformance/core_c/regression/`, which runs them end to end; here we check
+/// the shape of the C the backend emits for the constructs they cover.
+fn emit_regression(file: &str) -> String {
+    let source =
+        fs::read_to_string(root().join("conformance/core_c/regression").join(file)).unwrap();
+    let program = parse_core_source(&source).unwrap();
+    let checked = verify_core_program(
+        &program,
+        &CoreCheckOptions {
+            available_modules: BTreeSet::from([program.module.value.clone()]),
+        },
+    )
+    .unwrap();
+    let ir = lower_core_program(checked);
+    CoreCBackend
+        .emit(verify_core_ir(&ir).unwrap())
+        .unwrap()
+        .source
+}
+
+#[test]
+fn an_if_statement_lowers_without_a_result_temporary() {
+    let source = emit_regression("g12_if_statement.argx");
+    assert!(source.contains("if ("), "no if emitted:\n{source}");
+    // A statement `if` has no value, so nothing declares a temporary for it.
+    let if_line = source
+        .lines()
+        .find(|line| line.trim_start().starts_with("if ("))
+        .unwrap();
+    assert!(!if_line.contains('='), "statement if assigns: {if_line}");
+}
+
+#[test]
+fn a_block_expression_gets_its_own_c_scope() {
+    let source = emit_regression("g04_block_scope.argx");
+    // The same name is declared twice, which only compiles because the block
+    // expression is wrapped in braces of its own.
+    assert_eq!(
+        source.matches("uint32_t argorix_v_t = ").count(),
+        2,
+        "both declarations should be present:\n{source}"
+    );
+    let body = source
+        .split_once("argorix_fn_argorix_main(argorix_budget *budget) {")
+        .and_then(|(_, rest)| rest.split_once("\n}"))
+        .map(|(body, _)| body)
+        .unwrap();
+    let inner = body.find("uint32_t argorix_v_t = 40U;").unwrap();
+    let opening = body[..inner].rfind('{').unwrap();
+    let closing = body[inner..].find('}').unwrap() + inner;
+    let outer = body.find("uint32_t argorix_v_t = 2U;").unwrap();
+    assert!(
+        opening < inner && inner < closing && closing < outer,
+        "the first declaration is not enclosed in its own block:\n{body}"
+    );
+}
+
+#[test]
+fn struct_fields_are_prefixed_so_c_keywords_are_safe() {
+    let source = emit_regression("g07_field_named_like_c_keyword.argx");
+    assert!(source.contains("argorix_f_long"));
+    assert!(source.contains("argorix_f_char"));
+    assert!(
+        !source.contains(" long;") && !source.contains(" char;"),
+        "a field reached C unprefixed:\n{source}"
+    );
+}
+
+#[test]
+fn a_type_is_defined_before_the_type_that_holds_it() {
+    let source = emit_regression("g02_struct_in_struct.argx");
+    let point = source.find("struct argorix_type_Point {").unwrap();
+    let line = source.find("struct argorix_type_Line {").unwrap();
+    assert!(point < line, "Line is defined before Point:\n{source}");
+}
+
+#[test]
+fn shifts_and_negation_go_through_checked_helpers() {
+    let shift = emit_regression("g13_shift.argx");
+    assert!(
+        shift.contains("argorix_u32_shr("),
+        "no checked shift:\n{shift}"
+    );
+    let negation = emit_regression("g14_signed_negation.argx");
+    assert!(
+        negation.contains("argorix_i32_neg("),
+        "no checked negation:\n{negation}"
+    );
+}
+
+#[test]
+fn every_function_charges_and_returns_the_call_depth_budget() {
+    let source = emit_regression("g15_deep_recursion.argx");
+    assert!(source.contains("argorix_enter(budget);"));
+    assert!(source.contains("argorix_leave(budget);"));
+    assert!(source.contains("ARGORIX_DEPTH_LIMIT"));
+    // Every exit path gives the budget back, so a loop of calls cannot drain it.
+    let returns = source.matches("    return").count();
+    let leaves = source.matches("argorix_leave(budget);").count();
+    assert!(
+        leaves >= returns - 1,
+        "{leaves} releases for {returns} returns:\n{source}"
+    );
+}
+
+#[test]
+fn an_unused_parameter_is_marked_used_in_plain_c() {
+    let source = emit_regression("g08_unused_parameter.argx");
+    assert!(source.contains("(void)argorix_v_b;"));
+    assert!(source.contains("(void)argorix_fn_pick;"));
+    assert!(
+        !source.contains("__attribute__"),
+        "the fix should stay plain C11:\n{source}"
     );
 }

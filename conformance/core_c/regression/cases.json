@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "core_version": "0.1",
+  "task": "ESP-009.B",
+  "purpose": "Programs that the transitional C backend once got wrong, kept as regression cases. Each one is valid Core 0.1 that argorixc core-check accepts, and every expectation comes from spec/core/evaluation.md. They were the known-gap corpus of issue #27 until the defects were fixed.",
+  "cases": [
+    {
+      "id": "g01_nested_array",
+      "file": "g01_nested_array.argx",
+      "was": "Array typedefs were emitted sorted by name, so the outer array preceded the inner one.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:37",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g02_struct_in_struct",
+      "file": "g02_struct_in_struct.argx",
+      "was": "Struct definitions were emitted alphabetically instead of in dependency order.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g03_array_of_struct",
+      "file": "g03_array_of_struct.argx",
+      "was": "The array typedef came before the struct it holds.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g04_block_scope",
+      "file": "g04_block_scope.argx",
+      "was": "A block expression's locals landed in the enclosing C scope.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g05_unit_tail_call",
+      "file": "g05_unit_tail_call.argx",
+      "was": "A unit function whose tail is a call emitted `return <value>;` inside void.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g06_array_in_if",
+      "file": "g06_array_in_if.argx",
+      "was": "Array types declared inside a branch never got their typedef.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g07_field_named_like_c_keyword",
+      "file": "g07_field_named_like_c_keyword.argx",
+      "was": "Struct field names reached C unprefixed, so `long` and `char` collided.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g08_unused_parameter",
+      "file": "g08_unused_parameter.argx",
+      "was": "An unused parameter or uncalled private function failed -Werror.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g09_comparison_with_block_operand",
+      "file": "g09_comparison_with_block_operand.argx",
+      "was": "A comparison pushed its own bool type into the operand.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:false",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g10_shadowed_local_type",
+      "file": "g10_shadowed_local_type.argx",
+      "was": "A shadowed local kept the inner type after its scope closed, and printed 233.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:1001",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g11_evaluation_order_variable",
+      "file": "g11_evaluation_order_variable.argx",
+      "was": "A variable operand was read after the right side mutated it, and printed 4.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:3",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g12_if_statement",
+      "file": "g12_if_statement.argx",
+      "was": "`if` in statement position was rejected at emission.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g13_shift",
+      "file": "g13_shift.argx",
+      "was": "Shifts were rejected at emission.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:16",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g14_signed_negation",
+      "file": "g14_signed_negation.argx",
+      "was": "Signed negation was rejected at emission.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "g15_deep_recursion",
+      "file": "g15_deep_recursion.argx",
+      "was": "Recursion past the native stack ended in SIGSEGV instead of a typed trap. The spec allows either the result or a typed resource trap; the runtime now charges a call-depth budget and traps below the stack limit.",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:CALL_DEPTH_LIMIT"
+    },
+    {
+      "id": "g16_if_inside_comparison_operand",
+      "file": "g16_if_inside_comparison_operand.argx",
+      "was": "Arithmetic containing an `if` was rejected when it was a comparison operand.",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    }
+  ]
+}
