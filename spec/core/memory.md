@@ -1,6 +1,6 @@
 # Memoria ejecutable Core M1/ABI-1
 
-Estado: contrato ESP-005 sobre [M1](../memory-model.md). El prototipo Rust valida la lógica secuencial; stage0, backend C y backend nativo aún no lo implementan.
+Estado: contrato ESP-005 sobre [M1](../memory-model.md). El prototipo Rust valida la lógica secuencial. El runtime C1 de ESP-008 implementa ya la parte que su perfil declara —handle canónico de 48 bytes, validación de arena, época, slot, generación, tipo, rango y permiso, y almacenamiento de `Buffer`/`Arena` desde ESP-009— con evidencia ejecutable en `tests/selfhost/runtime/` y `conformance/core_c/`. El backend nativo no existe todavía.
 
 ## Arena y asignación
 
