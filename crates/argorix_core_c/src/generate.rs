@@ -76,12 +76,38 @@ pub fn unsigned(kind: IntType) -> bool {
     kind.name.starts_with('u')
 }
 
+/// The exact width of the type, taken from its own name: `u8` is 8 bits.
+pub fn width(kind: IntType) -> u32 {
+    kind.name[1..]
+        .parse()
+        .expect("every declared type name ends in its width")
+}
+
+/// Fit a value into the type's two's-complement representation.
+///
+/// Only the shifts use this: `spec/core/evaluation.md` gives them a single
+/// rule, the amount below the width, and keeps the modular forms for the
+/// explicit `wrapping_*` intrinsics. Bits that leave the width are therefore
+/// dropped, as they are in the `checked_shl` of the language Core's literals
+/// follow, and no second overflow rule is invented here.
+fn truncate(value: i128, kind: IntType) -> i128 {
+    let bits = width(kind);
+    let modulus = 1i128 << bits;
+    let wrapped = value.rem_euclid(modulus);
+    if unsigned(kind) || wrapped <= kind.high {
+        wrapped
+    } else {
+        wrapped - modulus
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Trap {
     IntegerOverflow,
     DivisionByZero,
     IndexOutOfBounds,
     ArenaReleased,
+    ShiftOutOfRange,
 }
 
 impl Trap {
@@ -91,6 +117,7 @@ impl Trap {
             Trap::DivisionByZero => "DIVISION_BY_ZERO",
             Trap::IndexOutOfBounds => "INDEX_OUT_OF_BOUNDS",
             Trap::ArenaReleased => "ARENA_RELEASED",
+            Trap::ShiftOutOfRange => "SHIFT_OUT_OF_RANGE",
         }
     }
 }
@@ -106,6 +133,13 @@ pub enum Expr {
     Literal(i128),
     Var(String),
     Arith(&'static str, Box<Expr>, Box<Expr>),
+    /// `left << right` or `left >> right`. Both operands carry the program's
+    /// integer type, as the frontend requires, and an amount that reaches the
+    /// width traps.
+    Shift(&'static str, Box<Expr>, Box<Expr>),
+    /// `-value`, generated only for a signed program: the backend has no
+    /// representable result for an unsigned one.
+    Negate(Box<Expr>),
     Compare(&'static str, Box<Expr>, Box<Expr>),
     And(Box<Expr>, Box<Expr>),
     Or(Box<Expr>, Box<Expr>),
@@ -307,6 +341,30 @@ pub fn arithmetic(op: &str, left: i128, right: i128, kind: IntType) -> Result<i1
         "^" => Ok(left ^ right),
         other => panic!("unsupported operator {other}"),
     }
+}
+
+/// `left << right` and `left >> right` by the rules of
+/// `spec/core/evaluation.md`: the amount must be below the width, and the
+/// signed right shift keeps the sign.
+pub fn shift(op: &str, left: i128, right: i128, kind: IntType) -> Result<i128, Failure> {
+    if right < 0 || right >= i128::from(width(kind)) {
+        return Err(Failure::Trapped(Trap::ShiftOutOfRange));
+    }
+    let amount = right as u32;
+    match op {
+        "<<" => Ok(truncate(left << amount, kind)),
+        ">>" => Ok(left >> amount),
+        other => panic!("unsupported shift {other}"),
+    }
+}
+
+/// `-value`. The minimum of a signed type has no positive counterpart, so it
+/// is the one input that overflows.
+pub fn negate(value: i128, kind: IntType) -> Result<i128, Failure> {
+    if value == kind.low {
+        return Err(Failure::Trapped(Trap::IntegerOverflow));
+    }
+    Ok(-value)
 }
 
 #[derive(Default)]
@@ -531,6 +589,15 @@ fn evaluate(
             let right = evaluate(right, env, program, fuel)?.int();
             Value::Int(arithmetic(op, left, right, program.kind)?)
         }
+        Expr::Shift(op, left, right) => {
+            let left = evaluate(left, env, program, fuel)?.int();
+            let right = evaluate(right, env, program, fuel)?.int();
+            Value::Int(shift(op, left, right, program.kind)?)
+        }
+        Expr::Negate(inner) => {
+            let value = evaluate(inner, env, program, fuel)?.int();
+            Value::Int(negate(value, program.kind)?)
+        }
         Expr::If(condition, then_branch, else_branch) => {
             let branch = if evaluate(condition, env, program, fuel)?.truthy() {
                 then_branch
@@ -621,7 +688,10 @@ pub fn render_expr(expr: &Expr, kind: IntType) -> String {
                 render_expr(right, kind)
             )
         }
-        Expr::Compare(op, left, right) | Expr::Arith(op, left, right) => {
+        Expr::Negate(inner) => format!("-({})", render_expr(inner, kind)),
+        Expr::Compare(op, left, right)
+        | Expr::Arith(op, left, right)
+        | Expr::Shift(op, left, right) => {
             format!(
                 "({} {op} {})",
                 render_expr(left, kind),
@@ -917,6 +987,12 @@ impl Generator {
             return self.literal();
         }
         let choice = self.rng.below(100);
+        if choice < 7 {
+            return self.shift(names, depth, functions, allow_if);
+        }
+        if choice < 12 && !unsigned(self.kind) {
+            return self.negation(names, depth, functions, allow_if);
+        }
         if choice < 55 {
             let op = *self.rng.pick(&ARITH);
             let left = self.value(names, depth - 1, functions, allow_if);
@@ -954,6 +1030,48 @@ impl Generator {
             return Expr::Call(function.name, arguments);
         }
         self.literal()
+    }
+
+    /// `left << amount` or `left >> amount`.
+    ///
+    /// The amount is usually inside the width, and sometimes past it, which
+    /// `spec/core/evaluation.md` makes a trap rather than a wrapped amount.
+    fn shift(
+        &mut self,
+        names: &[String],
+        depth: u32,
+        functions: &[Function],
+        allow_if: bool,
+    ) -> Expr {
+        let op = if self.rng.chance(50) { "<<" } else { ">>" };
+        let left = self.value(names, depth - 1, functions, allow_if);
+        let bits = i128::from(width(self.kind));
+        let amount = if self.rng.chance(70) {
+            Expr::Literal(self.rng.range(0, bits - 1))
+        } else if self.rng.chance(50) {
+            Expr::Literal(self.rng.range(bits, bits + 8))
+        } else {
+            // A computed amount, which the oracle and the runtime must judge
+            // by its value and not by its shape.
+            self.value(names, depth - 1, functions, allow_if)
+        };
+        Expr::Shift(op, Box::new(left), Box::new(amount))
+    }
+
+    /// `-value`, only in a signed program. The backend has no representable
+    /// result for an unsigned one, and the minimum is the single input that
+    /// overflows.
+    fn negation(
+        &mut self,
+        names: &[String],
+        depth: u32,
+        functions: &[Function],
+        allow_if: bool,
+    ) -> Expr {
+        if self.rng.chance(15) {
+            return Expr::Negate(Box::new(Expr::Literal(self.kind.low)));
+        }
+        Expr::Negate(Box::new(self.value(names, depth - 1, functions, allow_if)))
     }
 
     fn condition(&mut self, names: &[String], depth: u32, functions: &[Function]) -> Expr {
@@ -1088,10 +1206,11 @@ fn reads(expr: &Expr, seen: &mut BTreeSet<String>) {
             seen.insert(name.clone());
         }
         Expr::Literal(_) => {}
-        Expr::Not(inner) => reads(inner, seen),
+        Expr::Not(inner) | Expr::Negate(inner) => reads(inner, seen),
         Expr::And(left, right)
         | Expr::Or(left, right)
         | Expr::Arith(_, left, right)
+        | Expr::Shift(_, left, right)
         | Expr::Compare(_, left, right) => {
             reads(left, seen);
             reads(right, seen);
@@ -1166,10 +1285,11 @@ fn calls(expr: &Expr, seen: &mut BTreeSet<String>) {
             seen.insert(name.clone());
             arguments.iter().for_each(|argument| calls(argument, seen));
         }
-        Expr::Not(inner) => calls(inner, seen),
+        Expr::Not(inner) | Expr::Negate(inner) => calls(inner, seen),
         Expr::And(left, right)
         | Expr::Or(left, right)
         | Expr::Arith(_, left, right)
+        | Expr::Shift(_, left, right)
         | Expr::Compare(_, left, right) => {
             calls(left, seen);
             calls(right, seen);
@@ -1825,11 +1945,6 @@ mod tests {
         for index in 1..40 {
             let program = generate_program(5, index);
             let source = render_program(&program);
-            assert!(
-                !source.contains("<<") && !source.contains(">>"),
-                "shift in {}",
-                program.id
-            );
             // Flat arrays and flat structs are generated on purpose; the
             // nested forms are gaps g01, g02 and g03.
             assert!(
@@ -1846,6 +1961,102 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Shifts and signed negation were gaps g13 and g14 until #37. The
+    /// generator now has to produce them, so a regression is caught by the
+    /// oracle and not only by the fixed corpus.
+    #[test]
+    fn generated_programs_cover_shifts_and_negation() {
+        let mut shifts_left = 0;
+        let mut shifts_right = 0;
+        let mut negations = 0;
+        for index in 1..60 {
+            for seed in [5u64, 23] {
+                let source = render_program(&generate_program(seed, index));
+                shifts_left += source.matches("<<").count();
+                shifts_right += source.matches(">>").count();
+                negations += source.matches("-(").count();
+            }
+        }
+        assert!(shifts_left > 0, "no left shift was generated");
+        assert!(shifts_right > 0, "no right shift was generated");
+        assert!(negations > 0, "no negation was generated");
+    }
+
+    /// An unsigned program never negates: the backend has no representable
+    /// result for it, and the frontend would accept the program.
+    #[test]
+    fn unsigned_programs_never_negate() {
+        for index in 1..80 {
+            let program = generate_program(31, index);
+            if !unsigned(program.kind) {
+                continue;
+            }
+            let source = render_program(&program);
+            for line in source.lines() {
+                assert!(
+                    !line.contains("-("),
+                    "unsigned negation in {}: {line}",
+                    program.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shifts_trap_only_on_the_amount() {
+        // `spec/core/evaluation.md`: the amount must be below the width.
+        assert_eq!(shift("<<", 1, 7, TYPES[0]).ok(), Some(128));
+        assert!(matches!(
+            shift("<<", 1, 8, TYPES[0]),
+            Err(Failure::Trapped(Trap::ShiftOutOfRange))
+        ));
+        assert!(matches!(
+            shift(">>", 1, 64, TYPES[3]),
+            Err(Failure::Trapped(Trap::ShiftOutOfRange))
+        ));
+        assert!(matches!(
+            shift("<<", 1, -1, TYPES[6]),
+            Err(Failure::Trapped(Trap::ShiftOutOfRange))
+        ));
+        // Bits that leave the width are dropped; they are not an overflow.
+        assert_eq!(shift("<<", 255, 1, TYPES[0]).ok(), Some(254));
+        assert_eq!(shift("<<", 1, 7, TYPES[4]).ok(), Some(-128));
+        // The signed right shift keeps the sign.
+        assert_eq!(shift(">>", -8, 2, TYPES[6]).ok(), Some(-2));
+        assert_eq!(shift(">>", -1, 63, TYPES[7]).ok(), Some(-1));
+        // The unsigned right shift does not.
+        assert_eq!(shift(">>", 255, 4, TYPES[0]).ok(), Some(15));
+    }
+
+    #[test]
+    fn negation_overflows_only_at_the_minimum() {
+        assert_eq!(negate(42, TYPES[6]).ok(), Some(-42));
+        assert_eq!(negate(0, TYPES[6]).ok(), Some(0));
+        assert!(matches!(
+            negate(-128, TYPES[4]),
+            Err(Failure::Trapped(Trap::IntegerOverflow))
+        ));
+        assert!(matches!(
+            negate(i64::MIN.into(), TYPES[7]),
+            Err(Failure::Trapped(Trap::IntegerOverflow))
+        ));
+    }
+
+    #[test]
+    fn a_shift_amount_reaching_the_width_is_a_trap_in_a_whole_program() {
+        let program = program_with(
+            vec![],
+            Expr::Shift(
+                "<<",
+                Box::new(Expr::Literal(1)),
+                Box::new(Expr::Literal(32)),
+            ),
+        );
+        let (_, stderr, exit) = expected_case(&program).expect("the program finishes");
+        assert_eq!(exit, 70);
+        assert_eq!(stderr, "ARGORIX_TRAP:SHIFT_OUT_OF_RANGE");
     }
 
     #[test]
