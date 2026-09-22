@@ -1,0 +1,8 @@
+core 0.1;
+module gap.g20_module_constant;
+
+const LIMIT: u32 = 40u32;
+
+pub fn argorix_main() -> u32 {
+    LIMIT + 2u32
+}

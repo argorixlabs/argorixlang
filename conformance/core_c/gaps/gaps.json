@@ -2,7 +2,7 @@
   "schema_version": 1,
   "recorded_commit": "9c77061",
   "recorded_with": "gcc 12.2.0, -std=c11 -Wall -Wextra -Werror",
-  "purpose": "Known defects of the transitional C backend, each with the behaviour it reproduces today, so a fix is noticed and can be promoted. The sixteen defects of issue #27 were fixed in ESP-009.B and now live as regression cases in ../regression/cases.json; the three recorded here were found by the ESP-009.C differential work and reported as issue #39. Each program is valid Core 0.1 that argorixc core-check accepts.",
+  "purpose": "Known defects of the transitional C backend, each with the behaviour it reproduces today, so a fix is noticed and can be promoted. The sixteen defects of issue #27 were fixed in ESP-009.B and now live as regression cases in ../regression/cases.json; the six recorded here were found by the ESP-009.C differential work and reported as issue #39. Each program is valid Core 0.1 that argorixc core-check accepts.",
   "gaps": [
     {
       "id": "g17_loop_statement",
@@ -27,6 +27,30 @@
       "spec_expected_stdout": "ARGORIX_RESULT:40",
       "signature": "this C profile currently matches enum values only",
       "note": "`match` on a `bool`. spec/core/evaluation.md requires `match` to be exhaustive for bool and enum alike, so the bool scrutinee is specified, not an extension."
+    },
+    {
+      "id": "g20_module_constant",
+      "file": "g20_module_constant.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "signature": "constant lowering is not implemented yet",
+      "note": "`const LIMIT: u32 = 40u32;` at module level. spec/core/grammar.ebnf has `const_decl` among the items, and spec/core/evaluation.md only forbids executable global initialisers, not constants."
+    },
+    {
+      "id": "g21_match_integer",
+      "file": "g21_match_integer.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:42",
+      "signature": "this C profile currently matches enum values only",
+      "note": "`match` on an integer with a literal arm and `_`. The grammar's `pattern` production lists both a literal and `_`, and `_` is what makes a non-enum scrutinee exhaustive. Same message as g19_match_bool, different pattern kind: a fix for one need not cover the other."
+    },
+    {
+      "id": "g22_match_guard",
+      "file": "g22_match_guard.argx",
+      "kind": "emit_rejected",
+      "spec_expected_stdout": "ARGORIX_RESULT:48",
+      "signature": "match guards are not implemented in the C profile yet",
+      "note": "An arm with `if p0 > 3u32`. spec/core/evaluation.md names guards explicitly (\"guards no cuentan para exhaustividad\"), so they are part of Core 0.1."
     }
   ]
 }

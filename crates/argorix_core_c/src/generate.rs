@@ -254,7 +254,7 @@ pub enum Stmt {
     IfStatement {
         condition: Expr,
         then_body: Vec<Stmt>,
-        else_body: Option<Vec<Stmt>>,
+        else_body: Option<ElseBranch>,
     },
     /// `let name: Array<T, N> = [..];`, declared at function level only:
     /// an array declared inside an `if` or a loop body hits gap g06.
@@ -325,6 +325,16 @@ pub enum Stmt {
         variant: usize,
         payload: Option<Expr>,
     },
+}
+
+/// What follows the `else` of an `if` statement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ElseBranch {
+    Block(Vec<Stmt>),
+    /// `else if ..`. The backend lowers this through its own path, which
+    /// keeps the scope without an extra brace level, so it is worth
+    /// generating as a chain rather than as a block holding an `if`.
+    Chain(Box<Stmt>),
 }
 
 /// An enum, its variants, and the function that reads one back.
@@ -707,10 +717,13 @@ fn execute(
             else_body,
         } => {
             let taken = evaluate(condition, env, program, fuel)?.truthy();
-            let branch = if taken {
-                Some(then_body)
-            } else {
-                else_body.as_ref()
+            let branch = match (taken, else_body) {
+                (true, _) => Some(then_body),
+                (false, Some(ElseBranch::Block(body))) => Some(body),
+                // `else if` is not a scope of its own: the nested statement
+                // runs where this one does.
+                (false, Some(ElseBranch::Chain(next))) => return execute(next, env, program, fuel),
+                (false, None) => None,
             };
             if let Some(branch) = branch {
                 // The branch has its own scope; what it assigns to an outer
@@ -1024,6 +1037,41 @@ pub fn render_literal(value: i128, kind: IntType) -> String {
     format!("(0{name} - {}{name})", -value)
 }
 
+/// `if .. { } else if .. { } else { }`, rendered as one chain.
+fn render_if_chain(
+    statement: &Stmt,
+    kind: IntType,
+    indent: &str,
+    terminator: &str,
+    lines: &mut Vec<String>,
+) {
+    let Stmt::IfStatement {
+        condition,
+        then_body,
+        else_body,
+    } = statement
+    else {
+        unreachable!("only an `if` statement starts a chain")
+    };
+    lines.push(format!("{indent}if {} {{", render_expr(condition, kind)));
+    render_statements(then_body, kind, &format!("{indent}    "), lines);
+    match else_body {
+        None => lines.push(format!("{indent}}}{terminator}")),
+        Some(ElseBranch::Block(body)) => {
+            lines.push(format!("{indent}}} else {{"));
+            render_statements(body, kind, &format!("{indent}    "), lines);
+            lines.push(format!("{indent}}}{terminator}"));
+        }
+        Some(ElseBranch::Chain(next)) => {
+            let mut chain = Vec::new();
+            render_if_chain(next, kind, indent, terminator, &mut chain);
+            let head = chain.remove(0);
+            lines.push(format!("{indent}}} else {}", head.trim_start()));
+            lines.extend(chain);
+        }
+    }
+}
+
 fn render_struct_value(type_name: &str, fields: &[Expr], kind: IntType) -> String {
     let rendered = fields
         .iter()
@@ -1060,29 +1108,16 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                 render_statements(body, kind, &format!("{indent}    "), lines);
                 lines.push(format!("{indent}}}"));
             }
-            Stmt::IfStatement {
-                condition,
-                then_body,
-                else_body,
-            } => {
+            Stmt::IfStatement { .. } => {
                 // The last statement of a body is followed by the block's
                 // tail expression, which usually starts with `(`. The
                 // frontend then parses `if c { .. } (tail)` as a call of the
                 // `if` and rejects the program, so that position takes the
                 // `;` form the grammar's `expression_stmt` spells out. Both
                 // forms are generated, and the divergence between them is
-                // reported, not worked around silently.
+                // reported (issue #38), not worked around silently.
                 let terminator = if last { ";" } else { "" };
-                lines.push(format!("{indent}if {} {{", render_expr(condition, kind)));
-                render_statements(then_body, kind, &format!("{indent}    "), lines);
-                match else_body {
-                    None => lines.push(format!("{indent}}}{terminator}")),
-                    Some(body) => {
-                        lines.push(format!("{indent}}} else {{"));
-                        render_statements(body, kind, &format!("{indent}    "), lines);
-                        lines.push(format!("{indent}}}{terminator}"));
-                    }
-                }
+                render_if_chain(statement, kind, indent, terminator, lines);
             }
             Stmt::LetArray { name, elements } => lines.push(format!(
                 "{indent}let {name}: Array<{}, {}> = [{}];",
@@ -1516,12 +1551,34 @@ impl Generator {
         mutable: &[String],
         functions: &[Function],
     ) -> Stmt {
+        let links = 1 + self.rng.below(3) as usize;
+        self.if_chain(names, mutable, functions, links)
+    }
+
+    /// One `if`, and up to `remaining - 1` `else if` links after it.
+    fn if_chain(
+        &mut self,
+        names: &[String],
+        mutable: &[String],
+        functions: &[Function],
+        remaining: usize,
+    ) -> Stmt {
         let condition = self.condition(names, 1, functions);
         let then_body = self.branch_body(names, mutable, functions);
-        let else_body = self
-            .rng
-            .chance(40)
-            .then(|| self.branch_body(names, mutable, functions));
+        let else_body = if remaining > 1 && self.rng.chance(45) {
+            Some(ElseBranch::Chain(Box::new(self.if_chain(
+                names,
+                mutable,
+                functions,
+                remaining - 1,
+            ))))
+        } else if self.rng.chance(40) {
+            Some(ElseBranch::Block(
+                self.branch_body(names, mutable, functions),
+            ))
+        } else {
+            None
+        };
         Stmt::IfStatement {
             condition,
             then_body,
@@ -1807,8 +1864,12 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
             then_body
                 .iter()
                 .for_each(|inner| statement_reads(inner, seen));
-            if let Some(body) = else_body {
-                body.iter().for_each(|inner| statement_reads(inner, seen));
+            match else_body {
+                None => {}
+                Some(ElseBranch::Block(body)) => {
+                    body.iter().for_each(|inner| statement_reads(inner, seen));
+                }
+                Some(ElseBranch::Chain(next)) => statement_reads(next, seen),
             }
         }
     }
@@ -1904,8 +1965,12 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
             then_body
                 .iter()
                 .for_each(|inner| statement_calls(inner, seen));
-            if let Some(body) = else_body {
-                body.iter().for_each(|inner| statement_calls(inner, seen));
+            match else_body {
+                None => {}
+                Some(ElseBranch::Block(body)) => {
+                    body.iter().for_each(|inner| statement_calls(inner, seen));
+                }
+                Some(ElseBranch::Chain(next)) => statement_calls(next, seen),
             }
         }
     }
