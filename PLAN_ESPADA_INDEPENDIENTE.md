@@ -102,6 +102,7 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-009 | Biblioteca estándar mínima | 008 | EN_CURSO |
 | ESP-009.B | Defectos del backend C que bloqueaban escribir Core | 008 | HECHA |
 | ESP-009.C | Cobertura diferencial de esas construcciones | 009.B | HECHA |
+| ESP-009.D | Cobertura diferencial de texto y techos de recursos | 009.C | HECHA |
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | PENDIENTE |
 | ESP-011 | Parser y AST en Argorix | 010 | PENDIENTE |
 | ESP-012 | Resolución, tipos y módulos en Argorix | 011 | PENDIENTE |
@@ -250,8 +251,18 @@ padre:
   sentencia, `break` con valor, `match` sobre bool y sobre entero, guardas,
   constantes de módulo y `x = x;`.
 
-Ninguna de las dos subtareas escribe `.argx` de biblioteca: ESP-009 sigue
-abierta hasta que sus colecciones y su serialización existan en Argorix.
+- **ESP-009.D** ([ficha](tasks/espada/ESP-009.D.md),
+  [PR #41](https://github.com/argorixlabs/argorixlang/pull/41)): las dos
+  partes de ESP-009 que ya se ejecutan —bytes/UTF-8 y los techos de recursos
+  de `Buffer` y `Arena`— pasan de una fixture escrita a mano cada una a
+  entradas generadas y adversarias. 960 programas sin divergencia, con 38
+  `UTF8_INVALID` y 41 `RESOURCE_LIMIT`; el validador UTF-8 del oráculo sale de
+  la tabla 3-7 del estándar Unicode, no del runtime.
+
+Ninguna de las tres subtareas escribe `.argx` de biblioteca: ESP-009 sigue
+abierta hasta que sus colecciones y su serialización existan en Argorix. Lo
+que falta por cubrir en el arnés depende de que existan: mapas (claves
+duplicadas, orden canónico), rutas, la frontera de archivos y el JSON.
 
 ### ESP-010 — Lexer y diagnósticos en Argorix
 
