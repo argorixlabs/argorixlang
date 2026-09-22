@@ -136,13 +136,27 @@ fn main() -> Result<()> {
                 root.join(out)
             };
             let manifest = generate::build_corpus(seed, count, &out)?;
-            let traps = manifest
-                .cases
+            // The mix matters: a program that traps stops there, so a corpus
+            // that is nearly all traps checks little of what follows one.
+            let mut outcomes: std::collections::BTreeMap<&str, usize> =
+                std::collections::BTreeMap::new();
+            for case in &manifest.cases {
+                let outcome = if case.expected_exit == 70 {
+                    case.expected_stderr
+                        .strip_prefix("ARGORIX_TRAP:")
+                        .unwrap_or("TRAP")
+                } else {
+                    "RESULT"
+                };
+                *outcomes.entry(outcome).or_default() += 1;
+            }
+            let mix = outcomes
                 .iter()
-                .filter(|case| case.expected_exit == 70)
-                .count();
+                .map(|(outcome, count)| format!("{outcome} {count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
             println!(
-                "generated {} cases in {} (seed {seed}, {traps} expected traps, {} attempts)",
+                "generated {} cases in {} (seed {seed}, {} attempts): {mix}",
                 manifest.cases.len(),
                 out.display(),
                 manifest.attempts

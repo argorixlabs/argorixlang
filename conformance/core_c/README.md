@@ -81,9 +81,15 @@ case passes and every negative control is detected.
 ## Known-gap corpus
 
 `gaps/` holds valid Core programs that the backend gets wrong today, recorded
-in [`gaps/gaps.json`](gaps/gaps.json) with the defect each one reproduces
-(issue #27). Every program is accepted by `argorixc core-check`, and the
-expected output comes from `spec/core/evaluation.md`.
+in [`gaps/gaps.json`](gaps/gaps.json) with the defect each one reproduces.
+Every program is accepted by `argorixc core-check`, and the expected output
+comes from `spec/core/evaluation.md`.
+
+The sixteen of issue #27 were fixed in PR #37 and moved to `regression/`. The
+six there now are g17–g22 of [issue #39](https://github.com/argorixlabs/argorixlang/issues/39):
+`loop` as a statement, `loop` with a value break, `match` on a bool, a module
+`const`, `match` on an integer with `_`, and a match guard. All six are
+rejected at emission, so none of them can produce a wrong result today.
 
 ```sh
 ./target/debug/core-c-harness gaps --argorixc target/debug/argorixc --cc gcc

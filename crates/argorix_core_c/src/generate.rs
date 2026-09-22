@@ -110,11 +110,12 @@ pub fn width(kind: IntType) -> u32 {
 
 /// Fit a value into the type's two's-complement representation.
 ///
-/// Only the shifts use this: `spec/core/evaluation.md` gives them a single
-/// rule, the amount below the width, and keeps the modular forms for the
+/// Only the shifts use this. `spec/core/evaluation.md` gives a shift one
+/// rule, an amount below the width, and keeps the modular forms for the
 /// explicit `wrapping_*` intrinsics. Bits that leave the width are therefore
-/// dropped, as they are in the `checked_shl` of the language Core's literals
-/// follow, and no second overflow rule is invented here.
+/// dropped rather than counted as an overflow: the spec states no second
+/// rule for a shift, and inventing one would make this oracle a third
+/// semantics instead of a reading of the first.
 fn truncate(value: i128, kind: IntType) -> i128 {
     let bits = width(kind);
     let modulus = 1i128 << bits;
@@ -399,8 +400,8 @@ impl Value {
     }
 }
 
-/// What a statement left behind: nothing, a value the function returns, or a
-/// jump to the next iteration of the enclosing loop.
+/// What a statement left behind: nothing, a value the function returns, the
+/// end of this iteration, or the end of the loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Flow {
     Normal,
@@ -2307,18 +2308,18 @@ impl Generator {
         let name = self.fresh("g");
         let outer_name = self.fresh("x");
         let inner_name = self.fresh("x");
-        let height = 1 + self.rng.below(3) as usize;
-        let width = 1 + self.rng.below(3) as usize;
-        let mut rows = Vec::with_capacity(height);
-        for _ in 0..height {
-            let mut row = Vec::with_capacity(width);
-            for _ in 0..width {
+        let rows_count = 1 + self.rng.below(3) as usize;
+        let columns = 1 + self.rng.below(3) as usize;
+        let mut rows = Vec::with_capacity(rows_count);
+        for _ in 0..rows_count {
+            let mut row = Vec::with_capacity(columns);
+            for _ in 0..columns {
                 row.push(self.value(names, 1, functions, true));
             }
             rows.push(row);
         }
-        let outer = self.position(height as u64);
-        let inner = self.position(width as u64);
+        let outer = self.position(rows_count as u64);
+        let inner = self.position(columns as u64);
         (
             vec![
                 Stmt::LetNestedArray {
