@@ -177,8 +177,8 @@ jobs:
       - name: Generate programs and compare against the oracle
         run: |
           set -eu
-          for seed in 1 2 3; do
-            ./target/debug/core-c-harness generate --seed "$seed" --count 60 \
+          for seed in 1 2 3 4; do
+            ./target/debug/core-c-harness generate --seed "$seed" --count 80 \
               --out "target/core-c/fuzz-$seed"
             ./target/debug/core-c-harness all \
               --argorixc target/debug/argorixc --cc gcc \
@@ -187,6 +187,21 @@ jobs:
               --work-dir "target/core-c/fuzz-work-$seed" \
               --report "target/core-c/fuzz-report-$seed.json"
           done
+      - name: Run one seed under the sanitizers
+        # A generated corpus is where a leak in a construct shows up
+        # first: the Buffer storage that was never released was found
+        # that way, and the constructs ESP-009.C added reach the same
+        # allocator and the same handle registry.
+        run: |
+          set -eu
+          ./target/debug/core-c-harness generate --seed 5 --count 80 \
+            --out target/core-c/fuzz-5
+          ./target/debug/core-c-harness all \
+            --argorixc target/debug/argorixc --cc gcc --sanitize \
+            --cases target/core-c/fuzz-5/cases.json \
+            --bundle target/core-c/fuzz-bundle-5 \
+            --work-dir target/core-c/fuzz-work-5 \
+            --report target/core-c/fuzz-report-5.json
       - uses: actions/upload-artifact@v7
         # The generated programs go with the report so any failure can be
         # reproduced exactly from the artifact.

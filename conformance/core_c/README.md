@@ -118,15 +118,26 @@ comparison and dependency inspection all reuse the pipeline above. A seed
 reproduces its corpus exactly.
 
 The generator deliberately stays inside the subset the backend claims to
-support, avoiding every shape recorded in `gaps/`: no shadowing, no block
-operands, no shifts, no signed negation, no `if` statements, no unused locals,
-parameters or functions, no recursion, and no `if` expression anywhere inside a
-comparison operand. Aggregates stay flat and at function level for the same
-reason: nested arrays, structs holding structs, arrays of structs and arrays
-declared inside a block are gaps g01, g02, g03 and g06. It also avoids shapes that only upset the C compiler's
+support, avoiding every shape recorded in `gaps/`. What it avoids today is
+short: an aggregate declared inside an `if` or a loop body, which is gap g06,
+and unused locals, parameters or functions, which are valid Core whose C fails
+the `-Werror` profile. It also avoids shapes that only upset the C compiler's
 warning profile, such as `unsigned < 0` or a literal `^` pair that GCC reads as
 a mistyped power. **A failure is therefore a real divergence between the
 backend and the specification, not a known gap.**
+
+The sixteen defects of issue #27 were fixed in PR #37, so the shapes the
+generator used to steer around are now generated on purpose: shifts, signed
+negation, `if` used as a statement, blocks whose local shadows an outer name,
+`if` expressions inside comparison operands and inside aggregate literals, and
+the nested aggregates that were gaps g01, g02 and g03.
+
+One shape is spelt a particular way for a reason. A final `if` statement is
+rendered with the `;` that `expression_stmt` spells out in the grammar,
+because the frontend parses `if c { .. } (tail)` as a call of the `if` and
+rejects the program; the `;`-less form is still generated wherever another
+statement follows it. That divergence is [issue #38](https://github.com/argorixlabs/argorixlang/issues/38),
+not a silent workaround.
 
 Coverage: exact-width arithmetic with overflow traps, trapping division by zero
 and `MIN / -1`, truncating `/` and `%`, bitwise operators, comparisons,
@@ -137,8 +148,14 @@ must trap `INDEX_OUT_OF_BOUNDS`), reads of flat struct fields, buffers filled
 by `push` and read the same way, and arenas with one allocation read through a
 handle — sometimes after `release()`, which must trap `ARENA_RELEASED` — and
 enums read back through a function whose body is an exhaustive `match`, with
-both a variant that carries a field and a fieldless one. All of
-it across all eight integer widths.
+both a variant that carries a field and a fieldless one. Since ESP-009.C it
+also covers `<<` and `>>` with amounts inside and past the width (which must
+trap `SHIFT_OUT_OF_RANGE`), signed negation including the minimum (which must
+trap `INTEGER_OVERFLOW`), `if` used as a statement with and without `else`,
+block expressions whose local shadows an outer name, nested arrays read
+through two `u64` indexes that may each point past the end, structs that hold
+structs read through `q.f0.f1`, and arrays of structs read through
+`t[i].f0`. All of it across all eight integer widths.
 
 Running the generated corpus with `--sanitize` is worth doing for the memory
 constructs in particular: it is the combination that would have caught the
@@ -222,5 +239,8 @@ of the two exists, the job fails.
   toolchain. The harness binary itself is built from Rust beforehand and copied
   in, exactly like `argorixc`: this is stage0 tooling, not evidence of
   toolchain independence (ESP-024).
-- The generator covers scalars only. Arrays, structs, enums, buffers, arenas,
-  bytes and UTF-8 are not generated yet.
+- The generator does not produce `bytes`, `string`, `Slice`, `match` on a
+  value other than a generated enum, `loop`/`break`, `return`, recursion, or
+  an aggregate declared inside an `if` or a loop body (gap g06). Handle
+  mutation and arena slot reuse are exercised by the runtime cases, not by the
+  generator.

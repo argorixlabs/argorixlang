@@ -22,6 +22,31 @@ use crate::harness::Case;
 
 pub const MAX_LOOP_ITERATIONS: u32 = 10_000;
 
+/// How deep the oracle follows calls before it declares the program unusable.
+///
+/// The runtime's own limit is far higher (`CALL_DEPTH_LIMIT`), but the oracle
+/// evaluates on the host stack. A program that goes deeper is skipped rather
+/// than risked: the corpus loses one program, not the run.
+pub const MAX_CALL_DEPTH: u32 = 200;
+
+/// What a single evaluation may still spend.
+#[derive(Debug, Clone, Copy)]
+pub struct Budget {
+    /// Loop iterations left, across the whole program.
+    pub steps: u32,
+    /// Call frames still open.
+    pub depth: u32,
+}
+
+impl Budget {
+    fn new() -> Self {
+        Budget {
+            steps: MAX_LOOP_ITERATIONS,
+            depth: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntType {
     pub name: &'static str,
@@ -216,6 +241,14 @@ pub enum Stmt {
         condition: Expr,
         body: Vec<Stmt>,
     },
+    /// `return value;`, generated inside a branch so the tail stays
+    /// reachable.
+    Return {
+        value: Expr,
+    },
+    /// `continue;`, generated after a loop's counter has already advanced, so
+    /// the loop still finishes.
+    Continue,
     /// `if condition { .. } else { .. }` used as a statement, with no value
     /// and no `else` required. It was gap g12.
     IfStatement {
@@ -352,6 +385,15 @@ impl Value {
             Value::Int(value) => value != 0,
         }
     }
+}
+
+/// What a statement left behind: nothing, a value the function returns, or a
+/// jump to the next iteration of the enclosing loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Flow {
+    Normal,
+    Returned(i128),
+    Continued,
 }
 
 pub enum Failure {
@@ -543,7 +585,7 @@ impl Environment {
 }
 
 pub fn evaluate_program(program: &Program) -> Result<i128, Failure> {
-    let mut fuel = MAX_LOOP_ITERATIONS;
+    let mut fuel = Budget::new();
     let mut env = Environment::default();
     let value = run_body(
         &program.main.body,
@@ -560,10 +602,17 @@ fn run_body(
     tail: &Expr,
     env: &mut Environment,
     program: &Program,
-    fuel: &mut u32,
+    fuel: &mut Budget,
 ) -> Result<Value, Failure> {
     for statement in body {
-        execute(statement, env, program, fuel)?;
+        match execute(statement, env, program, fuel)? {
+            Flow::Normal => {}
+            // A `return` ends the function: its tail is never evaluated.
+            Flow::Returned(value) => return Ok(Value::Int(value)),
+            Flow::Continued => {
+                unreachable!("`continue` is generated inside a loop body only")
+            }
+        }
     }
     evaluate(tail, env, program, fuel)
 }
@@ -572,8 +621,8 @@ fn execute(
     statement: &Stmt,
     env: &mut Environment,
     program: &Program,
-    fuel: &mut u32,
-) -> Result<(), Failure> {
+    fuel: &mut Budget,
+) -> Result<Flow, Failure> {
     match statement {
         Stmt::Let { name, value, .. } => {
             let computed = evaluate(value, env, program, fuel)?.int();
@@ -667,32 +716,50 @@ fn execute(
                 // The branch has its own scope; what it assigns to an outer
                 // local stays assigned.
                 let scope = env.mark();
+                let mut flow = Flow::Normal;
                 for inner in branch {
-                    execute(inner, env, program, fuel)?;
+                    flow = execute(inner, env, program, fuel)?;
+                    if flow != Flow::Normal {
+                        break;
+                    }
                 }
                 env.restore(scope);
+                if flow != Flow::Normal {
+                    return Ok(flow);
+                }
             }
         }
         Stmt::While { condition, body } => {
             while evaluate(condition, env, program, fuel)?.truthy() {
-                if *fuel == 0 {
+                if fuel.steps == 0 {
                     return Err(Failure::Unusable(Unusable::DoesNotFinish));
                 }
-                *fuel -= 1;
+                fuel.steps -= 1;
                 for inner in body {
-                    execute(inner, env, program, fuel)?;
+                    match execute(inner, env, program, fuel)? {
+                        Flow::Normal => {}
+                        // A `return` leaves the loop and the function.
+                        Flow::Returned(value) => return Ok(Flow::Returned(value)),
+                        // A `continue` only ends this iteration.
+                        Flow::Continued => break,
+                    }
                 }
             }
         }
+        Stmt::Return { value } => {
+            let computed = evaluate(value, env, program, fuel)?.int();
+            return Ok(Flow::Returned(computed));
+        }
+        Stmt::Continue => return Ok(Flow::Continued),
     }
-    Ok(())
+    Ok(Flow::Normal)
 }
 
 fn evaluate(
     expr: &Expr,
     env: &mut Environment,
     program: &Program,
-    fuel: &mut u32,
+    fuel: &mut Budget,
 ) -> Result<Value, Failure> {
     Ok(match expr {
         Expr::Literal(value) => Value::Int(*value),
@@ -743,7 +810,12 @@ fn evaluate(
         Expr::Block { body, tail } => {
             let scope = env.mark();
             for statement in body {
-                execute(statement, env, program, fuel)?;
+                let flow = execute(statement, env, program, fuel)?;
+                debug_assert_eq!(
+                    flow,
+                    Flow::Normal,
+                    "a block expression's body only declares locals"
+                );
             }
             let value = evaluate(tail, env, program, fuel)?;
             env.restore(scope);
@@ -853,7 +925,13 @@ fn evaluate(
             for (parameter, value) in function.params.iter().zip(values) {
                 local.set(parameter, value);
             }
-            run_body(&function.body, &function.tail, &mut local, program, fuel)?
+            if fuel.depth == MAX_CALL_DEPTH {
+                return Err(Failure::Unusable(Unusable::DoesNotFinish));
+            }
+            fuel.depth += 1;
+            let result = run_body(&function.body, &function.tail, &mut local, program, fuel)?;
+            fuel.depth -= 1;
+            result
         }
     })
 }
@@ -1072,6 +1150,10 @@ fn render_statements(body: &[Stmt], kind: IntType, indent: &str, lines: &mut Vec
                     rows.len()
                 ));
             }
+            Stmt::Return { value } => {
+                lines.push(format!("{indent}return {};", render_expr(value, kind)))
+            }
+            Stmt::Continue => lines.push(format!("{indent}continue;")),
             Stmt::LetIndex { name, value } => {
                 lines.push(format!("{indent}let {name}: u64 = {value}u64;"))
             }
@@ -1468,6 +1550,12 @@ impl Generator {
                 body.push(Stmt::Compound { name, op, value });
             }
         }
+        if self.rng.chance(20) {
+            // An early `return`. It sits inside a branch, so the function's
+            // tail stays reachable when the branch is not taken.
+            let value = self.value(names, 1, functions, true);
+            body.push(Stmt::Return { value });
+        }
         body
     }
 
@@ -1582,6 +1670,18 @@ impl Generator {
             op: "+",
             value: Expr::Literal(1),
         });
+        if self.rng.chance(25) {
+            // `continue` after the counter has already advanced, so the loop
+            // still finishes.
+            let mut visible = names.clone();
+            visible.push(counter.clone());
+            let condition = self.condition(&visible, 1, functions);
+            inner.push(Stmt::IfStatement {
+                condition,
+                then_body: vec![Stmt::Continue],
+                else_body: None,
+            });
+        }
         names.push(counter.clone());
         mutable.push(counter.clone());
         vec![
@@ -1687,6 +1787,8 @@ fn statement_reads(statement: &Stmt, seen: &mut BTreeSet<String>) {
                 reads(value, seen);
             }
         }
+        Stmt::Return { value } => reads(value, seen),
+        Stmt::Continue => {}
         Stmt::LetIndex { .. } | Stmt::LetBuffer { .. } | Stmt::LetArena { .. } => {}
         Stmt::Compound { name, value, .. } => {
             seen.insert(name.clone());
@@ -1778,6 +1880,8 @@ fn statement_calls(statement: &Stmt, seen: &mut BTreeSet<String>) {
             .flatten()
             .for_each(|element| calls(element, seen)),
         Stmt::Push { value, .. } => calls(value, seen),
+        Stmt::Return { value } => calls(value, seen),
+        Stmt::Continue => {}
         Stmt::LetIndex { .. }
         | Stmt::LetBuffer { .. }
         | Stmt::LetArena { .. }
@@ -1900,6 +2004,14 @@ pub fn generate_program(seed: u64, index: u64) -> Program {
     let mut tail = generator.value(&names, 3, &functions, true);
     for expression in reads {
         tail = Expr::Arith("^", Box::new(tail), Box::new(expression));
+    }
+    // The recursive function joins the program only after the tail is built,
+    // so no random call site can hand it an argument that recurses for as
+    // long as the type is wide.
+    if generator.rng.chance(35) {
+        let (function, call) = generator.recursive_function(functions.len() as u64);
+        functions.push(function);
+        tail = Expr::Arith("^", Box::new(tail), Box::new(call));
     }
 
     let mut called = BTreeSet::new();
@@ -2245,6 +2357,51 @@ impl Generator {
                 fields,
             },
             read,
+        )
+    }
+
+    /// A function that calls itself, with a base case that its literal
+    /// argument always reaches. Recursion is what the C backend charges its
+    /// call-depth budget for, and no generated program had any.
+    ///
+    /// The call site passes a small non-negative literal, so the depth is
+    /// bounded by construction: an arbitrary argument could recurse for as
+    /// long as the type is wide.
+    fn recursive_function(&mut self, index: u64) -> (Function, Expr) {
+        let name = format!("recurse{index}");
+        let parameter = format!("r{index}_0");
+        let base = self.literal();
+        let op = *self.rng.pick(&["+", "-", "^"]);
+        let body = vec![Stmt::IfStatement {
+            condition: Expr::Compare(
+                "==",
+                Box::new(Expr::Var(parameter.clone())),
+                Box::new(Expr::Literal(0)),
+            ),
+            then_body: vec![Stmt::Return { value: base }],
+            else_body: None,
+        }];
+        let tail = Expr::Arith(
+            op,
+            Box::new(Expr::Call(
+                name.clone(),
+                vec![Expr::Arith(
+                    "-",
+                    Box::new(Expr::Var(parameter.clone())),
+                    Box::new(Expr::Literal(1)),
+                )],
+            )),
+            Box::new(Expr::Var(parameter.clone())),
+        );
+        let call = Expr::Call(name.clone(), vec![Expr::Literal(self.rng.range(0, 5))]);
+        (
+            Function {
+                name,
+                params: vec![parameter],
+                body,
+                tail,
+            },
+            call,
         )
     }
 
@@ -2673,6 +2830,120 @@ mod tests {
         assert!(shifts_left > 0, "no left shift was generated");
         assert!(shifts_right > 0, "no right shift was generated");
         assert!(negations > 0, "no negation was generated");
+    }
+
+    /// `return`, `continue` and a self-recursive function are generated:
+    /// none of them appeared in the corpus before ESP-009.C.
+    #[test]
+    fn generated_programs_cover_returns_continues_and_recursion() {
+        let mut returns = 0;
+        let mut continues = 0;
+        let mut recursions = 0;
+        for index in 1..60 {
+            for seed in [5u64, 23, 55] {
+                let source = render_program(&generate_program(seed, index));
+                returns += source.matches("return ").count();
+                continues += source.matches("continue;").count();
+                recursions += source.matches("fn recurse").count();
+            }
+        }
+        assert!(returns > 0, "no `return` was generated");
+        assert!(continues > 0, "no `continue` was generated");
+        assert!(recursions > 0, "no recursive function was generated");
+    }
+
+    /// A `return` inside a branch ends the function: the tail never runs.
+    #[test]
+    fn a_return_inside_a_branch_ends_the_function() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "v1".into(),
+                    mutable: true,
+                    value: Expr::Literal(1),
+                },
+                Stmt::IfStatement {
+                    condition: Expr::Compare(
+                        "==",
+                        Box::new(Expr::Var("v1".into())),
+                        Box::new(Expr::Literal(1)),
+                    ),
+                    then_body: vec![Stmt::Return {
+                        value: Expr::Literal(42),
+                    }],
+                    else_body: None,
+                },
+            ],
+            Expr::Literal(7),
+        );
+        assert_eq!(evaluate_program(&program).ok(), Some(42));
+    }
+
+    /// A `continue` ends the iteration, not the loop.
+    #[test]
+    fn a_continue_skips_the_rest_of_the_iteration() {
+        let program = program_with(
+            vec![
+                Stmt::Let {
+                    name: "i1".into(),
+                    mutable: true,
+                    value: Expr::Literal(0),
+                },
+                Stmt::Let {
+                    name: "v2".into(),
+                    mutable: true,
+                    value: Expr::Literal(0),
+                },
+                Stmt::While {
+                    condition: Expr::Compare(
+                        "<",
+                        Box::new(Expr::Var("i1".into())),
+                        Box::new(Expr::Literal(4)),
+                    ),
+                    body: vec![
+                        Stmt::Compound {
+                            name: "i1".into(),
+                            op: "+",
+                            value: Expr::Literal(1),
+                        },
+                        Stmt::IfStatement {
+                            condition: Expr::Compare(
+                                "==",
+                                Box::new(Expr::Var("i1".into())),
+                                Box::new(Expr::Literal(2)),
+                            ),
+                            then_body: vec![Stmt::Continue],
+                            else_body: None,
+                        },
+                        Stmt::Compound {
+                            name: "v2".into(),
+                            op: "+",
+                            value: Expr::Literal(10),
+                        },
+                    ],
+                },
+            ],
+            Expr::Var("v2".into()),
+        );
+        // Four iterations, one of them cut short: 30, not 40.
+        assert_eq!(evaluate_program(&program).ok(), Some(30));
+    }
+
+    /// The oracle runs on the host stack, so a program that recurses past its
+    /// own limit is skipped instead of taking the harness down.
+    #[test]
+    fn a_program_deeper_than_the_call_budget_is_unusable() {
+        let mut program = program_with(Vec::new(), Expr::Call("deep".into(), vec![]));
+        program.functions.push(Function {
+            name: "deep".into(),
+            params: Vec::new(),
+            body: Vec::new(),
+            tail: Expr::Call("deep".into(), vec![]),
+        });
+        assert!(matches!(
+            evaluate_program(&program),
+            Err(Failure::Unusable(Unusable::DoesNotFinish))
+        ));
     }
 
     /// An unsigned program never negates: the backend has no representable
