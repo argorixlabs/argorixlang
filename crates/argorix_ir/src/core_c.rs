@@ -519,13 +519,17 @@ impl<'a> Emitter<'a> {
             ScalarType::Array { .. } | ScalarType::Slice(_) => {
                 self.emit_aggregate_type(ty, arrays, emitted, source)
             }
-            // Buffer, arena and handle are runtime structs declared in the C1
-            // header; only what they hold can need a definition here.
+            // Buffer, arena and handle are opaque runtime structs declared in
+            // the C1 header, so a named type they hold is not needed yet: it
+            // is defined later with the others, and a node may point to its
+            // own type through a handle. An array or slice they hold still
+            // needs its typedef.
             ScalarType::Buffer(element)
             | ScalarType::Arena(element)
-            | ScalarType::Handle(element) => {
-                self.emit_dependencies(element, arrays, emitted, source)
-            }
+            | ScalarType::Handle(element) => match element.as_ref() {
+                ScalarType::User(_) => Ok(()),
+                _ => self.emit_dependencies(element, arrays, emitted, source),
+            },
             _ => Ok(()),
         }
     }
@@ -944,9 +948,12 @@ impl<'a> FunctionEmitter<'a> {
     /// The C lvalue of a place, without moving anything out of it: a local,
     /// a field of a place, or an element of a place. Reading `h.values` to
     /// take its length, or pushing into it, uses the place where it is.
+    /// `write` says the place will be assigned: through a handle, that is
+    /// the arena slot itself, checked for write permission, not a copy.
     fn emit_place(
         &mut self,
         expression: &CoreIrExpr,
+        write: bool,
         indent: usize,
         source: &mut String,
     ) -> Result<(String, ScalarType), CoreCError> {
@@ -959,7 +966,33 @@ impl<'a> FunctionEmitter<'a> {
                 }
             }
             CoreIrExpr::Field { value, name } => {
-                let (base, base_ty) = self.emit_place(value, indent, source)?;
+                let (base, base_ty) = self.emit_place(value, write, indent, source)?;
+                if let (true, ScalarType::Handle(element)) = (write, &base_ty) {
+                    let ScalarType::User(type_name) = element.as_ref() else {
+                        return Err(CoreCError::unsupported(
+                            "handle field access requires a struct element",
+                        ));
+                    };
+                    let field_ty = self
+                        .structs
+                        .get(type_name)
+                        .and_then(|layout| layout.fields.get(name))
+                        .cloned()
+                        .ok_or_else(|| {
+                            CoreCError::unsupported(format!(
+                                "unknown field `{name}` on `{type_name}`"
+                            ))
+                        })?;
+                    return Ok((
+                        format!(
+                            "(({} *)argorix_handle_get({base}, {}U, sizeof({}), true))->argorix_f_{name}",
+                            element.c_name(),
+                            core_type_id(element),
+                            element.c_name(),
+                        ),
+                        field_ty,
+                    ));
+                }
                 let ScalarType::User(type_name) = &base_ty else {
                     // Through a handle, or anything else: read it as a value.
                     return self.emit_expr(expression, None, indent, source);
@@ -975,7 +1008,7 @@ impl<'a> FunctionEmitter<'a> {
                 Ok((format!("{base}.argorix_f_{name}"), field_ty))
             }
             CoreIrExpr::Index { value, index } => {
-                let (base, base_ty) = self.emit_place(value, indent, source)?;
+                let (base, base_ty) = self.emit_place(value, write, indent, source)?;
                 let index = self.emit_expr(
                     index,
                     Some(&ScalarType::Integer("u64".into())),
@@ -1056,7 +1089,7 @@ impl<'a> FunctionEmitter<'a> {
             } if !matches!(target, CoreIrExpr::Path { .. }) => {
                 // A field or an element: the place is written in place.
                 if *operator != CoreIrAssignOp::Assign {
-                    let (place, ty) = self.emit_place(target, indent, source)?;
+                    let (place, ty) = self.emit_place(target, true, indent, source)?;
                     let right = self.emit_expr(value, Some(&ty), indent, source)?;
                     line(
                         source,
@@ -1073,7 +1106,7 @@ impl<'a> FunctionEmitter<'a> {
                     // leaves the old value intact.
                     let hint = self.infer_type(value);
                     let right = self.emit_consumed(value, hint.as_ref(), indent, source)?;
-                    let (place, ty) = self.emit_place(target, indent, source)?;
+                    let (place, ty) = self.emit_place(target, true, indent, source)?;
                     if self.is_resource(&ty) {
                         line(source, indent, &self.drop_call(&ty, &place));
                     }
@@ -1388,7 +1421,7 @@ impl<'a> FunctionEmitter<'a> {
                 Ok((temp, ty))
             }
             CoreIrExpr::Index { value, index } => {
-                let value = self.emit_place(value, indent, source)?;
+                let value = self.emit_place(value, false, indent, source)?;
                 let (element, length, buffer) = match &value.1 {
                     ScalarType::Array { element, length } => {
                         ((**element).clone(), format!("{}U", length), false)
@@ -1433,7 +1466,7 @@ impl<'a> FunctionEmitter<'a> {
                 self.bind_temp(access, element, indent, source)
             }
             CoreIrExpr::Field { value, name } => {
-                let value = self.emit_place(value, indent, source)?;
+                let value = self.emit_place(value, false, indent, source)?;
                 let (type_name, access) = match &value.1 {
                     ScalarType::User(type_name) => {
                         (type_name, format!("{}.argorix_f_{}", value.0, name))
@@ -1550,7 +1583,8 @@ impl<'a> FunctionEmitter<'a> {
                         // The buffer is only touched by the push itself, after
                         // the value is computed: a trap in the value leaves it
                         // as it was, as `spec/core/stdlib.md` requires.
-                        let (receiver, receiver_ty) = self.emit_place(value, indent, source)?;
+                        let (receiver, receiver_ty) =
+                            self.emit_place(value, true, indent, source)?;
                         let ScalarType::Buffer(element) = receiver_ty else {
                             return Err(CoreCError::unsupported(
                                 "push is only implemented for Buffer values",
@@ -1615,7 +1649,7 @@ impl<'a> FunctionEmitter<'a> {
                         let [start, end] = arguments.as_slice() else {
                             return Err(CoreCError::unsupported("slice requires two arguments"));
                         };
-                        let (view, view_ty) = self.emit_place(value, indent, source)?;
+                        let (view, view_ty) = self.emit_place(value, false, indent, source)?;
                         if !matches!(view_ty, ScalarType::Slice(_)) {
                             return Err(CoreCError::unsupported("slice narrows a Slice"));
                         }
@@ -1637,7 +1671,7 @@ impl<'a> FunctionEmitter<'a> {
                             "intrinsic `{name}` does not accept arguments"
                         )));
                     }
-                    let receiver = self.emit_place(value, indent, source)?;
+                    let receiver = self.emit_place(value, false, indent, source)?;
                     return match (name.as_str(), &receiver.1) {
                         ("length", ScalarType::Array { length, .. }) => self.bind_temp(
                             format!("{length}U"),

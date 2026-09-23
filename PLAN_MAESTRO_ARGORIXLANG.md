@@ -6,7 +6,7 @@ Base de inspección: `5d73d66`, workspace `1.0.0`. Comprobar revisión, ramas y 
 Última actualización de estado: 2026-09-22 sobre `main@e6b6056`. **ESP-009
 (biblioteca estándar mínima) está EN_CURSO**, ahora en el carril de Claude:
 API S1 congelada, `Buffer<T>`/`Arena<T>` ejecutables, semántica de movimiento
-(PR #47) y siete módulos `.argx` (`result`, `bytes`, `text`, `vector`,
+(PR #47) y ocho módulos `.argx` (`result`, `bytes`, `text`, `vector`, `arena`,
 `ordered_map`, `path`, `json`) con fixtures adversarias en gcc/clang y
 sanitizers. Falta la frontera de archivos del compilador y las medidas de
 memoria. Sus subtareas ESP-009.B a ESP-009.F están cerradas. Ninguna otra

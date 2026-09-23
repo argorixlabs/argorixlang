@@ -1,0 +1,115 @@
+core 0.1;
+module stdlib.arena;
+
+// Arena traversal patterns for the compiler (spec/core/stdlib.md,
+// `stdlib.arena`), specialized to what a compiler needs first: a tree of
+// lexical scopes, each holding the names it defines.
+//
+// Everything lives in two arenas the caller creates and releases: scopes
+// point to their parent and entries to the next entry of their scope through
+// handles, so no node owns another and releasing the arenas frees the whole
+// tree at once. A name is a byte range of one names buffer the caller keeps
+// (the source text), so an entry holds no storage of its own.
+//
+// Handles are checked on every access: a handle kept after its arena is
+// released traps with `ARENA_RELEASED` instead of reading freed memory.
+
+import stdlib.bytes;
+
+pub struct Scope { parent: Parent, first: Link, count: u64, }
+
+pub enum Parent {
+    Root,
+    Inside { scope: Handle<Scope>, },
+}
+
+pub struct Entry { start: u64, end: u64, value: u64, next: Link, }
+
+pub enum Link {
+    End,
+    Next { entry: Handle<Entry>, },
+}
+
+pub enum Defined {
+    Added,
+    // The name is already defined in this very scope, with this value.
+    Duplicate { value: u64, },
+}
+
+pub enum Lookup {
+    // `depth` counts the scopes climbed: 0 is the scope searched from.
+    Found { value: u64, depth: u64, },
+    Missing,
+}
+
+pub fn root(scopes: Arena<Scope>) -> Handle<Scope> {
+    let mut arena: Arena<Scope> = scopes;
+    arena.alloc(Scope { parent: Parent::Root, first: Link::End, count: 0u64 })
+}
+
+pub fn child(scopes: Arena<Scope>, parent: Handle<Scope>) -> Handle<Scope> {
+    let mut arena: Arena<Scope> = scopes;
+    arena.alloc(Scope { parent: Parent::Inside { scope: parent }, first: Link::End, count: 0u64 })
+}
+
+// Defines `names[start..end]` in `scope`. A name may shadow one of an
+// enclosing scope, but not one of its own scope.
+pub fn define(entries: Arena<Entry>, scope: Handle<Scope>, names: Slice<u8>, start: u64, end: u64, value: u64) -> Defined {
+    match find_here(scope, names, names.slice(start, end)) {
+        Link::Next { entry } => {
+            return Defined::Duplicate { value: entry.value };
+        },
+        Link::End => {},
+    }
+    let mut arena: Arena<Entry> = entries;
+    let entry: Handle<Entry> = arena.alloc(Entry { start: start, end: end, value: value, next: scope.first });
+    scope.first = Link::Next { entry: entry };
+    scope.count += 1u64;
+    Defined::Added
+}
+
+// The innermost definition of `key` visible from `scope`.
+pub fn lookup(scope: Handle<Scope>, names: Slice<u8>, key: Slice<u8>) -> Lookup {
+    let mut current: Handle<Scope> = scope;
+    let mut depth: u64 = 0u64;
+    loop {
+        match find_here(current, names, key) {
+            Link::Next { entry } => {
+                return Lookup::Found { value: entry.value, depth: depth };
+            },
+            Link::End => {},
+        }
+        match current.parent {
+            Parent::Root => {
+                return Lookup::Missing;
+            },
+            Parent::Inside { scope } => {
+                current = scope;
+                depth += 1u64;
+            },
+        }
+    }
+}
+
+// The number of names `scope` itself defines.
+pub fn count(scope: Handle<Scope>) -> u64 {
+    scope.count
+}
+
+// The entry of `scope` named `key`, or `Link::End`.
+fn find_here(scope: Handle<Scope>, names: Slice<u8>, key: Slice<u8>) -> Link {
+    let mut link: Link = scope.first;
+    loop {
+        match link {
+            Link::End => {
+                return Link::End;
+            },
+            Link::Next { entry } => {
+                if bytes.equal(names.slice(entry.start, entry.end), key) {
+                    return Link::Next { entry: entry };
+                }
+                link = entry.next;
+            },
+        }
+    }
+}

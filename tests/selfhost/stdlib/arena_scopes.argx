@@ -1,0 +1,70 @@
+core 0.1;
+module selfhost_stdlib.arena_scopes;
+
+// stdlib.arena: a scope tree in two arenas. Inner scopes shadow outer
+// names, a duplicate in one scope is reported with the value it keeps, and
+// lookups climb to the root. All 8 checks pass gives 255.
+
+import stdlib.arena;
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+fn added(defined: Defined) -> bool {
+    match defined {
+        Defined::Added => true,
+        Defined::Duplicate { value: _ } => false,
+    }
+}
+
+// The value a refused definition kept; 0 if it was added.
+fn kept(defined: Defined) -> u64 {
+    match defined {
+        Defined::Added => 0u64,
+        Defined::Duplicate { value } => value,
+    }
+}
+
+// The value found, plus 100 per scope climbed; 999 when missing.
+fn seen(found: Lookup) -> u64 {
+    match found {
+        Lookup::Found { value, depth } => value + 100u64 * depth,
+        Lookup::Missing => 999u64,
+    }
+}
+
+fn check(names: Slice<u8>) -> u64 {
+    // names: "x y x z"; x = [0,1), y = [2,3), x again = [4,5), z = [6,7).
+    let mut scopes: Arena<Scope> = Arena::new();
+    let mut entries: Arena<Entry> = Arena::new();
+    let mut mask: u64 = 0u64;
+
+    let outer: Handle<Scope> = arena.root(scopes);
+    let inner: Handle<Scope> = arena.child(scopes, outer);
+    let first: Defined = arena.define(entries, outer, names, 0u64, 1u64, 1u64);
+    let second: Defined = arena.define(entries, outer, names, 2u64, 3u64, 2u64);
+    mask += bit(added(first), 0u64);
+    mask += bit(added(second), 1u64);
+    // The second `x` in the same scope is refused and names the value kept.
+    let again: Defined = arena.define(entries, outer, names, 4u64, 5u64, 7u64);
+    mask += bit(kept(again) == 1u64, 2u64);
+    // In the inner scope it shadows the outer one.
+    let shadow: Defined = arena.define(entries, inner, names, 4u64, 5u64, 3u64);
+    mask += bit(added(shadow), 3u64);
+
+    mask += bit(seen(arena.lookup(inner, names, names.slice(0u64, 1u64))) == 3u64, 4u64);
+    mask += bit(seen(arena.lookup(inner, names, names.slice(2u64, 3u64))) == 102u64, 5u64);
+    mask += bit(seen(arena.lookup(inner, names, names.slice(6u64, 7u64))) == 999u64, 6u64);
+    mask += bit(arena.count(outer) == 2u64 && arena.count(inner) == 1u64
+        && seen(arena.lookup(outer, names, names.slice(4u64, 5u64))) == 1u64, 7u64);
+
+    entries.release();
+    scopes.release();
+    mask
+}
+
+pub fn argorix_main() -> u64 {
+    let names: Array<u8, 7> = [120u8, 32u8, 121u8, 32u8, 120u8, 32u8, 122u8];
+    check(names.as_slice())
+}

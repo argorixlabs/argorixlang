@@ -230,18 +230,18 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
   ([PR #26](https://github.com/argorixlabs/argorixlang/pull/26)).
 - Semántica de movimiento y liberación determinista de recursos
   ([PR #47](https://github.com/argorixlabs/argorixlang/pull/47)).
-- Siete módulos `.argx` en `stdlib/`: `result`, `bytes`, `text` (UTF-8 según
+- Ocho módulos `.argx` en `stdlib/`: `result`, `bytes`, `text` (UTF-8 según
   la tabla 3-7), `vector`, `ordered_map` (orden por bytes y duplicados
-  rechazados), `path` (sólo rutas relativas normales) y `json` (escritor
-  canónico y validador).
+  rechazados), `arena` (árbol de ámbitos enlazado por handles), `path`
+  (sólo rutas relativas normales) y `json` (escritor canónico y validador).
 
-Nueve fixtures, positivas y adversarias (UTF-8 inválido, claves duplicadas,
-traversal, desbordamiento, JSON mal formado, profundidad y rangos), pasan con
-gcc y clang, con y sin sanitizers. Falta:
+Doce fixtures, positivas y adversarias (UTF-8 inválido, claves duplicadas,
+traversal, desbordamiento, JSON mal formado, profundidad, rangos y handles
+caducados), entre ellas un tokenizador y un árbol de símbolos de ejemplo,
+pasan con gcc y clang, con y sin sanitizers. Falta:
 
 - la frontera de archivos del compilador (`stdlib.compiler_host`);
-- las medidas de memoria sobre una muestra del compilador;
-- los ejemplos de tokenización y árbol de símbolos.
+- las medidas de memoria sobre una muestra del compilador.
 
 Subtareas cerradas por el carril de Claude, ninguna recorta criterios del
 padre:
