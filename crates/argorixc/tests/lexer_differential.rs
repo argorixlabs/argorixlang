@@ -1,12 +1,13 @@
 //! ESP-010: the Argorix lexer (`compiler/lexer.argx`) against the stage0 one.
 //!
-//! One Core program embeds every sample source and the FNV-1a of the stage0
-//! token dump (`argorixc core-tokens`) for each. Compiled through the
-//! transitional C backend, it lexes each sample with the Argorix lexer, dumps
-//! the tokens the same way and returns a bitmask of the samples whose digest
-//! differs, so a failure names its sample. The samples are the adversarial
-//! cases in `tests/selfhost/lexer/samples/`, the lexer's own sources, the
-//! standard library and the Core spec corpus.
+//! `tests/selfhost/lexer/lex_files.argx` is compiled through the transitional
+//! C backend and run with a package root holding every sample. It reads each
+//! sample through the compiler-host boundary, lexes it with the Argorix lexer
+//! and writes its canonical token dump (`spec/core/tokens.md`). Each dump must
+//! equal, byte for byte, what the stage0 lexer produces (`argorixc
+//! core-tokens`). The samples are the adversarial cases in
+//! `tests/selfhost/lexer/samples/`, the lexer's own sources, the standard
+//! library and the Core spec corpus.
 
 // The differential needs a Unix C toolchain; elsewhere only the hash test runs.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
@@ -32,27 +33,25 @@ fn fnv1a(data: &[u8]) -> u64 {
 
 fn samples() -> Vec<(String, Vec<u8>)> {
     let mut found = Vec::new();
-    let mut directories = vec![
-        root().join("tests/selfhost/lexer/samples"),
-        root().join("compiler"),
-        root().join("stdlib"),
-        root().join("tests/selfhost/spec/valid"),
-        root().join("tests/selfhost/spec/invalid"),
+    let directories = [
+        "compiler",
+        "stdlib",
+        "tests/selfhost/lexer/samples",
+        "tests/selfhost/spec/invalid",
+        "tests/selfhost/spec/valid",
     ];
-    directories.sort();
     for directory in directories {
-        let mut entries: Vec<PathBuf> = fs::read_dir(&directory)
+        let mut entries: Vec<PathBuf> = fs::read_dir(root().join(directory))
             .unwrap()
             .map(|entry| entry.unwrap().path())
             .filter(|path| path.is_file())
             .collect();
         entries.sort();
         for path in entries {
-            let name = path
-                .strip_prefix(root())
-                .unwrap_or(&path)
-                .display()
-                .to_string();
+            let name = format!(
+                "{directory}/{}",
+                path.file_name().unwrap().to_string_lossy()
+            );
             found.push((name, fs::read(&path).unwrap()));
         }
     }
@@ -60,8 +59,8 @@ fn samples() -> Vec<(String, Vec<u8>)> {
 }
 
 #[test]
-fn the_rust_dump_uses_the_documented_hash() {
-    // Known FNV-1a 64 vectors, so the two sides agree on the function itself.
+fn the_rust_side_uses_the_documented_hash() {
+    // Known FNV-1a 64 vectors, so both sides agree on the function itself.
     assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
     assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
 }
@@ -77,39 +76,37 @@ fn the_argorix_lexer_matches_the_stage0_lexer_when_cc_is_available() {
         return;
     };
     let samples = samples();
-    assert!(samples.len() <= 64, "one bit per sample");
-    assert!(samples.iter().any(|(name, _)| name.ends_with("lexer.argx")));
-
-    let mut program = String::from(
-        "core 0.1;\nmodule lexer_check.all;\n\nimport compiler.token_dump;\n\npub fn argorix_main() -> u64 {\n    let mut mismatches: u64 = 0u64;\n",
-    );
-    for (index, (_, source)) in samples.iter().enumerate() {
-        let bytes = source
-            .iter()
-            .map(|byte| format!("{byte}u8"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let expected = fnv1a(core_token_dump(source).as_bytes());
-        program.push_str(&format!(
-            "    let sample_{index}: Array<u8, {}> = [{bytes}];\n    if token_dump.digest(sample_{index}.as_slice()) != {expected}u64 {{\n        mismatches += 1u64 << {index}u64;\n    }}\n",
-            source.len()
-        ));
-    }
-    program.push_str("    mismatches\n}\n");
+    assert!(samples
+        .iter()
+        .any(|(name, _)| name == "compiler/lexer.argx"));
 
     let work = env::temp_dir().join(format!("argorix-lexer-{}", std::process::id()));
     let _ = fs::remove_dir_all(&work);
-    fs::create_dir_all(&work).unwrap();
-    let root_file = work.join("lexer_check.argx");
-    fs::write(&root_file, &program).unwrap();
-    let c_file = work.join("lexer_check.c");
+    let package = work.join("package");
+    let build = work.join("build");
+    fs::create_dir_all(package.join("samples")).unwrap();
+    fs::create_dir_all(build.join("dumps")).unwrap();
+    // The samples are copied under flat names: the listed paths are what the
+    // Argorix program reads, and they must be normal relative paths.
+    let mut list = String::new();
+    let mut total = 0_u64;
+    for (index, (_, source)) in samples.iter().enumerate() {
+        let file = format!("samples/{index}.src");
+        fs::write(package.join(&file), source).unwrap();
+        list.push_str(&file);
+        list.push('\n');
+        total += source.len() as u64;
+    }
+    fs::write(package.join("files.txt"), &list).unwrap();
+
+    let c_file = work.join("lex_files.c");
     let emit = Command::new(env!("CARGO_BIN_EXE_argorixc"))
         .arg("--stdlib")
         .arg(root().join("stdlib"))
         .arg("--modules")
         .arg(root().join("compiler"))
         .arg("core-emit-c")
-        .arg(&root_file)
+        .arg(root().join("tests/selfhost/lexer/lex_files.argx"))
         .arg("--output")
         .arg(&c_file)
         .output()
@@ -119,8 +116,8 @@ fn the_argorix_lexer_matches_the_stage0_lexer_when_cc_is_available() {
         "emission failed: {}",
         String::from_utf8_lossy(&emit.stderr)
     );
-    let executable = work.join("lexer_check");
-    // The samples together take more than the default test budget of steps.
+    let executable = work.join("lex_files");
+    // Lexing every sample takes more than the default test budget of steps.
     let compile = Command::new(compiler)
         .args(["-std=c11", "-O1", "-Wall", "-Wextra", "-Werror"])
         .arg("-DARGORIX_STEP_LIMIT=4000000000ULL")
@@ -137,27 +134,41 @@ fn the_argorix_lexer_matches_the_stage0_lexer_when_cc_is_available() {
         "C compile failed: {}",
         String::from_utf8_lossy(&compile.stderr)
     );
-    let run = Command::new(&executable).output().unwrap();
-    let stdout = String::from_utf8_lossy(&run.stdout).trim().to_string();
-    let mask: u64 = stdout
-        .strip_prefix("ARGORIX_RESULT:")
-        .unwrap_or_else(|| {
-            panic!(
-                "no result: {stdout} {}",
-                String::from_utf8_lossy(&run.stderr)
-            )
-        })
-        .parse()
+    let run = Command::new(&executable)
+        .arg("--package-root")
+        .arg(&package)
+        .arg("--read-budget")
+        .arg((total + list.len() as u64).to_string())
+        .arg("--build-root")
+        .arg(&build)
+        .args(["--write-budget", "100000000"])
+        .output()
         .unwrap();
-    let failed: Vec<&str> = samples
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| mask & (1 << index) != 0)
-        .map(|(_, (name, _))| name.as_str())
-        .collect();
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout).trim(),
+        format!("ARGORIX_RESULT:{}", samples.len()),
+        "stderr: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let mut failed = Vec::new();
+    for (index, (name, source)) in samples.iter().enumerate() {
+        let expected = core_token_dump(source);
+        let actual = fs::read(build.join(format!("dumps/{index}.tokens"))).unwrap();
+        if actual != expected.as_bytes() {
+            let first = expected
+                .lines()
+                .zip(String::from_utf8_lossy(&actual).lines())
+                .find(|(want, got)| want != got)
+                .map(|(want, got)| format!("expected `{want}`, got `{got}`"))
+                .unwrap_or_else(|| "the dumps differ in length".into());
+            failed.push(format!("{name}: {first}"));
+        }
+    }
     assert!(
         failed.is_empty(),
-        "the Argorix lexer disagrees on {failed:?}"
+        "the Argorix lexer disagrees:\n{}",
+        failed.join("\n")
     );
     fs::remove_dir_all(work).unwrap();
 }

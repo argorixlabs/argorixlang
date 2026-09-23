@@ -1927,10 +1927,18 @@ impl<'a> FunctionEmitter<'a> {
                         ));
                     }
                 };
+                // Value temporaries start zeroed: every path that reaches a use
+                // assigns them, but an optimizing C compiler cannot always see
+                // that across the matched flag or a diverging arm, and
+                // -Werror=maybe-uninitialized would reject the program.
                 let result = self.next_temp();
                 let matched = self.next_temp();
                 if let Some(ty) = &result_ty {
-                    line(source, indent, &format!("{} {result};", ty.c_name()));
+                    line(
+                        source,
+                        indent,
+                        &format!("{} {result} = {{0}};", ty.c_name()),
+                    );
                 }
                 line(source, indent, &format!("bool {matched} = false;"));
                 for arm in arms {
@@ -2144,7 +2152,7 @@ impl<'a> FunctionEmitter<'a> {
                 let condition =
                     self.emit_expr(condition, Some(&ScalarType::Bool), indent, source)?;
                 let temp = self.next_temp();
-                line(source, indent, &format!("{} {temp};", ty.c_name()));
+                line(source, indent, &format!("{} {temp} = {{0}};", ty.c_name()));
                 line(source, indent, &format!("if ({}) {{", condition.0));
                 self.emit_block_assignment(then_block, &temp, &ty, indent + 1, source)?;
                 let else_expr = else_expr
@@ -2161,7 +2169,7 @@ impl<'a> FunctionEmitter<'a> {
                     CoreCError::unsupported("value block needs an expected scalar type")
                 })?;
                 let temp = self.next_temp();
-                line(source, indent, &format!("{} {temp};", ty.c_name()));
+                line(source, indent, &format!("{} {temp} = {{0}};", ty.c_name()));
                 self.emit_block_assignment(body, &temp, &ty, indent, source)?;
                 Ok((temp, ty))
             }
@@ -2171,7 +2179,7 @@ impl<'a> FunctionEmitter<'a> {
                 let slot = match expected {
                     Some(ty) if *ty != ScalarType::Unit => {
                         let temp = self.next_temp();
-                        line(source, indent, &format!("{} {temp};", ty.c_name()));
+                        line(source, indent, &format!("{} {temp} = {{0}};", ty.c_name()));
                         Some((temp, ty.clone()))
                     }
                     _ => None,
