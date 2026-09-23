@@ -54,8 +54,8 @@
     "ESP-009": {
       "status": "EN_CURSO",
       "file": "tasks/espada/ESP-009.md",
-      "evidence": "tests/selfhost/stdlib/cases.json; la parte cerrada tiene evidencia por subtarea",
-      "scope": "Biblioteca estandar minima; API S1, Buffer/Arena, movimiento (PR 47) y modulos result, bytes, text, vector, ordered_map, arena, path y json en .argx con 12 fixtures y ejemplos de tokenizacion y arbol de simbolos; faltan compiler_host y medidas de memoria",
+      "evidence": "tests/selfhost/stdlib/cases.json; bootstrap/ESP-009-measurements.json; la parte cerrada tiene evidencia por subtarea",
+      "scope": "Biblioteca estandar minima; API S1, Buffer/Arena, movimiento (PR 47) y modulos result, bytes, text, vector, ordered_map, arena, path y json en .argx y compiler_host, con 14 fixtures, ejemplos de tokenizacion y arbol de simbolos y medidas en bootstrap/ESP-009-measurements.json; criterios cumplidos en PRs 48-50, pendiente CI en main",
       "subtasks": {
         "ESP-009.B": {
           "status": "HECHA",

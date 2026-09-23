@@ -31,9 +31,10 @@ control-flow graph. ESP-008 owns that backend transformation and execution.
 
 `effect_policy` is an allow-list. The verifier derives used effects from the
 program and rejects undeclared effects. Core 0.1 identifies memory reads,
-memory writes, allocation, traps, and named host effects. Named host effects
-are rejected in the bootstrap profile until a typed host-capability lowering
-is specified. Duplicate policy entries are invalid.
+memory writes, allocation, traps, and named host effects. The only named host
+effects accepted are `package.read` and `build.write`, derived from functions
+that take a `PackageRead` or `BuildWrite` capability (`stdlib.compiler_host`);
+any other named host effect is rejected. Duplicate policy entries are invalid.
 
 ## Verification
 

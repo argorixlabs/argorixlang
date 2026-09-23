@@ -353,6 +353,7 @@ jobs:
           ./target/debug/core-c-harness all
           --argorixc target/debug/argorixc
           --cc ${{ matrix.cc }} ${{ matrix.flags }}
+          --repeat 3
           --cases tests/selfhost/stdlib/cases.json
           --bundle target/core-c/stdlib-bundle
           --work-dir target/core-c/stdlib

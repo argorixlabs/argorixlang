@@ -40,6 +40,9 @@ enum Ty {
     Arena(Box<Ty>),
     Handle(Box<Ty>),
     Named(String),
+    /// `PackageRead` or `BuildWrite`: authority the driver hands to
+    /// `argorix_main`, never made in source (`stdlib.compiler_host`).
+    Capability(String),
     Unknown,
     Never,
 }
@@ -49,7 +52,7 @@ impl Ty {
         match self {
             Self::Unit => "unit".into(),
             Self::Bool => "bool".into(),
-            Self::Int(name) | Self::Named(name) => name.clone(),
+            Self::Int(name) | Self::Named(name) | Self::Capability(name) => name.clone(),
             Self::Bytes => "bytes".into(),
             Self::String => "string".into(),
             Self::Array(element, length) => format!("Array<{}, {length}>", element.display()),
@@ -150,6 +153,7 @@ pub fn verify_core_program<'a>(
     checker.check_recursive_values();
     checker.check_constants();
     checker.check_functions();
+    checker.check_capability_positions();
     if checker.diagnostics.is_empty() {
         Ok(VerifiedCoreProgram { program })
     } else {
@@ -870,6 +874,22 @@ impl<'a> Checker<'a> {
                 Ty::Handle(element)
             }
             ("release", Ty::Arena(_)) if arguments.is_empty() => Ty::Unit,
+            // The compiler-host boundary (`stdlib.compiler_host`): a status
+            // code, then the bytes; the host re-checks the path on each call.
+            ("status" | "read", Ty::Capability(kind))
+                if kind == "PackageRead" && arguments.len() == 1 =>
+            {
+                self.check_byte_views(arguments);
+                if name == "status" {
+                    Ty::Int("u64".into())
+                } else {
+                    Ty::Buffer(Box::new(Ty::Int("u8".into())))
+                }
+            }
+            ("write", Ty::Capability(kind)) if kind == "BuildWrite" && arguments.len() == 2 => {
+                self.check_byte_views(arguments);
+                Ty::Int("u64".into())
+            }
             ("as_bytes", Ty::Array(element, _))
                 if *element == Ty::Int("u8".into()) && arguments.is_empty() =>
             {
@@ -1164,6 +1184,7 @@ impl<'a> Checker<'a> {
                 "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" => {
                     Ty::Int(name.clone())
                 }
+                "PackageRead" | "BuildWrite" => Ty::Capability(name.clone()),
                 _ => Ty::Named(name.clone()),
             },
             CoreTypeKind::Container {
@@ -1172,6 +1193,13 @@ impl<'a> Checker<'a> {
                 array_length,
             } => {
                 let element = Box::new(self.lower_type(element));
+                if Self::contains_capability(&element) {
+                    self.error(
+                        "CapabilityEscapes",
+                        format!("a capability is held by the call it was passed to and cannot be stored in a `{name}`"),
+                        source.span,
+                    );
+                }
                 if Self::contains_slice(&element) {
                     self.error(
                         "SliceEscapes",
@@ -1311,6 +1339,80 @@ impl<'a> Checker<'a> {
                 }
             }
             _ => false,
+        }
+    }
+
+    fn contains_capability(ty: &Ty) -> bool {
+        match ty {
+            Ty::Capability(_) => true,
+            Ty::Array(element, _)
+            | Ty::Slice(element)
+            | Ty::Buffer(element)
+            | Ty::Arena(element)
+            | Ty::Handle(element) => Self::contains_capability(element),
+            _ => false,
+        }
+    }
+
+    /// Arguments of a host operation: byte views, which may be made with
+    /// `x.as_slice()` right there, as for a call.
+    fn check_byte_views(&mut self, arguments: &[CoreExpr]) {
+        let bytes = Ty::Slice(Box::new(Ty::Int("u8".into())));
+        for argument in arguments {
+            self.view_argument = Self::viewed_root(argument).is_some();
+            let actual = self.infer_expr(argument, Some(&bytes));
+            self.view_argument = false;
+            self.require_compatible(&bytes, &actual, argument.span);
+        }
+    }
+
+    /// A capability is authority the driver lends to one run: it may be a
+    /// parameter or a local, never a field, a payload or a returned value,
+    /// so no data structure carries it past the calls it was passed to.
+    fn check_capability_positions(&mut self) {
+        let mut escapes = Vec::new();
+        for item in &self.program.items {
+            let (name, span) = match &item.kind {
+                CoreItemKind::Struct(value) => (&value.name.value, value.name.span),
+                CoreItemKind::Enum(value) => (&value.name.value, value.name.span),
+                CoreItemKind::Function(value) => (&value.name.value, value.name.span),
+                CoreItemKind::Const(value) => (&value.name.value, value.name.span),
+            };
+            if name == "PackageRead" || name == "BuildWrite" {
+                escapes.push((
+                    "DuplicateDeclaration",
+                    format!("`{name}` is the built-in capability type and cannot be redeclared"),
+                    span,
+                ));
+            }
+            let holds = match &item.kind {
+                CoreItemKind::Struct(value) => self
+                    .structs
+                    .get(&value.name.value)
+                    .is_some_and(|info| info.fields.values().any(Self::contains_capability)),
+                CoreItemKind::Enum(value) => {
+                    self.enums.get(&value.name.value).is_some_and(|info| {
+                        info.variants
+                            .values()
+                            .any(|variant| variant.fields.values().any(Self::contains_capability))
+                    })
+                }
+                CoreItemKind::Function(value) => self
+                    .functions
+                    .get(&value.name.value)
+                    .is_some_and(|info| Self::contains_capability(&info.result)),
+                CoreItemKind::Const(_) => false,
+            };
+            if holds {
+                escapes.push((
+                    "CapabilityEscapes",
+                    format!("`{name}` would keep a capability past the call it was passed to; a capability can only be a parameter or a local"),
+                    span,
+                ));
+            }
+        }
+        for (code, message, span) in escapes {
+            self.error(code, message, span);
         }
     }
 

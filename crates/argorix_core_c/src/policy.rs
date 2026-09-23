@@ -20,6 +20,10 @@ pub struct Policy {
     pub forbidden_library_patterns: Vec<String>,
     pub forbidden_symbol_patterns: Vec<String>,
     pub forbidden_imports: Vec<String>,
+    /// File-system functions only the compiler-host shim may import: a
+    /// program that cannot hold a capability must not link any of them.
+    #[serde(default)]
+    pub host_only_imports: Vec<String>,
     pub forbidden_byte_markers: Vec<String>,
     pub execution_timeout_seconds: u64,
 }
@@ -118,6 +122,7 @@ mod tests {
             forbidden_library_patterns: vec!["rust".into(), "libstd-".into()],
             forbidden_symbol_patterns: vec!["^rust_".into(), "^__rust".into()],
             forbidden_imports: vec!["system".into(), "execve".into()],
+            host_only_imports: vec!["open".into()],
             forbidden_byte_markers: vec!["/rustc/".into()],
             execution_timeout_seconds: 10,
         }

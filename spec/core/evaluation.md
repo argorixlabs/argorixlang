@@ -20,5 +20,5 @@ Acceso fuera de límites, handle inválido, profundidad/steps/memoria excedidos 
 
 ## Determinismo
 
-Sin efectos host, mismo programa/input/perfil produce mismo resultado o trap. Orden de mapas no forma parte de Core 0.1; una tabla de símbolos del corpus usa `Buffer<Entry>` y búsqueda explícita. Reloj, entropía, filesystem y procesos no existen hasta recibir capacidades host tipadas en ESP-005.
+Sin efectos host, mismo programa/input/perfil produce mismo resultado o trap. Orden de mapas no forma parte de Core 0.1; una tabla de símbolos del corpus usa `Buffer<Entry>` y búsqueda explícita. Reloj, entropía, red y procesos no existen. El filesystem sólo existe como las dos capacidades tipadas del perfil compiler-host (`PackageRead`, `BuildWrite`; ver `stdlib.md`), que el driver presta a `argorix_main`; su resultado depende también del contenido de las raíces prestadas, y un archivo que cambia entre `status` y `read` es el trap `HOST_UNAVAILABLE`, nunca un resultado parcial.
 

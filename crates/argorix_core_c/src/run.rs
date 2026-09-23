@@ -224,7 +224,7 @@ fn run_case(
         compiler,
         toolchain,
         options.root,
-        &[c_path],
+        std::slice::from_ref(&c_path),
         &executable,
         extra,
     )?;
@@ -248,8 +248,11 @@ fn run_case(
     } else {
         &[]
     };
+    let (args, build) = host_arguments(case, options)?;
+    reset_build(case, build.as_deref())?;
     let execution = harness::execute_with_env(
         &executable,
+        &args,
         Duration::from_secs(policy.execution_timeout_seconds),
         env,
     )?;
@@ -257,8 +260,10 @@ fn run_case(
     // `spec/core/stdlib.md` requires it of repeated gcc and clang runs alike,
     // and nothing checked it before.
     for run in 1..options.repeat.max(1) {
+        reset_build(case, build.as_deref())?;
         let again = harness::execute_with_env(
             &executable,
+            &args,
             Duration::from_secs(policy.execution_timeout_seconds),
             env,
         )?;
@@ -298,6 +303,9 @@ entropy than AddressSanitizer supports, so check vm.mmap_rnd_bits"
         ));
     } else {
         result.failures.extend(harness::compare(case, &execution));
+        if let (Some(host), Some(build)) = (&case.host, &build) {
+            result.failures.extend(check_build(host, build)?);
+        }
     }
     if options.sanitize {
         let findings = harness::sanitizer_findings(&execution.stderr);
@@ -315,6 +323,18 @@ entropy than AddressSanitizer supports, so check vm.mmap_rnd_bits"
     }
     let dependencies = harness::inspect_binary(&executable, policy)?;
     result.failures.extend(dependencies.violations.clone());
+    // Only a program that can hold a capability is built with the host shim;
+    // any other binary must not import a single file-system function.
+    let c_source = std::fs::read_to_string(&c_path)?;
+    if !c_source.contains("#include \"argorix_core_host.h\"") {
+        for name in &dependencies.imported_symbols {
+            if policy.host_only_imports.contains(name) {
+                result.failures.push(format!(
+                    "imports a file-system function without a capability: {name}"
+                ));
+            }
+        }
+    }
     result.dependencies = Some(dependencies);
     result.passed = result.failures.is_empty();
     Ok(result)
@@ -520,6 +540,92 @@ pub fn print_summary(report: &Report) {
     );
 }
 
+/// The command-line arguments that lend a case its compiler-host roots and
+/// budgets, and the build directory it writes to, if any.
+fn host_arguments(case: &Case, options: &RunOptions<'_>) -> Result<(Vec<String>, Option<PathBuf>)> {
+    let Some(host) = &case.host else {
+        return Ok((Vec::new(), None));
+    };
+    let mut args = Vec::new();
+    if let Some(root) = &host.package_root {
+        let base = options.cases_path.parent().unwrap_or(Path::new("."));
+        let root = base
+            .join(root)
+            .canonicalize()
+            .with_context(|| format!("case {}: package root", case.id))?;
+        args.push("--package-root".into());
+        args.push(root.display().to_string());
+    }
+    if let Some(budget) = host.read_budget {
+        args.push("--read-budget".into());
+        args.push(budget.to_string());
+    }
+    let mut build = None;
+    if let Some(budget) = host.write_budget {
+        let directory = options.work.join(format!("{}.build", case.id));
+        args.push("--build-root".into());
+        args.push(directory.display().to_string());
+        args.push("--write-budget".into());
+        args.push(budget.to_string());
+        build = Some(directory);
+    }
+    Ok((args, build))
+}
+
+/// An empty build root with the directories the case asks for, before every
+/// run, so repeated runs start from the same state.
+fn reset_build(case: &Case, build: Option<&Path>) -> Result<()> {
+    let (Some(host), Some(build)) = (&case.host, build) else {
+        return Ok(());
+    };
+    if build.exists() {
+        std::fs::remove_dir_all(build)?;
+    }
+    std::fs::create_dir_all(build)?;
+    for directory in &host.build_dirs {
+        std::fs::create_dir_all(build.join(directory))?;
+    }
+    Ok(())
+}
+
+/// Every expected file with its exact contents, and nothing else.
+fn check_build(host: &harness::HostSetup, build: &Path) -> Result<Vec<String>> {
+    let mut failures = Vec::new();
+    let mut found = std::collections::BTreeMap::new();
+    let mut pending = vec![build.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let relative = path
+                    .strip_prefix(build)?
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                found.insert(relative, std::fs::read(&path)?);
+            }
+        }
+    }
+    for (file, text) in &host.expected_build {
+        match found.get(file) {
+            None => failures.push(format!("build is missing {file}")),
+            Some(bytes) if bytes != text.as_bytes() => failures.push(format!(
+                "build file {file} is {:?}, expected {text:?}",
+                String::from_utf8_lossy(bytes)
+            )),
+            Some(_) => {}
+        }
+    }
+    for file in found.keys() {
+        if !host.expected_build.contains_key(file) {
+            failures.push(format!("build has an unexpected file {file}"));
+        }
+    }
+    Ok(failures)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
