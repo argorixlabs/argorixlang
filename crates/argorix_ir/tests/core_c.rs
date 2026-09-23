@@ -221,10 +221,20 @@ fn c1_runtime_validates_handle_generation_and_arena_lifetime_when_cc_is_availabl
 #[test]
 fn buffers_are_released_before_every_return() {
     let source = emit("buffer_success.argx");
-    let drop_call = "argorix_buffer_drop(&argorix_v_values);";
+    // An owning local is released through its type's drop function, and
+    // only while it still owns: a moved-out local has its flag cleared.
+    let drop_call = "argorix_drop_buffer_u32(&argorix_v_values);";
     assert!(
         source.contains(drop_call),
         "a Buffer local must be dropped, or its storage leaks:\n{source}"
+    );
+    assert!(
+        source.contains("if (argorix_live_values) {"),
+        "the drop must be guarded by the local's live flag:\n{source}"
+    );
+    assert!(
+        source.contains("static void argorix_drop_buffer_u32(argorix_buffer *value) {"),
+        "the drop function must be defined:\n{source}"
     );
     // The drop has to precede the return that leaves the function, and the
     // result is already in a temporary by then.

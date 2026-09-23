@@ -1,0 +1,13 @@
+core 0.1;
+module regression.o04_ownership_returned_buffer;
+
+fn make() -> Buffer<u8> {
+    let mut b: Buffer<u8> = Buffer::new();
+    b.push(7u8);
+    b
+}
+
+pub fn argorix_main() -> u64 {
+    let b: Buffer<u8> = make();
+    b.length()
+}

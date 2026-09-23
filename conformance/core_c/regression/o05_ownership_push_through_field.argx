@@ -1,0 +1,23 @@
+core 0.1;
+module regression.o05_ownership_push_through_field;
+
+struct Holder { values: Buffer<u8>, count: u64, }
+
+fn fill(values: Buffer<u8>, n: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = values;
+    let mut i: u64 = 0u64;
+    while i < n {
+        out.push(7u8);
+        i += 1u64;
+    }
+    out
+}
+
+pub fn argorix_main() -> u64 {
+    let start: Buffer<u8> = Buffer::new();
+    let mut h: Holder = Holder { values: fill(start, 3u64), count: 0u64 };
+    h.values.push(1u8);
+    h.values[0u64] = 40u8;
+    h.count = h.values.length();
+    h.count + 38u64
+}

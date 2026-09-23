@@ -2,6 +2,25 @@
 
 ## Current claim
 
+- Task: ESP-009 — minimal standard library, the `.argx` modules of
+  `spec/core/stdlib.md`.
+- State: IN PROGRESS.
+- Branch: `claude/stdlib-core`, base `fd11276` (`origin/main`).
+- Started: 2026-09-22.
+- Ownership: reassigned from the Codex lane by the maintainer on 2026-09-22
+  (“toma todo tu”). `codex/stdlib-esp009` last moved on 2026-09-20 and
+  carries no `stdlib/*.argx`; its merged work (the S1 API and the
+  Buffer/Arena verticals, PR #26) is kept as is.
+- Paths: `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`,
+  `tasks/espada/ESP-009.md`, and the Core frontend, IR, C backend and C1
+  runtime where a stdlib module needs a primitive.
+
+---
+
+# Previous claim: ESP-009.F (PR #46)
+
+## Claim
+
 - Task: ESP-009.F — backend gaps g17–g23 (issue #39) and cross-module
   symbol resolution (issue #45). Subtask of ESP-009 (§10 of the master plan).
 - State: DONE (pending review).

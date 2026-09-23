@@ -33,9 +33,44 @@ an intentional bootstrap constraint, not implicit dynamic typing.
   unchanged.
 - `buffer[index: u64] -> T` validates initialized length and traps
   `INDEX_OUT_OF_BOUNDS` before access.
-- Storage preserves insertion order. Moving/borrowing and deterministic
-  destruction must be completed before S1 closes; no public raw capacity or
-  pointer exists.
+- Storage preserves insertion order. No public raw capacity or pointer
+  exists.
+- `buffer[index] = value` replaces an element in place, after the same
+  bounds check.
+
+### Ownership of resource values
+
+A *resource* is a `Buffer<T>`, or a struct, enum or fixed array that holds one
+at any depth. Every other type is plain data and is copied. A resource has
+exactly one owner at a time, and is released exactly once, when its owner's
+scope ends:
+
+- **Moves.** A resource moves when it is bound by `let`, passed as an
+  argument (parameters are by value), returned, used as a `break` value,
+  stored in a field or an element of a new aggregate, pushed into a buffer,
+  assigned, matched on, or evaluated as a statement and discarded. After a
+  move the source binding cannot be used; assigning it a new value makes it
+  an owner again.
+- **Places.** A local, a field of a place or an element of a place can be
+  inspected without moving: `h.values.length()`, `rows[i][j]`,
+  `h.values.push(x)`. Moving a resource *out of* a field or an element is an
+  error (`MoveOutOfPlace`): the value that holds it still owns it.
+- **Flow.** A binding moved on any path that reaches a use is an error
+  (`UseAfterMove`); both branches of an `if` or `match`, and the right-hand
+  side of `&&`/`||`, count as paths. A binding declared before a loop cannot
+  be moved on a path back to the loop head (`MoveInLoop`); moving it on a path
+  that leaves the loop is fine.
+- **Temporaries.** A resource that is only inspected must be a place; a
+  temporary such as `make().length()` is an error (`ResourceTemporary`),
+  because nothing would own it afterwards.
+- **Matching.** Matching consumes the scrutinee. The arm that runs owns what
+  its pattern binds; parts it does not bind are released on entry.
+- **Arenas.** A resource cannot be stored in an `Arena<T>` slot
+  (`ResourceInArena`): a slot is freed without looking inside it.
+- **Release.** Each owner is released at the end of its scope, and on every
+  `return`, `break` or `continue` that leaves that scope first. Releasing a
+  struct releases its resource fields, an enum those of its live variant, a
+  buffer or array each resource element before its own storage.
 
 ### `Arena<T>` and `Handle<T>`
 

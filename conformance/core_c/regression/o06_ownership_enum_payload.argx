@@ -1,0 +1,34 @@
+core 0.1;
+module regression.o06_ownership_enum_payload;
+
+enum Parsed { Ok { bytes: Buffer<u8>, }, Err { code: u64, }, }
+
+fn parse(n: u64) -> Parsed {
+    if n == 0u64 {
+        return Parsed::Err { code: 9u64 };
+    }
+    let mut b: Buffer<u8> = Buffer::new();
+    let mut i: u64 = 0u64;
+    while i < n {
+        b.push(1u8);
+        i += 1u64;
+    }
+    Parsed::Ok { bytes: b }
+}
+
+fn size(p: Parsed) -> u64 {
+    match p {
+        Parsed::Ok { bytes } => bytes.length(),
+        Parsed::Err { code } => code,
+    }
+}
+
+pub fn argorix_main() -> u64 {
+    let ignored: Parsed = parse(5u64);
+    let mut total: u64 = size(parse(30u64)) + size(parse(0u64));
+    match ignored {
+        Parsed::Ok { bytes: _ } => { total += 3u64; },
+        Parsed::Err { code } => { total += code; },
+    }
+    total
+}

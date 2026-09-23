@@ -1,0 +1,9 @@
+core 0.1;
+module regression.o02_ownership_index_assignment;
+
+pub fn argorix_main() -> u8 {
+    let mut b: Buffer<u8> = Buffer::new();
+    b.push(1u8);
+    b[0u64] = 42u8;
+    b[0u64]
+}

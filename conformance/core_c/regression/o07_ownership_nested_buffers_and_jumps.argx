@@ -1,0 +1,31 @@
+core 0.1;
+module regression.o07_ownership_nested_buffers_and_jumps;
+
+pub fn argorix_main() -> u64 {
+    let mut rows: Buffer<Buffer<u8>> = Buffer::new();
+    let mut i: u64 = 0u64;
+    while i < 5u64 {
+        let mut row: Buffer<u8> = Buffer::new();
+        row.push(1u8);
+        if i == 3u64 {
+            i += 1u64;
+            continue;
+        }
+        let mut j: u64 = 0u64;
+        while j < i {
+            row.push(2u8);
+            j += 1u64;
+        }
+        rows.push(row);
+        i += 1u64;
+    }
+    let mut total: u64 = 0u64;
+    let mut k: u64 = 0u64;
+    loop {
+        if k >= rows.length() { break; }
+        total += rows[k].length();
+        let scratch: Buffer<u8> = Buffer::new();
+        k += 1u64;
+    }
+    total + rows.length()
+}
