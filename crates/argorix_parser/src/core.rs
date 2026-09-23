@@ -405,7 +405,17 @@ impl<'a> CoreLexer<'a> {
                             ));
                             other
                         }
-                        None => return,
+                        // A backslash that ends the file leaves the string
+                        // open, which used to pass without any diagnostic.
+                        None => {
+                            self.diagnostics.push(CoreDiagnostic::new(
+                                CorePhase::Lexical,
+                                "UnterminatedString",
+                                "unterminated string literal",
+                                Span::new(start, self.offset, line, column),
+                            ));
+                            return;
+                        }
                     };
                     value.push(escaped);
                 }
@@ -420,6 +430,74 @@ impl<'a> CoreLexer<'a> {
             span: Span::new(start, self.offset, line, column),
         });
     }
+}
+
+/// The canonical token dump of `spec/core/tokens.md`: one line per token, or
+/// one line per lexical diagnostic when there is any. The Argorix lexer
+/// (`compiler/lexer.argx`) must produce the same bytes for the same source.
+pub fn core_token_dump(source: &[u8]) -> String {
+    let text = match std::str::from_utf8(source) {
+        Ok(text) => text,
+        Err(error) => {
+            let valid = &source[..error.valid_up_to()];
+            // The prefix is valid UTF-8 by construction.
+            let prefix = std::str::from_utf8(valid).unwrap_or_default();
+            let line = 1 + prefix.matches('\n').count();
+            let column = 1 + prefix.rsplit('\n').next().unwrap_or("").chars().count();
+            return format!("{line}:{column}: lexical[InvalidUtf8]: source is not valid UTF-8\n");
+        }
+    };
+    let mut out = String::new();
+    match lex_core(text) {
+        Err(diagnostics) => {
+            for diagnostic in diagnostics {
+                out.push_str(&format!("{diagnostic}\n"));
+            }
+        }
+        Ok(tokens) => {
+            for token in tokens {
+                let span = token.span;
+                out.push_str(&format!(
+                    "{}:{} {} {} ",
+                    span.line, span.column, span.start, span.end
+                ));
+                match &token.kind {
+                    CoreTokenKind::Ident(name) => out.push_str(&format!("Ident {name}")),
+                    CoreTokenKind::Integer { value, suffix } => {
+                        out.push_str(&format!("Integer {value}"));
+                        if let Some(suffix) = suffix {
+                            out.push_str(&format!(" {suffix}"));
+                        }
+                    }
+                    CoreTokenKind::String(value) => {
+                        out.push_str("String \"");
+                        out.push_str(&escape_json(value));
+                        out.push('"');
+                    }
+                    other => out.push_str(&format!("{other:?}")),
+                }
+                out.push('\n');
+            }
+        }
+    }
+    out
+}
+
+/// The escaping of `stdlib.text.append_json_escaped`.
+fn escape_json(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if (ch as u32) < 32 => out.push_str(&format!("\\u00{:02x}", ch as u32)),
+            ch => out.push(ch),
+        }
+    }
+    out
 }
 
 fn is_core_ident_start(ch: char) -> bool {

@@ -1,0 +1,67 @@
+core 0.1;
+module compiler.diagnostics;
+
+// Structured diagnostics of the Argorix compiler. A diagnostic is a stable
+// code, the span it points at, and for some codes a `detail` range of the
+// source (the offending character). `append_rendered` spells it the way the
+// stage0 frontend does: `line:column: phase[Code]: message`.
+
+import stdlib.bytes;
+
+pub struct Diagnostic { code: u64, start: u64, end: u64, line: u64, column: u64, detail_start: u64, detail_end: u64, }
+
+// Lexical codes, in spec/core/tokens.md.
+pub const UNEXPECTED_CHARACTER: u64 = 1u64;
+pub const UNTERMINATED_COMMENT: u64 = 2u64;
+pub const INTEGER_OUT_OF_RANGE: u64 = 3u64;
+pub const UNTERMINATED_STRING: u64 = 4u64;
+pub const INVALID_ESCAPE: u64 = 5u64;
+pub const INVALID_UTF8: u64 = 6u64;
+
+pub fn at(code: u64, start: u64, end: u64, line: u64, column: u64) -> Diagnostic {
+    Diagnostic { code: code, start: start, end: end, line: line, column: column, detail_start: start, detail_end: start }
+}
+
+pub fn with_detail(code: u64, start: u64, end: u64, line: u64, column: u64, detail_start: u64, detail_end: u64) -> Diagnostic {
+    Diagnostic { code: code, start: start, end: end, line: line, column: column, detail_start: detail_start, detail_end: detail_end }
+}
+
+// `line:column: lexical[Code]: message`, without a newline. `source` is the
+// text the diagnostic points into.
+pub fn append_rendered(out: Buffer<u8>, source: Slice<u8>, found: Diagnostic) -> Buffer<u8> {
+    let mut text: Buffer<u8> = bytes.append_decimal(out, found.line);
+    text.push(58u8);
+    text = bytes.append_decimal(text, found.column);
+    text = bytes.append(text, ": lexical[".as_slice());
+    text = append_code(text, found.code);
+    text = bytes.append(text, "]: ".as_slice());
+    append_message(text, source, found)
+}
+
+fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
+    if code == UNEXPECTED_CHARACTER { return bytes.append(out, "UnexpectedCharacter".as_slice()); }
+    if code == UNTERMINATED_COMMENT { return bytes.append(out, "UnterminatedComment".as_slice()); }
+    if code == INTEGER_OUT_OF_RANGE { return bytes.append(out, "IntegerOutOfRange".as_slice()); }
+    if code == UNTERMINATED_STRING { return bytes.append(out, "UnterminatedString".as_slice()); }
+    if code == INVALID_ESCAPE { return bytes.append(out, "InvalidEscape".as_slice()); }
+    bytes.append(out, "InvalidUtf8".as_slice())
+}
+
+fn append_message(out: Buffer<u8>, source: Slice<u8>, found: Diagnostic) -> Buffer<u8> {
+    if found.code == UNEXPECTED_CHARACTER {
+        let mut text: Buffer<u8> = bytes.append(out, "unexpected character `".as_slice());
+        text = bytes.append(text, source.slice(found.detail_start, found.detail_end));
+        text.push(96u8);
+        return text;
+    }
+    if found.code == UNTERMINATED_COMMENT { return bytes.append(out, "unterminated block comment".as_slice()); }
+    if found.code == INTEGER_OUT_OF_RANGE { return bytes.append(out, "integer literal exceeds u64".as_slice()); }
+    if found.code == UNTERMINATED_STRING { return bytes.append(out, "unterminated string literal".as_slice()); }
+    if found.code == INVALID_ESCAPE {
+        let mut text: Buffer<u8> = bytes.append(out, "invalid escape `\\".as_slice());
+        text = bytes.append(text, source.slice(found.detail_start, found.detail_end));
+        text.push(96u8);
+        return text;
+    }
+    bytes.append(out, "source is not valid UTF-8".as_slice())
+}

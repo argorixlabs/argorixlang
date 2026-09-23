@@ -1,0 +1,150 @@
+core 0.1;
+module compiler.token;
+
+// The tokens of Argorix Core (spec/core/grammar.ebnf, spec/core/tokens.md).
+// Kinds are numbered in the order of the stage0 lexer's token kinds, and
+// `append_name` spells each one as the canonical token dump does.
+
+import stdlib.bytes;
+
+// `value` is an integer literal's value. `text_start..text_end` is an integer
+// literal's suffix in the source (empty when it has none), or a string
+// literal's decoded bytes in the lexer's string buffer.
+pub struct Token { kind: u64, start: u64, end: u64, line: u64, column: u64, value: u64, text_start: u64, text_end: u64, }
+
+pub const IDENT: u64 = 1u64;
+pub const INTEGER: u64 = 2u64;
+pub const STRING: u64 = 3u64;
+pub const LEFT_BRACE: u64 = 4u64;
+pub const RIGHT_BRACE: u64 = 5u64;
+pub const LEFT_PAREN: u64 = 6u64;
+pub const RIGHT_PAREN: u64 = 7u64;
+pub const LEFT_BRACKET: u64 = 8u64;
+pub const RIGHT_BRACKET: u64 = 9u64;
+pub const LESS: u64 = 10u64;
+pub const LESS_EQUAL: u64 = 11u64;
+pub const GREATER: u64 = 12u64;
+pub const GREATER_EQUAL: u64 = 13u64;
+pub const COMMA: u64 = 14u64;
+pub const COLON: u64 = 15u64;
+pub const COLON_COLON: u64 = 16u64;
+pub const SEMICOLON: u64 = 17u64;
+pub const DOT: u64 = 18u64;
+pub const ARROW: u64 = 19u64;
+pub const FAT_ARROW: u64 = 20u64;
+pub const ASSIGN: u64 = 21u64;
+pub const PLUS_ASSIGN: u64 = 22u64;
+pub const MINUS_ASSIGN: u64 = 23u64;
+pub const STAR_ASSIGN: u64 = 24u64;
+pub const SLASH_ASSIGN: u64 = 25u64;
+pub const PERCENT_ASSIGN: u64 = 26u64;
+pub const PLUS: u64 = 27u64;
+pub const MINUS: u64 = 28u64;
+pub const STAR: u64 = 29u64;
+pub const SLASH: u64 = 30u64;
+pub const PERCENT: u64 = 31u64;
+pub const BANG: u64 = 32u64;
+pub const EQUAL_EQUAL: u64 = 33u64;
+pub const BANG_EQUAL: u64 = 34u64;
+pub const AMP: u64 = 35u64;
+pub const AMP_AMP: u64 = 36u64;
+pub const PIPE: u64 = 37u64;
+pub const PIPE_PIPE: u64 = 38u64;
+pub const CARET: u64 = 39u64;
+pub const SHIFT_LEFT: u64 = 40u64;
+pub const SHIFT_RIGHT: u64 = 41u64;
+pub const EOF: u64 = 42u64;
+
+// The kind of a two-byte operator, or 0.
+pub fn double_kind(first: u8, second: u8) -> u64 {
+    if first == 58u8 && second == 58u8 { return COLON_COLON; }
+    if first == 45u8 && second == 62u8 { return ARROW; }
+    if first == 61u8 && second == 62u8 { return FAT_ARROW; }
+    if first == 61u8 && second == 61u8 { return EQUAL_EQUAL; }
+    if first == 33u8 && second == 61u8 { return BANG_EQUAL; }
+    if first == 60u8 && second == 61u8 { return LESS_EQUAL; }
+    if first == 62u8 && second == 61u8 { return GREATER_EQUAL; }
+    if first == 60u8 && second == 60u8 { return SHIFT_LEFT; }
+    if first == 62u8 && second == 62u8 { return SHIFT_RIGHT; }
+    if first == 38u8 && second == 38u8 { return AMP_AMP; }
+    if first == 124u8 && second == 124u8 { return PIPE_PIPE; }
+    if first == 43u8 && second == 61u8 { return PLUS_ASSIGN; }
+    if first == 45u8 && second == 61u8 { return MINUS_ASSIGN; }
+    if first == 42u8 && second == 61u8 { return STAR_ASSIGN; }
+    if first == 47u8 && second == 61u8 { return SLASH_ASSIGN; }
+    if first == 37u8 && second == 61u8 { return PERCENT_ASSIGN; }
+    0u64
+}
+
+// The kind of a one-byte operator or delimiter, or 0.
+pub fn single_kind(byte: u8) -> u64 {
+    if byte == 123u8 { return LEFT_BRACE; }
+    if byte == 125u8 { return RIGHT_BRACE; }
+    if byte == 40u8 { return LEFT_PAREN; }
+    if byte == 41u8 { return RIGHT_PAREN; }
+    if byte == 91u8 { return LEFT_BRACKET; }
+    if byte == 93u8 { return RIGHT_BRACKET; }
+    if byte == 44u8 { return COMMA; }
+    if byte == 59u8 { return SEMICOLON; }
+    if byte == 46u8 { return DOT; }
+    if byte == 94u8 { return CARET; }
+    if byte == 58u8 { return COLON; }
+    if byte == 61u8 { return ASSIGN; }
+    if byte == 60u8 { return LESS; }
+    if byte == 62u8 { return GREATER; }
+    if byte == 43u8 { return PLUS; }
+    if byte == 45u8 { return MINUS; }
+    if byte == 42u8 { return STAR; }
+    if byte == 47u8 { return SLASH; }
+    if byte == 37u8 { return PERCENT; }
+    if byte == 33u8 { return BANG; }
+    if byte == 38u8 { return AMP; }
+    if byte == 124u8 { return PIPE; }
+    0u64
+}
+
+// The kind's name in the canonical dump.
+pub fn append_name(out: Buffer<u8>, kind: u64) -> Buffer<u8> {
+    if kind == IDENT { return bytes.append(out, "Ident".as_slice()); }
+    if kind == INTEGER { return bytes.append(out, "Integer".as_slice()); }
+    if kind == STRING { return bytes.append(out, "String".as_slice()); }
+    if kind == LEFT_BRACE { return bytes.append(out, "LeftBrace".as_slice()); }
+    if kind == RIGHT_BRACE { return bytes.append(out, "RightBrace".as_slice()); }
+    if kind == LEFT_PAREN { return bytes.append(out, "LeftParen".as_slice()); }
+    if kind == RIGHT_PAREN { return bytes.append(out, "RightParen".as_slice()); }
+    if kind == LEFT_BRACKET { return bytes.append(out, "LeftBracket".as_slice()); }
+    if kind == RIGHT_BRACKET { return bytes.append(out, "RightBracket".as_slice()); }
+    if kind == LESS { return bytes.append(out, "Less".as_slice()); }
+    if kind == LESS_EQUAL { return bytes.append(out, "LessEqual".as_slice()); }
+    if kind == GREATER { return bytes.append(out, "Greater".as_slice()); }
+    if kind == GREATER_EQUAL { return bytes.append(out, "GreaterEqual".as_slice()); }
+    if kind == COMMA { return bytes.append(out, "Comma".as_slice()); }
+    if kind == COLON { return bytes.append(out, "Colon".as_slice()); }
+    if kind == COLON_COLON { return bytes.append(out, "ColonColon".as_slice()); }
+    if kind == SEMICOLON { return bytes.append(out, "Semicolon".as_slice()); }
+    if kind == DOT { return bytes.append(out, "Dot".as_slice()); }
+    if kind == ARROW { return bytes.append(out, "Arrow".as_slice()); }
+    if kind == FAT_ARROW { return bytes.append(out, "FatArrow".as_slice()); }
+    if kind == ASSIGN { return bytes.append(out, "Assign".as_slice()); }
+    if kind == PLUS_ASSIGN { return bytes.append(out, "PlusAssign".as_slice()); }
+    if kind == MINUS_ASSIGN { return bytes.append(out, "MinusAssign".as_slice()); }
+    if kind == STAR_ASSIGN { return bytes.append(out, "StarAssign".as_slice()); }
+    if kind == SLASH_ASSIGN { return bytes.append(out, "SlashAssign".as_slice()); }
+    if kind == PERCENT_ASSIGN { return bytes.append(out, "PercentAssign".as_slice()); }
+    if kind == PLUS { return bytes.append(out, "Plus".as_slice()); }
+    if kind == MINUS { return bytes.append(out, "Minus".as_slice()); }
+    if kind == STAR { return bytes.append(out, "Star".as_slice()); }
+    if kind == SLASH { return bytes.append(out, "Slash".as_slice()); }
+    if kind == PERCENT { return bytes.append(out, "Percent".as_slice()); }
+    if kind == BANG { return bytes.append(out, "Bang".as_slice()); }
+    if kind == EQUAL_EQUAL { return bytes.append(out, "EqualEqual".as_slice()); }
+    if kind == BANG_EQUAL { return bytes.append(out, "BangEqual".as_slice()); }
+    if kind == AMP { return bytes.append(out, "Amp".as_slice()); }
+    if kind == AMP_AMP { return bytes.append(out, "AmpAmp".as_slice()); }
+    if kind == PIPE { return bytes.append(out, "Pipe".as_slice()); }
+    if kind == PIPE_PIPE { return bytes.append(out, "PipePipe".as_slice()); }
+    if kind == CARET { return bytes.append(out, "Caret".as_slice()); }
+    if kind == SHIFT_LEFT { return bytes.append(out, "ShiftLeft".as_slice()); }
+    if kind == SHIFT_RIGHT { return bytes.append(out, "ShiftRight".as_slice()); }
+    bytes.append(out, "Eof".as_slice())
+}

@@ -1,0 +1,260 @@
+core 0.1;
+module compiler.lexer;
+
+// The Argorix Core lexer, in Argorix (ESP-010). It follows spec/core/tokens.md
+// and must produce the same token dump as the stage0 lexer it replaces:
+//
+// - the source is UTF-8, checked first; invalid UTF-8 is one diagnostic;
+// - whitespace is space, tab, CR and LF; `//` comments run to the end of the
+//   line and `/* */` comments nest;
+// - a span is a byte range; its line counts LFs and its column counts
+//   characters, from 1;
+// - lexing goes on after an error, so one pass reports every lexical
+//   diagnostic, each bounded to the input it has seen.
+
+import stdlib.text;
+import stdlib.result;
+import compiler.token;
+import compiler.diagnostics;
+
+// Tokens end with `Eof`; string literals' bytes live in `strings`.
+pub struct Lexed { tokens: Buffer<Token>, strings: Buffer<u8>, diagnostics: Buffer<Diagnostic>, }
+
+pub fn lex(source: Slice<u8>) -> Lexed {
+    let mut tokens: Buffer<Token> = Buffer::new();
+    let mut strings: Buffer<u8> = Buffer::new();
+    let mut found: Buffer<Diagnostic> = Buffer::new();
+    match text.validate(source) {
+        Checked::Err { failure } => {
+            found.push(invalid_utf8(source, result.position(failure)));
+            return Lexed { tokens: tokens, strings: strings, diagnostics: found };
+        },
+        Checked::Ok => {},
+    }
+    let length: u64 = source.length();
+    let mut at: u64 = 0u64;
+    let mut line: u64 = 1u64;
+    let mut column: u64 = 1u64;
+    while at < length {
+        let byte: u8 = source[at];
+        let start: u64 = at;
+        let start_line: u64 = line;
+        let start_column: u64 = column;
+        let next: u8 = if at + 1u64 < length { source[at + 1u64] } else { 0u8 };
+        if byte == 32u8 || byte == 9u8 || byte == 13u8 {
+            at += 1u64;
+            column += 1u64;
+        } else if byte == 10u8 {
+            at += 1u64;
+            line += 1u64;
+            column = 1u64;
+        } else if byte == 47u8 && next == 47u8 {
+            // A line comment stops before its LF.
+            while at < length && source[at] != 10u8 {
+                at += width(source[at]);
+                column += 1u64;
+            }
+        } else if byte == 47u8 && next == 42u8 {
+            at += 2u64;
+            column += 2u64;
+            let mut depth: u64 = 1u64;
+            while depth > 0u64 {
+                if at >= length {
+                    found.push(diagnostics.at(diagnostics.UNTERMINATED_COMMENT, start, start + 2u64, start_line, start_column));
+                    break;
+                }
+                let current: u8 = source[at];
+                let following: u8 = if at + 1u64 < length { source[at + 1u64] } else { 0u8 };
+                if current == 47u8 && following == 42u8 {
+                    at += 2u64;
+                    column += 2u64;
+                    depth += 1u64;
+                } else if current == 42u8 && following == 47u8 {
+                    at += 2u64;
+                    column += 2u64;
+                    depth -= 1u64;
+                } else if current == 10u8 {
+                    at += 1u64;
+                    line += 1u64;
+                    column = 1u64;
+                } else {
+                    at += width(current);
+                    column += 1u64;
+                }
+            }
+        } else if is_digit(byte) {
+            // Digits and `_`, then an alphanumeric suffix, all one token.
+            let mut value: u64 = 0u64;
+            let mut overflow: bool = false;
+            while at < length && (is_digit(source[at]) || source[at] == 95u8) {
+                if source[at] != 95u8 {
+                    let digit: u64 = digit_value(source[at]);
+                    if value > 1844674407370955161u64 || (value == 1844674407370955161u64 && digit > 5u64) {
+                        overflow = true;
+                    } else {
+                        value = value * 10u64 + digit;
+                    }
+                }
+                at += 1u64;
+                column += 1u64;
+            }
+            let digits_end: u64 = at;
+            while at < length && (is_digit(source[at]) || is_letter(source[at])) {
+                at += 1u64;
+                column += 1u64;
+            }
+            if overflow {
+                found.push(diagnostics.at(diagnostics.INTEGER_OUT_OF_RANGE, start, at, start_line, start_column));
+            } else {
+                tokens.push(Token { kind: token.INTEGER, start: start, end: at, line: start_line, column: start_column, value: value, text_start: digits_end, text_end: at });
+            }
+        } else if byte == 34u8 {
+            at += 1u64;
+            column += 1u64;
+            let text_start: u64 = strings.length();
+            let mut closed: bool = false;
+            loop {
+                if at >= length || source[at] == 10u8 {
+                    found.push(diagnostics.at(diagnostics.UNTERMINATED_STRING, start, at, start_line, start_column));
+                    break;
+                }
+                let current: u8 = source[at];
+                if current == 34u8 {
+                    at += 1u64;
+                    column += 1u64;
+                    closed = true;
+                    break;
+                }
+                if current == 92u8 {
+                    at += 1u64;
+                    column += 1u64;
+                    if at >= length {
+                        // A backslash that ends the file leaves the string open.
+                        found.push(diagnostics.at(diagnostics.UNTERMINATED_STRING, start, at, start_line, start_column));
+                        break;
+                    }
+                    let escaped: u8 = source[at];
+                    let escape_start: u64 = at;
+                    at += width(escaped);
+                    if escaped == 10u8 {
+                        line += 1u64;
+                        column = 1u64;
+                    } else {
+                        column += 1u64;
+                    }
+                    if escaped == 110u8 {
+                        strings.push(10u8);
+                    } else if escaped == 114u8 {
+                        strings.push(13u8);
+                    } else if escaped == 116u8 {
+                        strings.push(9u8);
+                    } else if escaped == 34u8 || escaped == 92u8 {
+                        strings.push(escaped);
+                    } else {
+                        found.push(diagnostics.with_detail(diagnostics.INVALID_ESCAPE, start, at, start_line, start_column, escape_start, at));
+                        let mut copy: u64 = escape_start;
+                        while copy < at {
+                            strings.push(source[copy]);
+                            copy += 1u64;
+                        }
+                    }
+                } else {
+                    let end: u64 = at + width(current);
+                    while at < end {
+                        strings.push(source[at]);
+                        at += 1u64;
+                    }
+                    column += 1u64;
+                }
+            }
+            if closed {
+                tokens.push(Token { kind: token.STRING, start: start, end: at, line: start_line, column: start_column, value: 0u64, text_start: text_start, text_end: strings.length() });
+            }
+        } else if is_letter(byte) || byte == 95u8 {
+            at += 1u64;
+            column += 1u64;
+            while at < length && (is_letter(source[at]) || is_digit(source[at]) || source[at] == 95u8) {
+                at += 1u64;
+                column += 1u64;
+            }
+            tokens.push(simple(token.IDENT, start, at, start_line, start_column));
+        } else {
+            let pair: u64 = if at + 1u64 < length { token.double_kind(byte, next) } else { 0u64 };
+            let single: u64 = token.single_kind(byte);
+            if pair != 0u64 {
+                at += 2u64;
+                column += 2u64;
+                tokens.push(simple(pair, start, at, start_line, start_column));
+            } else if single != 0u64 {
+                at += 1u64;
+                column += 1u64;
+                tokens.push(simple(single, start, at, start_line, start_column));
+            } else {
+                let end: u64 = at + width(byte);
+                found.push(diagnostics.with_detail(diagnostics.UNEXPECTED_CHARACTER, start, end, start_line, start_column, start, end));
+                at = end;
+                column += 1u64;
+            }
+        }
+    }
+    tokens.push(simple(token.EOF, at, at, line, column));
+    Lexed { tokens: tokens, strings: strings, diagnostics: found }
+}
+
+fn simple(kind: u64, start: u64, end: u64, line: u64, column: u64) -> Token {
+    Token { kind: kind, start: start, end: end, line: line, column: column, value: 0u64, text_start: start, text_end: start }
+}
+
+// Where the first invalid byte sits, counted like any other position.
+fn invalid_utf8(source: Slice<u8>, bad: u64) -> Diagnostic {
+    let mut at: u64 = 0u64;
+    let mut line: u64 = 1u64;
+    let mut column: u64 = 1u64;
+    while at < bad {
+        if source[at] == 10u8 {
+            line += 1u64;
+            column = 1u64;
+            at += 1u64;
+        } else {
+            at += width(source[at]);
+            column += 1u64;
+        }
+    }
+    diagnostics.at(diagnostics.INVALID_UTF8, bad, bad, line, column)
+}
+
+// The length of the UTF-8 sequence a valid leading byte starts.
+fn width(byte: u8) -> u64 {
+    if byte < 128u8 {
+        1u64
+    } else if byte < 224u8 {
+        2u64
+    } else if byte < 240u8 {
+        3u64
+    } else {
+        4u64
+    }
+}
+
+fn is_digit(byte: u8) -> bool {
+    byte >= 48u8 && byte <= 57u8
+}
+
+fn is_letter(byte: u8) -> bool {
+    (byte >= 65u8 && byte <= 90u8) || (byte >= 97u8 && byte <= 122u8)
+}
+
+fn digit_value(byte: u8) -> u64 {
+    match byte {
+        48u8 => 0u64,
+        49u8 => 1u64,
+        50u8 => 2u64,
+        51u8 => 3u64,
+        52u8 => 4u64,
+        53u8 => 5u64,
+        54u8 => 6u64,
+        55u8 => 7u64,
+        56u8 => 8u64,
+        _ => 9u64,
+    }
+}

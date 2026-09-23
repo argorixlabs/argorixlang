@@ -5,7 +5,7 @@ use argorix_ir::{
 };
 use argorix_module::{check_package, package_ir, resolve_package, ModuleGraph, ResolvedPackage};
 use argorix_parser::{
-    core::{parse_core_source, CoreDiagnostic, CoreItemKind, CoreProgram},
+    core::{core_token_dump, parse_core_source, CoreDiagnostic, CoreItemKind, CoreProgram},
     parse_source, Diagnostic, Program,
 };
 use argorix_semantics::{
@@ -31,6 +31,11 @@ struct Cli {
     #[arg(long, global = true)]
     stdlib: Option<PathBuf>,
 
+    /// Another directory whose Core modules join the locked compilation set,
+    /// such as `compiler/` for a program that imports the Argorix compiler.
+    #[arg(long = "modules", global = true)]
+    modules: Vec<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -45,6 +50,8 @@ enum Command {
     CoreEmitIr { file: PathBuf },
     /// Verify serialized Argorix Core IR JSON.
     CoreVerifyIr { file: PathBuf },
+    /// Print the canonical token dump of a Core source file (spec/core/tokens.md).
+    CoreTokens { file: PathBuf },
     /// Lower checked Argorix Core 0.1 source into transitional C11.
     CoreEmitC {
         file: PathBuf,
@@ -98,8 +105,13 @@ fn run() -> Result<()> {
             println!("Protocols: {}", compiled.program.protocols.len());
             println!("Semantic checks: passed");
         }
+        Command::CoreTokens { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", core_token_dump(&source));
+        }
         Command::CoreCheck { file } => {
-            let compiled = compile_core(&file, cli.stdlib.as_deref())?;
+            let compiled = compile_core(&file, cli.stdlib.as_deref(), &cli.modules)?;
             let functions = compiled
                 .root
                 .items
@@ -123,7 +135,7 @@ fn run() -> Result<()> {
             println!("Execution: available through core-emit-c");
         }
         Command::CoreEmitIr { file } => {
-            let compiled = compile_core(&file, cli.stdlib.as_deref())?;
+            let compiled = compile_core(&file, cli.stdlib.as_deref(), &cli.modules)?;
             let verified = verify_core_program(
                 &compiled.program,
                 &CoreCheckOptions {
@@ -152,7 +164,7 @@ fn run() -> Result<()> {
             println!("Semantic fingerprint: {}", verified.semantic_fingerprint());
         }
         Command::CoreEmitC { file, output } => {
-            let compiled = compile_core(&file, cli.stdlib.as_deref())?;
+            let compiled = compile_core(&file, cli.stdlib.as_deref(), &cli.modules)?;
             let checked = verify_core_program(
                 &compiled.program,
                 &CoreCheckOptions {
@@ -368,7 +380,11 @@ struct CheckedCoreSource {
     linked_modules: usize,
 }
 
-fn compile_core(path: &Path, stdlib: Option<&Path>) -> Result<CheckedCoreSource> {
+fn compile_core(
+    path: &Path,
+    stdlib: Option<&Path>,
+    module_dirs: &[PathBuf],
+) -> Result<CheckedCoreSource> {
     if path.extension().and_then(|extension| extension.to_str()) != Some("argx") {
         bail!("Argorix source files must use the `.argx` extension");
     }
@@ -392,9 +408,13 @@ fn compile_core(path: &Path, stdlib: Option<&Path>) -> Result<CheckedCoreSource>
     files.insert(root_name.clone(), (file.clone(), source.clone()));
     // The standard library joins the set only when the driver names it.
     let mut directories = vec![directory.clone()];
-    if let Some(stdlib) = stdlib {
-        if fs::canonicalize(stdlib).ok() != fs::canonicalize(&directory).ok() {
-            directories.push(stdlib.to_path_buf());
+    for extra in module_dirs.iter().map(PathBuf::as_path).chain(stdlib) {
+        let identity = fs::canonicalize(extra).ok();
+        if !directories
+            .iter()
+            .any(|known| fs::canonicalize(known).ok() == identity)
+        {
+            directories.push(extra.to_path_buf());
         }
     }
     let mut candidates = Vec::new();

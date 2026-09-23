@@ -6,3 +6,5 @@
 *.json text eol=lf
 *.argx text eol=lf
 *.lock text eol=lf
+tests/selfhost/lexer/samples/** -text
+tests/selfhost/lexer/package/** -text

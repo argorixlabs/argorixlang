@@ -75,7 +75,9 @@ scope ends:
 ### Views of owned storage
 
 `x.as_slice()` makes a `Slice<T>` view of a `Buffer<T>` or `Array<T, N>`
-without moving `x`. The view does not own anything, so it must not outlive `x`:
+without moving `x`, and a `Slice<u8>` of the UTF-8 bytes of a `string`, such
+as `"name".as_slice()`. The view does not own anything, so it must not outlive
+`x`:
 
 - `as_slice()` may only appear directly as an argument of a call,
   `f(x.as_slice())` (`SliceEscapes`), and that call may not also move `x`

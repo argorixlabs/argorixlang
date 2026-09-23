@@ -52,10 +52,10 @@
       "scope": "Ejecucion Core mediante backend C transitorio y runtime C1; no self-hosting, backend nativo ni independencia completa"
     },
     "ESP-009": {
-      "status": "EN_CURSO",
+      "status": "HECHA",
       "file": "tasks/espada/ESP-009.md",
       "evidence": "tests/selfhost/stdlib/cases.json; bootstrap/ESP-009-measurements.json; la parte cerrada tiene evidencia por subtarea",
-      "scope": "Biblioteca estandar minima; API S1, Buffer/Arena, movimiento (PR 47) y modulos result, bytes, text, vector, ordered_map, arena, path y json en .argx y compiler_host, con 14 fixtures, ejemplos de tokenizacion y arbol de simbolos y medidas en bootstrap/ESP-009-measurements.json; criterios cumplidos en PRs 48-50, pendiente CI en main",
+      "scope": "Biblioteca estandar minima; API S1, Buffer/Arena, movimiento (PR 47) y modulos result, bytes, text, vector, ordered_map, arena, path y json en .argx y compiler_host, con 14 fixtures, ejemplos de tokenizacion y arbol de simbolos y medidas en bootstrap/ESP-009-measurements.json; PRs 47, 48 y 51, CI verde en main@1183b90",
       "subtasks": {
         "ESP-009.B": {
           "status": "HECHA",
@@ -88,6 +88,12 @@
           "scope": "Gaps del backend de issue 39 e imports entre modulos de issue 45; la stdlib puede escribirse en Core modular"
         }
       }
+    },
+    "ESP-010": {
+      "status": "EN_CURSO",
+      "file": "tasks/espada/ESP-010.md",
+      "evidence": "crates/argorixc/tests/lexer_differential.rs; tests/selfhost/lexer/cases.json",
+      "scope": "Lexer y diagnosticos en Argorix (compiler/); volcado canonico en spec/core/tokens.md, igual al del lexer stage0 en 47 muestras; falta leer las fuentes por la frontera de archivos (PR 53)"
     }
   },
   "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad. esp_progress se actualiza al reclamar o cerrar una tarea ESP; el estado operativo del día vive en WORKBOARD.md.",

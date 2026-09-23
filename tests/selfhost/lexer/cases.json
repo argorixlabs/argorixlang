@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "core_version": "0.1",
+  "task": "ESP-010",
+  "purpose": "Fixtures of the Argorix lexer in compiler/. The differential against the stage0 lexer is crates/argorixc/tests/lexer_differential.rs; these check structure and run under gcc, clang and the sanitizers.",
+  "cases": [
+    {
+      "id": "lexer_basics",
+      "file": "lexer_basics.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2047",
+      "expected_stderr": ""
+    },
+    {
+      "id": "lex_files",
+      "file": "lex_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "package",
+        "read_budget": 100,
+        "write_budget": 1000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.tokens": "1:1 0 2 Ident fn\n1:4 3 4 Ident f\n1:5 4 5 LeftParen\n1:6 5 6 RightParen\n1:8 7 9 Arrow\n1:11 10 12 Ident u8\n1:14 13 14 LeftBrace\n1:16 15 18 Integer 7 u8\n1:20 19 20 RightBrace\n2:1 21 21 Eof\n",
+          "dumps/1.tokens": "1:5: lexical[UnterminatedString]: unterminated string literal\n"
+        }
+      }
+    }
+  ]
+}

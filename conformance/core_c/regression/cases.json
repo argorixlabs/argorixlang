@@ -339,6 +339,14 @@
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:33",
       "expected_stderr": ""
+    },
+    {
+      "id": "g26_strings_and_wrapping_add",
+      "file": "g26_strings_and_wrapping_add.argx",
+      "was": "String literals and wrapping_add are valid Core that the C backend refused (\"outside the scalar C profile\", \"does not accept arguments\"); the Argorix lexer needs both (ESP-010).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:110512",
+      "expected_stderr": ""
     }
   ]
 }
