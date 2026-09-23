@@ -268,8 +268,17 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// In program order, so the diagnostics come out the same on every run
+    /// (`structs` is a hash map).
     fn check_recursive_values(&mut self) {
-        for (name, info) in &self.structs {
+        for item in &self.program.items {
+            let CoreItemKind::Struct(value) = &item.kind else {
+                continue;
+            };
+            let name = &value.name.value;
+            let Some(info) = self.structs.get(name) else {
+                continue;
+            };
             if info
                 .fields
                 .values()
@@ -733,7 +742,8 @@ impl<'a> Checker<'a> {
                 );
             }
         }
-        for name in required.keys() {
+        // Sorted, so missing fields are reported in the same order every run.
+        for name in required.keys().collect::<BTreeSet<_>>() {
             if !fields.iter().any(|(field, _)| &field.value == name) {
                 self.error("TypeMismatch", format!("missing field `{name}`"), span);
             }
@@ -1034,7 +1044,8 @@ impl<'a> Checker<'a> {
         self.join(flows);
         if let Ty::Named(name) = &scrutinee {
             if let Some(info) = self.enums.get(name) {
-                let missing: Vec<_> = info
+                // Sorted, so the message is the same on every run.
+                let missing: BTreeSet<_> = info
                     .variants
                     .keys()
                     .filter(|variant| !covered.contains(*variant))
@@ -1043,7 +1054,10 @@ impl<'a> Checker<'a> {
                 if !wildcard && !missing.is_empty() {
                     self.error(
                         "NonExhaustiveMatch",
-                        format!("missing variants: {}", missing.join(", ")),
+                        format!(
+                            "missing variants: {}",
+                            missing.into_iter().collect::<Vec<_>>().join(", ")
+                        ),
                         span,
                     );
                 }

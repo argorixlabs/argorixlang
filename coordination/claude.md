@@ -2,8 +2,20 @@
 
 ## Current claim
 
+- Task: ESP-012 — resolution, types and modules in Argorix, as subtasks A
+  (types and names), B (ownership and views) and C (module linker).
+- State: IN PROGRESS; A done on `claude/check-esp012a`.
+- Started: 2026-09-23.
+- Ficha: `tasks/espada/ESP-012.md`.
+- Paths: `compiler/check.argx`, `tests/selfhost/check/**`, `spec/core/check.md`,
+  the ficha, and the stage0 checker where the port finds a defect.
+
+---
+
+# Previous claim: ESP-011 (DONE)
+
 - Task: ESP-011 — parser and AST in Argorix.
-- State: IN PROGRESS.
+- State: DONE on 2026-09-23, merged in PR #54; CI green on `main@21b80ca`.
 - Branch: `claude/parser-esp011`, base `6f981db` (`origin/main`).
 - Started: 2026-09-23.
 - Ficha: `tasks/espada/ESP-011.md`.

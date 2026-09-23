@@ -54,6 +54,8 @@ enum Command {
     CoreTokens { file: PathBuf },
     /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
     CoreAst { file: PathBuf },
+    /// Print the checker diagnostics of one Core file, checked on its own.
+    CoreCheckDump { file: PathBuf },
     /// Lower checked Argorix Core 0.1 source into transitional C11.
     CoreEmitC {
         file: PathBuf,
@@ -121,6 +123,11 @@ fn run() -> Result<()> {
             println!("Agents: {}", compiled.program.agents.len());
             println!("Protocols: {}", compiled.program.protocols.len());
             println!("Semantic checks: passed");
+        }
+        Command::CoreCheckDump { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_semantics::core_check_dump(&source));
         }
         Command::CoreAst { file } => {
             let source =

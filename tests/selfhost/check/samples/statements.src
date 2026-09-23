@@ -1,0 +1,35 @@
+core 0.1;
+module samples.statements;
+
+enum Shape { Dot, Box { w: u64, h: u64, }, Line, }
+
+fn g(s: Shape, n: u64) -> bool {
+    break;
+    continue;
+    let fixed: u64 = 1u64;
+    fixed = 2u64;
+    fixed += 1u64;
+    let mut flag: bool = true;
+    flag += true;
+    nothing = 3u64;
+    let mut values: Buffer<u64> = Buffer::new();
+    let frozen: Buffer<u64> = Buffer::new();
+    frozen.push(1u64);
+    values.push(true);
+    while n { n; }
+    let l: u64 = loop { if flag { break 1u64; } break true; };
+    match s {
+        Shape::Dot => 1u64,
+        Shape::Box { w, h: 2u64, z } if w > 1u64 => w,
+        Other::Dot => 2u64,
+        Shape::Nope => 3u64,
+    };
+    match n {
+        0u64 => true,
+        true => false,
+        x => x,
+    };
+    return 5u64;
+}
+
+fn h() -> u64 { }

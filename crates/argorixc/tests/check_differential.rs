@@ -1,19 +1,19 @@
-//! ESP-011: the Argorix parser (`compiler/parser.argx`) against the stage0 one.
+//! ESP-012.A: the Argorix checker (`compiler/check.argx`) against the stage0 one.
 //!
-//! `tests/selfhost/parser/parse_files.argx` is compiled through the transitional
+//! `tests/selfhost/check/check_files.argx` is compiled through the transitional
 //! C backend and run with a package root holding every sample. It reads each
-//! sample through the compiler-host boundary, parses it with the Argorix parser
-//! and writes its canonical AST dump (`spec/core/ast.md`). Each dump must
-//! equal, byte for byte, what the stage0 parser produces (`argorixc
-//! core-ast`). The samples are the adversarial cases in
-//! `tests/selfhost/parser/samples/` and the lexer samples, the compiler's own
+//! sample through the compiler-host boundary, checks it with the Argorix checker
+//! and writes its diagnostics dump (`spec/core/check.md`). Each dump must
+//! equal, byte for byte, what the stage0 checker produces (`argorixc
+//! core-check-dump`) without the codes of ESP-012.B. The samples are the cases in
+//! `tests/selfhost/check/samples/`, the parser and lexer samples, the compiler's own
 //! sources, the standard library, the stdlib, runtime and regression fixtures
 //! and the Core spec corpus.
 
 // The differential needs a Unix C toolchain; elsewhere this file is empty.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
-use argorix_parser::core_ast::core_ast_dump;
+use argorix_semantics::core_check_dump;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
@@ -22,13 +22,43 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+/// Codes of ESP-012.B (ownership and views), which the Argorix checker does not
+/// report yet.
+const LATER_CODES: [&str; 7] = [
+    "UseAfterMove",
+    "MoveInLoop",
+    "MoveOutOfPlace",
+    "ResourceTemporary",
+    "ResourceInArena",
+    "SliceEscapes",
+    "SliceAliasesMove",
+];
+
+/// The dump without the lines of `LATER_CODES`; `ok` if nothing is left.
+fn without_later_codes(dump: &str) -> String {
+    let kept: String = dump
+        .lines()
+        .filter(|line| {
+            !LATER_CODES
+                .iter()
+                .any(|code| line.ends_with(&format!("[{code}]")))
+        })
+        .map(|line| format!("{line}\n"))
+        .collect();
+    if kept.is_empty() {
+        "ok\n".into()
+    } else {
+        kept
+    }
+}
+
 /// The stage0 dump, on a stack as large as `argorixc` gives itself: the
 /// deep-nesting samples recurse further than a test thread's default stack.
 fn on_large_stack(source: &[u8]) -> String {
     let source = source.to_vec();
     std::thread::Builder::new()
         .stack_size(64 << 20)
-        .spawn(move || core_ast_dump(&source))
+        .spawn(move || without_later_codes(&core_check_dump(&source)))
         .unwrap()
         .join()
         .unwrap()
@@ -40,6 +70,7 @@ fn samples() -> Vec<(String, Vec<u8>)> {
         "compiler",
         "stdlib",
         "tests/selfhost/lexer/samples",
+        "tests/selfhost/check/samples",
         "tests/selfhost/parser/samples",
         "tests/selfhost/runtime",
         "tests/selfhost/stdlib",
@@ -73,7 +104,7 @@ fn samples() -> Vec<(String, Vec<u8>)> {
 
 #[cfg(unix)]
 #[test]
-fn the_argorix_parser_matches_the_stage0_parser_when_cc_is_available() {
+fn the_argorix_checker_matches_the_stage0_checker_when_cc_is_available() {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
         .find(|name| Command::new(name).arg("--version").output().is_ok());
@@ -86,7 +117,7 @@ fn the_argorix_parser_matches_the_stage0_parser_when_cc_is_available() {
         .iter()
         .any(|(name, _)| name == "compiler/lexer.argx"));
 
-    let work = env::temp_dir().join(format!("argorix-parser-{}", std::process::id()));
+    let work = env::temp_dir().join(format!("argorix-check-{}", std::process::id()));
     let _ = fs::remove_dir_all(&work);
     let package = work.join("package");
     let build = work.join("build");
@@ -105,14 +136,14 @@ fn the_argorix_parser_matches_the_stage0_parser_when_cc_is_available() {
     }
     fs::write(package.join("files.txt"), &list).unwrap();
 
-    let c_file = work.join("parse_files.c");
+    let c_file = work.join("check_files.c");
     let emit = Command::new(env!("CARGO_BIN_EXE_argorixc"))
         .arg("--stdlib")
         .arg(root().join("stdlib"))
         .arg("--modules")
         .arg(root().join("compiler"))
         .arg("core-emit-c")
-        .arg(root().join("tests/selfhost/parser/parse_files.argx"))
+        .arg(root().join("tests/selfhost/check/check_files.argx"))
         .arg("--output")
         .arg(&c_file)
         .output()
@@ -122,8 +153,8 @@ fn the_argorix_parser_matches_the_stage0_parser_when_cc_is_available() {
         "emission failed: {}",
         String::from_utf8_lossy(&emit.stderr)
     );
-    let executable = work.join("parse_files");
-    // Parsing every sample takes more than the default test budget of steps.
+    let executable = work.join("check_files");
+    // Checking every sample takes more than the default test budget of steps.
     let compile = Command::new(compiler)
         .args(["-std=c11", "-O1", "-Wall", "-Wextra", "-Werror"])
         .arg("-DARGORIX_STEP_LIMIT=4000000000ULL")
@@ -162,7 +193,7 @@ fn the_argorix_parser_matches_the_stage0_parser_when_cc_is_available() {
     let mut failed = Vec::new();
     for (index, (name, source)) in samples.iter().enumerate() {
         let expected = on_large_stack(source);
-        let actual = fs::read(build.join(format!("dumps/{index}.ast"))).unwrap();
+        let actual = fs::read(build.join(format!("dumps/{index}.check"))).unwrap();
         if actual != expected.as_bytes() {
             let first = expected
                 .lines()
@@ -175,7 +206,7 @@ fn the_argorix_parser_matches_the_stage0_parser_when_cc_is_available() {
     }
     assert!(
         failed.is_empty(),
-        "the Argorix parser disagrees:\n{}",
+        "the Argorix checker disagrees:\n{}",
         failed.join("\n")
     );
     fs::remove_dir_all(work).unwrap();

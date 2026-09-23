@@ -2,7 +2,7 @@
 
 > Plan rector: [Plan maestro de ArgorixLang](PLAN_MAESTRO_ARGORIXLANG.md). Este documento desarrolla la entrega R1 de independencia; no acredita por sí solo la madurez final. Aplicar las dependencias cruzadas del maestro. ESP-026 queda sustituida por fichas MAT independientes.
 
-Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. ESP-009 (biblioteca estándar mínima) y ESP-010 (lexer en Argorix) están HECHAS; ESP-011 (parser en Argorix) está EN_CURSO. Self-hosting e independencia completa siguen pendientes.
+Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. ESP-009 (biblioteca estándar mínima), ESP-010 (lexer) y ESP-011 (parser) están HECHAS; ESP-012 (chequeo semántico en Argorix) está EN_CURSO. Self-hosting e independencia completa siguen pendientes.
 Fecha: 2026-09-17. Base inspeccionada: `5d73d66`, workspace `1.0.0`.
 Última actualización de estado: 2026-09-22 sobre `main@9c77061`. El estado operativo del día (quién tiene cada carril, ramas, PRs e issues abiertos) vive en [WORKBOARD.md](WORKBOARD.md) y en los registros de `coordination/`; esta tabla solo cambia al reclamar o cerrar una tarea.
 Este plan reemplazó la prioridad del backlog AL: self-hosting deja de estar diferido. El plan maestro vigente añade funcionalidad completa y producción como entregas obligatorias posteriores.
@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 está HECHA (PR #53). ESP-011 está EN_CURSO; ESP-012 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54). ESP-012 está EN_CURSO; ESP-013 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -106,8 +106,8 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-009.E | Ejecución repetida byte a byte idéntica | 009.D | HECHA |
 | ESP-009.F | Gaps del backend (#39) e imports entre módulos (#45) | 009.B | HECHA |
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | HECHA |
-| ESP-011 | Parser y AST en Argorix | 010 | EN_CURSO |
-| ESP-012 | Resolución, tipos y módulos en Argorix | 011 | PENDIENTE |
+| ESP-011 | Parser y AST en Argorix | 010 | HECHA |
+| ESP-012 | Resolución, tipos y módulos en Argorix | 011 | EN_CURSO |
 | ESP-013 | Lowering y emisión en Argorix | 012 | PENDIENTE |
 | ESP-014 | Primer compilador self-hosted completo | 013 | PENDIENTE |
 | ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | PENDIENTE |
@@ -323,8 +323,8 @@ propias fuentes, la stdlib y el corpus de la spec.
 **Entregables:** parser y AST `.argx`, fixtures de precedencia y errores.
 **Aceptación:** parsea todas sus fuentes y las del lexer; rechaza ambigüedades/errores de acuerdo con la gramática; entradas profundas se limitan sin bloquear el proceso.
 
-**Estado (2026-09-23):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-011.md)).
-El parser y el AST ya existen en `compiler/`, y su volcado canónico
+**Estado (2026-09-23):** HECHA en el carril de Claude ([ficha](tasks/espada/ESP-011.md),
+PR #54). El parser y el AST están en `compiler/`, y su volcado canónico
 (`spec/core/ast.md`) coincide byte a byte con el del parser stage0 en 135
 archivos. Incluyen sus propias fuentes, la stdlib, los corpus de fixtures y
 muestras de precedencia, recuperación y anidamiento profundo. El puerto
@@ -338,6 +338,13 @@ ahora en 256 niveles con un diagnóstico.
 **Pasos:** implementar scopes, firmas, llamadas, recursión, tipos, exhaustividad, efectos y grafo de imports; resolver determinísticamente ciclos permitidos y prohibidos; limitar rutas al paquete y declarar permisos de compilación.
 **Entregables:** frontend semántico `.argx` y diagnósticos comparables.
 **Aceptación:** valida sus fuentes; detecta símbolos duplicados, tipos incorrectos, retornos ausentes, handles mal usados e imports inválidos; decisiones de error tienen pruebas independientes.
+
+**Estado (2026-09-23):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-012.md)),
+dividida en tres subtareas. ESP-012.A está hecha: el checker de declaraciones,
+tipos, scopes, nombres, expresiones, control de flujo, exhaustividad y
+literales está en `compiler/check.argx`. Sus diagnósticos coinciden con los del
+checker stage0 en 140 archivos. Faltan ESP-012.B (ownership y vistas) y
+ESP-012.C (grafo de módulos y linker).
 
 ### ESP-013 — Lowering y emisión en Argorix
 

@@ -1,0 +1,17 @@
+core 0.1;
+module samples.declarations;
+
+struct Point { x: u64, y: u64, }
+struct Point { z: u8, }
+enum Shape { Dot, Box { w: u64, }, }
+fn area(s: Shape, s: u8) -> u64 { 0u64 }
+const LIMIT: u8 = 300u8;
+const OTHER: u8 = 1u64;
+struct Node { next: Node, }
+struct Pair { left: Node2, }
+struct Node2 { back: Pair, }
+struct Fine { next: Handle<Fine>, }
+struct PackageRead { x: u8, }
+struct Keeper { cap: BuildWrite, }
+fn keep(p: PackageRead) -> PackageRead { p }
+fn buffers() -> Buffer<PackageRead> { Buffer::new() }

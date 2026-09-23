@@ -44,6 +44,11 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
     ast.dump(tree)
 }
 
+// The tree of an already lexed source. Check `errors` before using it.
+pub fn parse(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>) -> Tree {
+    program(tokens, source, strings)
+}
+
 // ------------------------------------------------------------------ tokens
 
 // The kind of the token at `at`. The first half of a `>>` that closed a type
@@ -160,7 +165,7 @@ fn finish(kind: u64, start: u64, end: u64, label_start: u64, kids: Slice<u64>, t
     let mut q: Tree = tree;
     let head: u64 = link(kids);
     q = chain(q, kids);
-    q.nodes.push(Node { kind: kind, start: start, end: end, label_start: label_start, label_end: q.texts.length(), first: head, next: 0u64 });
+    q.nodes.push(Node { kind: kind, start: start, end: end, label_start: label_start, label_end: q.texts.length(), first: head, next: 0u64, word: 0u64, path_last: 0u64, value: 0u64, flag: 0u64 });
     q.last = q.nodes.length() - 1u64;
     q
 }
@@ -168,7 +173,7 @@ fn finish(kind: u64, start: u64, end: u64, label_start: u64, kids: Slice<u64>, t
 // The same over a chain already linked, given its head (position + 1).
 fn finish_chain(kind: u64, start: u64, end: u64, label_start: u64, head: u64, tree: Tree) -> Tree {
     let mut q: Tree = tree;
-    q.nodes.push(Node { kind: kind, start: start, end: end, label_start: label_start, label_end: q.texts.length(), first: head, next: 0u64 });
+    q.nodes.push(Node { kind: kind, start: start, end: end, label_start: label_start, label_end: q.texts.length(), first: head, next: 0u64, word: 0u64, path_last: 0u64, value: 0u64, flag: 0u64 });
     q.last = q.nodes.length() - 1u64;
     q
 }
@@ -179,6 +184,18 @@ fn link(kids: Slice<u64>) -> u64 {
         return 0u64;
     }
     kids[0u64] + 1u64
+}
+
+// Sets what the checker reads on the node just built (see `Node`); the tree
+// comes last, like in `finish`.
+fn tag(word: u64, path_last: u64, value: u64, flag: u64, tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    let node: u64 = q.last;
+    q.nodes[node].word = word;
+    q.nodes[node].path_last = path_last;
+    q.nodes[node].value = value;
+    q.nodes[node].flag = flag;
+    q
 }
 
 // Makes each of `kids` point to the next.
@@ -260,7 +277,7 @@ fn program(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>) -> Tree 
             q = put(q, source.slice(tokens[alias - 1u64].start, tokens[alias - 1u64].end));
         }
         let none: Array<u64, 0> = [];
-        q = finish(ast.OTHER, tokens[import_start].start, tokens[q.at - 1u64].end, label, none.as_slice(), q);
+        q = tag(path_first + 1u64, path_last, alias, 0u64, finish(ast.IMPORT, tokens[import_start].start, tokens[q.at - 1u64].end, label, none.as_slice(), q));
         kids.push(q.last);
     }
     while kind_at(tokens, q.at, q.halved) != token.EOF {
@@ -276,7 +293,7 @@ fn program(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>) -> Tree 
     let label: u64 = q.texts.length();
     q = put(q, "Program 0.1 ".as_slice());
     q = put_path(tokens, source, q, module_first, module_last, ".".as_slice());
-    finish(ast.OTHER, tokens[0u64].start, tokens[q.at].end, label, kids.as_slice(), q)
+    tag(module_first + 1u64, module_last, 0u64, 0u64, finish(ast.PROGRAM, tokens[0u64].start, tokens[q.at].end, label, kids.as_slice(), q))
 }
 
 fn header_failed(tree: Tree) -> Tree {
@@ -399,7 +416,7 @@ fn function(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: T
             q = put(q, "Param ".as_slice());
             q = put(q, source.slice(tokens[parameter].start, tokens[parameter].end));
             let one: Array<u64, 1> = [ty];
-            q = finish(ast.OTHER, tokens[parameter].start, q.nodes[ty].end, label, one.as_slice(), q);
+            q = tag(parameter + 1u64, 0u64, 0u64, 0u64, finish(ast.PARAM, tokens[parameter].start, q.nodes[ty].end, label, one.as_slice(), q));
             kids.push(q.last);
             if kind_at(tokens, q.at, q.halved) != token.COMMA {
                 break;
@@ -423,7 +440,7 @@ fn function(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: T
     let end: u64 = q.nodes[q.last].end;
     let label: u64 = q.texts.length();
     q = put_item_label(tokens, source, q, public, "Fn".as_slice(), name);
-    finish(ast.OTHER, tokens[start].start, end, label, kids.as_slice(), q)
+    tag(name + 1u64, 0u64, 0u64, if public { 1u64 } else { 0u64 }, finish(ast.FN, tokens[start].start, end, label, kids.as_slice(), q))
 }
 
 fn structure(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, public: bool, start: u64) -> Tree {
@@ -442,7 +459,7 @@ fn structure(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: 
     let end: u64 = if head == 0u64 { tokens[name].end } else { q.chain_end };
     let label: u64 = q.texts.length();
     q = put_item_label(tokens, source, q, public, "Struct".as_slice(), name);
-    finish_chain(ast.OTHER, tokens[start].start, end, label, head, q)
+    tag(name + 1u64, 0u64, 0u64, if public { 1u64 } else { 0u64 }, finish_chain(ast.STRUCT, tokens[start].start, end, label, head, q))
 }
 
 fn enumeration(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, public: bool, start: u64) -> Tree {
@@ -470,14 +487,14 @@ fn enumeration(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree
         let label: u64 = q.texts.length();
         q = put(q, "Variant ".as_slice());
         q = put(q, source.slice(tokens[variant].start, tokens[variant].end));
-        q = finish_chain(ast.OTHER, tokens[variant].start, end, label, head, q);
+        q = tag(variant + 1u64, 0u64, 0u64, 0u64, finish_chain(ast.VARIANT, tokens[variant].start, end, label, head, q));
         kids.push(q.last);
     }
     q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
     if q.failed { return q; }
     let label: u64 = q.texts.length();
     q = put_item_label(tokens, source, q, public, "Enum".as_slice(), name);
-    finish(ast.OTHER, tokens[start].start, end, label, kids.as_slice(), q)
+    tag(name + 1u64, 0u64, 0u64, if public { 1u64 } else { 0u64 }, finish(ast.ENUM, tokens[start].start, end, label, kids.as_slice(), q))
 }
 
 fn constant(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, public: bool, start: u64) -> Tree {
@@ -501,7 +518,7 @@ fn constant(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: T
     q = put_item_label(tokens, source, q, public, "Const".as_slice(), name);
     let kids: Array<u64, 2> = [ty, value];
     let end: u64 = q.nodes[value].end;
-    finish(ast.OTHER, tokens[start].start, end, label, kids.as_slice(), q)
+    tag(name + 1u64, 0u64, 0u64, if public { 1u64 } else { 0u64 }, finish(ast.CONST, tokens[start].start, end, label, kids.as_slice(), q))
 }
 
 // `{ name: Type, ... }`: the fields become a sibling chain whose head is
@@ -527,7 +544,7 @@ fn field_block(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
         q = put(q, "Field ".as_slice());
         q = put(q, source.slice(tokens[field].start, tokens[field].end));
         let one: Array<u64, 1> = [ty];
-        q = finish(ast.OTHER, tokens[field].start, end, label, one.as_slice(), q);
+        q = tag(field + 1u64, 0u64, 0u64, 0u64, finish(ast.FIELD, tokens[field].start, end, label, one.as_slice(), q));
         kids.push(q.last);
     }
     q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
@@ -558,7 +575,7 @@ fn type_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
         q = put(q, "Type ".as_slice());
         q = put(q, source.slice(tokens[name].start, tokens[name].end));
         let none: Array<u64, 0> = [];
-        return finish(ast.OTHER, tokens[name].start, tokens[name].end, label, none.as_slice(), q);
+        return tag(name + 1u64, 0u64, 0u64, 0u64, finish(ast.TYPE_NAMED, tokens[name].start, tokens[name].end, label, none.as_slice(), q));
     }
     q = step(tokens, q);
     let is_array: bool = bytes.equal(text, "Array".as_slice());
@@ -590,7 +607,7 @@ fn type_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
         q = put_decimal(q, length);
     }
     let one: Array<u64, 1> = [element];
-    finish(ast.OTHER, tokens[name].start, end, label, one.as_slice(), q)
+    tag(name + 1u64, 0u64, length, 0u64, finish(ast.TYPE_CONTAINER, tokens[name].start, end, label, one.as_slice(), q))
 }
 
 // Consumes the `>` that closes type arguments, and leaves where it ends in
@@ -645,10 +662,10 @@ fn block_inner(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree
             q = put(q, "While".as_slice());
             let two: Array<u64, 2> = [condition, body];
             let end: u64 = q.nodes[body].end;
-            q = finish(ast.OTHER, tokens[first].start, end, label, two.as_slice(), q);
+            q = finish(ast.WHILE, tokens[first].start, end, label, two.as_slice(), q);
             kids.push(q.last);
         } else if is_word(tokens, source, q.at, "break".as_slice()) {
-            q = jump(tokens, source, strings, q, "Break".as_slice(), "expected `;` after break".as_slice());
+            q = jump(tokens, source, strings, q, ast.BREAK, "Break".as_slice(), "expected `;` after break".as_slice());
             if q.failed { return q; }
             kids.push(q.last);
         } else if is_word(tokens, source, q.at, "continue".as_slice()) {
@@ -658,10 +675,10 @@ fn block_inner(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree
             let label: u64 = q.texts.length();
             q = put(q, "Continue".as_slice());
             let none: Array<u64, 0> = [];
-            q = finish(ast.OTHER, tokens[first].start, tokens[q.at - 1u64].end, label, none.as_slice(), q);
+            q = finish(ast.CONTINUE, tokens[first].start, tokens[q.at - 1u64].end, label, none.as_slice(), q);
             kids.push(q.last);
         } else if is_word(tokens, source, q.at, "return".as_slice()) {
-            q = jump(tokens, source, strings, q, "Return".as_slice(), "expected `;` after return".as_slice());
+            q = jump(tokens, source, strings, q, ast.RETURN, "Return".as_slice(), "expected `;` after return".as_slice());
             if q.failed { return q; }
             kids.push(q.last);
         } else {
@@ -681,7 +698,7 @@ fn block_inner(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree
                 q = put_assign(q, operator);
                 let two: Array<u64, 2> = [value, right];
                 let start: u64 = q.nodes[value].start;
-                q = finish(ast.OTHER, start, tokens[q.at - 1u64].end, label, two.as_slice(), q);
+                q = tag(0u64, 0u64, operator, 0u64, finish(ast.ASSIGN, start, tokens[q.at - 1u64].end, label, two.as_slice(), q));
                 kids.push(q.last);
             } else if operator == token.SEMICOLON {
                 q = step(tokens, q);
@@ -719,7 +736,7 @@ fn statement(tree: Tree, value: u64) -> Tree {
     let start: u64 = q.nodes[value].start;
     let end: u64 = q.nodes[value].end;
     let one: Array<u64, 1> = [value];
-    finish(ast.OTHER, start, end, label, one.as_slice(), q)
+    finish(ast.EXPR, start, end, label, one.as_slice(), q)
 }
 
 fn binding(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree) -> Tree {
@@ -753,11 +770,11 @@ fn binding(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tr
         q = put(q, "mut ".as_slice());
     }
     q = put(q, source.slice(tokens[name].start, tokens[name].end));
-    finish(ast.OTHER, tokens[first].start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
+    tag(name + 1u64, 0u64, 0u64, if mutable { 1u64 } else { 0u64 }, finish(ast.LET, tokens[first].start, tokens[q.at - 1u64].end, label, kids.as_slice(), q))
 }
 
 // `break` or `return`, with an optional value and a `;`.
-fn jump(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, name: Slice<u8>, missing: Slice<u8>) -> Tree {
+fn jump(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, kind: u64, name: Slice<u8>, missing: Slice<u8>) -> Tree {
     let first: u64 = tree.at;
     let mut q: Tree = step(tokens, tree);
     let mut kids: Buffer<u64> = Buffer::new();
@@ -770,7 +787,7 @@ fn jump(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree,
     if q.failed { return q; }
     let label: u64 = q.texts.length();
     q = put(q, name);
-    finish(ast.OTHER, tokens[first].start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
+    finish(kind, tokens[first].start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
 }
 
 fn is_assign(kind: u64) -> bool {
@@ -815,7 +832,7 @@ fn binary(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tre
         let two: Array<u64, 2> = [left, right];
         let start: u64 = q.nodes[left].start;
         let end: u64 = q.nodes[right].end;
-        q = finish(ast.OTHER, start, end, label, two.as_slice(), q);
+        q = tag(0u64, 0u64, operator, 0u64, finish(ast.BINARY, start, end, label, two.as_slice(), q));
         left = q.last;
     }
     q
@@ -883,7 +900,7 @@ fn unary_inner(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree
     }
     let one: Array<u64, 1> = [value];
     let end: u64 = q.nodes[value].end;
-    finish(ast.OTHER, tokens[operator].start, end, label, one.as_slice(), q)
+    tag(0u64, 0u64, kind, 0u64, finish(ast.UNARY, tokens[operator].start, end, label, one.as_slice(), q))
 }
 
 fn postfix(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, aggregate: bool) -> Tree {
@@ -915,7 +932,7 @@ fn postfix(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tr
             let label: u64 = q.texts.length();
             q = put(q, "Call".as_slice());
             let start: u64 = q.nodes[value].start;
-            q = finish(ast.OTHER, start, tokens[q.at - 1u64].end, label, kids.as_slice(), q);
+            q = finish(ast.CALL, start, tokens[q.at - 1u64].end, label, kids.as_slice(), q);
         } else if kind == token.LEFT_BRACKET {
             q = step(tokens, q);
             q = expression(tokens, source, strings, q, true);
@@ -927,7 +944,7 @@ fn postfix(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tr
             q = put(q, "Index".as_slice());
             let two: Array<u64, 2> = [value, index];
             let start: u64 = q.nodes[value].start;
-            q = finish(ast.OTHER, start, tokens[q.at - 1u64].end, label, two.as_slice(), q);
+            q = finish(ast.INDEX, start, tokens[q.at - 1u64].end, label, two.as_slice(), q);
         } else if kind == token.DOT {
             q = step(tokens, q);
             let name: u64 = q.at;
@@ -938,7 +955,7 @@ fn postfix(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tr
             q = put(q, source.slice(tokens[name].start, tokens[name].end));
             let one: Array<u64, 1> = [value];
             let start: u64 = q.nodes[value].start;
-            q = finish(ast.OTHER, start, tokens[name].end, label, one.as_slice(), q);
+            q = tag(name + 1u64, 0u64, 0u64, 0u64, finish(ast.FIELD_ACCESS, start, tokens[name].end, label, one.as_slice(), q));
         } else {
             break;
         }
@@ -960,24 +977,24 @@ fn primary(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tr
             q = put(q, " ".as_slice());
             q = put(q, source.slice(found.text_start, found.text_end));
         }
-        q = finish(ast.OTHER, found.start, found.end, label, none.as_slice(), q);
+        q = tag(first + 1u64, 0u64, found.value, if found.text_start < found.text_end { 1u64 } else { 0u64 }, finish(ast.INTEGER, found.start, found.end, label, none.as_slice(), q));
     } else if kind == token.STRING {
         let label: u64 = q.texts.length();
         q = put(q, "String \"".as_slice());
         let escaped: Buffer<u8> = text.append_json_escaped(Buffer::new(), strings.slice(found.text_start, found.text_end));
         q = put(q, escaped.as_slice());
         q = put(q, "\"".as_slice());
-        q = finish(ast.OTHER, found.start, found.end, label, none.as_slice(), q);
+        q = tag(first + 1u64, 0u64, 0u64, 0u64, finish(ast.STRING, found.start, found.end, label, none.as_slice(), q));
     } else if kind == token.IDENT {
         if is_word(tokens, source, first, "true".as_slice()) || is_word(tokens, source, first, "false".as_slice()) {
             let label: u64 = q.texts.length();
             q = put(q, "Bool ".as_slice());
             q = put(q, source.slice(found.start, found.end));
-            q = finish(ast.OTHER, found.start, found.end, label, none.as_slice(), q);
+            q = tag(first + 1u64, 0u64, if is_word(tokens, source, first, "true".as_slice()) { 1u64 } else { 0u64 }, 0u64, finish(ast.BOOL, found.start, found.end, label, none.as_slice(), q));
         } else if is_word(tokens, source, first, "unit".as_slice()) {
             let label: u64 = q.texts.length();
             q = put(q, "Unit".as_slice());
-            q = finish(ast.OTHER, found.start, found.end, label, none.as_slice(), q);
+            q = finish(ast.UNIT, found.start, found.end, label, none.as_slice(), q);
         } else if is_word(tokens, source, first, "if".as_slice()) {
             return conditional(tokens, source, strings, q, first);
         } else if is_word(tokens, source, first, "match".as_slice()) {
@@ -1002,7 +1019,7 @@ fn primary(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tr
             let label: u64 = q.texts.length();
             q = put(q, "Path ".as_slice());
             q = put_path(tokens, source, q, first, last, "::".as_slice());
-            q = finish(ast.PATH, found.start, tokens[last].end, label, none.as_slice(), q);
+            q = tag(first + 1u64, last, 0u64, 0u64, finish(ast.PATH, found.start, tokens[last].end, label, none.as_slice(), q));
         }
     } else if kind == token.LEFT_PAREN {
         q = expression(tokens, source, strings, q, true);
@@ -1034,7 +1051,7 @@ fn primary(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tr
         if q.failed { return q; }
         let label: u64 = q.texts.length();
         q = put(q, "Array".as_slice());
-        q = finish(ast.OTHER, found.start, tokens[q.at - 1u64].end, label, kids.as_slice(), q);
+        q = finish(ast.ARRAY, found.start, tokens[q.at - 1u64].end, label, kids.as_slice(), q);
     } else if kind == token.LEFT_BRACE {
         q.at -= 1u64;
         return block(tokens, source, strings, q);
@@ -1065,7 +1082,7 @@ fn aggregate_value(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, 
         q = put(q, "FieldValue ".as_slice());
         q = put(q, source.slice(tokens[name].start, tokens[name].end));
         let one: Array<u64, 1> = [value];
-        q = finish(ast.OTHER, tokens[name].start, tokens[name].end, label, one.as_slice(), q);
+        q = tag(name + 1u64, 0u64, 0u64, 0u64, finish(ast.FIELD_VALUE, tokens[name].start, tokens[name].end, label, one.as_slice(), q));
         kids.push(q.last);
         if kind_at(tokens, q.at, q.halved) != token.COMMA {
             break;
@@ -1080,11 +1097,13 @@ fn aggregate_value(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, 
     let label: u64 = q.texts.length();
     q = put(q, "Aggregate ".as_slice());
     // The path's label is `Path ` and the path itself.
+    let path_word: u64 = q.nodes[path].word;
+    let path_last: u64 = q.nodes[path].path_last;
     let path_start: u64 = q.nodes[path].label_start + 5u64;
     let path_end: u64 = q.nodes[path].label_end;
     q = put_copy(q, path_start, path_end);
     let start: u64 = q.nodes[path].start;
-    finish(ast.OTHER, start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
+    tag(path_word, path_last, 0u64, 0u64, finish(ast.AGGREGATE, start, tokens[q.at - 1u64].end, label, kids.as_slice(), q))
 }
 
 // `if` has been consumed at `first`.
@@ -1154,7 +1173,7 @@ fn matching(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: T
             }
             let label: u64 = q.texts.length();
             q = put(q, "Return".as_slice());
-            q = finish(ast.OTHER, tokens[returned].start, end, label, values.as_slice(), q);
+            q = finish(ast.RETURN, tokens[returned].start, end, label, values.as_slice(), q);
             let statement_node: u64 = q.last;
             let block_label: u64 = q.texts.length();
             q = put(q, "Block".as_slice());
@@ -1175,7 +1194,7 @@ fn matching(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: T
         } else {
             q = put(q, "Arm".as_slice());
         }
-        q = finish(ast.OTHER, tokens[arm].start, tokens[q.at - 1u64].end, label, parts.as_slice(), q);
+        q = tag(0u64, 0u64, 0u64, if guarded { 1u64 } else { 0u64 }, finish(ast.ARM, tokens[arm].start, tokens[q.at - 1u64].end, label, parts.as_slice(), q));
         kids.push(q.last);
     }
     q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
@@ -1201,6 +1220,8 @@ fn pattern_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
     let mut q: Tree = step(tokens, tree);
     let found: Token = tokens[first];
     let mut kids: Buffer<u64> = Buffer::new();
+    let mut pattern_kind: u64 = ast.PATTERN_INTEGER;
+    let mut pattern_value: u64 = found.value;
     let label: u64 = q.texts.length();
     if kind == token.INTEGER {
         q = put(q, "Pattern ".as_slice());
@@ -1208,6 +1229,12 @@ fn pattern_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
     } else if kind == token.IDENT {
         let word: Slice<u8> = source.slice(found.start, found.end);
         if bytes.equal(word, "_".as_slice()) || bytes.equal(word, "true".as_slice()) || bytes.equal(word, "false".as_slice()) {
+            if bytes.equal(word, "_".as_slice()) {
+                pattern_kind = ast.PATTERN_WILDCARD;
+            } else {
+                pattern_kind = ast.PATTERN_BOOL;
+                pattern_value = if bytes.equal(word, "true".as_slice()) { 1u64 } else { 0u64 };
+            }
             q = put(q, "Pattern ".as_slice());
             q = put(q, word);
         } else {
@@ -1219,6 +1246,8 @@ fn pattern_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
                 if q.failed { return q; }
             }
             if last == first && kind_at(tokens, q.at, q.halved) != token.LEFT_BRACE {
+                pattern_kind = ast.PATTERN_BINDING;
+                pattern_value = 0u64;
                 q = put(q, "Pattern binding ".as_slice());
                 q = put(q, word);
             } else {
@@ -1238,7 +1267,7 @@ fn pattern_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
                         let field_label: u64 = q.texts.length();
                         q = put(q, "PatternField ".as_slice());
                         q = put(q, source.slice(tokens[name].start, tokens[name].end));
-                        q = finish(ast.OTHER, tokens[name].start, tokens[name].end, field_label, nested.as_slice(), q);
+                        q = tag(name + 1u64, 0u64, 0u64, 0u64, finish(ast.PATTERN_FIELD, tokens[name].start, tokens[name].end, field_label, nested.as_slice(), q));
                         kids.push(q.last);
                         if kind_at(tokens, q.at, q.halved) != token.COMMA {
                             break;
@@ -1256,12 +1285,12 @@ fn pattern_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
                 q = put(q, "Pattern ".as_slice());
                 q = put_path(tokens, source, q, first, last, "::".as_slice());
                 let end: u64 = tokens[q.at - 1u64].end;
-                return finish(ast.OTHER, found.start, end, own, kids.as_slice(), q);
+                return tag(first + 1u64, last, 0u64, 0u64, finish(ast.PATTERN_VARIANT, found.start, end, own, kids.as_slice(), q));
             }
         }
     } else {
         return fail(tokens, q, first, "ExpectedPattern".as_slice(), "expected match pattern".as_slice());
     }
     let end: u64 = tokens[q.at - 1u64].end;
-    finish(ast.OTHER, found.start, end, label, kids.as_slice(), q)
+    tag(first + 1u64, 0u64, pattern_value, 0u64, finish(pattern_kind, found.start, end, label, kids.as_slice(), q))
 }
