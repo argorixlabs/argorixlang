@@ -10,12 +10,13 @@ remain the source of truth for scope and acceptance.
 
 | Owner | Task | Branch | State | Exclusive paths | Agent log |
 | --- | --- | --- | --- | --- | --- |
+| Claude | ESP-009 — minimal standard library (stdlib in `.argx`) | `claude/stdlib-core` | IN PROGRESS | `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`, `tasks/espada/ESP-009.md`, the Core toolchain where the stdlib needs it | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009.F — backend gaps g17–g23 and cross-module imports (issues #39, #45) | `claude/esp009f-unblock` | DONE | Core frontend/IR/C backend, C1 runtime, `conformance/core_c/**`, `tasks/espada/ESP-009.F.md` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009.E — repeated execution must be byte-identical (subtask of ESP-009) | `claude/harness-determinism` | DONE | `crates/argorix_core_c/**`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.E.md` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009.D — differential coverage of text and the resource ceilings (subtask of ESP-009) | `claude/differential-text` | DONE (PR #41) | `crates/argorix_core_c/**`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.D.md` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009.C — differential coverage for the constructs ESP-009.B unlocked (subtask of ESP-009) | `claude/differential-bitwise` | DONE (PR #40) | `crates/argorix_core_c/**`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.C.md` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009.B — backend defects that blocked writing Core (subtask of ESP-009) | `claude/esp009b-backend-defects` | DONE (PR #37) | `crates/argorix_ir/src/core_c.rs`, `crates/argorix_ir/tests/core_c.rs`, `bootstrap/c/argorix_core_runtime.{c,h}`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.B.md` | [coordination/claude.md](coordination/claude.md) |
-| Codex | ESP-009 — minimal standard library | `codex/stdlib-esp009` | IN PROGRESS | `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`, `tasks/espada/ESP-009.md`; required Buffer/Arena/host-ABI plumbing coordinated through `bootstrap/c/**` and Core stage0 modules | [coordination/codex.md](coordination/codex.md) |
+| Codex | ESP-009 — minimal standard library | `codex/stdlib-esp009` | REASSIGNED to Claude (2026-09-22) | `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`, `tasks/espada/ESP-009.md`; required Buffer/Arena/host-ABI plumbing coordinated through `bootstrap/c/**` and Core stage0 modules | [coordination/codex.md](coordination/codex.md) |
 | Claude | MAT-029 — governance, support, and maintenance | `claude/governance-mat029` | DONE (PR #24) | `GOVERNANCE.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `operations/**`, `tasks/madurez/MAT-029.md`, `spec/MAT-029-validation.json`, `.github/CODEOWNERS`, `.github/PULL_REQUEST_TEMPLATE.md` | [coordination/claude.md](coordination/claude.md) |
 | Codex | ESP-008 — transitional C backend and minimal runtime | `codex/c-backend-esp008` | DONE | see `tasks/espada/ESP-008.md`; open defects in issue #27 | [coordination/codex.md](coordination/codex.md) |
 | Claude | ESP-008.R — native C execution runner and dependency evidence | `claude/core-c-runner` | DONE | `conformance/core_c/**`, `.github/workflows/core-c.yml` | [coordination/claude.md](coordination/claude.md) |
@@ -55,7 +56,7 @@ reverting, or cherry-picking an entire foreign branch.
 | Task | Ready now | Notes |
 | --- | --- | --- |
 | ESP-008 | Complete | Evidence in `bootstrap/ESP-008-validation.json`. |
-| ESP-009 | Claimed by Codex | ESP-008 is complete. |
+| ESP-009 | Claimed by Claude | Reassigned by the maintainer on 2026-09-22; `codex/stdlib-esp009` last moved on 2026-09-20. |
 | ESP-010 | No | Waits for ESP-009. |
 | MAT-029 | Done by Claude | Closed with drills; see `spec/MAT-029-validation.json`. |
 | MAT-008 to MAT-028, MAT-030 | No | Their declared implementation dependencies are not complete. |
