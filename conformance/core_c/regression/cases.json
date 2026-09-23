@@ -347,6 +347,14 @@
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:110512",
       "expected_stderr": ""
+    },
+    {
+      "id": "g27_field_of_slice_element",
+      "file": "g27_field_of_slice_element.argx",
+      "was": "Reading a field of a view's element (`points[i].x`, `points: Slice<Point>`) was refused with CBackendUnsupported: only buffer and array elements were places. The Argorix parser reads its tokens this way (ESP-011).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:102",
+      "expected_stderr": ""
     }
   ]
 }

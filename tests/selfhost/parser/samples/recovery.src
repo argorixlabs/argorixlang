@@ -1,0 +1,10 @@
+core 0.1;
+module samples.recovery;
+
+fn ok() -> u8 { 1u8 }
+fn broken( -> u8 { 2u8 }
+struct Also { x: u8 y: u8, }
+pub enum E { A, B { v: u8, }, }
+const C: u8 = ;
+extern fn g();
+fn last() -> u8 { let x = 3u8 x }

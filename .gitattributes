@@ -8,3 +8,5 @@
 *.lock text eol=lf
 tests/selfhost/lexer/samples/** -text
 tests/selfhost/lexer/package/** -text
+tests/selfhost/parser/package/** -text
+tests/selfhost/parser/samples/** -text

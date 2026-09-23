@@ -1,0 +1,6 @@
+core 0.1;
+module m;
+fn f() -> u8 {
+  let x: u8 = if c { 1u8 } else { 2u8 } (3u8);
+  x
+}

@@ -52,6 +52,8 @@ enum Command {
     CoreVerifyIr { file: PathBuf },
     /// Print the canonical token dump of a Core source file (spec/core/tokens.md).
     CoreTokens { file: PathBuf },
+    /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
+    CoreAst { file: PathBuf },
     /// Lower checked Argorix Core 0.1 source into transitional C11.
     CoreEmitC {
         file: PathBuf,
@@ -79,8 +81,23 @@ enum Command {
     GraphPackage { manifest: PathBuf },
 }
 
+/// The stack the compiler runs on. The stage0 frontend recurses once per
+/// nesting level, and a debug build on the 1 MiB main-thread stack of Windows
+/// overflowed near 55 levels, long before the parser's own limit
+/// (`CORE_NESTING_LIMIT`) could report them.
+const COMPILER_STACK_BYTES: usize = 64 << 20;
+
 fn main() {
-    if let Err(error) = run() {
+    let compiler = std::thread::Builder::new()
+        .name("argorixc".into())
+        .stack_size(COMPILER_STACK_BYTES)
+        .spawn(run)
+        .expect("failed to start the compiler thread");
+    let outcome = compiler.join().unwrap_or_else(|_| {
+        eprintln!("argorixc: internal error");
+        std::process::exit(101);
+    });
+    if let Err(error) = outcome {
         eprintln!("{error:#}");
         std::process::exit(1);
     }
@@ -104,6 +121,11 @@ fn run() -> Result<()> {
             println!("Agents: {}", compiled.program.agents.len());
             println!("Protocols: {}", compiled.program.protocols.len());
             println!("Semantic checks: passed");
+        }
+        Command::CoreAst { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_parser::core_ast::core_ast_dump(&source));
         }
         Command::CoreTokens { file } => {
             let source =

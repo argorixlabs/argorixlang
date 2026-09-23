@@ -1,0 +1,1267 @@
+core 0.1;
+module compiler.parser;
+
+// The Argorix Core parser, in Argorix (ESP-011). It follows the stage0
+// parser rule for rule so both build the same tree, with the same spans, and
+// report the same errors (spec/core/ast.md):
+//
+// - recursive descent, binary operators by precedence climbing (levels 1-10,
+//   all left-associative);
+// - `x { ... }` is an aggregate only where an aggregate is allowed, never in
+//   a condition, a scrutinee or a `while` head;
+// - an error inside an item abandons that item; parsing resumes at the next
+//   `fn`, `struct`, `enum`, `const` or `pub`, so one pass reports one error per
+//   broken item; an error before the first item ends the parse;
+// - expressions, blocks, types and patterns nest at most `NESTING_LIMIT` deep.
+//
+// Every step takes the whole parse state (`Tree`) and returns it; a step that
+// fails sets `failed` and returns at once, and each caller passes that on.
+
+import stdlib.bytes;
+import stdlib.text;
+import compiler.token;
+import compiler.lexer;
+import compiler.diagnostics;
+import compiler.ast;
+
+pub const NESTING_LIMIT: u64 = 256u64;
+
+// The canonical AST dump of `source`: the lexer's diagnostics if lexing
+// failed, the syntax errors if parsing failed, the tree otherwise.
+pub fn dump(source: Slice<u8>) -> Buffer<u8> {
+    let lexed: Lexed = lexer.lex(source);
+    if lexed.diagnostics.length() > 0u64 {
+        let mut out: Buffer<u8> = Buffer::new();
+        let mut index: u64 = 0u64;
+        while index < lexed.diagnostics.length() {
+            out = diagnostics.append_rendered(out, source, lexed.diagnostics[index]);
+            out.push(10u8);
+            index += 1u64;
+        }
+        return out;
+    }
+    let tree: Tree = program(lexed.tokens.as_slice(), source, lexed.strings.as_slice());
+    ast.dump(tree)
+}
+
+// ------------------------------------------------------------------ tokens
+
+// The kind of the token at `at`. The first half of a `>>` that closed a type
+// argument turns the token into `>` (see `type_close`).
+fn kind_at(tokens: Slice<Token>, at: u64, halved: u64) -> u64 {
+    if halved == at + 1u64 {
+        return token.GREATER;
+    }
+    tokens[at].kind
+}
+
+fn is_word(tokens: Slice<Token>, source: Slice<u8>, at: u64, word: Slice<u8>) -> bool {
+    let found: Token = tokens[at];
+    found.kind == token.IDENT && bytes.equal(source.slice(found.start, found.end), word)
+}
+
+// Past the current token, but never past `Eof`.
+fn step(tokens: Slice<Token>, tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    if kind_at(tokens, q.at, q.halved) != token.EOF {
+        q.at += 1u64;
+    }
+    q
+}
+
+// Consumes a token of `kind`, or fails at the current one.
+fn expect(tokens: Slice<Token>, tree: Tree, kind: u64, code: Slice<u8>, message: Slice<u8>) -> Tree {
+    if kind_at(tokens, tree.at, tree.halved) == kind {
+        return step(tokens, tree);
+    }
+    let at: u64 = tree.at;
+    fail(tokens, tree, at, code, message)
+}
+
+fn expect_word(tokens: Slice<Token>, source: Slice<u8>, tree: Tree, word: Slice<u8>, code: Slice<u8>, message: Slice<u8>) -> Tree {
+    if is_word(tokens, source, tree.at, word) {
+        return step(tokens, tree);
+    }
+    let at: u64 = tree.at;
+    fail(tokens, tree, at, code, message)
+}
+
+// ------------------------------------------------------------------ state
+
+fn fail(tokens: Slice<Token>, tree: Tree, at: u64, code: Slice<u8>, message: Slice<u8>) -> Tree {
+    let mut q: Tree = tree;
+    let code_start: u64 = q.texts.length();
+    q = put(q, code);
+    let message_start: u64 = q.texts.length();
+    q = put(q, message);
+    q.pending = SyntaxError {
+        line: tokens[at].line,
+        column: tokens[at].column,
+        code_start: code_start,
+        code_end: message_start,
+        message_start: message_start,
+        message_end: q.texts.length(),
+    };
+    q.failed = true;
+    q
+}
+
+fn put(tree: Tree, text: Slice<u8>) -> Tree {
+    let mut q: Tree = tree;
+    let mut index: u64 = 0u64;
+    while index < text.length() {
+        q.texts.push(text[index]);
+        index += 1u64;
+    }
+    q
+}
+
+fn put_decimal(tree: Tree, value: u64) -> Tree {
+    let digits: Buffer<u8> = bytes.append_decimal(Buffer::new(), value);
+    put(tree, digits.as_slice())
+}
+
+// The identifiers from `first` to `last`, joined by `separator`: a dotted
+// module path or a `::` path, whatever spacing the source used.
+fn put_path(tokens: Slice<Token>, source: Slice<u8>, tree: Tree, first: u64, last: u64, separator: Slice<u8>) -> Tree {
+    let mut q: Tree = tree;
+    let mut index: u64 = first;
+    let mut started: bool = false;
+    while index <= last {
+        if tokens[index].kind == token.IDENT {
+            if started {
+                q = put(q, separator);
+            }
+            q = put(q, source.slice(tokens[index].start, tokens[index].end));
+            started = true;
+        }
+        index += 1u64;
+    }
+    q
+}
+
+// Copies a range of `texts` to its end.
+fn put_copy(tree: Tree, start: u64, end: u64) -> Tree {
+    let mut q: Tree = tree;
+    let mut index: u64 = start;
+    while index < end {
+        let byte: u8 = q.texts[index];
+        q.texts.push(byte);
+        index += 1u64;
+    }
+    q
+}
+
+// A node over `kids`, labelled with the texts from `label_start` on. It
+// becomes `last`.
+// `tree` comes last so that the other arguments, which often read it, are
+// evaluated before it moves.
+fn finish(kind: u64, start: u64, end: u64, label_start: u64, kids: Slice<u64>, tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    let head: u64 = link(kids);
+    q = chain(q, kids);
+    q.nodes.push(Node { kind: kind, start: start, end: end, label_start: label_start, label_end: q.texts.length(), first: head, next: 0u64 });
+    q.last = q.nodes.length() - 1u64;
+    q
+}
+
+// The same over a chain already linked, given its head (position + 1).
+fn finish_chain(kind: u64, start: u64, end: u64, label_start: u64, head: u64, tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    q.nodes.push(Node { kind: kind, start: start, end: end, label_start: label_start, label_end: q.texts.length(), first: head, next: 0u64 });
+    q.last = q.nodes.length() - 1u64;
+    q
+}
+
+// The first of `kids` as a link (position + 1), or 0 when there are none.
+fn link(kids: Slice<u64>) -> u64 {
+    if kids.length() == 0u64 {
+        return 0u64;
+    }
+    kids[0u64] + 1u64
+}
+
+// Makes each of `kids` point to the next.
+fn chain(tree: Tree, kids: Slice<u64>) -> Tree {
+    let mut q: Tree = tree;
+    let mut index: u64 = 0u64;
+    while index + 1u64 < kids.length() {
+        q.nodes[kids[index]].next = kids[index + 1u64] + 1u64;
+        index += 1u64;
+    }
+    q
+}
+
+// One nesting level deeper, or `NestingTooDeep`.
+fn nest(tokens: Slice<Token>, tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    q.depth += 1u64;
+    if q.depth > NESTING_LIMIT {
+        let at: u64 = q.at;
+        return fail(tokens, q, at, "NestingTooDeep".as_slice(), "nesting exceeds 256 levels".as_slice());
+    }
+    q
+}
+
+// ------------------------------------------------------------------ program
+
+fn program(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>) -> Tree {
+    let mut q: Tree = ast.empty();
+    if !is_word(tokens, source, 0u64, "core".as_slice()) {
+        q = fail(tokens, q, 0u64, "VersionRequired".as_slice(), "Core source must begin with `core 0.1;`".as_slice());
+        return header_failed(q);
+    }
+    q = step(tokens, q);
+    let major: u64 = q.at;
+    q = expect(tokens, q, token.INTEGER, "VersionRequired".as_slice(), "expected Core major version".as_slice());
+    if q.failed { return header_failed(q); }
+    q = expect(tokens, q, token.DOT, "VersionRequired".as_slice(), "expected `.` in Core version".as_slice());
+    if q.failed { return header_failed(q); }
+    let minor: u64 = q.at;
+    q = expect(tokens, q, token.INTEGER, "VersionRequired".as_slice(), "expected Core minor version".as_slice());
+    if q.failed { return header_failed(q); }
+    if tokens[major].value != 0u64 || tokens[minor].value != 1u64 {
+        q = version_unsupported(tokens, q, major, minor);
+        return header_failed(q);
+    }
+    q = expect(tokens, q, token.SEMICOLON, "ExpectedSemicolon".as_slice(), "expected `;` after Core version".as_slice());
+    if q.failed { return header_failed(q); }
+    q = expect_word(tokens, source, q, "module".as_slice(), "ExpectedModule".as_slice(), "expected module declaration".as_slice());
+    if q.failed { return header_failed(q); }
+    let module_first: u64 = q.at;
+    q = dotted(tokens, q);
+    if q.failed { return header_failed(q); }
+    let module_last: u64 = q.at - 1u64;
+    q = expect(tokens, q, token.SEMICOLON, "ExpectedSemicolon".as_slice(), "expected `;` after module".as_slice());
+    if q.failed { return header_failed(q); }
+
+    let mut kids: Buffer<u64> = Buffer::new();
+    while is_word(tokens, source, q.at, "import".as_slice()) {
+        let import_start: u64 = q.at;
+        q = step(tokens, q);
+        let path_first: u64 = q.at;
+        q = dotted(tokens, q);
+        if q.failed { return header_failed(q); }
+        let path_last: u64 = q.at - 1u64;
+        let mut alias: u64 = 0u64;
+        if is_word(tokens, source, q.at, "as".as_slice()) {
+            q = step(tokens, q);
+            alias = q.at + 1u64;
+            q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected import alias".as_slice());
+            if q.failed { return header_failed(q); }
+        }
+        q = expect(tokens, q, token.SEMICOLON, "ExpectedSemicolon".as_slice(), "expected `;` after import".as_slice());
+        if q.failed { return header_failed(q); }
+        let label: u64 = q.texts.length();
+        q = put(q, "Import ".as_slice());
+        q = put_path(tokens, source, q, path_first, path_last, ".".as_slice());
+        if alias != 0u64 {
+            q = put(q, " as ".as_slice());
+            q = put(q, source.slice(tokens[alias - 1u64].start, tokens[alias - 1u64].end));
+        }
+        let none: Array<u64, 0> = [];
+        q = finish(ast.OTHER, tokens[import_start].start, tokens[q.at - 1u64].end, label, none.as_slice(), q);
+        kids.push(q.last);
+    }
+    while kind_at(tokens, q.at, q.halved) != token.EOF {
+        q = item(tokens, source, strings, q);
+        if q.failed {
+            q.errors.push(q.pending);
+            q.failed = false;
+            q = synchronize(tokens, source, q);
+        } else {
+            kids.push(q.last);
+        }
+    }
+    let label: u64 = q.texts.length();
+    q = put(q, "Program 0.1 ".as_slice());
+    q = put_path(tokens, source, q, module_first, module_last, ".".as_slice());
+    finish(ast.OTHER, tokens[0u64].start, tokens[q.at].end, label, kids.as_slice(), q)
+}
+
+fn header_failed(tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    q.errors.push(q.pending);
+    q.failed = false;
+    q
+}
+
+fn version_unsupported(tokens: Slice<Token>, tree: Tree, major: u64, minor: u64) -> Tree {
+    let mut q: Tree = tree;
+    let code_start: u64 = q.texts.length();
+    q = put(q, "VersionUnsupported".as_slice());
+    let message_start: u64 = q.texts.length();
+    q = put(q, "unsupported Core version `".as_slice());
+    q = put_decimal(q, tokens[major].value);
+    q = put(q, ".".as_slice());
+    q = put_decimal(q, tokens[minor].value);
+    q = put(q, "`".as_slice());
+    q.pending = SyntaxError {
+        line: tokens[major].line,
+        column: tokens[major].column,
+        code_start: code_start,
+        code_end: message_start,
+        message_start: message_start,
+        message_end: q.texts.length(),
+    };
+    q.failed = true;
+    q
+}
+
+// `a.b.c`.
+fn dotted(tokens: Slice<Token>, tree: Tree) -> Tree {
+    let mut q: Tree = expect(tokens, tree, token.IDENT, "ExpectedIdentifier".as_slice(), "expected path".as_slice());
+    if q.failed { return q; }
+    while kind_at(tokens, q.at, q.halved) == token.DOT {
+        q = step(tokens, q);
+        q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected path segment".as_slice());
+        if q.failed { return q; }
+    }
+    q
+}
+
+// Past the broken item, to the next one.
+fn synchronize(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    while kind_at(tokens, q.at, q.halved) != token.EOF {
+        if is_word(tokens, source, q.at, "fn".as_slice()) || is_word(tokens, source, q.at, "struct".as_slice())
+            || is_word(tokens, source, q.at, "enum".as_slice()) || is_word(tokens, source, q.at, "const".as_slice())
+            || is_word(tokens, source, q.at, "pub".as_slice())
+        {
+            return q;
+        }
+        q = step(tokens, q);
+    }
+    q
+}
+
+// ------------------------------------------------------------------ items
+
+fn item(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    // An item that failed may have left nesting levels open.
+    q.depth = 0u64;
+    let start: u64 = q.at;
+    let mut public: bool = false;
+    if is_word(tokens, source, q.at, "pub".as_slice()) {
+        public = true;
+        q = step(tokens, q);
+    }
+    if is_word(tokens, source, q.at, "fn".as_slice()) {
+        return function(tokens, source, strings, q, public, start);
+    }
+    if is_word(tokens, source, q.at, "struct".as_slice()) {
+        return structure(tokens, source, strings, q, public, start);
+    }
+    if is_word(tokens, source, q.at, "enum".as_slice()) {
+        return enumeration(tokens, source, strings, q, public, start);
+    }
+    if is_word(tokens, source, q.at, "const".as_slice()) {
+        return constant(tokens, source, strings, q, public, start);
+    }
+    let at: u64 = q.at;
+    if is_word(tokens, source, q.at, "extern".as_slice()) {
+        return fail(tokens, q, at, "ForbiddenHostEscape".as_slice(), "Core 0.1 has no `extern` or arbitrary FFI".as_slice());
+    }
+    fail(tokens, q, at, "ExpectedItem".as_slice(), "expected `fn`, `struct`, `enum` or `const`".as_slice())
+}
+
+// `pub ` if public, then `kind` and the item's name.
+fn put_item_label(tokens: Slice<Token>, source: Slice<u8>, tree: Tree, public: bool, kind: Slice<u8>, name: u64) -> Tree {
+    let mut q: Tree = tree;
+    if public {
+        q = put(q, "pub ".as_slice());
+    }
+    q = put(q, kind);
+    q = put(q, " ".as_slice());
+    put(q, source.slice(tokens[name].start, tokens[name].end))
+}
+
+fn function(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, public: bool, start: u64) -> Tree {
+    let mut q: Tree = step(tokens, tree);
+    let name: u64 = q.at;
+    q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected function name".as_slice());
+    if q.failed { return q; }
+    q = expect(tokens, q, token.LEFT_PAREN, "ExpectedToken".as_slice(), "expected `(`".as_slice());
+    if q.failed { return q; }
+    let mut kids: Buffer<u64> = Buffer::new();
+    if kind_at(tokens, q.at, q.halved) != token.RIGHT_PAREN {
+        loop {
+            let parameter: u64 = q.at;
+            q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected parameter name".as_slice());
+            if q.failed { return q; }
+            q = expect(tokens, q, token.COLON, "ExpectedToken".as_slice(), "expected `:`".as_slice());
+            if q.failed { return q; }
+            q = parse_type(tokens, source, q);
+            if q.failed { return q; }
+            let ty: u64 = q.last;
+            let label: u64 = q.texts.length();
+            q = put(q, "Param ".as_slice());
+            q = put(q, source.slice(tokens[parameter].start, tokens[parameter].end));
+            let one: Array<u64, 1> = [ty];
+            q = finish(ast.OTHER, tokens[parameter].start, q.nodes[ty].end, label, one.as_slice(), q);
+            kids.push(q.last);
+            if kind_at(tokens, q.at, q.halved) != token.COMMA {
+                break;
+            }
+            q = step(tokens, q);
+            if kind_at(tokens, q.at, q.halved) == token.RIGHT_PAREN {
+                break;
+            }
+        }
+    }
+    q = expect(tokens, q, token.RIGHT_PAREN, "ExpectedToken".as_slice(), "expected `)`".as_slice());
+    if q.failed { return q; }
+    q = expect(tokens, q, token.ARROW, "ExpectedToken".as_slice(), "expected `->`".as_slice());
+    if q.failed { return q; }
+    q = parse_type(tokens, source, q);
+    if q.failed { return q; }
+    kids.push(q.last);
+    q = block(tokens, source, strings, q);
+    if q.failed { return q; }
+    kids.push(q.last);
+    let end: u64 = q.nodes[q.last].end;
+    let label: u64 = q.texts.length();
+    q = put_item_label(tokens, source, q, public, "Fn".as_slice(), name);
+    finish(ast.OTHER, tokens[start].start, end, label, kids.as_slice(), q)
+}
+
+fn structure(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, public: bool, start: u64) -> Tree {
+    let mut q: Tree = step(tokens, tree);
+    let name: u64 = q.at;
+    q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected struct name".as_slice());
+    if q.failed { return q; }
+    if kind_at(tokens, q.at, q.halved) == token.LESS {
+        let at: u64 = q.at;
+        return fail(tokens, q, at, "FeatureDeferred".as_slice(), "user-defined generics are deferred in Core 0.1".as_slice());
+    }
+    q = field_block(tokens, source, q);
+    if q.failed { return q; }
+    let head: u64 = q.last;
+    // A struct's span ends at its last field, or at its name.
+    let end: u64 = if head == 0u64 { tokens[name].end } else { q.chain_end };
+    let label: u64 = q.texts.length();
+    q = put_item_label(tokens, source, q, public, "Struct".as_slice(), name);
+    finish_chain(ast.OTHER, tokens[start].start, end, label, head, q)
+}
+
+fn enumeration(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, public: bool, start: u64) -> Tree {
+    let mut q: Tree = step(tokens, tree);
+    let name: u64 = q.at;
+    q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected enum name".as_slice());
+    if q.failed { return q; }
+    q = expect(tokens, q, token.LEFT_BRACE, "ExpectedToken".as_slice(), "expected `{`".as_slice());
+    if q.failed { return q; }
+    let mut kids: Buffer<u64> = Buffer::new();
+    let mut end: u64 = tokens[name].end;
+    while kind_at(tokens, q.at, q.halved) != token.RIGHT_BRACE && kind_at(tokens, q.at, q.halved) != token.EOF {
+        let variant: u64 = q.at;
+        q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected variant name".as_slice());
+        if q.failed { return q; }
+        let mut head: u64 = 0u64;
+        if kind_at(tokens, q.at, q.halved) == token.LEFT_BRACE {
+            q = field_block(tokens, source, q);
+            if q.failed { return q; }
+            head = q.last;
+        }
+        q = expect(tokens, q, token.COMMA, "ExpectedComma".as_slice(), "expected `,` after enum variant".as_slice());
+        if q.failed { return q; }
+        end = tokens[q.at - 1u64].end;
+        let label: u64 = q.texts.length();
+        q = put(q, "Variant ".as_slice());
+        q = put(q, source.slice(tokens[variant].start, tokens[variant].end));
+        q = finish_chain(ast.OTHER, tokens[variant].start, end, label, head, q);
+        kids.push(q.last);
+    }
+    q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
+    if q.failed { return q; }
+    let label: u64 = q.texts.length();
+    q = put_item_label(tokens, source, q, public, "Enum".as_slice(), name);
+    finish(ast.OTHER, tokens[start].start, end, label, kids.as_slice(), q)
+}
+
+fn constant(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, public: bool, start: u64) -> Tree {
+    let mut q: Tree = step(tokens, tree);
+    let name: u64 = q.at;
+    q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected const name".as_slice());
+    if q.failed { return q; }
+    q = expect(tokens, q, token.COLON, "ExpectedToken".as_slice(), "expected `:`".as_slice());
+    if q.failed { return q; }
+    q = parse_type(tokens, source, q);
+    if q.failed { return q; }
+    let ty: u64 = q.last;
+    q = expect(tokens, q, token.ASSIGN, "ExpectedToken".as_slice(), "expected `=`".as_slice());
+    if q.failed { return q; }
+    q = expression(tokens, source, strings, q, true);
+    if q.failed { return q; }
+    let value: u64 = q.last;
+    q = expect(tokens, q, token.SEMICOLON, "ExpectedSemicolon".as_slice(), "expected `;`".as_slice());
+    if q.failed { return q; }
+    let label: u64 = q.texts.length();
+    q = put_item_label(tokens, source, q, public, "Const".as_slice(), name);
+    let kids: Array<u64, 2> = [ty, value];
+    let end: u64 = q.nodes[value].end;
+    finish(ast.OTHER, tokens[start].start, end, label, kids.as_slice(), q)
+}
+
+// `{ name: Type, ... }`: the fields become a sibling chain whose head is
+// `last` (0 when there are none) and whose last field ends at `chain_end`.
+fn field_block(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
+    let mut q: Tree = expect(tokens, tree, token.LEFT_BRACE, "ExpectedToken".as_slice(), "expected `{`".as_slice());
+    if q.failed { return q; }
+    let mut kids: Buffer<u64> = Buffer::new();
+    let mut end: u64 = 0u64;
+    while kind_at(tokens, q.at, q.halved) != token.RIGHT_BRACE && kind_at(tokens, q.at, q.halved) != token.EOF {
+        let field: u64 = q.at;
+        q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected field name".as_slice());
+        if q.failed { return q; }
+        q = expect(tokens, q, token.COLON, "ExpectedToken".as_slice(), "expected `:`".as_slice());
+        if q.failed { return q; }
+        q = parse_type(tokens, source, q);
+        if q.failed { return q; }
+        let ty: u64 = q.last;
+        q = expect(tokens, q, token.COMMA, "ExpectedComma".as_slice(), "expected `,` after field".as_slice());
+        if q.failed { return q; }
+        end = tokens[q.at - 1u64].end;
+        let label: u64 = q.texts.length();
+        q = put(q, "Field ".as_slice());
+        q = put(q, source.slice(tokens[field].start, tokens[field].end));
+        let one: Array<u64, 1> = [ty];
+        q = finish(ast.OTHER, tokens[field].start, end, label, one.as_slice(), q);
+        kids.push(q.last);
+    }
+    q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
+    if q.failed { return q; }
+    q = chain(q, kids.as_slice());
+    q.last = if kids.length() == 0u64 { 0u64 } else { kids[0u64] + 1u64 };
+    q.chain_end = end;
+    q
+}
+
+// ------------------------------------------------------------------ types
+
+fn parse_type(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
+    let mut q: Tree = nest(tokens, tree);
+    if q.failed { return q; }
+    q = type_inner(tokens, source, q);
+    q.depth -= 1u64;
+    q
+}
+
+fn type_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
+    let name: u64 = tree.at;
+    let mut q: Tree = expect(tokens, tree, token.IDENT, "ExpectedType".as_slice(), "expected type".as_slice());
+    if q.failed { return q; }
+    let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
+    if kind_at(tokens, q.at, q.halved) != token.LESS {
+        let label: u64 = q.texts.length();
+        q = put(q, "Type ".as_slice());
+        q = put(q, source.slice(tokens[name].start, tokens[name].end));
+        let none: Array<u64, 0> = [];
+        return finish(ast.OTHER, tokens[name].start, tokens[name].end, label, none.as_slice(), q);
+    }
+    q = step(tokens, q);
+    let is_array: bool = bytes.equal(text, "Array".as_slice());
+    if !(is_array || bytes.equal(text, "Slice".as_slice()) || bytes.equal(text, "Buffer".as_slice())
+        || bytes.equal(text, "Arena".as_slice()) || bytes.equal(text, "Handle".as_slice()))
+    {
+        return fail(tokens, q, name, "FeatureDeferred".as_slice(), "only intrinsic containers accept type arguments in Core 0.1".as_slice());
+    }
+    q = parse_type(tokens, source, q);
+    if q.failed { return q; }
+    let element: u64 = q.last;
+    let mut length: u64 = 0u64;
+    if is_array {
+        q = expect(tokens, q, token.COMMA, "ExpectedComma".as_slice(), "expected array length".as_slice());
+        if q.failed { return q; }
+        let length_token: u64 = q.at;
+        q = expect(tokens, q, token.INTEGER, "ExpectedInteger".as_slice(), "expected array length".as_slice());
+        if q.failed { return q; }
+        length = tokens[length_token].value;
+    }
+    q = type_close(tokens, q);
+    if q.failed { return q; }
+    let end: u64 = q.chain_end;
+    let label: u64 = q.texts.length();
+    q = put(q, "Type ".as_slice());
+    q = put(q, text);
+    if is_array {
+        q = put(q, " ".as_slice());
+        q = put_decimal(q, length);
+    }
+    let one: Array<u64, 1> = [element];
+    finish(ast.OTHER, tokens[name].start, end, label, one.as_slice(), q)
+}
+
+// Consumes the `>` that closes type arguments, and leaves where it ends in
+// `chain_end`. A `>>` closes two: its first half ends one byte in and the
+// token stays, now read as `>`, for the enclosing type.
+fn type_close(tokens: Slice<Token>, tree: Tree) -> Tree {
+    let mut q: Tree = tree;
+    let at: u64 = q.at;
+    if kind_at(tokens, at, q.halved) == token.GREATER {
+        q = step(tokens, q);
+        q.chain_end = tokens[at].end;
+        return q;
+    }
+    if tokens[at].kind == token.SHIFT_RIGHT {
+        q.halved = at + 1u64;
+        q.chain_end = tokens[at].start + 1u64;
+        return q;
+    }
+    fail(tokens, q, at, "ExpectedToken".as_slice(), "expected `>`".as_slice())
+}
+
+// ------------------------------------------------------------------ blocks
+
+fn block(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree) -> Tree {
+    let mut q: Tree = nest(tokens, tree);
+    if q.failed { return q; }
+    q = block_inner(tokens, source, strings, q);
+    q.depth -= 1u64;
+    q
+}
+
+fn block_inner(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree) -> Tree {
+    let open: u64 = tree.at;
+    let mut q: Tree = expect(tokens, tree, token.LEFT_BRACE, "ExpectedToken".as_slice(), "expected `{`".as_slice());
+    if q.failed { return q; }
+    let mut kids: Buffer<u64> = Buffer::new();
+    while kind_at(tokens, q.at, q.halved) != token.RIGHT_BRACE && kind_at(tokens, q.at, q.halved) != token.EOF {
+        let first: u64 = q.at;
+        if is_word(tokens, source, q.at, "let".as_slice()) {
+            q = binding(tokens, source, strings, q);
+            if q.failed { return q; }
+            kids.push(q.last);
+        } else if is_word(tokens, source, q.at, "while".as_slice()) {
+            q = step(tokens, q);
+            q = expression(tokens, source, strings, q, false);
+            if q.failed { return q; }
+            let condition: u64 = q.last;
+            q = block(tokens, source, strings, q);
+            if q.failed { return q; }
+            let body: u64 = q.last;
+            let label: u64 = q.texts.length();
+            q = put(q, "While".as_slice());
+            let two: Array<u64, 2> = [condition, body];
+            let end: u64 = q.nodes[body].end;
+            q = finish(ast.OTHER, tokens[first].start, end, label, two.as_slice(), q);
+            kids.push(q.last);
+        } else if is_word(tokens, source, q.at, "break".as_slice()) {
+            q = jump(tokens, source, strings, q, "Break".as_slice(), "expected `;` after break".as_slice());
+            if q.failed { return q; }
+            kids.push(q.last);
+        } else if is_word(tokens, source, q.at, "continue".as_slice()) {
+            q = step(tokens, q);
+            q = expect(tokens, q, token.SEMICOLON, "ExpectedSemicolon".as_slice(), "expected `;` after continue".as_slice());
+            if q.failed { return q; }
+            let label: u64 = q.texts.length();
+            q = put(q, "Continue".as_slice());
+            let none: Array<u64, 0> = [];
+            q = finish(ast.OTHER, tokens[first].start, tokens[q.at - 1u64].end, label, none.as_slice(), q);
+            kids.push(q.last);
+        } else if is_word(tokens, source, q.at, "return".as_slice()) {
+            q = jump(tokens, source, strings, q, "Return".as_slice(), "expected `;` after return".as_slice());
+            if q.failed { return q; }
+            kids.push(q.last);
+        } else {
+            q = expression(tokens, source, strings, q, true);
+            if q.failed { return q; }
+            let value: u64 = q.last;
+            let operator: u64 = kind_at(tokens, q.at, q.halved);
+            if is_assign(operator) {
+                q = step(tokens, q);
+                q = expression(tokens, source, strings, q, true);
+                if q.failed { return q; }
+                let right: u64 = q.last;
+                q = expect(tokens, q, token.SEMICOLON, "ExpectedSemicolon".as_slice(), "expected `;` after assignment".as_slice());
+                if q.failed { return q; }
+                let label: u64 = q.texts.length();
+                q = put(q, "Assign ".as_slice());
+                q = put_assign(q, operator);
+                let two: Array<u64, 2> = [value, right];
+                let start: u64 = q.nodes[value].start;
+                q = finish(ast.OTHER, start, tokens[q.at - 1u64].end, label, two.as_slice(), q);
+                kids.push(q.last);
+            } else if operator == token.SEMICOLON {
+                q = step(tokens, q);
+                q = statement(q, value);
+                kids.push(q.last);
+            } else if operator == token.RIGHT_BRACE {
+                // The value of the block.
+                kids.push(value);
+                break;
+            } else if is_block_like(q.nodes[value].kind) {
+                q = statement(q, value);
+                kids.push(q.last);
+            } else {
+                let at: u64 = q.at;
+                return fail(tokens, q, at, "ExpectedSemicolon".as_slice(), "expected `;` or end of block".as_slice());
+            }
+        }
+    }
+    q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
+    if q.failed { return q; }
+    let label: u64 = q.texts.length();
+    q = put(q, "Block".as_slice());
+    finish(ast.BLOCK, tokens[open].start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
+}
+
+fn is_block_like(kind: u64) -> bool {
+    kind == ast.BLOCK || kind == ast.IF || kind == ast.MATCH || kind == ast.LOOP
+}
+
+// An expression statement over `value`, with its span.
+fn statement(tree: Tree, value: u64) -> Tree {
+    let mut q: Tree = tree;
+    let label: u64 = q.texts.length();
+    q = put(q, "Expr".as_slice());
+    let start: u64 = q.nodes[value].start;
+    let end: u64 = q.nodes[value].end;
+    let one: Array<u64, 1> = [value];
+    finish(ast.OTHER, start, end, label, one.as_slice(), q)
+}
+
+fn binding(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree) -> Tree {
+    let first: u64 = tree.at;
+    let mut q: Tree = step(tokens, tree);
+    let mut mutable: bool = false;
+    if is_word(tokens, source, q.at, "mut".as_slice()) {
+        mutable = true;
+        q = step(tokens, q);
+    }
+    let name: u64 = q.at;
+    q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected binding name".as_slice());
+    if q.failed { return q; }
+    let mut kids: Buffer<u64> = Buffer::new();
+    if kind_at(tokens, q.at, q.halved) == token.COLON {
+        q = step(tokens, q);
+        q = parse_type(tokens, source, q);
+        if q.failed { return q; }
+        kids.push(q.last);
+    }
+    q = expect(tokens, q, token.ASSIGN, "ExpectedToken".as_slice(), "expected `=`".as_slice());
+    if q.failed { return q; }
+    q = expression(tokens, source, strings, q, true);
+    if q.failed { return q; }
+    kids.push(q.last);
+    q = expect(tokens, q, token.SEMICOLON, "ExpectedSemicolon".as_slice(), "expected `;` after binding".as_slice());
+    if q.failed { return q; }
+    let label: u64 = q.texts.length();
+    q = put(q, "Let ".as_slice());
+    if mutable {
+        q = put(q, "mut ".as_slice());
+    }
+    q = put(q, source.slice(tokens[name].start, tokens[name].end));
+    finish(ast.OTHER, tokens[first].start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
+}
+
+// `break` or `return`, with an optional value and a `;`.
+fn jump(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, name: Slice<u8>, missing: Slice<u8>) -> Tree {
+    let first: u64 = tree.at;
+    let mut q: Tree = step(tokens, tree);
+    let mut kids: Buffer<u64> = Buffer::new();
+    if kind_at(tokens, q.at, q.halved) != token.SEMICOLON {
+        q = expression(tokens, source, strings, q, true);
+        if q.failed { return q; }
+        kids.push(q.last);
+    }
+    q = expect(tokens, q, token.SEMICOLON, "ExpectedSemicolon".as_slice(), missing);
+    if q.failed { return q; }
+    let label: u64 = q.texts.length();
+    q = put(q, name);
+    finish(ast.OTHER, tokens[first].start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
+}
+
+fn is_assign(kind: u64) -> bool {
+    kind == token.ASSIGN || kind == token.PLUS_ASSIGN || kind == token.MINUS_ASSIGN
+        || kind == token.STAR_ASSIGN || kind == token.SLASH_ASSIGN || kind == token.PERCENT_ASSIGN
+}
+
+fn put_assign(tree: Tree, kind: u64) -> Tree {
+    if kind == token.PLUS_ASSIGN { return put(tree, "+=".as_slice()); }
+    if kind == token.MINUS_ASSIGN { return put(tree, "-=".as_slice()); }
+    if kind == token.STAR_ASSIGN { return put(tree, "*=".as_slice()); }
+    if kind == token.SLASH_ASSIGN { return put(tree, "/=".as_slice()); }
+    if kind == token.PERCENT_ASSIGN { return put(tree, "%=".as_slice()); }
+    put(tree, "=".as_slice())
+}
+
+// ------------------------------------------------------------------ expressions
+
+fn expression(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, aggregate: bool) -> Tree {
+    binary(tokens, source, strings, tree, 0u64, aggregate)
+}
+
+// Precedence climbing: operators bind at least as tightly as `minimum`, and
+// the right side climbs one level higher, so every level is left-associative.
+fn binary(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, minimum: u64, aggregate: bool) -> Tree {
+    let mut q: Tree = unary(tokens, source, strings, tree, aggregate);
+    if q.failed { return q; }
+    let mut left: u64 = q.last;
+    loop {
+        let operator: u64 = kind_at(tokens, q.at, q.halved);
+        let level: u64 = precedence(operator);
+        if level == 0u64 || level < minimum {
+            break;
+        }
+        q = step(tokens, q);
+        q = binary(tokens, source, strings, q, level + 1u64, aggregate);
+        if q.failed { return q; }
+        let right: u64 = q.last;
+        let label: u64 = q.texts.length();
+        q = put(q, "Binary ".as_slice());
+        q = put_binary(q, operator);
+        let two: Array<u64, 2> = [left, right];
+        let start: u64 = q.nodes[left].start;
+        let end: u64 = q.nodes[right].end;
+        q = finish(ast.OTHER, start, end, label, two.as_slice(), q);
+        left = q.last;
+    }
+    q
+}
+
+// 0 for a token that is not a binary operator.
+fn precedence(kind: u64) -> u64 {
+    if kind == token.PIPE_PIPE { return 1u64; }
+    if kind == token.AMP_AMP { return 2u64; }
+    if kind == token.EQUAL_EQUAL || kind == token.BANG_EQUAL { return 3u64; }
+    if kind == token.LESS || kind == token.LESS_EQUAL || kind == token.GREATER || kind == token.GREATER_EQUAL { return 4u64; }
+    if kind == token.PIPE { return 5u64; }
+    if kind == token.CARET { return 6u64; }
+    if kind == token.AMP { return 7u64; }
+    if kind == token.SHIFT_LEFT || kind == token.SHIFT_RIGHT { return 8u64; }
+    if kind == token.PLUS || kind == token.MINUS { return 9u64; }
+    if kind == token.STAR || kind == token.SLASH || kind == token.PERCENT { return 10u64; }
+    0u64
+}
+
+fn put_binary(tree: Tree, kind: u64) -> Tree {
+    if kind == token.PIPE_PIPE { return put(tree, "||".as_slice()); }
+    if kind == token.AMP_AMP { return put(tree, "&&".as_slice()); }
+    if kind == token.EQUAL_EQUAL { return put(tree, "==".as_slice()); }
+    if kind == token.BANG_EQUAL { return put(tree, "!=".as_slice()); }
+    if kind == token.LESS { return put(tree, "<".as_slice()); }
+    if kind == token.LESS_EQUAL { return put(tree, "<=".as_slice()); }
+    if kind == token.GREATER { return put(tree, ">".as_slice()); }
+    if kind == token.GREATER_EQUAL { return put(tree, ">=".as_slice()); }
+    if kind == token.PIPE { return put(tree, "|".as_slice()); }
+    if kind == token.CARET { return put(tree, "^".as_slice()); }
+    if kind == token.AMP { return put(tree, "&".as_slice()); }
+    if kind == token.SHIFT_LEFT { return put(tree, "<<".as_slice()); }
+    if kind == token.SHIFT_RIGHT { return put(tree, ">>".as_slice()); }
+    if kind == token.PLUS { return put(tree, "+".as_slice()); }
+    if kind == token.MINUS { return put(tree, "-".as_slice()); }
+    if kind == token.STAR { return put(tree, "*".as_slice()); }
+    if kind == token.SLASH { return put(tree, "/".as_slice()); }
+    put(tree, "%".as_slice())
+}
+
+fn unary(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, aggregate: bool) -> Tree {
+    let mut q: Tree = nest(tokens, tree);
+    if q.failed { return q; }
+    q = unary_inner(tokens, source, strings, q, aggregate);
+    q.depth -= 1u64;
+    q
+}
+
+fn unary_inner(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, aggregate: bool) -> Tree {
+    let operator: u64 = tree.at;
+    let kind: u64 = kind_at(tokens, operator, tree.halved);
+    if kind != token.BANG && kind != token.MINUS {
+        return postfix(tokens, source, strings, tree, aggregate);
+    }
+    let mut q: Tree = step(tokens, tree);
+    q = unary(tokens, source, strings, q, aggregate);
+    if q.failed { return q; }
+    let value: u64 = q.last;
+    let label: u64 = q.texts.length();
+    if kind == token.BANG {
+        q = put(q, "Unary !".as_slice());
+    } else {
+        q = put(q, "Unary -".as_slice());
+    }
+    let one: Array<u64, 1> = [value];
+    let end: u64 = q.nodes[value].end;
+    finish(ast.OTHER, tokens[operator].start, end, label, one.as_slice(), q)
+}
+
+fn postfix(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, aggregate: bool) -> Tree {
+    let mut q: Tree = primary(tokens, source, strings, tree, aggregate);
+    if q.failed { return q; }
+    loop {
+        let value: u64 = q.last;
+        let kind: u64 = kind_at(tokens, q.at, q.halved);
+        if kind == token.LEFT_PAREN {
+            q = step(tokens, q);
+            let mut kids: Buffer<u64> = Buffer::new();
+            kids.push(value);
+            if kind_at(tokens, q.at, q.halved) != token.RIGHT_PAREN {
+                loop {
+                    q = expression(tokens, source, strings, q, true);
+                    if q.failed { return q; }
+                    kids.push(q.last);
+                    if kind_at(tokens, q.at, q.halved) != token.COMMA {
+                        break;
+                    }
+                    q = step(tokens, q);
+                    if kind_at(tokens, q.at, q.halved) == token.RIGHT_PAREN {
+                        break;
+                    }
+                }
+            }
+            q = expect(tokens, q, token.RIGHT_PAREN, "ExpectedToken".as_slice(), "expected `)`".as_slice());
+            if q.failed { return q; }
+            let label: u64 = q.texts.length();
+            q = put(q, "Call".as_slice());
+            let start: u64 = q.nodes[value].start;
+            q = finish(ast.OTHER, start, tokens[q.at - 1u64].end, label, kids.as_slice(), q);
+        } else if kind == token.LEFT_BRACKET {
+            q = step(tokens, q);
+            q = expression(tokens, source, strings, q, true);
+            if q.failed { return q; }
+            let index: u64 = q.last;
+            q = expect(tokens, q, token.RIGHT_BRACKET, "ExpectedToken".as_slice(), "expected `]`".as_slice());
+            if q.failed { return q; }
+            let label: u64 = q.texts.length();
+            q = put(q, "Index".as_slice());
+            let two: Array<u64, 2> = [value, index];
+            let start: u64 = q.nodes[value].start;
+            q = finish(ast.OTHER, start, tokens[q.at - 1u64].end, label, two.as_slice(), q);
+        } else if kind == token.DOT {
+            q = step(tokens, q);
+            let name: u64 = q.at;
+            q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected field name".as_slice());
+            if q.failed { return q; }
+            let label: u64 = q.texts.length();
+            q = put(q, "Field ".as_slice());
+            q = put(q, source.slice(tokens[name].start, tokens[name].end));
+            let one: Array<u64, 1> = [value];
+            let start: u64 = q.nodes[value].start;
+            q = finish(ast.OTHER, start, tokens[name].end, label, one.as_slice(), q);
+        } else {
+            break;
+        }
+    }
+    q
+}
+
+fn primary(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, aggregate: bool) -> Tree {
+    let first: u64 = tree.at;
+    let kind: u64 = kind_at(tokens, first, tree.halved);
+    let mut q: Tree = step(tokens, tree);
+    let found: Token = tokens[first];
+    let none: Array<u64, 0> = [];
+    if kind == token.INTEGER {
+        let label: u64 = q.texts.length();
+        q = put(q, "Integer ".as_slice());
+        q = put_decimal(q, found.value);
+        if found.text_start < found.text_end {
+            q = put(q, " ".as_slice());
+            q = put(q, source.slice(found.text_start, found.text_end));
+        }
+        q = finish(ast.OTHER, found.start, found.end, label, none.as_slice(), q);
+    } else if kind == token.STRING {
+        let label: u64 = q.texts.length();
+        q = put(q, "String \"".as_slice());
+        let escaped: Buffer<u8> = text.append_json_escaped(Buffer::new(), strings.slice(found.text_start, found.text_end));
+        q = put(q, escaped.as_slice());
+        q = put(q, "\"".as_slice());
+        q = finish(ast.OTHER, found.start, found.end, label, none.as_slice(), q);
+    } else if kind == token.IDENT {
+        if is_word(tokens, source, first, "true".as_slice()) || is_word(tokens, source, first, "false".as_slice()) {
+            let label: u64 = q.texts.length();
+            q = put(q, "Bool ".as_slice());
+            q = put(q, source.slice(found.start, found.end));
+            q = finish(ast.OTHER, found.start, found.end, label, none.as_slice(), q);
+        } else if is_word(tokens, source, first, "unit".as_slice()) {
+            let label: u64 = q.texts.length();
+            q = put(q, "Unit".as_slice());
+            q = finish(ast.OTHER, found.start, found.end, label, none.as_slice(), q);
+        } else if is_word(tokens, source, first, "if".as_slice()) {
+            return conditional(tokens, source, strings, q, first);
+        } else if is_word(tokens, source, first, "match".as_slice()) {
+            return matching(tokens, source, strings, q, first);
+        } else if is_word(tokens, source, first, "loop".as_slice()) {
+            q = block(tokens, source, strings, q);
+            if q.failed { return q; }
+            let body: u64 = q.last;
+            let label: u64 = q.texts.length();
+            q = put(q, "Loop".as_slice());
+            let one: Array<u64, 1> = [body];
+            let end: u64 = q.nodes[body].end;
+            return finish(ast.LOOP, found.start, end, label, one.as_slice(), q);
+        } else {
+            let mut last: u64 = first;
+            while kind_at(tokens, q.at, q.halved) == token.COLON_COLON {
+                q = step(tokens, q);
+                last = q.at;
+                q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected path segment".as_slice());
+                if q.failed { return q; }
+            }
+            let label: u64 = q.texts.length();
+            q = put(q, "Path ".as_slice());
+            q = put_path(tokens, source, q, first, last, "::".as_slice());
+            q = finish(ast.PATH, found.start, tokens[last].end, label, none.as_slice(), q);
+        }
+    } else if kind == token.LEFT_PAREN {
+        q = expression(tokens, source, strings, q, true);
+        if q.failed { return q; }
+        let inner: u64 = q.last;
+        q = expect(tokens, q, token.RIGHT_PAREN, "ExpectedToken".as_slice(), "expected `)`".as_slice());
+        if q.failed { return q; }
+        // Parentheses widen the span and change nothing else.
+        q.nodes[inner].start = found.start;
+        q.nodes[inner].end = tokens[q.at - 1u64].end;
+        q.last = inner;
+    } else if kind == token.LEFT_BRACKET {
+        let mut kids: Buffer<u64> = Buffer::new();
+        if kind_at(tokens, q.at, q.halved) != token.RIGHT_BRACKET {
+            loop {
+                q = expression(tokens, source, strings, q, true);
+                if q.failed { return q; }
+                kids.push(q.last);
+                if kind_at(tokens, q.at, q.halved) != token.COMMA {
+                    break;
+                }
+                q = step(tokens, q);
+                if kind_at(tokens, q.at, q.halved) == token.RIGHT_BRACKET {
+                    break;
+                }
+            }
+        }
+        q = expect(tokens, q, token.RIGHT_BRACKET, "ExpectedToken".as_slice(), "expected `]`".as_slice());
+        if q.failed { return q; }
+        let label: u64 = q.texts.length();
+        q = put(q, "Array".as_slice());
+        q = finish(ast.OTHER, found.start, tokens[q.at - 1u64].end, label, kids.as_slice(), q);
+    } else if kind == token.LEFT_BRACE {
+        q.at -= 1u64;
+        return block(tokens, source, strings, q);
+    } else {
+        return fail(tokens, q, first, "ExpectedExpression".as_slice(), "expected expression".as_slice());
+    }
+    let value: u64 = q.last;
+    if aggregate && kind_at(tokens, q.at, q.halved) == token.LEFT_BRACE && q.nodes[value].kind == ast.PATH {
+        return aggregate_value(tokens, source, strings, q, value);
+    }
+    q
+}
+
+// `path { name: value, ... }`, replacing the path it starts from.
+fn aggregate_value(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, path: u64) -> Tree {
+    let mut q: Tree = step(tokens, tree);
+    let mut kids: Buffer<u64> = Buffer::new();
+    while kind_at(tokens, q.at, q.halved) != token.RIGHT_BRACE {
+        let name: u64 = q.at;
+        q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected field name".as_slice());
+        if q.failed { return q; }
+        q = expect(tokens, q, token.COLON, "ExpectedToken".as_slice(), "expected `:`".as_slice());
+        if q.failed { return q; }
+        q = expression(tokens, source, strings, q, true);
+        if q.failed { return q; }
+        let value: u64 = q.last;
+        let label: u64 = q.texts.length();
+        q = put(q, "FieldValue ".as_slice());
+        q = put(q, source.slice(tokens[name].start, tokens[name].end));
+        let one: Array<u64, 1> = [value];
+        q = finish(ast.OTHER, tokens[name].start, tokens[name].end, label, one.as_slice(), q);
+        kids.push(q.last);
+        if kind_at(tokens, q.at, q.halved) != token.COMMA {
+            break;
+        }
+        q = step(tokens, q);
+        if kind_at(tokens, q.at, q.halved) == token.RIGHT_BRACE {
+            break;
+        }
+    }
+    q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
+    if q.failed { return q; }
+    let label: u64 = q.texts.length();
+    q = put(q, "Aggregate ".as_slice());
+    // The path's label is `Path ` and the path itself.
+    let path_start: u64 = q.nodes[path].label_start + 5u64;
+    let path_end: u64 = q.nodes[path].label_end;
+    q = put_copy(q, path_start, path_end);
+    let start: u64 = q.nodes[path].start;
+    finish(ast.OTHER, start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
+}
+
+// `if` has been consumed at `first`.
+fn conditional(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, first: u64) -> Tree {
+    let mut q: Tree = expression(tokens, source, strings, tree, false);
+    if q.failed { return q; }
+    let mut kids: Buffer<u64> = Buffer::new();
+    kids.push(q.last);
+    q = block(tokens, source, strings, q);
+    if q.failed { return q; }
+    kids.push(q.last);
+    let mut end: u64 = q.nodes[q.last].end;
+    if is_word(tokens, source, q.at, "else".as_slice()) {
+        q = step(tokens, q);
+        if is_word(tokens, source, q.at, "if".as_slice()) {
+            let nested: u64 = q.at;
+            q = step(tokens, q);
+            q = conditional(tokens, source, strings, q, nested);
+        } else {
+            q = block(tokens, source, strings, q);
+        }
+        if q.failed { return q; }
+        kids.push(q.last);
+        end = q.nodes[q.last].end;
+    }
+    let label: u64 = q.texts.length();
+    q = put(q, "If".as_slice());
+    finish(ast.IF, tokens[first].start, end, label, kids.as_slice(), q)
+}
+
+// `match` has been consumed at `first`.
+fn matching(tokens: Slice<Token>, source: Slice<u8>, strings: Slice<u8>, tree: Tree, first: u64) -> Tree {
+    let mut q: Tree = expression(tokens, source, strings, tree, false);
+    if q.failed { return q; }
+    let mut kids: Buffer<u64> = Buffer::new();
+    kids.push(q.last);
+    q = expect(tokens, q, token.LEFT_BRACE, "ExpectedToken".as_slice(), "expected `{`".as_slice());
+    if q.failed { return q; }
+    while kind_at(tokens, q.at, q.halved) != token.RIGHT_BRACE && kind_at(tokens, q.at, q.halved) != token.EOF {
+        let arm: u64 = q.at;
+        let mut parts: Buffer<u64> = Buffer::new();
+        q = pattern(tokens, source, q);
+        if q.failed { return q; }
+        parts.push(q.last);
+        let mut guarded: bool = false;
+        if is_word(tokens, source, q.at, "if".as_slice()) {
+            q = step(tokens, q);
+            q = expression(tokens, source, strings, q, true);
+            if q.failed { return q; }
+            parts.push(q.last);
+            guarded = true;
+        }
+        q = expect(tokens, q, token.FAT_ARROW, "ExpectedToken".as_slice(), "expected `=>`".as_slice());
+        if q.failed { return q; }
+        if is_word(tokens, source, q.at, "return".as_slice()) {
+            // `=> return value` is a block of that one statement. Its span is
+            // the arm's first token, as in the stage0 parser.
+            let returned: u64 = q.at;
+            q = step(tokens, q);
+            let mut values: Buffer<u64> = Buffer::new();
+            let mut end: u64 = tokens[returned].end;
+            if kind_at(tokens, q.at, q.halved) != token.COMMA {
+                q = expression(tokens, source, strings, q, true);
+                if q.failed { return q; }
+                values.push(q.last);
+                end = q.nodes[q.last].end;
+            }
+            let label: u64 = q.texts.length();
+            q = put(q, "Return".as_slice());
+            q = finish(ast.OTHER, tokens[returned].start, end, label, values.as_slice(), q);
+            let statement_node: u64 = q.last;
+            let block_label: u64 = q.texts.length();
+            q = put(q, "Block".as_slice());
+            let one: Array<u64, 1> = [statement_node];
+            q = finish(ast.BLOCK, tokens[arm].start, tokens[arm].end, block_label, one.as_slice(), q);
+        } else if kind_at(tokens, q.at, q.halved) == token.LEFT_BRACE {
+            q = block(tokens, source, strings, q);
+        } else {
+            q = expression(tokens, source, strings, q, true);
+        }
+        if q.failed { return q; }
+        parts.push(q.last);
+        q = expect(tokens, q, token.COMMA, "ExpectedComma".as_slice(), "expected `,` after match arm".as_slice());
+        if q.failed { return q; }
+        let label: u64 = q.texts.length();
+        if guarded {
+            q = put(q, "Arm guarded".as_slice());
+        } else {
+            q = put(q, "Arm".as_slice());
+        }
+        q = finish(ast.OTHER, tokens[arm].start, tokens[q.at - 1u64].end, label, parts.as_slice(), q);
+        kids.push(q.last);
+    }
+    q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
+    if q.failed { return q; }
+    let label: u64 = q.texts.length();
+    q = put(q, "Match".as_slice());
+    finish(ast.MATCH, tokens[first].start, tokens[q.at - 1u64].end, label, kids.as_slice(), q)
+}
+
+// ------------------------------------------------------------------ patterns
+
+fn pattern(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
+    let mut q: Tree = nest(tokens, tree);
+    if q.failed { return q; }
+    q = pattern_inner(tokens, source, q);
+    q.depth -= 1u64;
+    q
+}
+
+fn pattern_inner(tokens: Slice<Token>, source: Slice<u8>, tree: Tree) -> Tree {
+    let first: u64 = tree.at;
+    let kind: u64 = kind_at(tokens, first, tree.halved);
+    let mut q: Tree = step(tokens, tree);
+    let found: Token = tokens[first];
+    let mut kids: Buffer<u64> = Buffer::new();
+    let label: u64 = q.texts.length();
+    if kind == token.INTEGER {
+        q = put(q, "Pattern ".as_slice());
+        q = put_decimal(q, found.value);
+    } else if kind == token.IDENT {
+        let word: Slice<u8> = source.slice(found.start, found.end);
+        if bytes.equal(word, "_".as_slice()) || bytes.equal(word, "true".as_slice()) || bytes.equal(word, "false".as_slice()) {
+            q = put(q, "Pattern ".as_slice());
+            q = put(q, word);
+        } else {
+            let mut last: u64 = first;
+            while kind_at(tokens, q.at, q.halved) == token.COLON_COLON {
+                q = step(tokens, q);
+                last = q.at;
+                q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected variant segment".as_slice());
+                if q.failed { return q; }
+            }
+            if last == first && kind_at(tokens, q.at, q.halved) != token.LEFT_BRACE {
+                q = put(q, "Pattern binding ".as_slice());
+                q = put(q, word);
+            } else {
+                if kind_at(tokens, q.at, q.halved) == token.LEFT_BRACE {
+                    q = step(tokens, q);
+                    while kind_at(tokens, q.at, q.halved) != token.RIGHT_BRACE {
+                        let name: u64 = q.at;
+                        q = expect(tokens, q, token.IDENT, "ExpectedIdentifier".as_slice(), "expected pattern field".as_slice());
+                        if q.failed { return q; }
+                        let mut nested: Buffer<u64> = Buffer::new();
+                        if kind_at(tokens, q.at, q.halved) == token.COLON {
+                            q = step(tokens, q);
+                            q = pattern(tokens, source, q);
+                            if q.failed { return q; }
+                            nested.push(q.last);
+                        }
+                        let field_label: u64 = q.texts.length();
+                        q = put(q, "PatternField ".as_slice());
+                        q = put(q, source.slice(tokens[name].start, tokens[name].end));
+                        q = finish(ast.OTHER, tokens[name].start, tokens[name].end, field_label, nested.as_slice(), q);
+                        kids.push(q.last);
+                        if kind_at(tokens, q.at, q.halved) != token.COMMA {
+                            break;
+                        }
+                        q = step(tokens, q);
+                        if kind_at(tokens, q.at, q.halved) == token.RIGHT_BRACE {
+                            break;
+                        }
+                    }
+                    q = expect(tokens, q, token.RIGHT_BRACE, "ExpectedToken".as_slice(), "expected `}`".as_slice());
+                    if q.failed { return q; }
+                }
+                // The label goes after any nested labels, so it starts here.
+                let own: u64 = q.texts.length();
+                q = put(q, "Pattern ".as_slice());
+                q = put_path(tokens, source, q, first, last, "::".as_slice());
+                let end: u64 = tokens[q.at - 1u64].end;
+                return finish(ast.OTHER, found.start, end, own, kids.as_slice(), q);
+            }
+        }
+    } else {
+        return fail(tokens, q, first, "ExpectedPattern".as_slice(), "expected match pattern".as_slice());
+    }
+    let end: u64 = tokens[q.at - 1u64].end;
+    finish(ast.OTHER, found.start, end, label, kids.as_slice(), q)
+}

@@ -1,0 +1,4 @@
+core 0.1;
+module q;
+fn f( -> u8 { 1u8 }
+fn g() -> u8 { 2u8 }

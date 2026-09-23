@@ -368,6 +368,15 @@ jobs:
           --bundle target/core-c/lexer-bundle
           --work-dir target/core-c/lexer
           --report target/core-c/report-lexer.json
+      - name: Run the parser fixtures (ESP-011)
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc ${{ matrix.cc }} ${{ matrix.flags }}
+          --cases tests/selfhost/parser/cases.json
+          --bundle target/core-c/parser-bundle
+          --work-dir target/core-c/parser
+          --report target/core-c/report-parser.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:

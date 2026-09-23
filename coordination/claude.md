@@ -2,8 +2,21 @@
 
 ## Current claim
 
+- Task: ESP-011 — parser and AST in Argorix.
+- State: IN PROGRESS.
+- Branch: `claude/parser-esp011`, base `6f981db` (`origin/main`).
+- Started: 2026-09-23.
+- Ficha: `tasks/espada/ESP-011.md`.
+- Paths: `compiler/**`, `tests/selfhost/parser/**`, `spec/core/ast.md`, the
+  ficha, the stage0 Core parser where the port and the spec disagree, and the
+  `argorixc` AST dump.
+
+---
+
+# Previous claim: ESP-010 (DONE)
+
 - Task: ESP-010 — lexer and diagnostics in Argorix.
-- State: IN PROGRESS (PR #53), on top of ESP-009, which is DONE.
+- State: DONE on 2026-09-23, merged in PR #53; CI green on `main@6f981db`.
 - Branch: `claude/lexer-esp010`, base `1183b90` (`origin/main`).
 - Started: 2026-09-23.
 - Ficha: `tasks/espada/ESP-010.md`.

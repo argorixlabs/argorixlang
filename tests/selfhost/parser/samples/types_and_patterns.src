@@ -1,0 +1,27 @@
+core 0.1;
+module samples.types;
+import stdlib.result as r;
+import a.b.c;
+
+struct Holder { items: Buffer<Buffer<u8>>, grid: Array<Array<u8, 2>, 3>, h: Handle<Arena<Holder>>, }
+enum Shape { Dot, Box { w: u64, h: u64, }, }
+
+fn area(s: Shape, p: Point) -> u64 {
+    let q: Point = Point { x: 1u64, y: p.y, };
+    if s == Shape::Dot { 0u64 } else if q.x > 0u64 { 1u64 } else { 2u64 };
+    while q.x < 3u64 { q.x += 1u64; }
+    match s {
+        Shape::Dot => 0u64,
+        Shape::Box { w, h: 5u64 } if w > 2u64 => return w,
+        Shape::Box { w: _, h } => { h * 2u64 },
+        _ => return,
+    }
+}
+
+fn values() -> Array<u64, 3> {
+    let v: Array<u64, 3> = [1u64, 2u64, 3u64,];
+    let l: u64 = loop { break 4u64; };
+    let s: string = "a\"b\n";
+    f(v[0u64], (x), unit, true, false)(1u64).field;
+    { v }
+}
