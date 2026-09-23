@@ -2,8 +2,9 @@
 //!
 //! The case manifest is the oracle; `argorixc core-emit-c`, the C compiler and
 //! the C1 runtime are the implementations under test. Commands are always an
-//! argument vector, never a shell string, and case contents never become
-//! arguments.
+//! argument vector, never a shell string. The only case contents that become
+//! arguments are the compiler-host roots and budgets, checked as plain paths
+//! and numbers.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -32,6 +33,31 @@ pub struct Case {
     pub expected_exit: i32,
     pub expected_stdout: String,
     pub expected_stderr: String,
+    /// For a program whose `argorix_main` takes compiler-host capabilities:
+    /// what the driver lends it. Without it, such a program gets nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<HostSetup>,
+}
+
+/// The roots and budgets a case lends, and the build it must leave behind.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HostSetup {
+    /// Relative to the cases manifest; lent as `--package-root`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_budget: Option<u64>,
+    /// When set, a fresh build directory is lent as `--build-root`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write_budget: Option<u64>,
+    /// Directories created inside the build root before each run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub build_dirs: Vec<String>,
+    /// Every file the build root must hold afterwards, with its exact text;
+    /// any other file is a failure.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub expected_build: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -258,6 +284,42 @@ pub fn validate_case(case: &Case, base: &Path) -> Result<()> {
         case.id,
         base.join(&case.file).display()
     );
+    if let Some(host) = &case.host {
+        let plain = |path: &str| {
+            !path.is_empty()
+                && !path.starts_with('/')
+                && !path.contains('\\')
+                && !path.contains(':')
+                && path
+                    .split('/')
+                    .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+        };
+        if let Some(root) = &host.package_root {
+            anyhow::ensure!(
+                plain(root) && base.join(root).is_dir(),
+                "case {}: package_root must be a plain relative directory",
+                case.id
+            );
+            anyhow::ensure!(
+                host.read_budget.is_some(),
+                "case {}: a package_root needs a read_budget",
+                case.id
+            );
+        }
+        for path in host.build_dirs.iter().chain(host.expected_build.keys()) {
+            anyhow::ensure!(
+                plain(path),
+                "case {}: build path `{path}` must be plain and relative",
+                case.id
+            );
+        }
+        anyhow::ensure!(
+            host.write_budget.is_some()
+                || (host.build_dirs.is_empty() && host.expected_build.is_empty()),
+            "case {}: build_dirs and expected_build need a write_budget",
+            case.id
+        );
+    }
     Ok(())
 }
 
@@ -514,7 +576,7 @@ pub fn run_argv(argv: &[String]) -> Result<(i32, String, String)> {
 // Execution
 
 pub fn execute(executable: &Path, timeout: Duration) -> Result<Execution> {
-    execute_with_env(executable, timeout, &[])
+    execute_with_env(executable, &[], timeout, &[])
 }
 
 /// Lines that mean a sanitizer caught something, whatever the exit status.
@@ -532,10 +594,12 @@ pub fn sanitizer_findings(stderr: &str) -> Vec<String> {
 
 pub fn execute_with_env(
     executable: &Path,
+    args: &[String],
     timeout: Duration,
     env: &[(&str, &str)],
 ) -> Result<Execution> {
     let mut command = Command::new(executable);
+    command.args(args);
     for (name, value) in env {
         command.env(name, value);
     }
@@ -667,6 +731,7 @@ mod tests {
             expected_exit: 0,
             expected_stdout: "ARGORIX_RESULT:42".into(),
             expected_stderr: String::new(),
+            host: None,
         }
     }
 

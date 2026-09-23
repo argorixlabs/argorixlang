@@ -141,6 +141,54 @@ The agent-runtime profile cannot inherit these capabilities. S1 exposes no
 ambient current directory, general filesystem API, network, environment,
 arbitrary process spawn, linker selection, FFI, or shell evaluation.
 
+#### Core surface (ESP-009)
+
+- `PackageRead` and `BuildWrite` are built-in capability types. Source cannot
+  construct one or redeclare the names (`DuplicateDeclaration`). A capability
+  may be a parameter or a local; it cannot be a struct field, an enum payload,
+  a container element or a return type (`CapabilityEscapes`), so no data
+  structure outlives the lending.
+- Only the entry lends them: `argorix_main` takes no parameters, or at most
+  one `PackageRead` and one `BuildWrite`. A function that takes a capability
+  has the IR effect `package.read` or `build.write`; no other host effect
+  exists.
+- Operations, whose paths and data are byte views:
+  - `package.status(path) -> u64` returns a status code;
+  - `package.read(path) -> Buffer<u8>` returns the file, and is meant only
+    after a status of 0. A file that changed in between is the trap
+    `HOST_UNAVAILABLE`.
+  - `build.write(path, data) -> u64` creates or replaces the file and returns
+    a status code. Its directory must already exist inside the build root.
+- `stdlib.compiler_host` wraps them as `read(package, path) -> BytesResult`
+  and `write(build, path, data) -> Checked`. It validates the path with
+  `stdlib.path` first, and reports a host refusal as
+  `Failure::Host { at: code }`.
+- Status codes: 0 ok, 1 invalid path, 2 not found, 3 outside the root, 4 not a
+  regular file, 5 over the byte budget, 6 I/O error, 7 unsupported host.
+
+#### Host shim (C1)
+
+The shim is `bootstrap/c/argorix_core_host.h`. It is compiled only into a
+program that can hold a capability; no other binary may import a
+file-system function, and the harness checks this (`host_only_imports` in
+`conformance/core_c/policy.json`).
+
+- The driver passes `--package-root`, `--read-budget`, `--build-root` and
+  `--write-budget`. An unknown flag, a flag for a capability the entry does not
+  take, a missing root or budget, or a root that is not a directory traps
+  `PERMISSION_DENIED` before any Core code runs.
+- The roots are canonicalized with `realpath`. Every operation:
+  1. checks the path again against the `stdlib.path` rules;
+  2. resolves it;
+  3. refuses a result that lies outside its root, including through a
+     symlink;
+  4. writes with `O_NOFOLLOW`;
+  5. charges the byte budget.
+- Windows is not supported yet: every operation returns 7.
+- The window between resolving a path and opening it is not closed against
+  concurrent writers to the roots. OS isolation of the compiler process
+  (MAT-011) covers that race.
+
 ## Required evidence
 
 Closure requires source-level positive fixtures plus adversarial cases for

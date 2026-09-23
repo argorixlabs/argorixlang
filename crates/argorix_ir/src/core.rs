@@ -411,10 +411,11 @@ pub fn verify_core_ir(
         ));
     }
     for effect in &allowed {
-        if matches!(effect, CoreIrEffect::Host(_)) {
+        if matches!(effect, CoreIrEffect::Host(name) if !CORE_HOST_EFFECTS.contains(&name.as_str()))
+        {
             diagnostics.push(CoreIrDiagnostic::new(
                 "UnauthorizedEffect",
-                "Core IR 0.1 forbids host effects",
+                "Core IR 0.1 forbids host effects other than package.read and build.write",
                 "effect_policy",
             ));
         }
@@ -723,11 +724,37 @@ fn lower_pattern(value: &CorePattern) -> CoreIrPattern {
     }
 }
 
+/// The named host effects Core IR 0.1 accepts: the two operations of the
+/// compiler-host boundary (`spec/core/stdlib.md`). Any other host effect is
+/// refused.
+pub const CORE_HOST_EFFECTS: [&str; 2] = ["package.read", "build.write"];
+
+/// A host effect comes with the capability that authorizes it, and a
+/// capability can only reach a function as a parameter, so the parameters
+/// name every host effect the program can use.
+fn capability_effect(ty: &CoreIrType) -> Option<CoreIrEffect> {
+    match ty {
+        CoreIrType::Named { name } if name == "PackageRead" => {
+            Some(CoreIrEffect::Host("package.read".into()))
+        }
+        CoreIrType::Named { name } if name == "BuildWrite" => {
+            Some(CoreIrEffect::Host("build.write".into()))
+        }
+        _ => None,
+    }
+}
+
 fn collect_effects(program: &CoreIrProgram) -> BTreeSet<CoreIrEffect> {
     let mut effects = BTreeSet::new();
     for item in &program.items {
         match &item.kind {
             CoreIrItemKind::Function(function) => {
+                effects.extend(
+                    function
+                        .parameters
+                        .iter()
+                        .filter_map(|parameter| capability_effect(&parameter.ty)),
+                );
                 collect_block_effects(&function.body, &mut effects)
             }
             CoreIrItemKind::Const(value) => collect_expr_effects(&value.value, &mut effects),

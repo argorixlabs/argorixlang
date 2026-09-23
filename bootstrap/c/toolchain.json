@@ -6,7 +6,8 @@
   "required_flags": ["-std=c11", "-Wall", "-Wextra", "-Werror"],
   "runtime_sources": [
     "bootstrap/c/argorix_core_runtime.c",
-    "bootstrap/c/argorix_core_runtime.h"
+    "bootstrap/c/argorix_core_runtime.h",
+    "bootstrap/c/argorix_core_host.h"
   ],
   "selftest_source": "bootstrap/c/runtime_selftest.c",
   "forbidden_link_inputs": ["*.rlib", "*.rustlib", "cargo", "rustc"],

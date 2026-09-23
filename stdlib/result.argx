@@ -5,7 +5,8 @@ module stdlib.result;
 // user generics, so each result the library needs is its own enum, and no
 // operation reports success with a sentinel value.
 
-// Why an operation failed, and the byte position where it was found.
+// Why an operation failed, and the byte position where it was found (for
+// `Host`, the host status code instead).
 pub enum Failure {
     InvalidUtf8 { at: u64, },
     OutOfRange { at: u64, },
@@ -13,6 +14,9 @@ pub enum Failure {
     InvalidPath { at: u64, },
     InvalidJson { at: u64, },
     TooDeep { at: u64, },
+    // The compiler host refused a file operation; `at` is its status code
+    // (stdlib.compiler_host), not a byte position.
+    Host { at: u64, },
 }
 
 // The outcome of a search in ordered data: where the value is, or where it
@@ -47,6 +51,7 @@ pub fn code(failure: Failure) -> u64 {
         Failure::InvalidPath { at: _ } => 4u64,
         Failure::InvalidJson { at: _ } => 5u64,
         Failure::TooDeep { at: _ } => 6u64,
+        Failure::Host { at: _ } => 7u64,
     }
 }
 
@@ -59,6 +64,7 @@ pub fn position(failure: Failure) -> u64 {
         Failure::InvalidPath { at } => at,
         Failure::InvalidJson { at } => at,
         Failure::TooDeep { at } => at,
+        Failure::Host { at } => at,
     }
 }
 
