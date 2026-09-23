@@ -1,0 +1,14 @@
+core 0.1;
+module selfhost_stdlib.trap_stale_scope;
+
+// A scope handle kept after its arena is released traps instead of reading
+// freed memory.
+
+import stdlib.arena;
+
+pub fn argorix_main() -> u64 {
+    let mut scopes: Arena<Scope> = Arena::new();
+    let outer: Handle<Scope> = arena.root(scopes);
+    scopes.release();
+    arena.count(outer)
+}

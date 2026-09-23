@@ -1,0 +1,43 @@
+core 0.1;
+module regression.g25_write_through_handle;
+
+// Assigning a field through a handle wrote to a temporary copy, so the arena
+// slot kept its old value and the program returned a wrong result without a
+// diagnostic. A node that links to its own type through a handle was also
+// refused as "contains itself by value" (found by stdlib.arena, ESP-009).
+
+struct Node { value: u64, next: Link, }
+
+enum Link {
+    End,
+    Next { node: Handle<Node>, },
+}
+
+fn total(first: Handle<Node>) -> u64 {
+    let mut sum: u64 = 0u64;
+    let mut link: Link = Link::Next { node: first };
+    loop {
+        match link {
+            Link::End => {
+                return sum;
+            },
+            Link::Next { node } => {
+                sum += node.value;
+                link = node.next;
+            },
+        }
+    }
+}
+
+pub fn argorix_main() -> u64 {
+    let mut nodes: Arena<Node> = Arena::new();
+    let tail: Handle<Node> = nodes.alloc(Node { value: 1u64, next: Link::End });
+    let head: Handle<Node> = nodes.alloc(Node { value: 10u64, next: Link::End });
+    // Plain, compound and enum-valued writes through a handle.
+    head.next = Link::Next { node: tail };
+    head.value += 20u64;
+    tail.value = 3u64;
+    let result: u64 = total(head);
+    nodes.release();
+    result
+}
