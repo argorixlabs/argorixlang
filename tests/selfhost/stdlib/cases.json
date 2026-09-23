@@ -108,6 +108,13 @@
       "expected_exit": 70,
       "expected_stdout": "",
       "expected_stderr": "ARGORIX_TRAP:PERMISSION_DENIED"
+    },
+    {
+      "id": "json_duplicates",
+      "file": "json_duplicates.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:255",
+      "expected_stderr": ""
     }
   ]
 }

@@ -155,51 +155,141 @@ fn object(input: Slice<u8>, at: u64, depth: u64) -> U64Result {
     if index < input.length() && input[index] == 125u8 {
         return U64Result::Ok { value: index + 1u64 };
     }
-    // The keys seen so far, as ranges of `input`, to reject a duplicate.
+    // The keys seen so far, as ranges of `input`. Duplicates are looked for
+    // once, when the object ends or an error leaves it (see `settle`), by
+    // sorting the keys: n log n comparisons instead of one per pair.
     let mut starts: Buffer<u64> = Buffer::new();
     let mut ends: Buffer<u64> = Buffer::new();
     loop {
         if index >= input.length() || input[index] != 34u8 {
-            return invalid(index);
+            return settle(input, starts.as_slice(), ends.as_slice(), invalid(index));
         }
         let key_end: u64 = match string_end(input, index) {
             U64Result::Ok { value } => value,
             U64Result::Err { failure } => {
-                return U64Result::Err { failure: failure };
+                return settle(input, starts.as_slice(), ends.as_slice(), U64Result::Err { failure: failure });
             },
         };
-        let key_start: u64 = index + 1u64;
-        let key_stop: u64 = key_end - 1u64;
-        let mut seen: u64 = 0u64;
-        while seen < starts.length() {
-            if bytes.equal(input.slice(starts[seen], ends[seen]), input.slice(key_start, key_stop)) {
-                return U64Result::Err { failure: Failure::DuplicateKey { at: index } };
-            }
-            seen += 1u64;
-        }
-        starts.push(key_start);
-        ends.push(key_stop);
+        starts.push(index + 1u64);
+        ends.push(key_end - 1u64);
         index = key_end;
         if index >= input.length() || input[index] != 58u8 {
-            return invalid(index);
+            return settle(input, starts.as_slice(), ends.as_slice(), invalid(index));
         }
         index = match value(input, index + 1u64, depth) {
             U64Result::Ok { value } => value,
             U64Result::Err { failure } => {
-                return U64Result::Err { failure: failure };
+                return settle(input, starts.as_slice(), ends.as_slice(), U64Result::Err { failure: failure });
             },
         };
         if index >= input.length() {
-            return invalid(index);
+            return settle(input, starts.as_slice(), ends.as_slice(), invalid(index));
         }
         if input[index] == 125u8 {
-            return U64Result::Ok { value: index + 1u64 };
+            return settle(input, starts.as_slice(), ends.as_slice(), U64Result::Ok { value: index + 1u64 });
         }
         if input[index] != 44u8 {
-            return invalid(index);
+            return settle(input, starts.as_slice(), ends.as_slice(), invalid(index));
         }
         index += 1u64;
     }
+}
+
+// How an object ends: a duplicate key among those seen wins over `outcome`,
+// because a reader going left to right meets it first. Every other failure
+// lies after the last key seen, and the first duplicate key in document order
+// is what the error names.
+fn settle(input: Slice<u8>, starts: Slice<u64>, ends: Slice<u64>, outcome: U64Result) -> U64Result {
+    match first_duplicate(input, starts, ends) {
+        Search::Found { at } => U64Result::Err { failure: Failure::DuplicateKey { at: at } },
+        Search::Missing { insert_at: _ } => outcome,
+    }
+}
+
+// The opening quote of the first key, in document order, that repeats an
+// earlier one: after a stable sort, equal keys sit together in document
+// order, and each one after the first of its run is a repeat.
+fn first_duplicate(input: Slice<u8>, starts: Slice<u64>, ends: Slice<u64>) -> Search {
+    let count: u64 = starts.length();
+    if count < 2u64 {
+        return Search::Missing { insert_at: 0u64 };
+    }
+    let order: Buffer<u64> = sorted_keys(input, starts, ends);
+    let mut found: bool = false;
+    let mut first: u64 = 0u64;
+    let mut index: u64 = 1u64;
+    while index < count {
+        let key: u64 = order[index];
+        let previous: u64 = order[index - 1u64];
+        if bytes.equal(input.slice(starts[key], ends[key]), input.slice(starts[previous], ends[previous])) {
+            let quote: u64 = starts[key] - 1u64;
+            if !found || quote < first {
+                first = quote;
+                found = true;
+            }
+        }
+        index += 1u64;
+    }
+    if found {
+        Search::Found { at: first }
+    } else {
+        Search::Missing { insert_at: 0u64 }
+    }
+}
+
+// Key numbers 0..n in bytewise key order, ties in document order: a
+// bottom-up merge sort, which is stable.
+fn sorted_keys(input: Slice<u8>, starts: Slice<u64>, ends: Slice<u64>) -> Buffer<u64> {
+    let count: u64 = starts.length();
+    let mut order: Buffer<u64> = Buffer::new();
+    let mut spare: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < count {
+        order.push(index);
+        spare.push(0u64);
+        index += 1u64;
+    }
+    let mut width: u64 = 1u64;
+    while width < count {
+        let mut low: u64 = 0u64;
+        while low < count {
+            let middle: u64 = if count - low > width { low + width } else { count };
+            let high: u64 = if count - middle > width { middle + width } else { count };
+            let mut left: u64 = low;
+            let mut right: u64 = middle;
+            let mut out: u64 = low;
+            while out < high {
+                // The left run wins ties, which keeps equal keys in order.
+                let mut take_left: bool = right >= high;
+                if !take_left && left < middle {
+                    let a: u64 = order[left];
+                    let b: u64 = order[right];
+                    take_left = bytes.compare(input.slice(starts[b], ends[b]), input.slice(starts[a], ends[a])) >= 0i8;
+                }
+                if take_left {
+                    spare[out] = order[left];
+                    left += 1u64;
+                } else {
+                    spare[out] = order[right];
+                    right += 1u64;
+                }
+                out += 1u64;
+            }
+            low = high;
+        }
+        index = 0u64;
+        while index < count {
+            order[index] = spare[index];
+            index += 1u64;
+        }
+        // Stop before the width could pass `count` twice over.
+        if width > count - width {
+            width = count;
+        } else {
+            width = width * 2u64;
+        }
+    }
+    order
 }
 
 fn array(input: Slice<u8>, at: u64, depth: u64) -> U64Result {
