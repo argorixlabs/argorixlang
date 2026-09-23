@@ -1,0 +1,76 @@
+core 0.1;
+module stdlib.result;
+
+// Specialized tagged results for S1 (spec/core/stdlib.md). Core 0.1 has no
+// user generics, so each result the library needs is its own enum, and no
+// operation reports success with a sentinel value.
+
+// Why an operation failed, and the byte position where it was found.
+pub enum Failure {
+    InvalidUtf8 { at: u64, },
+    OutOfRange { at: u64, },
+    DuplicateKey { at: u64, },
+    InvalidPath { at: u64, },
+    InvalidJson { at: u64, },
+    TooDeep { at: u64, },
+}
+
+// The outcome of a search in ordered data: where the value is, or where it
+// would go to keep the order.
+pub enum Search {
+    Found { at: u64, },
+    Missing { insert_at: u64, },
+}
+
+// A validation that produces nothing on success.
+pub enum Checked {
+    Ok,
+    Err { failure: Failure, },
+}
+
+pub enum BytesResult {
+    Ok { value: Buffer<u8>, },
+    Err { failure: Failure, },
+}
+
+pub enum U64Result {
+    Ok { value: u64, },
+    Err { failure: Failure, },
+}
+
+// A stable number per kind of failure, for fixtures and messages.
+pub fn code(failure: Failure) -> u64 {
+    match failure {
+        Failure::InvalidUtf8 { at: _ } => 1u64,
+        Failure::OutOfRange { at: _ } => 2u64,
+        Failure::DuplicateKey { at: _ } => 3u64,
+        Failure::InvalidPath { at: _ } => 4u64,
+        Failure::InvalidJson { at: _ } => 5u64,
+        Failure::TooDeep { at: _ } => 6u64,
+    }
+}
+
+// The byte position a failure points at.
+pub fn position(failure: Failure) -> u64 {
+    match failure {
+        Failure::InvalidUtf8 { at } => at,
+        Failure::OutOfRange { at } => at,
+        Failure::DuplicateKey { at } => at,
+        Failure::InvalidPath { at } => at,
+        Failure::InvalidJson { at } => at,
+        Failure::TooDeep { at } => at,
+    }
+}
+
+// `code * 1000000 + position` for a failed check, 0 for success: one number
+// a fixture can compare exactly.
+pub fn checked_digest(result: Checked) -> u64 {
+    match result {
+        Checked::Ok => 0u64,
+        Checked::Err { failure } => failure_digest(failure),
+    }
+}
+
+pub fn failure_digest(failure: Failure) -> u64 {
+    code(failure) * 1000000u64 + position(failure)
+}

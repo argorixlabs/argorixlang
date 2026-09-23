@@ -1,0 +1,142 @@
+core 0.1;
+module stdlib.text;
+
+// UTF-8 text as bytes (spec/core/stdlib.md, `stdlib.text`): validation,
+// byte length, equality and deterministic escaping. Nothing here depends on
+// a locale; text is compared and ordered byte by byte.
+
+import stdlib.result;
+import stdlib.bytes;
+
+// Whether `value` is well-formed UTF-8, by Table 3-7 of the Unicode
+// Standard: no overlong form, no surrogate, nothing past U+10FFFF and no
+// truncated sequence. The failure points at the first byte of the sequence
+// that breaks the rule.
+pub fn validate(value: Slice<u8>) -> Checked {
+    let length: u64 = value.length();
+    let mut index: u64 = 0u64;
+    while index < length {
+        let width: u64 = sequence_width(value[index]);
+        if width == 0u64 {
+            return Checked::Err { failure: Failure::InvalidUtf8 { at: index } };
+        }
+        if width > length - index {
+            return Checked::Err { failure: Failure::InvalidUtf8 { at: index } };
+        }
+        if width > 1u64 {
+            // The second byte carries the range that excludes overlongs,
+            // surrogates and values past U+10FFFF.
+            let first: u8 = value[index];
+            let second: u8 = value[index + 1u64];
+            if second < second_low(first) || second > second_high(first) {
+                return Checked::Err { failure: Failure::InvalidUtf8 { at: index } };
+            }
+            let mut offset: u64 = 2u64;
+            while offset < width {
+                let next: u8 = value[index + offset];
+                if next < 128u8 || next > 191u8 {
+                    return Checked::Err { failure: Failure::InvalidUtf8 { at: index } };
+                }
+                offset += 1u64;
+            }
+        }
+        index += width;
+    }
+    Checked::Ok
+}
+
+pub fn is_valid(value: Slice<u8>) -> bool {
+    match validate(value) {
+        Checked::Ok => true,
+        Checked::Err { failure: _ } => false,
+    }
+}
+
+// Text is equal when its bytes are.
+pub fn equal(left: Slice<u8>, right: Slice<u8>) -> bool {
+    bytes.equal(left, right)
+}
+
+pub fn byte_length(value: Slice<u8>) -> u64 {
+    value.length()
+}
+
+// `target` with `value` added as the inside of a JSON string: `"` and `\`
+// escaped, the three common controls as `\n`, `\r`, `\t`, every other byte
+// below 32 as `\u00XX` in lowercase hex, and everything else unchanged. One
+// input has one output, so equal text always serializes to equal bytes.
+pub fn append_json_escaped(target: Buffer<u8>, value: Slice<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = target;
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        let byte: u8 = value[index];
+        if byte == 34u8 || byte == 92u8 {
+            out.push(92u8);
+            out.push(byte);
+        } else if byte == 10u8 {
+            out.push(92u8);
+            out.push(110u8);
+        } else if byte == 13u8 {
+            out.push(92u8);
+            out.push(114u8);
+        } else if byte == 9u8 {
+            out.push(92u8);
+            out.push(116u8);
+        } else if byte < 32u8 {
+            out.push(92u8);
+            out.push(117u8);
+            out.push(48u8);
+            out.push(48u8);
+            out.push(hex_digit(byte / 16u8));
+            out.push(hex_digit(byte % 16u8));
+        } else {
+            out.push(byte);
+        }
+        index += 1u64;
+    }
+    out
+}
+
+// How many bytes a sequence starting with `first` has, or 0 if no sequence
+// can start with it.
+fn sequence_width(first: u8) -> u64 {
+    if first <= 127u8 {
+        1u64
+    } else if first >= 194u8 && first <= 223u8 {
+        2u64
+    } else if first >= 224u8 && first <= 239u8 {
+        3u64
+    } else if first >= 240u8 && first <= 244u8 {
+        4u64
+    } else {
+        0u64
+    }
+}
+
+fn second_low(first: u8) -> u8 {
+    if first == 224u8 {
+        160u8
+    } else if first == 240u8 {
+        144u8
+    } else {
+        128u8
+    }
+}
+
+fn second_high(first: u8) -> u8 {
+    if first == 237u8 {
+        159u8
+    } else if first == 244u8 {
+        143u8
+    } else {
+        191u8
+    }
+}
+
+fn hex_digit(value: u8) -> u8 {
+    if value < 10u8 {
+        48u8 + value
+    } else {
+        87u8 + value
+    }
+}

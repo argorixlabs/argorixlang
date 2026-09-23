@@ -256,6 +256,34 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        // Core lets a slice sit in a field or be returned; this backend's
+        // views of Buffer and Array storage carry no generation to check, so
+        // a view that outlives the call it was passed to could dangle. Such a
+        // program is refused rather than emitted.
+        for (name, signature) in &self.signatures {
+            if contains_slice(&signature.result) {
+                return Err(CoreCError::unsupported(format!(
+                    "`{name}` returns a slice; this backend only passes views down"
+                )));
+            }
+        }
+        let layouts = self
+            .structs
+            .iter()
+            .flat_map(|(name, layout)| layout.fields.values().map(move |field| (name, field)));
+        let payloads = self.enums.iter().flat_map(|(name, layout)| {
+            layout
+                .variants
+                .values()
+                .flat_map(move |fields| fields.values().map(move |field| (name, field)))
+        });
+        for (name, field) in layouts.chain(payloads) {
+            if contains_slice(field) {
+                return Err(CoreCError::unsupported(format!(
+                    "`{name}` holds a slice; this backend only passes views down"
+                )));
+            }
+        }
         let entry = self
             .signatures
             .get("argorix_main")
@@ -450,11 +478,14 @@ impl<'a> Emitter<'a> {
         match ty {
             ScalarType::Array { element, length } => {
                 self.emit_dependencies(element, arrays, emitted, source)?;
+                // C11 has no zero-length array. An empty Core array keeps one
+                // slot of padding that no index can reach: every bound check
+                // and every length uses the Core length, 0.
                 writeln!(
                     source,
                     "typedef struct {{ {} data[{}]; }} {};",
                     element.c_name(),
-                    length,
+                    (*length).max(1),
                     ty.c_name()
                 )
                 .unwrap();
@@ -1330,6 +1361,21 @@ impl<'a> FunctionEmitter<'a> {
                     return Err(CoreCError::unsupported("array literal length mismatch"));
                 }
                 let temp = self.next_temp();
+                if values.is_empty() {
+                    // Nothing to fill: copy a zero-initialized static, so the
+                    // value is never read uninitialized.
+                    line(
+                        source,
+                        indent,
+                        &format!("static const {} {temp}_zero;", ty.c_name()),
+                    );
+                    line(
+                        source,
+                        indent,
+                        &format!("{} {temp} = {temp}_zero;", ty.c_name()),
+                    );
+                    return Ok((temp, ty));
+                }
                 line(source, indent, &format!("{} {temp};", ty.c_name()));
                 for (index, value) in values.iter().enumerate() {
                     let value = self.emit_consumed(value, Some(element), indent, source)?;
@@ -1563,6 +1609,29 @@ impl<'a> FunctionEmitter<'a> {
                             source,
                         );
                     }
+                    if name == "slice" {
+                        // `view.slice(start, end)`: a narrower view, checked
+                        // against the one it narrows.
+                        let [start, end] = arguments.as_slice() else {
+                            return Err(CoreCError::unsupported("slice requires two arguments"));
+                        };
+                        let (view, view_ty) = self.emit_place(value, indent, source)?;
+                        if !matches!(view_ty, ScalarType::Slice(_)) {
+                            return Err(CoreCError::unsupported("slice narrows a Slice"));
+                        }
+                        let u64_ty = ScalarType::Integer("u64".into());
+                        let start = self.emit_expr(start, Some(&u64_ty), indent, source)?;
+                        let end = self.emit_expr(end, Some(&u64_ty), indent, source)?;
+                        let text = format!(
+                            "({}){{{view}.data + argorix_range({}, {}, {view}.length), {} - {}}}",
+                            view_ty.c_name(),
+                            start.0,
+                            end.0,
+                            end.0,
+                            start.0
+                        );
+                        return self.bind_temp(text, view_ty.clone(), indent, source);
+                    }
                     if !arguments.is_empty() {
                         return Err(CoreCError::unsupported(format!(
                             "intrinsic `{name}` does not accept arguments"
@@ -1588,6 +1657,32 @@ impl<'a> FunctionEmitter<'a> {
                             indent,
                             source,
                         ),
+                        // A view of owned storage; the checker only allows it
+                        // as a direct argument, so it never outlives the call.
+                        ("as_slice", ScalarType::Buffer(element)) => {
+                            let slice = ScalarType::Slice(element.clone());
+                            self.bind_temp(
+                                format!(
+                                    "({}){{(const {} *)(const void *){}.data, {}.length}}",
+                                    slice.c_name(),
+                                    element.c_name(),
+                                    receiver.0,
+                                    receiver.0
+                                ),
+                                slice,
+                                indent,
+                                source,
+                            )
+                        }
+                        ("as_slice", ScalarType::Array { element, length }) => {
+                            let slice = ScalarType::Slice(element.clone());
+                            self.bind_temp(
+                                format!("({}){{{}.data, {}U}}", slice.c_name(), receiver.0, length),
+                                slice,
+                                indent,
+                                source,
+                            )
+                        }
                         ("as_bytes", ScalarType::Array { element, length })
                             if **element == ScalarType::Integer("u8".into()) =>
                         {
@@ -2185,10 +2280,28 @@ impl<'a> FunctionEmitter<'a> {
         for statement in &block.statements {
             self.emit_statement(statement, indent + 1, source)?;
         }
-        let tail = block
-            .tail
-            .as_ref()
-            .ok_or_else(|| CoreCError::unsupported("value block has no tail expression"))?;
+        let Some(tail) = block.tail.as_ref() else {
+            // A value block without a tail must leave by return, break or
+            // continue, as in `Err { failure } => { return ...; }`. Its exit
+            // already released the scope, and control never reaches `target`.
+            let diverges = matches!(
+                block.statements.last(),
+                Some(
+                    CoreIrStatement::Return { .. }
+                        | CoreIrStatement::Break { .. }
+                        | CoreIrStatement::Continue
+                )
+            );
+            if !diverges {
+                return Err(CoreCError::unsupported(
+                    "value block has no tail expression",
+                ));
+            }
+            self.owned.pop();
+            line(source, indent, "}");
+            self.locals = saved;
+            return Ok(());
+        };
         // The value leaves the block, so a local it names is moved out before
         // the block's own locals are dropped.
         let value = self.emit_consumed(tail, Some(ty), indent + 1, source)?;
@@ -2229,6 +2342,17 @@ impl<'a> FunctionEmitter<'a> {
 
 fn line(source: &mut String, indent: usize, value: &str) {
     let _ = writeln!(source, "{}{value}", "    ".repeat(indent));
+}
+
+fn contains_slice(value: &ScalarType) -> bool {
+    match value {
+        ScalarType::Slice(_) => true,
+        ScalarType::Buffer(element)
+        | ScalarType::Arena(element)
+        | ScalarType::Handle(element)
+        | ScalarType::Array { element, .. } => contains_slice(element),
+        _ => false,
+    }
 }
 
 fn collect_array_type(value: &ScalarType, arrays: &mut BTreeMap<String, ScalarType>) {

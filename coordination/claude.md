@@ -5,7 +5,8 @@
 - Task: ESP-009 — minimal standard library, the `.argx` modules of
   `spec/core/stdlib.md`.
 - State: IN PROGRESS.
-- Branch: `claude/stdlib-core`, base `fd11276` (`origin/main`).
+- Branch: `claude/stdlib-modules`, base `e6b6056` (`origin/main`, after
+  PR #47 on `claude/stdlib-core`).
 - Started: 2026-09-22.
 - Ownership: reassigned from the Codex lane by the maintainer on 2026-09-22
   (“toma todo tu”). `codex/stdlib-esp009` last moved on 2026-09-20 and

@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "core_version": "0.1",
+  "task": "ESP-009",
+  "purpose": "Source-level fixtures of the S1 standard library in stdlib/. Each positive fixture returns a bitmask with one bit per check, so a failure names the check; each adversarial fixture ends in the exact trap the spec requires.",
+  "cases": [
+    {
+      "id": "bytes_ops",
+      "file": "bytes_ops.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:4095",
+      "expected_stderr": ""
+    },
+    {
+      "id": "text_ops",
+      "file": "text_ops.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:1023",
+      "expected_stderr": ""
+    },
+    {
+      "id": "vector_ops",
+      "file": "vector_ops.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:255",
+      "expected_stderr": ""
+    },
+    {
+      "id": "ordered_map_ops",
+      "file": "ordered_map_ops.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:63",
+      "expected_stderr": ""
+    },
+    {
+      "id": "path_ops",
+      "file": "path_ops.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:8191",
+      "expected_stderr": ""
+    },
+    {
+      "id": "json_ops",
+      "file": "json_ops.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:16383",
+      "expected_stderr": ""
+    },
+    {
+      "id": "trap_sum_overflow",
+      "file": "trap_sum_overflow.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:INTEGER_OVERFLOW"
+    },
+    {
+      "id": "trap_slice_range",
+      "file": "trap_slice_range.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:INDEX_OUT_OF_BOUNDS"
+    },
+    {
+      "id": "trap_slice_reversed",
+      "file": "trap_slice_reversed.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:INDEX_OUT_OF_BOUNDS"
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+core 0.1;
+module stdlib.ordered_map;
+
+// A map from byte-string keys to `u64` values, kept in bytewise key order
+// (spec/core/stdlib.md, `stdlib.ordered_map`): keys are unique, a duplicate
+// is a result rather than an overwrite, and iterating by index visits the
+// keys in canonical order on every run.
+//
+// Entry `i` has key `keys[starts[i]..ends[i]]` and value `values[i]`. Key
+// bytes are appended once and never move; only the three index columns are
+// kept sorted. Queries take views of the columns, so the caller keeps its
+// map; updates take the map and return it.
+
+import stdlib.result;
+import stdlib.bytes;
+
+pub struct Map {
+    keys: Buffer<u8>,
+    starts: Buffer<u64>,
+    ends: Buffer<u64>,
+    values: Buffer<u64>,
+}
+
+pub enum Inserted {
+    Added { map: Map, },
+    Duplicate { map: Map, at: u64, },
+}
+
+pub fn empty() -> Map {
+    Map { keys: Buffer::new(), starts: Buffer::new(), ends: Buffer::new(), values: Buffer::new() }
+}
+
+// Where `key` is among the entries, or where it would go. Binary search over
+// the sorted columns.
+pub fn locate(keys: Slice<u8>, starts: Slice<u64>, ends: Slice<u64>, key: Slice<u8>) -> Search {
+    let mut low: u64 = 0u64;
+    let mut high: u64 = starts.length();
+    while low < high {
+        let middle: u64 = low + (high - low) / 2u64;
+        let order: i8 = bytes.compare(keys.slice(starts[middle], ends[middle]), key);
+        if order == 0i8 {
+            return Search::Found { at: middle };
+        }
+        if order < 0i8 {
+            low = middle + 1u64;
+        } else {
+            high = middle;
+        }
+    }
+    Search::Missing { insert_at: low }
+}
+
+// `map` with `key` bound to `value`, or the map unchanged and the position of
+// the key already there.
+pub fn insert(map: Map, key: Slice<u8>, value: u64) -> Inserted {
+    let found: Search = locate(map.keys.as_slice(), map.starts.as_slice(), map.ends.as_slice(), key);
+    match found {
+        Search::Found { at } => Inserted::Duplicate { map: map, at: at },
+        Search::Missing { insert_at } => Inserted::Added { map: add(map, key, value, insert_at) },
+    }
+}
+
+// `map` with a new entry at `slot`, which keeps the columns sorted.
+fn add(map: Map, key: Slice<u8>, value: u64, slot: u64) -> Map {
+    let mut out: Map = map;
+    let start: u64 = out.keys.length();
+    let mut index: u64 = 0u64;
+    while index < key.length() {
+        out.keys.push(key[index]);
+        index += 1u64;
+    }
+    let end: u64 = out.keys.length();
+    // Grow each column by one, then open the slot by shifting the tail.
+    out.starts.push(start);
+    out.ends.push(end);
+    out.values.push(value);
+    let mut hole: u64 = out.starts.length() - 1u64;
+    while hole > slot {
+        out.starts[hole] = out.starts[hole - 1u64];
+        out.ends[hole] = out.ends[hole - 1u64];
+        out.values[hole] = out.values[hole - 1u64];
+        hole -= 1u64;
+    }
+    out.starts[slot] = start;
+    out.ends[slot] = end;
+    out.values[slot] = value;
+    out
+}
+
+// The value bound to `key`.
+pub fn get(keys: Slice<u8>, starts: Slice<u64>, ends: Slice<u64>, values: Slice<u64>, key: Slice<u8>) -> U64Result {
+    match locate(keys, starts, ends, key) {
+        Search::Found { at } => U64Result::Ok { value: values[at] },
+        Search::Missing { insert_at } => U64Result::Err { failure: Failure::OutOfRange { at: insert_at } },
+    }
+}

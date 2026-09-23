@@ -279,7 +279,14 @@ pub fn emit_once(
     source: &Path,
     output: &Path,
 ) -> Result<(i32, String)> {
-    let result = Command::new(argorixc)
+    let mut command = Command::new(argorixc);
+    // The Core standard library lives in `stdlib/` of the repository; the
+    // driver only reads it when told to, so the harness tells it.
+    let stdlib = root.join("stdlib");
+    if stdlib.is_dir() {
+        command.arg("--stdlib").arg(stdlib);
+    }
+    let result = command
         .arg("core-emit-c")
         .arg(source)
         .arg("--output")

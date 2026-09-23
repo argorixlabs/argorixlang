@@ -72,6 +72,23 @@ scope ends:
   struct releases its resource fields, an enum those of its live variant, a
   buffer or array each resource element before its own storage.
 
+### Views of owned storage
+
+`x.as_slice()` makes a `Slice<T>` view of a `Buffer<T>` or `Array<T, N>`
+without moving `x`. The view does not own anything, so it must not outlive `x`:
+
+- `as_slice()` may only appear directly as an argument of a call,
+  `f(x.as_slice())` (`SliceEscapes`), and that call may not also move `x`
+  (`SliceAliasesMove`). Inside the callee the view is an ordinary parameter.
+- `view.slice(start, end)` narrows a view; `start > end` or `end` past the
+  view's length is the trap `INDEX_OUT_OF_BOUNDS`. `stdlib.bytes.range` is
+  the checked form that returns a result instead.
+- A slice cannot be the element of a container (`SliceEscapes`).
+- Core allows a slice as a struct field, an enum payload or a return type,
+  such as a parser that keeps its token slice. The transitional C backend
+  refuses those programs with `CBackendUnsupported`: its views of buffer and
+  array storage carry no generation to check, and a stored view could dangle.
+
 ### `Arena<T>` and `Handle<T>`
 
 - `Arena::new()` creates a bounded typed arena under the caller's ownership.

@@ -1,0 +1,62 @@
+core 0.1;
+module selfhost_stdlib.path_ops;
+
+// stdlib.path: only normal relative paths are valid. Traversal, roots, empty
+// segments, host separators and invalid UTF-8 are refused, each at the byte
+// that breaks the rule. All 13 checks pass gives 8191.
+
+import stdlib.path;
+import stdlib.bytes;
+import stdlib.result;
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+fn digest(value: Slice<u8>) -> u64 {
+    result.checked_digest(path.validate(value))
+}
+
+pub fn argorix_main() -> u64 {
+    let a_b: Array<u8, 3> = [97u8, 47u8, 98u8];
+    let empty: Array<u8, 0> = [];
+    let rooted: Array<u8, 2> = [47u8, 97u8];
+    let doubled: Array<u8, 4> = [97u8, 47u8, 47u8, 98u8];
+    let parent: Array<u8, 6> = [97u8, 47u8, 46u8, 46u8, 47u8, 98u8];
+    let current: Array<u8, 3> = [97u8, 47u8, 46u8];
+    let backslash: Array<u8, 3> = [97u8, 92u8, 98u8];
+    let drive: Array<u8, 3> = [99u8, 58u8, 120u8];
+    let nul: Array<u8, 2> = [97u8, 0u8];
+    let not_utf8: Array<u8, 2> = [97u8, 255u8];
+    let trailing: Array<u8, 2> = [97u8, 47u8];
+    let a: Array<u8, 1> = [97u8];
+    let b_c: Array<u8, 3> = [98u8, 47u8, 99u8];
+    let a_b_c: Array<u8, 5> = [97u8, 47u8, 98u8, 47u8, 99u8];
+    let dot_dot: Array<u8, 2> = [46u8, 46u8];
+    let mut mask: u64 = 0u64;
+
+    mask += bit(digest(a_b.as_slice()) == 0u64 && path.segment_count(a_b.as_slice()) == 2u64, 0u64);
+    mask += bit(digest(empty.as_slice()) == 4000000u64, 1u64);
+    mask += bit(digest(rooted.as_slice()) == 4000000u64, 2u64);
+    mask += bit(digest(doubled.as_slice()) == 4000002u64, 3u64);
+    mask += bit(digest(parent.as_slice()) == 4000002u64, 4u64);
+    mask += bit(digest(current.as_slice()) == 4000002u64, 5u64);
+    mask += bit(digest(backslash.as_slice()) == 4000001u64, 6u64);
+    mask += bit(digest(drive.as_slice()) == 4000001u64, 7u64);
+    mask += bit(digest(nul.as_slice()) == 4000001u64, 8u64);
+    mask += bit(digest(not_utf8.as_slice()) == 1000001u64, 9u64);
+    mask += bit(digest(trailing.as_slice()) == 4000002u64, 10u64);
+
+    let joined: bool = match path.join(a.as_slice(), b_c.as_slice()) {
+        BytesResult::Ok { value } => bytes.equal(value.as_slice(), a_b_c.as_slice()),
+        BytesResult::Err { failure: _ } => false,
+    };
+    mask += bit(joined, 11u64);
+    // Joining never lets a child climb out of its base.
+    let climbed: bool = match path.join(a.as_slice(), dot_dot.as_slice()) {
+        BytesResult::Ok { value: _ } => true,
+        BytesResult::Err { failure } => result.failure_digest(failure) != 4000000u64,
+    };
+    mask += bit(!climbed, 12u64);
+    mask
+}

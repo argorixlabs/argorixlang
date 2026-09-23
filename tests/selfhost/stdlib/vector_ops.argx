@@ -1,0 +1,53 @@
+core 0.1;
+module selfhost_stdlib.vector_ops;
+
+// stdlib.vector: sum, membership, a stable sort and a lower-bound search.
+// All 8 checks pass gives 255.
+
+import stdlib.vector;
+import stdlib.result;
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+fn same(left: Slice<u64>, right: Slice<u64>) -> bool {
+    if left.length() != right.length() {
+        return false;
+    }
+    let mut index: u64 = 0u64;
+    while index < left.length() {
+        if left[index] != right[index] {
+            return false;
+        }
+        index += 1u64;
+    }
+    true
+}
+
+fn found_at(search: Search) -> u64 {
+    match search {
+        Search::Found { at } => at,
+        Search::Missing { insert_at } => 1000u64 + insert_at,
+    }
+}
+
+pub fn argorix_main() -> u64 {
+    let small: Array<u64, 3> = [1u64, 2u64, 3u64];
+    let unsorted: Array<u64, 5> = [5u64, 3u64, 9u64, 1u64, 3u64];
+    let sorted_expected: Array<u64, 5> = [1u64, 3u64, 3u64, 5u64, 9u64];
+    let mut mask: u64 = 0u64;
+
+    mask += bit(vector.sum(small.as_slice()) == 6u64, 0u64);
+    mask += bit(vector.contains(small.as_slice(), 2u64), 1u64);
+    let sorted: Buffer<u64> = vector.sort(vector.copy(unsorted.as_slice()));
+    mask += bit(same(sorted.as_slice(), sorted_expected.as_slice()), 2u64);
+    mask += bit(found_at(vector.search_sorted(sorted.as_slice(), 5u64)) == 3u64, 3u64);
+    // Missing values report where they would go: 1000 + position.
+    mask += bit(found_at(vector.search_sorted(sorted.as_slice(), 4u64)) == 1003u64, 4u64);
+    mask += bit(found_at(vector.search_sorted(sorted.as_slice(), 0u64)) == 1000u64, 5u64);
+    mask += bit(found_at(vector.search_sorted(sorted.as_slice(), 10u64)) == 1005u64, 6u64);
+    // With duplicates, the search lands on the first of them.
+    mask += bit(found_at(vector.search_sorted(sorted.as_slice(), 3u64)) == 1u64, 7u64);
+    mask
+}

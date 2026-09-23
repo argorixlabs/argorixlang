@@ -323,6 +323,14 @@
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:15",
       "expected_stderr": ""
+    },
+    {
+      "id": "g24_diverging_value_arm",
+      "file": "g24_diverging_value_arm.argx",
+      "was": "A value-position match arm whose block ends in `return` or `break` has no tail; the backend refused it with CBackendUnsupported although the checker accepts it (found by the stdlib.json validator, ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:63",
+      "expected_stderr": ""
     }
   ]
 }

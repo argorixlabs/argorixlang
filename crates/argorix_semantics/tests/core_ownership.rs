@@ -180,3 +180,36 @@ fn plain_data_is_copied_not_moved() {
     )
     .is_empty());
 }
+
+#[test]
+fn a_view_is_only_made_as_a_call_argument() {
+    let body = "let b: Buffer<u8> = make();\nlet view: Slice<u8> = b.as_slice();\nview.length()";
+    assert_eq!(codes(body), vec!["SliceEscapes"]);
+}
+
+#[test]
+fn a_view_and_a_move_of_the_same_buffer_cannot_share_a_call() {
+    let source = format!(
+        "{PRELUDE}\nfn both(view: Slice<u8>, owned: Buffer<u8>) -> u64 {{ view.length() + owned.length() }}\n\
+         pub fn argorix_main() -> u64 {{\nlet b: Buffer<u8> = make();\nboth(b.as_slice(), b)\n}}\n"
+    );
+    let program = parse_core_source(&source).expect("case parses");
+    let codes: Vec<String> = match check_core_program(&program, &CoreCheckOptions::default()) {
+        Ok(()) => Vec::new(),
+        Err(diagnostics) => diagnostics.into_iter().map(|item| item.code).collect(),
+    };
+    assert_eq!(codes, vec!["SliceAliasesMove"]);
+}
+
+#[test]
+fn core_allows_a_slice_field() {
+    // The spec's parser fixture keeps its token slice in a struct; only the
+    // transitional C backend refuses that (see crates/argorix_ir/tests/core_c.rs).
+    let source = format!(
+        "{PRELUDE}\nstruct Cursor {{ bytes: Slice<u8>, at: u64, }}\n\
+         fn start(bytes: Slice<u8>) -> Cursor {{ Cursor {{ bytes: bytes, at: 0u64 }} }}\n\
+         pub fn argorix_main() -> u64 {{ 0u64 }}\n"
+    );
+    let program = parse_core_source(&source).expect("case parses");
+    assert!(check_core_program(&program, &CoreCheckOptions::default()).is_ok());
+}

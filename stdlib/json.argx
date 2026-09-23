@@ -1,0 +1,350 @@
+core 0.1;
+module stdlib.json;
+
+// The canonical JSON subset the bootstrap exchanges (spec/core/stdlib.md,
+// `stdlib.json`): objects, arrays, strings, unsigned integers, `true`,
+// `false` and `null`, with no insignificant whitespace. The writer produces
+// one spelling per value, and the validator accepts only that subset:
+//
+// - an integer is a `u64` without a sign, fraction, exponent or leading zero;
+// - a string is valid UTF-8, with no raw control byte and only the standard
+//   escapes (`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, `\uXXXX`);
+// - an object has no duplicate key, compared as written;
+// - nesting stops at `max_depth()` levels.
+
+import stdlib.result;
+import stdlib.bytes;
+import stdlib.text;
+
+pub fn max_depth() -> u64 {
+    64u64
+}
+
+// ---------------------------------------------------------------- writer
+// Each call takes the output and returns it with one more token. `first`
+// says whether a separator is needed before a member or an element.
+
+pub fn begin_object(out: Buffer<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    o.push(123u8);
+    o
+}
+
+pub fn end_object(out: Buffer<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    o.push(125u8);
+    o
+}
+
+pub fn begin_array(out: Buffer<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    o.push(91u8);
+    o
+}
+
+pub fn end_array(out: Buffer<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    o.push(93u8);
+    o
+}
+
+// A comma, unless this is the first element.
+pub fn separator(out: Buffer<u8>, first: bool) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    if !first {
+        o.push(44u8);
+    }
+    o
+}
+
+// `"name":`, preceded by a comma unless this is the first member.
+pub fn key(out: Buffer<u8>, first: bool, name: Slice<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = string(separator(out, first), name);
+    o.push(58u8);
+    o
+}
+
+pub fn string(out: Buffer<u8>, value: Slice<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    o.push(34u8);
+    let mut escaped: Buffer<u8> = text.append_json_escaped(o, value);
+    escaped.push(34u8);
+    escaped
+}
+
+pub fn unsigned(out: Buffer<u8>, value: u64) -> Buffer<u8> {
+    bytes.append_decimal(out, value)
+}
+
+pub fn boolean(out: Buffer<u8>, value: bool) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    if value {
+        o.push(116u8);
+        o.push(114u8);
+        o.push(117u8);
+        o.push(101u8);
+    } else {
+        o.push(102u8);
+        o.push(97u8);
+        o.push(108u8);
+        o.push(115u8);
+        o.push(101u8);
+    }
+    o
+}
+
+pub fn null(out: Buffer<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    o.push(110u8);
+    o.push(117u8);
+    o.push(108u8);
+    o.push(108u8);
+    o
+}
+
+// ---------------------------------------------------------------- validator
+
+pub fn validate(input: Slice<u8>) -> Checked {
+    match value(input, 0u64, 0u64) {
+        U64Result::Ok { value } => {
+            if value == input.length() {
+                Checked::Ok
+            } else {
+                Checked::Err { failure: Failure::InvalidJson { at: value } }
+            }
+        },
+        U64Result::Err { failure } => Checked::Err { failure: failure },
+    }
+}
+
+// One value starting at `at`: the position just after it.
+fn value(input: Slice<u8>, at: u64, depth: u64) -> U64Result {
+    if at >= input.length() {
+        return invalid(at);
+    }
+    let byte: u8 = input[at];
+    if byte == 123u8 {
+        return object(input, at, depth + 1u64);
+    }
+    if byte == 91u8 {
+        return array(input, at, depth + 1u64);
+    }
+    if byte == 34u8 {
+        return string_end(input, at);
+    }
+    if byte == 116u8 {
+        return word(input, at, 116u8, 114u8, 117u8, 101u8, 0u8);
+    }
+    if byte == 102u8 {
+        return word(input, at, 102u8, 97u8, 108u8, 115u8, 101u8);
+    }
+    if byte == 110u8 {
+        return word(input, at, 110u8, 117u8, 108u8, 108u8, 0u8);
+    }
+    if byte >= 48u8 && byte <= 57u8 {
+        return number(input, at);
+    }
+    invalid(at)
+}
+
+fn object(input: Slice<u8>, at: u64, depth: u64) -> U64Result {
+    if depth > max_depth() {
+        return U64Result::Err { failure: Failure::TooDeep { at: at } };
+    }
+    let mut index: u64 = at + 1u64;
+    if index < input.length() && input[index] == 125u8 {
+        return U64Result::Ok { value: index + 1u64 };
+    }
+    // The keys seen so far, as ranges of `input`, to reject a duplicate.
+    let mut starts: Buffer<u64> = Buffer::new();
+    let mut ends: Buffer<u64> = Buffer::new();
+    loop {
+        if index >= input.length() || input[index] != 34u8 {
+            return invalid(index);
+        }
+        let key_end: u64 = match string_end(input, index) {
+            U64Result::Ok { value } => value,
+            U64Result::Err { failure } => {
+                return U64Result::Err { failure: failure };
+            },
+        };
+        let key_start: u64 = index + 1u64;
+        let key_stop: u64 = key_end - 1u64;
+        let mut seen: u64 = 0u64;
+        while seen < starts.length() {
+            if bytes.equal(input.slice(starts[seen], ends[seen]), input.slice(key_start, key_stop)) {
+                return U64Result::Err { failure: Failure::DuplicateKey { at: index } };
+            }
+            seen += 1u64;
+        }
+        starts.push(key_start);
+        ends.push(key_stop);
+        index = key_end;
+        if index >= input.length() || input[index] != 58u8 {
+            return invalid(index);
+        }
+        index = match value(input, index + 1u64, depth) {
+            U64Result::Ok { value } => value,
+            U64Result::Err { failure } => {
+                return U64Result::Err { failure: failure };
+            },
+        };
+        if index >= input.length() {
+            return invalid(index);
+        }
+        if input[index] == 125u8 {
+            return U64Result::Ok { value: index + 1u64 };
+        }
+        if input[index] != 44u8 {
+            return invalid(index);
+        }
+        index += 1u64;
+    }
+}
+
+fn array(input: Slice<u8>, at: u64, depth: u64) -> U64Result {
+    if depth > max_depth() {
+        return U64Result::Err { failure: Failure::TooDeep { at: at } };
+    }
+    let mut index: u64 = at + 1u64;
+    if index < input.length() && input[index] == 93u8 {
+        return U64Result::Ok { value: index + 1u64 };
+    }
+    loop {
+        index = match value(input, index, depth) {
+            U64Result::Ok { value } => value,
+            U64Result::Err { failure } => {
+                return U64Result::Err { failure: failure };
+            },
+        };
+        if index >= input.length() {
+            return invalid(index);
+        }
+        if input[index] == 93u8 {
+            return U64Result::Ok { value: index + 1u64 };
+        }
+        if input[index] != 44u8 {
+            return invalid(index);
+        }
+        index += 1u64;
+    }
+}
+
+// A string starting with its opening quote at `at`: the position after its
+// closing quote.
+fn string_end(input: Slice<u8>, at: u64) -> U64Result {
+    let mut index: u64 = at + 1u64;
+    while index < input.length() {
+        let byte: u8 = input[index];
+        if byte == 34u8 {
+            // The raw bytes between the quotes must be UTF-8; escapes are
+            // ASCII, so checking them as written is enough.
+            return match text.validate(input.slice(at + 1u64, index)) {
+                Checked::Ok => U64Result::Ok { value: index + 1u64 },
+                Checked::Err { failure } => U64Result::Err {
+                    failure: Failure::InvalidUtf8 { at: at + 1u64 + result.position(failure) },
+                },
+            };
+        }
+        if byte < 32u8 {
+            return invalid(index);
+        }
+        if byte == 92u8 {
+            if index + 1u64 >= input.length() {
+                return invalid(index);
+            }
+            let escape: u8 = input[index + 1u64];
+            if escape == 117u8 {
+                if index + 6u64 > input.length() {
+                    return invalid(index);
+                }
+                let mut digit: u64 = 2u64;
+                while digit < 6u64 {
+                    if !is_hex(input[index + digit]) {
+                        return invalid(index + digit);
+                    }
+                    digit += 1u64;
+                }
+                index += 6u64;
+            } else if escape == 34u8 || escape == 92u8 || escape == 47u8 || escape == 98u8
+                || escape == 102u8 || escape == 110u8 || escape == 114u8 || escape == 116u8
+            {
+                index += 2u64;
+            } else {
+                return invalid(index + 1u64);
+            }
+        } else {
+            index += 1u64;
+        }
+    }
+    invalid(index)
+}
+
+// An unsigned integer: digits only, no leading zero, at most `u64::MAX`.
+fn number(input: Slice<u8>, at: u64) -> U64Result {
+    if input[at] == 48u8 {
+        if at + 1u64 < input.length() && is_digit(input[at + 1u64]) {
+            return invalid(at + 1u64);
+        }
+        return U64Result::Ok { value: at + 1u64 };
+    }
+    let mut total: u64 = 0u64;
+    let mut index: u64 = at;
+    while index < input.length() && is_digit(input[index]) {
+        let digit: u64 = digit_value(input[index]);
+        // 18446744073709551615 is u64::MAX; refuse before the arithmetic
+        // would trap.
+        if total > 1844674407370955161u64 || (total == 1844674407370955161u64 && digit > 5u64) {
+            return U64Result::Err { failure: Failure::OutOfRange { at: at } };
+        }
+        total = total * 10u64 + digit;
+        index += 1u64;
+    }
+    if index < input.length() && (input[index] == 46u8 || input[index] == 101u8 || input[index] == 69u8) {
+        return invalid(index);
+    }
+    U64Result::Ok { value: index }
+}
+
+// `true`, `false` or `null`: up to five exact bytes; a trailing 0 ends the
+// word early.
+fn word(input: Slice<u8>, at: u64, b0: u8, b1: u8, b2: u8, b3: u8, b4: u8) -> U64Result {
+    let length: u64 = if b4 == 0u8 { 4u64 } else { 5u64 };
+    if at + length > input.length() {
+        return invalid(at);
+    }
+    if input[at] != b0 || input[at + 1u64] != b1 || input[at + 2u64] != b2 || input[at + 3u64] != b3 {
+        return invalid(at);
+    }
+    if length == 5u64 && input[at + 4u64] != b4 {
+        return invalid(at);
+    }
+    U64Result::Ok { value: at + length }
+}
+
+fn invalid(at: u64) -> U64Result {
+    U64Result::Err { failure: Failure::InvalidJson { at: at } }
+}
+
+fn is_digit(byte: u8) -> bool {
+    byte >= 48u8 && byte <= 57u8
+}
+
+fn is_hex(byte: u8) -> bool {
+    is_digit(byte) || (byte >= 97u8 && byte <= 102u8) || (byte >= 65u8 && byte <= 70u8)
+}
+
+fn digit_value(byte: u8) -> u64 {
+    match byte {
+        48u8 => 0u64,
+        49u8 => 1u64,
+        50u8 => 2u64,
+        51u8 => 3u64,
+        52u8 => 4u64,
+        53u8 => 5u64,
+        54u8 => 6u64,
+        55u8 => 7u64,
+        56u8 => 8u64,
+        _ => 9u64,
+    }
+}

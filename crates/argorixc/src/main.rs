@@ -26,6 +26,11 @@ struct Cli {
     #[arg(long, global = true)]
     legacy_capabilities: bool,
 
+    /// Directory of the Argorix Core standard library. Its modules join the
+    /// locked compilation set of a Core program; nothing is found by searching.
+    #[arg(long, global = true)]
+    stdlib: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -94,7 +99,7 @@ fn run() -> Result<()> {
             println!("Semantic checks: passed");
         }
         Command::CoreCheck { file } => {
-            let compiled = compile_core(&file)?;
+            let compiled = compile_core(&file, cli.stdlib.as_deref())?;
             let functions = compiled
                 .root
                 .items
@@ -118,7 +123,7 @@ fn run() -> Result<()> {
             println!("Execution: available through core-emit-c");
         }
         Command::CoreEmitIr { file } => {
-            let compiled = compile_core(&file)?;
+            let compiled = compile_core(&file, cli.stdlib.as_deref())?;
             let verified = verify_core_program(
                 &compiled.program,
                 &CoreCheckOptions {
@@ -147,7 +152,7 @@ fn run() -> Result<()> {
             println!("Semantic fingerprint: {}", verified.semantic_fingerprint());
         }
         Command::CoreEmitC { file, output } => {
-            let compiled = compile_core(&file)?;
+            let compiled = compile_core(&file, cli.stdlib.as_deref())?;
             let checked = verify_core_program(
                 &compiled.program,
                 &CoreCheckOptions {
@@ -363,7 +368,7 @@ struct CheckedCoreSource {
     linked_modules: usize,
 }
 
-fn compile_core(path: &Path) -> Result<CheckedCoreSource> {
+fn compile_core(path: &Path, stdlib: Option<&Path>) -> Result<CheckedCoreSource> {
     if path.extension().and_then(|extension| extension.to_str()) != Some("argx") {
         bail!("Argorix source files must use the `.argx` extension");
     }
@@ -385,10 +390,22 @@ fn compile_core(path: &Path) -> Result<CheckedCoreSource> {
     let mut files: BTreeMap<String, (String, String)> = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     files.insert(root_name.clone(), (file.clone(), source.clone()));
-    for entry in fs::read_dir(&directory)
-        .with_context(|| format!("failed to enumerate `{}`", directory.display()))?
-    {
-        let candidate = entry?.path();
+    // The standard library joins the set only when the driver names it.
+    let mut directories = vec![directory.clone()];
+    if let Some(stdlib) = stdlib {
+        if fs::canonicalize(stdlib).ok() != fs::canonicalize(&directory).ok() {
+            directories.push(stdlib.to_path_buf());
+        }
+    }
+    let mut candidates = Vec::new();
+    for scanned in &directories {
+        for entry in fs::read_dir(scanned)
+            .with_context(|| format!("failed to enumerate `{}`", scanned.display()))?
+        {
+            candidates.push(entry?.path());
+        }
+    }
+    for candidate in candidates {
         if candidate
             .extension()
             .and_then(|extension| extension.to_str())

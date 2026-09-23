@@ -1,0 +1,128 @@
+core 0.1;
+module stdlib.bytes;
+
+// Bounded operations on byte strings (spec/core/stdlib.md, `stdlib.bytes`).
+// Read-only operations take views, `Slice<u8>`, so the caller keeps its
+// buffers; operations that build bytes take a buffer and return it.
+
+import stdlib.result;
+
+// Bytewise equality.
+pub fn equal(left: Slice<u8>, right: Slice<u8>) -> bool {
+    if left.length() != right.length() {
+        return false;
+    }
+    let mut index: u64 = 0u64;
+    while index < left.length() {
+        if left[index] != right[index] {
+            return false;
+        }
+        index += 1u64;
+    }
+    true
+}
+
+// Ordering over unsigned bytes: -1 if `left` sorts first, 1 if `right` does,
+// 0 if they are equal. A proper prefix sorts first. This is the order every
+// S1 map and every canonical output uses.
+pub fn compare(left: Slice<u8>, right: Slice<u8>) -> i8 {
+    let mut index: u64 = 0u64;
+    while index < left.length() && index < right.length() {
+        if left[index] < right[index] {
+            return 0i8 - 1i8;
+        }
+        if left[index] > right[index] {
+            return 1i8;
+        }
+        index += 1u64;
+    }
+    if left.length() < right.length() {
+        return 0i8 - 1i8;
+    }
+    if left.length() > right.length() {
+        return 1i8;
+    }
+    0i8
+}
+
+pub fn starts_with(value: Slice<u8>, prefix: Slice<u8>) -> bool {
+    if prefix.length() > value.length() {
+        return false;
+    }
+    equal(value.slice(0u64, prefix.length()), prefix)
+}
+
+// The first position at or after `from` holding `byte`.
+pub fn find(value: Slice<u8>, byte: u8, from: u64) -> Search {
+    let mut index: u64 = from;
+    while index < value.length() {
+        if value[index] == byte {
+            return Search::Found { at: index };
+        }
+        index += 1u64;
+    }
+    Search::Missing { insert_at: value.length() }
+}
+
+// A new buffer holding the bytes of `source`.
+pub fn copy(source: Slice<u8>) -> Buffer<u8> {
+    let target: Buffer<u8> = Buffer::new();
+    append(target, source)
+}
+
+// `target` with the bytes of `source` added at its end.
+pub fn append(target: Buffer<u8>, source: Slice<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = target;
+    let mut index: u64 = 0u64;
+    while index < source.length() {
+        out.push(source[index]);
+        index += 1u64;
+    }
+    out
+}
+
+// A copy of `value[start..end]`, or `OutOfRange` instead of a trap when the
+// range does not lie inside `value`.
+pub fn range(value: Slice<u8>, start: u64, end: u64) -> BytesResult {
+    if start > end {
+        return BytesResult::Err { failure: Failure::OutOfRange { at: start } };
+    }
+    if end > value.length() {
+        return BytesResult::Err { failure: Failure::OutOfRange { at: end } };
+    }
+    BytesResult::Ok { value: copy(value.slice(start, end)) }
+}
+
+// `target` with the decimal digits of `value` added, most significant first.
+pub fn append_decimal(target: Buffer<u8>, value: u64) -> Buffer<u8> {
+    let mut digits: Buffer<u8> = Buffer::new();
+    let mut rest: u64 = value;
+    loop {
+        digits.push(48u8 + low_digit(rest));
+        rest = rest / 10u64;
+        if rest == 0u64 { break; }
+    }
+    let mut out: Buffer<u8> = target;
+    let mut index: u64 = digits.length();
+    while index > 0u64 {
+        index -= 1u64;
+        out.push(digits[index]);
+    }
+    out
+}
+
+// `value % 10` as a byte. The remainder always fits.
+fn low_digit(value: u64) -> u8 {
+    match value % 10u64 {
+        0u64 => 0u8,
+        1u64 => 1u8,
+        2u64 => 2u8,
+        3u64 => 3u8,
+        4u64 => 4u8,
+        5u64 => 5u8,
+        6u64 => 6u8,
+        7u64 => 7u8,
+        8u64 => 8u8,
+        _ => 9u8,
+    }
+}

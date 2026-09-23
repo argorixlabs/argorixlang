@@ -1,0 +1,54 @@
+core 0.1;
+module regression.g24_diverging_value_arm;
+
+// A match arm in value position whose block leaves by `return` or `break`
+// has no tail. The backend refused it ("value block has no tail
+// expression") although the checker accepts it; stdlib.json needs it.
+
+enum Step {
+    Ok { value: u64, },
+    Stop { code: u64, },
+}
+
+fn step(index: u64) -> Step {
+    if index > 2u64 { Step::Stop { code: index } } else { Step::Ok { value: index * 10u64 } }
+}
+
+// Leaves through `return` from inside the arm, releasing a Buffer on the way.
+fn total() -> u64 {
+    let mut acc: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    loop {
+        let value: u64 = match step(index) {
+            Step::Ok { value } => value,
+            Step::Stop { code } => {
+                let mut scratch: Buffer<u64> = Buffer::new();
+                scratch.push(code);
+                return acc + scratch[0u64];
+            },
+        };
+        acc += value;
+        index += 1u64;
+    }
+}
+
+// Leaves the enclosing `while` through `break` from inside the arm.
+fn until_stop() -> u64 {
+    let mut acc: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while true {
+        let value: u64 = match step(index) {
+            Step::Ok { value } => value,
+            Step::Stop { code: _ } => {
+                break;
+            },
+        };
+        acc += value;
+        index += 1u64;
+    }
+    acc
+}
+
+pub fn argorix_main() -> u64 {
+    total() + until_stop()
+}

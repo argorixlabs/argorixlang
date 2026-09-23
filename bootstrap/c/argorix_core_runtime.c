@@ -62,6 +62,14 @@ size_t argorix_bounds(uint64_t index, uint64_t length) {
     return (size_t)index;
 }
 
+/* A sub-view `start..end` must lie inside the view it narrows. */
+size_t argorix_range(uint64_t start, uint64_t end, uint64_t length) {
+    if (start > end || end > length || end > (uint64_t)SIZE_MAX) {
+        argorix_trap("INDEX_OUT_OF_BOUNDS");
+    }
+    return (size_t)start;
+}
+
 static bool argorix_continuation(uint8_t value) {
     return value >= 0x80U && value <= 0xBFU;
 }
