@@ -1,0 +1,83 @@
+core 0.1;
+module selfhost_stdlib.json_duplicates;
+
+// stdlib.json names the first key, in document order, that repeats an
+// earlier one, whatever the sort order of the keys, even when a later part
+// of the document is malformed, and in nested objects. A 1500-member object
+// validates within the default step budget, which the pairwise check it
+// replaced could not do. All 8 checks pass gives 255.
+
+import stdlib.json;
+import stdlib.bytes;
+import stdlib.result;
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+fn digest(value: Slice<u8>) -> u64 {
+    result.checked_digest(json.validate(value))
+}
+
+fn name(index: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    out.push(107u8);
+    bytes.append_decimal(out, index)
+}
+
+// {"k0":0,...,"k<count-1>":count-1}, plus "k<repeat>" again at the end when
+// `repeat` is below `count`. Returns the document; `quote` is where the
+// repeated key's opening quote lands.
+fn members(count: u64, repeat: u64) -> Buffer<u8> {
+    let mut doc: Buffer<u8> = json.begin_object(Buffer::new());
+    let mut index: u64 = 0u64;
+    while index < count {
+        let key: Buffer<u8> = name(index);
+        doc = json.unsigned(json.key(doc, index == 0u64, key.as_slice()), index);
+        index += 1u64;
+    }
+    if repeat < count {
+        let key: Buffer<u8> = name(repeat);
+        doc = json.unsigned(json.key(doc, false, key.as_slice()), 0u64);
+    }
+    json.end_object(doc)
+}
+
+pub fn argorix_main() -> u64 {
+    let mut mask: u64 = 0u64;
+    // {"b":1,"a":2,"b":3}: the second "b" starts at 13.
+    let spread: Array<u8, 19> = [123u8, 34u8, 98u8, 34u8, 58u8, 49u8, 44u8, 34u8, 97u8, 34u8,
+        58u8, 50u8, 44u8, 34u8, 98u8, 34u8, 58u8, 51u8, 125u8];
+    mask += bit(digest(spread.as_slice()) == 3000013u64, 0u64);
+    // {"z":1,"a":2,"a":3,"z":4}: "a" repeats first (13), though "z" sorts last.
+    let two: Array<u8, 25> = [123u8, 34u8, 122u8, 34u8, 58u8, 49u8, 44u8, 34u8, 97u8, 34u8,
+        58u8, 50u8, 44u8, 34u8, 97u8, 34u8, 58u8, 51u8, 44u8, 34u8, 122u8, 34u8, 58u8, 52u8,
+        125u8];
+    mask += bit(digest(two.as_slice()) == 3000013u64, 1u64);
+    // {"a":1,"a":x}: the repeat comes before the malformed value.
+    let then_bad: Array<u8, 13> = [123u8, 34u8, 97u8, 34u8, 58u8, 49u8, 44u8, 34u8, 97u8, 34u8,
+        58u8, 120u8, 125u8];
+    mask += bit(digest(then_bad.as_slice()) == 3000007u64, 2u64);
+    // {"a":x,"a":1}: the malformed value comes first.
+    let bad_then: Array<u8, 13> = [123u8, 34u8, 97u8, 34u8, 58u8, 120u8, 44u8, 34u8, 97u8, 34u8,
+        58u8, 49u8, 125u8];
+    mask += bit(digest(bad_then.as_slice()) == 5000005u64, 3u64);
+    // {"o":{"b":1,"b":2}}: the inner repeat, at 12.
+    let nested: Array<u8, 19> = [123u8, 34u8, 111u8, 34u8, 58u8, 123u8, 34u8, 98u8, 34u8, 58u8,
+        49u8, 44u8, 34u8, 98u8, 34u8, 58u8, 50u8, 125u8, 125u8];
+    mask += bit(digest(nested.as_slice()) == 3000012u64, 4u64);
+    // {"a":1,"a":{"x":}}: the outer repeat, at 7, before the inner error.
+    let outer: Array<u8, 18> = [123u8, 34u8, 97u8, 34u8, 58u8, 49u8, 44u8, 34u8, 97u8, 34u8,
+        58u8, 123u8, 34u8, 120u8, 34u8, 58u8, 125u8, 125u8];
+    mask += bit(digest(outer.as_slice()) == 3000007u64, 5u64);
+
+    // 1500 distinct members fit the default budget of 1,000,000 steps.
+    let large: Buffer<u8> = members(1500u64, 1500u64);
+    mask += bit(digest(large.as_slice()) == 0u64, 6u64);
+    // The same with "k42" again at the end, where its quote is the byte after
+    // the last comma: the document minus `"k42":0}`, 8 bytes.
+    let repeated: Buffer<u8> = members(1500u64, 42u64);
+    let quote: u64 = repeated.length() - 8u64;
+    mask += bit(digest(repeated.as_slice()) == 3000000u64 + quote, 7u64);
+    mask
+}
