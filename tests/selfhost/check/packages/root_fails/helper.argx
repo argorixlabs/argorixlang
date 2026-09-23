@@ -1,0 +1,6 @@
+core 0.1;
+module demo.helper;
+
+pub const LIMIT: u32 = 4u32;
+
+pub fn consume(data: Buffer<u8>) -> u64 { data.length() }

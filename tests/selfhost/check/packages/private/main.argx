@@ -1,0 +1,8 @@
+core 0.1;
+module demo.main;
+
+import demo.helper;
+
+pub fn argorix_main() -> u32 {
+    helper.twice(1u32) + helper.bump(1u32) + helper.LIMIT
+}

@@ -1,0 +1,4 @@
+core 0.1;
+module demo.broken;
+
+pub fn broken( -> u32 { 1u32 }

@@ -1,0 +1,23 @@
+core 0.1;
+module demo.main;
+
+import demo.helper;
+
+struct Point { twice: u32, }
+
+pub fn argorix_main() -> u32 {
+    // The initializer still reaches the import; after it, `helper` is a local.
+    let helper: u32 = helper.twice(2u32);
+    let other: u32 = shadowed(Point { twice: 5u32 });
+    helper + other
+}
+
+fn shadowed(helper: Point) -> u32 {
+    helper.twice
+}
+
+fn in_match(value: u32) -> u32 {
+    match value {
+        helper => helper.twice,
+    }
+}

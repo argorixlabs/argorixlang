@@ -2,7 +2,7 @@
   "schema_version": 1,
   "core_version": "0.1",
   "task": "ESP-012",
-  "purpose": "The Argorix checker in compiler/ over real files, through the compiler-host boundary, under gcc, clang and the sanitizers. The differential against the stage0 checker over the whole corpus is crates/argorixc/tests/check_differential.rs.",
+  "purpose": "The Argorix checker and linker in compiler/ over real files, through the compiler-host boundary, under gcc, clang and the sanitizers. The differentials against stage0 over the whole corpus are crates/argorixc/tests/check_differential.rs and link_differential.rs.",
   "cases": [
     {
       "id": "check_files",
@@ -18,6 +18,24 @@
         "expected_build": {
           "dumps/0.check": "ok\n",
           "dumps/1.check": "3:36: semantic[LiteralOutOfRangeOrConstantTrap]\n3:22: semantic[TypeMismatch]\n"
+        }
+      }
+    },
+    {
+      "id": "link_files",
+      "file": "link_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:3",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "link_package",
+        "read_budget": 2000,
+        "write_budget": 2000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.link": "ok\n",
+          "dumps/1.link": "0:7:33: resolution[PrivateSymbol]\n0:7:53: resolution[PrivateSymbol]\n",
+          "dumps/2.link": "1:4:21: semantic[TypeMismatch]\n1:6:18: semantic[TypeMismatch]\n"
         }
       }
     }

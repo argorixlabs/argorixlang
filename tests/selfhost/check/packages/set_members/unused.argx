@@ -1,0 +1,5 @@
+core 0.1;
+module demo.unused;
+
+// Nothing imports this module, so its error is never reported.
+pub fn wrong() -> u32 { true }

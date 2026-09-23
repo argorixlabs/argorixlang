@@ -1,0 +1,4 @@
+core 0.1;
+module demo.io;
+
+pub fn size(package: PackageRead, name: Slice<u8>) -> u64 { package.status(name) }

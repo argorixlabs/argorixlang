@@ -1,0 +1,6 @@
+core 0.1;
+module demo.leaf;
+
+pub struct Leaf { value: u32, }
+
+pub fn make(value: u32) -> Leaf { Leaf { value: value } }

@@ -1,0 +1,8 @@
+core 0.1;
+module demo.helper;
+
+const LIMIT: u32 = 3u32;
+
+pub fn twice(value: u32) -> u32 { bump(value) + value }
+
+fn bump(value: u32) -> u32 { value + LIMIT }

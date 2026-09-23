@@ -1,0 +1,7 @@
+core 0.1;
+module demo.main;
+
+import demo.first;
+import demo.second;
+
+pub fn argorix_main() -> u32 { first.one() + second.two() }

@@ -1,0 +1,743 @@
+core 0.1;
+module compiler.link;
+
+// The Argorix Core linker, in Argorix (ESP-012.C). It follows the stage0
+// linker (`crates/argorix_semantics/src/core_link.rs`) and the way the driver
+// checks a package (`check_core_package`), and reports the same diagnostics
+// at the same places:
+//
+// - the root and the files of its locked set are lexed and parsed; a file
+//   that does not parse is left out of the set, and a module declared by two
+//   files cannot be imported;
+// - the imports are followed depth first from the root, which orders the
+//   modules dependencies first; a module declared twice, a cycle and a module
+//   outside the set are errors;
+// - `import a.b;` binds `b` and `import a.b as x;` binds `x`; the binding,
+//   and every public struct or enum of the imported module, which the
+//   importer names by its bare name, must not clash with another name of the
+//   importer;
+// - `b.f` and `b.C`, where `b` is a binding and not a local, name the public
+//   function or constant of that module. The linker rewrites them into paths
+//   that carry the item they name (`value`, + 1), which the checker reads.
+//
+// Stage0 renames the items of every module but the root and concatenates the
+// modules into one program. Here the files are merged into one tree instead
+// and each declaration keeps the module of its file, which `compiler.check`
+// uses to look names up. Each module is linked and checked as stage0 does,
+// in link order, and the first that fails is the one reported.
+
+import stdlib.bytes;
+import compiler.token;
+import compiler.lexer;
+import compiler.ast;
+import compiler.parser;
+import compiler.check;
+
+// Diagnostic codes, in spec/core/check.md.
+pub const DUPLICATE_MODULE: u64 = 1u64;
+pub const IMPORT_CYCLE: u64 = 2u64;
+pub const IMPORT_NOT_LOCKED: u64 = 3u64;
+pub const DUPLICATE_IMPORTED_NAME: u64 = 4u64;
+pub const UNKNOWN_IMPORTED_SYMBOL: u64 = 5u64;
+pub const PRIVATE_SYMBOL: u64 = 6u64;
+
+// The files merged into one tree. Token and node positions are shifted so
+// that tokens point into the concatenated sources and nodes to each other.
+// `bases` holds the first node of each file and one past the last;
+// `programs` the program node of each file (+ 1), or 0 when it does not
+// parse.
+pub struct Unit {
+    tokens: Buffer<Token>,
+    nodes: Buffer<Node>,
+    bases: Buffer<u64>,
+    programs: Buffer<u64>,
+}
+
+// What linking found. `order` holds files in link order. `state` per file:
+// 0 unvisited, 1 on the path being walked, 2 done. `failed` (+ 1) is the file
+// whose errors are `errors`, (code, byte) pairs. `bindings` holds (module,
+// binding token, imported file) triples, `imported` (module, type name token)
+// pairs, and `imports` (importer, imported) pairs for the checker.
+pub struct Linking {
+    registered: Buffer<u64>,
+    duplicated: Buffer<u64>,
+    state: Buffer<u64>,
+    order: Buffer<u64>,
+    failed: u64,
+    errors: Buffer<u64>,
+    bindings: Buffer<u64>,
+    imported: Buffer<u64>,
+    imports: Buffer<u64>,
+}
+
+// A walk over one module's items: the tree it rewrites, the locals in scope
+// as (name token, depth) pairs, and the errors it finds.
+pub struct Walk {
+    nodes: Buffer<Node>,
+    locals: Buffer<u64>,
+    live: u64,
+    depth: u64,
+    errors: Buffer<u64>,
+}
+
+// ------------------------------------------------------------------ entry
+
+// The diagnostics dump of a package (see `core_package_check_dump` in
+// stage0). `sources` holds the files one after another, the root first, and
+// `ends` where each ends. A line per diagnostic, `file:line:column:
+// phase[Code]`, where `file` counts the files from 0, or `ok`, or
+// `parse failed` when the root does not parse, or `root module declared
+// twice`.
+pub fn dump(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    let merged: Unit = merge(sources, ends);
+    if merged.programs[0u64] == 0u64 {
+        return bytes.append(out, "parse failed\n".as_slice());
+    }
+    let mut l: Linking = register(sources, merged.tokens.as_slice(), merged.nodes.as_slice(), merged.programs.as_slice());
+    if l.duplicated.length() > 0u64 && is_duplicated(sources, merged.tokens.as_slice(), merged.nodes.as_slice(), merged.programs.as_slice(), l.duplicated.as_slice(), module_first(merged.nodes.as_slice(), merged.programs.as_slice(), 0u64), module_last(merged.nodes.as_slice(), merged.programs.as_slice(), 0u64)) {
+        return bytes.append(out, "root module declared twice\n".as_slice());
+    }
+    l = visit(sources, merged.tokens.as_slice(), merged.nodes.as_slice(), merged.programs.as_slice(), 0u64, l);
+    if l.failed != 0u64 {
+        return append_errors(out, sources, ends, l.failed - 1u64, l.errors.as_slice());
+    }
+    // Each module's bindings, then its references, in link order. A module
+    // that fails keeps its errors and the modules after it are still linked:
+    // they cannot matter to the ones before it.
+    let mut link_errors: Buffer<u64> = Buffer::new();
+    let mut failing: u64 = 0u64;
+    let mut w: Walk = Walk { nodes: copy_nodes(merged.nodes.as_slice()), locals: Buffer::new(), live: 0u64, depth: 0u64, errors: Buffer::new() };
+    let mut index: u64 = 0u64;
+    while index < l.order.length() {
+        let module: u64 = l.order[index];
+        l = bind(sources, merged.tokens.as_slice(), w.nodes.as_slice(), merged.programs.as_slice(), module, l);
+        if l.failed != 0u64 {
+            if failing == 0u64 {
+                failing = module + 1u64;
+                link_errors = copy(l.errors.as_slice());
+            }
+            l.failed = 0u64;
+            l.errors = Buffer::new();
+        } else {
+            w.live = 0u64;
+            w.depth = 0u64;
+            w.errors = Buffer::new();
+            w = walk_module(sources, merged.tokens.as_slice(), merged.programs.as_slice(), l.bindings.as_slice(), module, w);
+            if w.errors.length() > 0u64 && failing == 0u64 {
+                failing = module + 1u64;
+                link_errors = copy(w.errors.as_slice());
+            }
+        }
+        index += 1u64;
+    }
+    // One program of every item, in link order.
+    let program: u64 = w.nodes.length();
+    w = chain(merged.programs.as_slice(), l.order.as_slice(), w);
+    let checked: Check = check.check_unit(sources, merged.tokens.as_slice(), w.nodes.as_slice(), program, merged.bases.as_slice(), l.imports.as_slice());
+    // The first module in link order that fails: a module is linked before it
+    // is checked, and the modules before it passed both.
+    index = 0u64;
+    while index < l.order.length() {
+        let module: u64 = l.order[index];
+        if failing == module + 1u64 {
+            return append_errors(out, sources, ends, module, link_errors.as_slice());
+        }
+        let start: u64 = file_start(ends, module);
+        let mut found: bool = false;
+        let mut at: u64 = 0u64;
+        while at < checked.diagnostics.length() {
+            let diagnostic: Diagnostic = checked.diagnostics[at];
+            if diagnostic.at >= start && diagnostic.at < ends[module] {
+                out = bytes.append_decimal(out, module);
+                out.push(58u8);
+                out = check.append_diagnostic(out, sources.slice(start, ends[module]), Diagnostic { code: diagnostic.code, at: diagnostic.at - start });
+                found = true;
+            }
+            at += 1u64;
+        }
+        if found {
+            return out;
+        }
+        index += 1u64;
+    }
+    bytes.append(out, "ok\n".as_slice())
+}
+
+fn file_start(ends: Slice<u64>, file: u64) -> u64 {
+    if file == 0u64 {
+        return 0u64;
+    }
+    ends[file - 1u64]
+}
+
+fn copy(values: Slice<u64>) -> Buffer<u64> {
+    let mut out: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < values.length() {
+        out.push(values[index]);
+        index += 1u64;
+    }
+    out
+}
+
+fn copy_nodes(values: Slice<Node>) -> Buffer<Node> {
+    let mut out: Buffer<Node> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < values.length() {
+        out.push(values[index]);
+        index += 1u64;
+    }
+    out
+}
+
+fn append_errors(out: Buffer<u8>, sources: Slice<u8>, ends: Slice<u64>, file: u64, errors: Slice<u64>) -> Buffer<u8> {
+    let mut text: Buffer<u8> = out;
+    let start: u64 = file_start(ends, file);
+    let source: Slice<u8> = sources.slice(start, ends[file]);
+    let mut index: u64 = 0u64;
+    while index < errors.length() {
+        let code: u64 = errors[index];
+        let at: u64 = errors[index + 1u64] - start;
+        // Line and column of the byte, counted as the lexer counts them.
+        let mut line: u64 = 1u64;
+        let mut column: u64 = 1u64;
+        let mut position: u64 = 0u64;
+        while position < at {
+            let byte: u8 = source[position];
+            if byte == 10u8 {
+                line += 1u64;
+                column = 1u64;
+            } else if byte < 128u8 || byte >= 192u8 {
+                column += 1u64;
+            }
+            position += 1u64;
+        }
+        text = bytes.append_decimal(text, file);
+        text.push(58u8);
+        text = bytes.append_decimal(text, line);
+        text.push(58u8);
+        text = bytes.append_decimal(text, column);
+        text = bytes.append(text, ": resolution[".as_slice());
+        text = append_code(text, code);
+        text = bytes.append(text, "]\n".as_slice());
+        index += 2u64;
+    }
+    text
+}
+
+fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
+    if code == DUPLICATE_MODULE { return bytes.append(out, "DuplicateModule".as_slice()); }
+    if code == IMPORT_CYCLE { return bytes.append(out, "ImportCycle".as_slice()); }
+    if code == IMPORT_NOT_LOCKED { return bytes.append(out, "ImportNotLocked".as_slice()); }
+    if code == DUPLICATE_IMPORTED_NAME { return bytes.append(out, "DuplicateImportedName".as_slice()); }
+    if code == UNKNOWN_IMPORTED_SYMBOL { return bytes.append(out, "UnknownImportedSymbol".as_slice()); }
+    bytes.append(out, "PrivateSymbol".as_slice())
+}
+
+// ------------------------------------------------------------------ merging
+
+// Every file lexed and parsed, and its tokens and nodes appended to one tree.
+fn merge(sources: Slice<u8>, ends: Slice<u64>) -> Unit {
+    let mut merged: Unit = Unit { tokens: Buffer::new(), nodes: Buffer::new(), bases: Buffer::new(), programs: Buffer::new() };
+    let mut file: u64 = 0u64;
+    while file < ends.length() {
+        merged.bases.push(merged.nodes.length());
+        let start: u64 = file_start(ends, file);
+        let source: Slice<u8> = sources.slice(start, ends[file]);
+        let lexed: Lexed = lexer.lex(source);
+        if lexed.diagnostics.length() > 0u64 {
+            merged.programs.push(0u64);
+            file += 1u64;
+            continue;
+        }
+        let tree: Tree = parser.parse(lexed.tokens.as_slice(), source, lexed.strings.as_slice());
+        if tree.errors.length() > 0u64 {
+            merged.programs.push(0u64);
+            file += 1u64;
+            continue;
+        }
+        let token_base: u64 = merged.tokens.length();
+        let node_base: u64 = merged.nodes.length();
+        let mut index: u64 = 0u64;
+        while index < lexed.tokens.length() {
+            let mut found: Token = lexed.tokens[index];
+            found.start += start;
+            found.end += start;
+            // A string's text is in the lexer's own buffer, which nothing
+            // after parsing reads.
+            if found.kind != token.STRING {
+                found.text_start += start;
+                found.text_end += start;
+            }
+            merged.tokens.push(found);
+            index += 1u64;
+        }
+        index = 0u64;
+        while index < tree.nodes.length() {
+            let mut found: Node = tree.nodes[index];
+            found.start += start;
+            found.end += start;
+            if found.first != 0u64 {
+                found.first += node_base;
+            }
+            if found.next != 0u64 {
+                found.next += node_base;
+            }
+            if found.word != 0u64 {
+                found.word += token_base;
+            }
+            let kind: u64 = found.kind;
+            if kind == ast.PATH || kind == ast.AGGREGATE || kind == ast.PATTERN_VARIANT || kind == ast.IMPORT || kind == ast.PROGRAM {
+                found.path_last += token_base;
+            }
+            // An import's alias token.
+            if kind == ast.IMPORT && found.value != 0u64 {
+                found.value += token_base;
+            }
+            merged.nodes.push(found);
+            index += 1u64;
+        }
+        merged.programs.push(merged.nodes.length());
+        file += 1u64;
+    }
+    merged.bases.push(merged.nodes.length());
+    merged
+}
+
+// The items of every module in `order`, chained into one program node,
+// which is appended last.
+fn chain(programs: Slice<u64>, order: Slice<u64>, walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    let root: Node = w.nodes[programs[0u64] - 1u64];
+    let mut first: u64 = 0u64;
+    let mut last: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < order.length() {
+        let program: u64 = programs[order[index]] - 1u64;
+        let mut link: u64 = w.nodes[program].first;
+        if link != 0u64 {
+            if last == 0u64 {
+                first = link;
+            } else {
+                w.nodes[last - 1u64].next = link;
+            }
+            while link != 0u64 {
+                last = link;
+                link = w.nodes[link - 1u64].next;
+            }
+        }
+        index += 1u64;
+    }
+    w.nodes.push(Node { kind: ast.PROGRAM, start: root.start, end: root.end, label_start: 0u64, label_end: 0u64, first: first, next: 0u64, word: root.word, path_last: root.path_last, value: 0u64, flag: 0u64 });
+    w
+}
+
+// ------------------------------------------------------------------ the module graph
+
+fn module_first(nodes: Slice<Node>, programs: Slice<u64>, file: u64) -> u64 {
+    nodes[programs[file] - 1u64].word - 1u64
+}
+
+fn module_last(nodes: Slice<Node>, programs: Slice<u64>, file: u64) -> u64 {
+    nodes[programs[file] - 1u64].path_last
+}
+
+fn same_word(sources: Slice<u8>, tokens: Slice<Token>, left: u64, right: u64) -> bool {
+    bytes.equal(sources.slice(tokens[left].start, tokens[left].end), sources.slice(tokens[right].start, tokens[right].end))
+}
+
+// Whether the paths `first..last` and `other_first..other_last` name the same
+// module: the same identifiers, in the same order.
+fn same_path(sources: Slice<u8>, tokens: Slice<Token>, first: u64, last: u64, other_first: u64, other_last: u64) -> bool {
+    let mut left: u64 = first;
+    let mut right: u64 = other_first;
+    loop {
+        while left <= last && tokens[left].kind != token.IDENT {
+            left += 1u64;
+        }
+        while right <= other_last && tokens[right].kind != token.IDENT {
+            right += 1u64;
+        }
+        if left > last || right > other_last {
+            return left > last && right > other_last;
+        }
+        if !same_word(sources, tokens, left, right) {
+            return false;
+        }
+        left += 1u64;
+        right += 1u64;
+    }
+}
+
+// The registered file declaring the module `first..last`, + 1, or 0.
+fn find_module(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, registered: Slice<u64>, first: u64, last: u64) -> u64 {
+    let mut index: u64 = 0u64;
+    while index < registered.length() {
+        let file: u64 = registered[index];
+        if same_path(sources, tokens, first, last, module_first(nodes, programs, file), module_last(nodes, programs, file)) {
+            return file + 1u64;
+        }
+        index += 1u64;
+    }
+    0u64
+}
+
+fn is_duplicated(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, duplicated: Slice<u64>, first: u64, last: u64) -> bool {
+    find_module(sources, tokens, nodes, programs, duplicated, first, last) != 0u64
+}
+
+// The root, then each file of the set that parses, unless a file registered
+// before it declares the same module; then that module is duplicated.
+fn register(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>) -> Linking {
+    let mut l: Linking = Linking {
+        registered: Buffer::new(),
+        duplicated: Buffer::new(),
+        state: Buffer::new(),
+        order: Buffer::new(),
+        failed: 0u64,
+        errors: Buffer::new(),
+        bindings: Buffer::new(),
+        imported: Buffer::new(),
+        imports: Buffer::new(),
+    };
+    let mut file: u64 = 0u64;
+    while file < programs.length() {
+        l.state.push(0u64);
+        if programs[file] != 0u64 {
+            let first: u64 = module_first(nodes, programs, file);
+            let last: u64 = module_last(nodes, programs, file);
+            if find_module(sources, tokens, nodes, programs, l.registered.as_slice(), first, last) != 0u64 {
+                if !is_duplicated(sources, tokens, nodes, programs, l.duplicated.as_slice(), first, last) {
+                    l.duplicated.push(file);
+                }
+            } else {
+                l.registered.push(file);
+            }
+        }
+        file += 1u64;
+    }
+    l
+}
+
+fn fail(file: u64, code: u64, at: u64, linking: Linking) -> Linking {
+    let mut l: Linking = linking;
+    l.failed = file + 1u64;
+    l.errors.push(code);
+    l.errors.push(at);
+    l
+}
+
+// Depth first from `file`: each module after the modules it imports.
+fn visit(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, file: u64, linking: Linking) -> Linking {
+    let mut l: Linking = linking;
+    l.state[file] = 1u64;
+    let mut link: u64 = nodes[programs[file] - 1u64].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind != ast.IMPORT {
+            continue;
+        }
+        let first: u64 = nodes[item].word - 1u64;
+        let last: u64 = nodes[item].path_last;
+        let at: u64 = tokens[first].start;
+        if is_duplicated(sources, tokens, nodes, programs, l.duplicated.as_slice(), first, last) {
+            return fail(file, DUPLICATE_MODULE, at, l);
+        }
+        let target: u64 = find_module(sources, tokens, nodes, programs, l.registered.as_slice(), first, last);
+        if target == 0u64 {
+            return fail(file, IMPORT_NOT_LOCKED, at, l);
+        }
+        let state: u64 = l.state[target - 1u64];
+        if state == 1u64 {
+            return fail(file, IMPORT_CYCLE, at, l);
+        }
+        if state == 0u64 {
+            l = visit(sources, tokens, nodes, programs, target - 1u64, l);
+            if l.failed != 0u64 {
+                return l;
+            }
+        }
+    }
+    l.state[file] = 2u64;
+    l.order.push(file);
+    l
+}
+
+// ------------------------------------------------------------------ bindings
+
+// Whether `module` has an item named like token `name`.
+fn has_item(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, module: u64, name: u64) -> bool {
+    let mut link: u64 = nodes[programs[module] - 1u64].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind != ast.IMPORT && same_word(sources, tokens, nodes[item].word - 1u64, name) {
+            return true;
+        }
+    }
+    false
+}
+
+// The (module, token) pair among `pairs` for `module` named like `name`, or
+// the triple when `width` is 3: its position + 1, or 0.
+fn find_named(sources: Slice<u8>, tokens: Slice<Token>, pairs: Slice<u64>, width: u64, module: u64, name: u64) -> u64 {
+    let mut index: u64 = 0u64;
+    while index < pairs.length() {
+        if pairs[index] == module && same_word(sources, tokens, pairs[index + 1u64], name) {
+            return index + 1u64;
+        }
+        index += width;
+    }
+    0u64
+}
+
+// The bindings of `module` and the types its imports bring in by bare name.
+fn bind(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, module: u64, linking: Linking) -> Linking {
+    let mut l: Linking = linking;
+    let mut link: u64 = nodes[programs[module] - 1u64].first;
+    while link != 0u64 {
+        let import: u64 = link - 1u64;
+        link = nodes[import].next;
+        if nodes[import].kind != ast.IMPORT {
+            continue;
+        }
+        let binding: u64 = if nodes[import].value != 0u64 { nodes[import].value - 1u64 } else { nodes[import].path_last };
+        if has_item(sources, tokens, nodes, programs, module, binding) || find_named(sources, tokens, l.bindings.as_slice(), 3u64, module, binding) != 0u64 {
+            return fail(module, DUPLICATE_IMPORTED_NAME, nodes[import].start, l);
+        }
+        let target: u64 = find_module(sources, tokens, nodes, programs, l.registered.as_slice(), nodes[import].word - 1u64, nodes[import].path_last) - 1u64;
+        let mut other: u64 = nodes[programs[target] - 1u64].first;
+        while other != 0u64 {
+            let item: u64 = other - 1u64;
+            other = nodes[item].next;
+            let kind: u64 = nodes[item].kind;
+            if (kind != ast.STRUCT && kind != ast.ENUM) || nodes[item].flag != 1u64 {
+                continue;
+            }
+            let name: u64 = nodes[item].word - 1u64;
+            if has_item(sources, tokens, nodes, programs, module, name) || find_named(sources, tokens, l.imported.as_slice(), 2u64, module, name) != 0u64 {
+                return fail(module, DUPLICATE_IMPORTED_NAME, nodes[import].start, l);
+            }
+            l.imported.push(module);
+            l.imported.push(name);
+        }
+        l.bindings.push(module);
+        l.bindings.push(binding);
+        l.bindings.push(target);
+        l.imports.push(module);
+        l.imports.push(target);
+    }
+    l
+}
+
+// ------------------------------------------------------------------ references
+
+fn walk_module(sources: Slice<u8>, tokens: Slice<Token>, programs: Slice<u64>, bindings: Slice<u64>, module: u64, walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    let mut link: u64 = w.nodes[programs[module] - 1u64].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = w.nodes[item].next;
+        w = node(sources, tokens, programs, bindings, module, item, w);
+    }
+    w
+}
+
+fn open_scope(walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    w.depth += 1u64;
+    w
+}
+
+fn close_scope(walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    while w.live > 0u64 && w.locals[w.live * 2u64 - 1u64] == w.depth {
+        w.live -= 1u64;
+    }
+    w.depth -= 1u64;
+    w
+}
+
+fn declare(name: u64, walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    let at: u64 = w.live * 2u64;
+    if at < w.locals.length() {
+        w.locals[at] = name;
+        w.locals[at + 1u64] = w.depth;
+    } else {
+        w.locals.push(name);
+        w.locals.push(w.depth);
+    }
+    w.live += 1u64;
+    w
+}
+
+fn is_local(sources: Slice<u8>, tokens: Slice<Token>, locals: Slice<u64>, live: u64, name: u64) -> bool {
+    let mut index: u64 = 0u64;
+    while index < live {
+        if same_word(sources, tokens, locals[index * 2u64], name) {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
+}
+
+// The children of `parent` from the n-th on, walked in order.
+fn children(sources: Slice<u8>, tokens: Slice<Token>, programs: Slice<u64>, bindings: Slice<u64>, module: u64, parent: u64, from: u64, walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    let mut link: u64 = w.nodes[parent].first;
+    let mut index: u64 = 0u64;
+    while link != 0u64 {
+        let found: u64 = link - 1u64;
+        link = w.nodes[found].next;
+        if index >= from {
+            w = node(sources, tokens, programs, bindings, module, found, w);
+        }
+        index += 1u64;
+    }
+    w
+}
+
+fn last_child(nodes: Slice<Node>, parent: u64) -> u64 {
+    let mut link: u64 = nodes[parent].first;
+    let mut last: u64 = 0u64;
+    while link != 0u64 {
+        last = link - 1u64;
+        link = nodes[last].next;
+    }
+    last
+}
+
+// One node and what it holds: scopes open where stage0 opens them, and a
+// field read on an import binding becomes the item it names.
+fn node(sources: Slice<u8>, tokens: Slice<Token>, programs: Slice<u64>, bindings: Slice<u64>, module: u64, at: u64, walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    let kind: u64 = w.nodes[at].kind;
+    if kind == ast.IMPORT || kind == ast.STRUCT || kind == ast.ENUM || kind == ast.TYPE_NAMED || kind == ast.TYPE_CONTAINER {
+        return w;
+    }
+    if kind == ast.FN {
+        w = open_scope(w);
+        let mut link: u64 = w.nodes[at].first;
+        while link != 0u64 {
+            let found: u64 = link - 1u64;
+            link = w.nodes[found].next;
+            if w.nodes[found].kind == ast.PARAM {
+                let name: u64 = w.nodes[found].word - 1u64;
+                w = declare(name, w);
+            } else if w.nodes[found].kind == ast.BLOCK {
+                w = node(sources, tokens, programs, bindings, module, found, w);
+            }
+        }
+        return close_scope(w);
+    }
+    if kind == ast.CONST {
+        return children(sources, tokens, programs, bindings, module, at, 1u64, w);
+    }
+    if kind == ast.BLOCK {
+        w = open_scope(w);
+        w = children(sources, tokens, programs, bindings, module, at, 0u64, w);
+        return close_scope(w);
+    }
+    if kind == ast.LET {
+        // The value is walked before the name exists, so `let b = b.f(..)`
+        // still reaches the import.
+        let value: u64 = last_child(w.nodes.as_slice(), at);
+        w = node(sources, tokens, programs, bindings, module, value, w);
+        let name: u64 = w.nodes[at].word - 1u64;
+        return declare(name, w);
+    }
+    if kind == ast.MATCH {
+        let scrutinee: u64 = w.nodes[at].first - 1u64;
+        w = node(sources, tokens, programs, bindings, module, scrutinee, w);
+        let mut link: u64 = w.nodes[scrutinee].next;
+        while link != 0u64 {
+            let arm: u64 = link - 1u64;
+            link = w.nodes[arm].next;
+            w = open_scope(w);
+            let pattern: u64 = w.nodes[arm].first - 1u64;
+            w = bind_pattern(pattern, w);
+            w = children(sources, tokens, programs, bindings, module, arm, 1u64, w);
+            w = close_scope(w);
+        }
+        return w;
+    }
+    if kind == ast.FIELD_ACCESS {
+        let base: u64 = w.nodes[at].first - 1u64;
+        let found: Node = w.nodes[base];
+        if found.kind == ast.PATH && found.word - 1u64 == found.path_last && !is_local(sources, tokens, w.locals.as_slice(), w.live, found.path_last) {
+            let binding: u64 = find_named(sources, tokens, bindings, 3u64, module, found.path_last);
+            if binding != 0u64 {
+                return reference(sources, tokens, programs, bindings[binding + 1u64], at, w);
+            }
+        }
+    }
+    children(sources, tokens, programs, bindings, module, at, 0u64, w)
+}
+
+fn bind_pattern(pattern: u64, walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    let kind: u64 = w.nodes[pattern].kind;
+    if kind == ast.PATTERN_BINDING {
+        let name: u64 = w.nodes[pattern].word - 1u64;
+        return declare(name, w);
+    }
+    if kind == ast.PATTERN_VARIANT {
+        let mut link: u64 = w.nodes[pattern].first;
+        while link != 0u64 {
+            let field: u64 = link - 1u64;
+            link = w.nodes[field].next;
+            if w.nodes[field].first != 0u64 {
+                w = bind_pattern(w.nodes[field].first - 1u64, w);
+            } else {
+                // `E::A { p0 }` binds the field's own name.
+                let name: u64 = w.nodes[field].word - 1u64;
+                w = declare(name, w);
+            }
+        }
+    }
+    w
+}
+
+// `b.x` at node `at`, where `b` binds module `target`: the public function or
+// constant `x` of that module. Of items named alike, the last decides the kind,
+// as in stage0, and any of them being public makes the name public.
+fn reference(sources: Slice<u8>, tokens: Slice<Token>, programs: Slice<u64>, target: u64, at: u64, walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    let name: u64 = w.nodes[at].word - 1u64;
+    let mut named: u64 = 0u64;
+    let mut public: bool = false;
+    let mut link: u64 = w.nodes[programs[target] - 1u64].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = w.nodes[item].next;
+        if w.nodes[item].kind != ast.IMPORT && same_word(sources, tokens, w.nodes[item].word - 1u64, name) {
+            named = item + 1u64;
+            if w.nodes[item].flag == 1u64 {
+                public = true;
+            }
+        }
+    }
+    if named == 0u64 || (w.nodes[named - 1u64].kind != ast.FN && w.nodes[named - 1u64].kind != ast.CONST) {
+        w.errors.push(UNKNOWN_IMPORTED_SYMBOL);
+        w.errors.push(tokens[name].start);
+        return w;
+    }
+    if !public {
+        w.errors.push(PRIVATE_SYMBOL);
+        w.errors.push(tokens[name].start);
+        return w;
+    }
+    // A path of the binding alone, carrying the item: its span and name
+    // token are the binding's, like the path stage0 puts in its place.
+    let base: Node = w.nodes[w.nodes[at].first - 1u64];
+    w.nodes[at].kind = ast.PATH;
+    w.nodes[at].first = 0u64;
+    w.nodes[at].word = base.word;
+    w.nodes[at].path_last = base.path_last;
+    w.nodes[at].value = named;
+    w
+}

@@ -1,0 +1,6 @@
+core 0.1;
+module demo.helper;
+
+pub fn one() -> u32 { 1u8 }
+
+fn two() -> bool { 2u32 }

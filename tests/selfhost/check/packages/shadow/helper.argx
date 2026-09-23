@@ -1,0 +1,4 @@
+core 0.1;
+module demo.helper;
+
+pub fn twice(value: u32) -> u32 { value + value }

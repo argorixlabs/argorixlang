@@ -1,0 +1,6 @@
+core 0.1;
+module demo.c;
+
+import demo.a;
+
+pub fn three() -> u32 { 3u32 }

@@ -13,8 +13,11 @@ module compiler.check;
 //   path that reaches a use is an error) and views (`x.as_slice()` only as a
 //   direct argument, never alongside a move of `x`).
 //
-// A program is checked on its own, as if its locked set held only itself,
-// until ESP-012.C links modules.
+// `dump` checks a program on its own, as if its locked set held only itself.
+// `check_unit` checks the modules `compiler.link` has merged into one tree
+// (ESP-012.C): each declaration belongs to the module of its file, and a name
+// is looked up among that module's own declarations and, for a type, the
+// public types of the modules it imports directly.
 
 import stdlib.bytes;
 import compiler.token;
@@ -27,13 +30,16 @@ import compiler.parser;
 // A type, interned: two types are equal exactly when their positions are.
 // `name` is a range of `names` for integers, named and capability types, and
 // `token` (+ 1) a source token spelling a named or capability type's name.
-// An integer's `length` is its width code (see `integer_code`).
-pub struct TypeRecord { tag: u64, name_start: u64, name_end: u64, element: u64, length: u64, token: u64, }
+// An integer's `length` is its width code (see `integer_code`). A named type
+// that names a struct or enum in scope keeps it in `declaration` (+ 1); one
+// that names nothing is told apart by its text alone.
+pub struct TypeRecord { tag: u64, name_start: u64, name_end: u64, element: u64, length: u64, token: u64, declaration: u64, }
 
 // A struct, enum, function or constant. `name` is its name token.
 // `members` / `count`: its fields, variants or parameters in `members`.
-// `ty`: a constant's type or a function's result.
-pub struct Declaration { kind: u64, name: u64, node: u64, ty: u64, members: u64, count: u64, }
+// `ty`: a constant's type or a function's result. `module`: the file that
+// declares it.
+pub struct Declaration { kind: u64, name: u64, node: u64, ty: u64, members: u64, count: u64, module: u64, public: bool, }
 
 // A field, a variant or a parameter: its name token (0 for a parameter
 // looked up by position), its type, and for a variant its own fields.
@@ -79,6 +85,13 @@ pub struct Check {
     // start of its exits).
     loops: Buffer<u64>,
     loops_live: u64,
+    // Modules (ESP-012.C): the file of the item being checked; the first node
+    // of each file, and one past the last; the (importer, imported) pairs of
+    // files; and whether the tree was linked, which leaves no import to check.
+    module: u64,
+    bases: Buffer<u64>,
+    imports: Buffer<u64>,
+    linked: bool,
 }
 
 // Type tags.
@@ -160,7 +173,8 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
     out
 }
 
-fn append_diagnostic(out: Buffer<u8>, source: Slice<u8>, found: Diagnostic) -> Buffer<u8> {
+// One line of the dump, for a diagnostic at a byte of `source`.
+pub fn append_diagnostic(out: Buffer<u8>, source: Slice<u8>, found: Diagnostic) -> Buffer<u8> {
     // Line and column of the byte, counted as the lexer counts them.
     let mut line: u64 = 1u64;
     let mut column: u64 = 1u64;
@@ -234,20 +248,44 @@ fn empty_check() -> Check {
         exits_live: 0u64,
         loops: Buffer::new(),
         loops_live: 0u64,
+        module: 0u64,
+        bases: Buffer::new(),
+        imports: Buffer::new(),
+        linked: false,
     };
     // Unknown, never, unit, bool, bytes, string: positions 0 to 5.
     let mut tag: u64 = 0u64;
     while tag <= T_STRING {
-        c.types.push(TypeRecord { tag: tag, name_start: 0u64, name_end: 0u64, element: 0u64, length: 0u64, token: 0u64 });
+        c.types.push(TypeRecord { tag: tag, name_start: 0u64, name_end: 0u64, element: 0u64, length: 0u64, token: 0u64, declaration: 0u64 });
         tag += 1u64;
     }
     c
 }
 
+// One program, on its own.
 pub fn check_program(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64) -> Check {
     let mut c: Check = empty_check();
-    c = collect(source, tokens, nodes, program, c);
-    c = check_imports(source, tokens, nodes, program, c);
+    c.bases.push(0u64);
+    c.bases.push(nodes.length());
+    passes(source, tokens, nodes, program, c)
+}
+
+// A linked tree (`compiler.link`): `bases` holds the first node of each file
+// and one past the last, and `imports` the (importer, imported) pairs of
+// files.
+pub fn check_unit(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, bases: Slice<u64>, imports: Slice<u64>) -> Check {
+    let mut c: Check = empty_check();
+    c.bases = copy_ids(bases);
+    c.imports = copy_ids(imports);
+    c.linked = true;
+    passes(source, tokens, nodes, program, c)
+}
+
+fn passes(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
+    let mut c: Check = collect(source, tokens, nodes, program, check);
+    if !c.linked {
+        c = check_imports(source, tokens, nodes, program, c);
+    }
     c = check_recursive(source, tokens, nodes, program, c);
     c = check_constants(source, tokens, nodes, program, c);
     c = check_functions(source, tokens, nodes, program, c);
@@ -332,11 +370,15 @@ fn names_equal(names: Slice<u8>, start: u64, end: u64, text: Slice<u8>) -> bool 
 
 // The type with this tag, name, element and length, interned.
 fn intern(tag: u64, name: Slice<u8>, element: u64, length: u64, check: Check) -> Check {
+    intern_declared(tag, name, element, length, 0u64, check)
+}
+
+fn intern_declared(tag: u64, name: Slice<u8>, element: u64, length: u64, declaration: u64, check: Check) -> Check {
     let mut c: Check = check;
     let mut index: u64 = 0u64;
     while index < c.types.length() {
         let found: TypeRecord = c.types[index];
-        if found.tag == tag && found.element == element && found.length == length
+        if found.tag == tag && found.element == element && found.length == length && found.declaration == declaration
             && names_equal(c.names.as_slice(), found.name_start, found.name_end, name)
         {
             c.result = index;
@@ -350,7 +392,7 @@ fn intern(tag: u64, name: Slice<u8>, element: u64, length: u64, check: Check) ->
         c.names.push(name[at]);
         at += 1u64;
     }
-    c.types.push(TypeRecord { tag: tag, name_start: start, name_end: c.names.length(), element: element, length: length, token: 0u64 });
+    c.types.push(TypeRecord { tag: tag, name_start: start, name_end: c.names.length(), element: element, length: length, token: 0u64, declaration: declaration });
     c.result = c.types.length() - 1u64;
     c
 }
@@ -363,9 +405,15 @@ fn integer_type(name: Slice<u8>, check: Check) -> Check {
     intern(T_INT, name, 0u64, integer_code(name), check)
 }
 
-// A named or capability type spelled by source token `at`.
+// A named or capability type spelled by source token `at`. A named type is
+// the struct or enum that name reaches from the current module.
 fn named_type(tag: u64, source: Slice<u8>, tokens: Slice<Token>, at: u64, check: Check) -> Check {
-    let mut c: Check = intern(tag, source.slice(tokens[at].start, tokens[at].end), 0u64, 0u64, check);
+    let text: Slice<u8> = source.slice(tokens[at].start, tokens[at].end);
+    let mut declaration: u64 = 0u64;
+    if tag == T_NAMED {
+        declaration = find_type(source, tokens, check.declarations.as_slice(), check.imports.as_slice(), check.module, text);
+    }
+    let mut c: Check = intern_declared(tag, text, 0u64, 0u64, declaration, check);
     let ty: u64 = c.result;
     if c.types[ty].token == 0u64 {
         c.types[ty].token = at + 1u64;
@@ -536,17 +584,94 @@ fn fits(value: u64, code: u64) -> bool {
 
 // ------------------------------------------------------------------ declarations
 
-// The declaration of `kind` named like token `name`, + 1, or 0.
-fn find_declaration(source: Slice<u8>, tokens: Slice<Token>, declarations: Slice<Declaration>, kind: u64, name: Slice<u8>) -> u64 {
+// The declaration of `module` of `kind` (0 for any) named `name`, + 1, or 0.
+fn find_declaration(source: Slice<u8>, tokens: Slice<Token>, declarations: Slice<Declaration>, module: u64, kind: u64, name: Slice<u8>) -> u64 {
     let mut index: u64 = 0u64;
     while index < declarations.length() {
         let found: Declaration = declarations[index];
-        if (kind == 0u64 || found.kind == kind) && word_is(source, tokens, found.name, name) {
+        if found.module == module && (kind == 0u64 || found.kind == kind) && word_is(source, tokens, found.name, name) {
             return index + 1u64;
         }
         index += 1u64;
     }
     0u64
+}
+
+// The struct or enum `name` reaches from `module`, + 1, or 0: its own, or a
+// public one of a module it imports directly. The linker has refused a name
+// that would reach two.
+fn find_type(source: Slice<u8>, tokens: Slice<Token>, declarations: Slice<Declaration>, imports: Slice<u64>, module: u64, name: Slice<u8>) -> u64 {
+    let own: u64 = find_type_in(source, tokens, declarations, module, false, name);
+    if own != 0u64 {
+        return own;
+    }
+    let mut pair: u64 = 0u64;
+    while pair < imports.length() {
+        if imports[pair] == module {
+            let imported: u64 = find_type_in(source, tokens, declarations, imports[pair + 1u64], true, name);
+            if imported != 0u64 {
+                return imported;
+            }
+        }
+        pair += 2u64;
+    }
+    0u64
+}
+
+// `find_type`, when it is of `kind`.
+fn find_kind(source: Slice<u8>, tokens: Slice<Token>, declarations: Slice<Declaration>, imports: Slice<u64>, module: u64, kind: u64, name: Slice<u8>) -> u64 {
+    let found: u64 = find_type(source, tokens, declarations, imports, module, name);
+    if found != 0u64 && declarations[found - 1u64].kind == kind {
+        return found;
+    }
+    0u64
+}
+
+fn find_type_in(source: Slice<u8>, tokens: Slice<Token>, declarations: Slice<Declaration>, module: u64, public: bool, name: Slice<u8>) -> u64 {
+    let mut index: u64 = 0u64;
+    while index < declarations.length() {
+        let found: Declaration = declarations[index];
+        if found.module == module && (found.kind == D_STRUCT || found.kind == D_ENUM) && (found.public || !public)
+            && word_is(source, tokens, found.name, name)
+        {
+            return index + 1u64;
+        }
+        index += 1u64;
+    }
+    0u64
+}
+
+// The declaration of the item at node `item`, + 1, or 0.
+fn declaration_at(declarations: Slice<Declaration>, item: u64) -> u64 {
+    let mut index: u64 = 0u64;
+    while index < declarations.length() {
+        if declarations[index].node == item {
+            return index + 1u64;
+        }
+        index += 1u64;
+    }
+    0u64
+}
+
+// The declaration (+ 1) of `kind` a type names, or 0.
+fn declared(types: Slice<TypeRecord>, declarations: Slice<Declaration>, ty: u64, kind: u64) -> u64 {
+    let found: TypeRecord = types[ty];
+    if found.tag != T_NAMED || found.declaration == 0u64 {
+        return 0u64;
+    }
+    if declarations[found.declaration - 1u64].kind != kind {
+        return 0u64;
+    }
+    found.declaration
+}
+
+// The file whose nodes include `node`.
+fn module_of(bases: Slice<u64>, node: u64) -> u64 {
+    let mut index: u64 = 0u64;
+    while index + 2u64 < bases.length() && bases[index + 1u64] <= node {
+        index += 1u64;
+    }
+    index
 }
 
 // The member among `count` from `first` named `name`, + 1, or 0.
@@ -561,6 +686,8 @@ fn find_member(source: Slice<u8>, tokens: Slice<Token>, members: Slice<Member>, 
     0u64
 }
 
+// Declarations are registered first, so that a type can name one declared
+// after it, then their members are collected, in program order.
 fn collect(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
     let mut c: Check = check;
     let mut link: u64 = nodes[program].first;
@@ -571,16 +698,36 @@ fn collect(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program:
         if kind == ast.IMPORT {
             continue;
         }
+        let module: u64 = module_of(c.bases.as_slice(), item);
         let name: u64 = nodes[item].word - 1u64;
-        if find_declaration(source, tokens, c.declarations.as_slice(), 0u64, source.slice(tokens[name].start, tokens[name].end)) != 0u64 {
+        if find_declaration(source, tokens, c.declarations.as_slice(), module, 0u64, source.slice(tokens[name].start, tokens[name].end)) == 0u64 {
+            let declared_kind: u64 = if kind == ast.STRUCT { D_STRUCT } else if kind == ast.ENUM { D_ENUM } else if kind == ast.FN { D_FN } else { D_CONST };
+            c.declarations.push(Declaration { kind: declared_kind, name: name, node: item, ty: 0u64, members: 0u64, count: 0u64, module: module, public: nodes[item].flag == 1u64 });
+        }
+    }
+    let mut next: u64 = 0u64;
+    link = nodes[program].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        let kind: u64 = nodes[item].kind;
+        if kind == ast.IMPORT {
+            continue;
+        }
+        c.module = module_of(c.bases.as_slice(), item);
+        let name: u64 = nodes[item].word - 1u64;
+        if next == c.declarations.length() || c.declarations[next].node != item {
             c = report(DUPLICATE_DECLARATION, tokens[name].start, c);
             continue;
         }
+        let declaration: u64 = next;
+        next += 1u64;
         if kind == ast.STRUCT {
             let first: u64 = c.members.length();
             c = collect_fields(source, tokens, nodes, item, c);
             let count: u64 = c.members.length() - first;
-            c.declarations.push(Declaration { kind: D_STRUCT, name: name, node: item, ty: 0u64, members: first, count: count });
+            c.declarations[declaration].members = first;
+            c.declarations[declaration].count = count;
         } else if kind == ast.ENUM {
             // Variants go first, together, then each variant's fields.
             let first: u64 = c.members.length();
@@ -601,7 +748,8 @@ fn collect(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program:
                 c.members[first + index].count = count;
                 index += 1u64;
             }
-            c.declarations.push(Declaration { kind: D_ENUM, name: name, node: item, ty: 0u64, members: first, count: variants });
+            c.declarations[declaration].members = first;
+            c.declarations[declaration].count = variants;
         } else if kind == ast.FN {
             let children: u64 = child_count(nodes, item);
             let parameters: u64 = children - 2u64;
@@ -616,11 +764,13 @@ fn collect(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program:
             }
             c = lower_type(source, tokens, nodes, child(nodes, item, parameters), c);
             let result: u64 = c.result;
-            c.declarations.push(Declaration { kind: D_FN, name: name, node: item, ty: result, members: first, count: parameters });
+            c.declarations[declaration].ty = result;
+            c.declarations[declaration].members = first;
+            c.declarations[declaration].count = parameters;
         } else {
             c = lower_type(source, tokens, nodes, child(nodes, item, 0u64), c);
             let ty: u64 = c.result;
-            c.declarations.push(Declaration { kind: D_CONST, name: name, node: item, ty: ty, members: 0u64, count: 0u64 });
+            c.declarations[declaration].ty = ty;
         }
     }
     c
@@ -685,14 +835,13 @@ fn check_recursive(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
         if found.kind != D_STRUCT {
             continue;
         }
-        let name: Slice<u8> = source.slice(tokens[found.name].start, tokens[found.name].end);
         // A simple path through struct fields names each struct once, so
         // this depth reaches everything reachable.
         let limit: u64 = c.declarations.length() + 1u64;
         let mut field: u64 = found.members;
         let mut recursive: bool = false;
         while field < found.members + found.count && !recursive {
-            recursive = contains_unboxed(source, tokens, c.types.as_slice(), c.declarations.as_slice(), c.members.as_slice(), c.members[field].ty, name, limit);
+            recursive = contains_unboxed(c.types.as_slice(), c.declarations.as_slice(), c.members.as_slice(), c.members[field].ty, index, limit);
             field += 1u64;
         }
         if recursive {
@@ -702,26 +851,25 @@ fn check_recursive(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
     c
 }
 
-// Whether `ty` holds a `target` by value, not through a handle.
-fn contains_unboxed(source: Slice<u8>, tokens: Slice<Token>, types: Slice<TypeRecord>, declarations: Slice<Declaration>, members: Slice<Member>, ty: u64, target: Slice<u8>, depth: u64) -> bool {
+// Whether `ty` holds the struct `target` (+ 1) by value, not through a
+// handle.
+fn contains_unboxed(types: Slice<TypeRecord>, declarations: Slice<Declaration>, members: Slice<Member>, ty: u64, target: u64, depth: u64) -> bool {
     let found: TypeRecord = types[ty];
     if found.tag == T_NAMED {
-        let name: u64 = found.token - 1u64;
-        let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
-        if bytes.equal(text, target) {
+        if found.declaration == target {
             return true;
         }
         if depth == 0u64 {
             return false;
         }
-        let declaration: u64 = find_declaration(source, tokens, declarations, D_STRUCT, text);
+        let declaration: u64 = declared(types, declarations, ty, D_STRUCT);
         if declaration == 0u64 {
             return false;
         }
         let owner: Declaration = declarations[declaration - 1u64];
         let mut field: u64 = owner.members;
         while field < owner.members + owner.count {
-            if contains_unboxed(source, tokens, types, declarations, members, members[field].ty, target, depth - 1u64) {
+            if contains_unboxed(types, declarations, members, members[field].ty, target, depth - 1u64) {
                 return true;
             }
             field += 1u64;
@@ -729,7 +877,7 @@ fn contains_unboxed(source: Slice<u8>, tokens: Slice<Token>, types: Slice<TypeRe
         return false;
     }
     if found.tag == T_ARRAY || found.tag == T_SLICE || found.tag == T_BUFFER || found.tag == T_ARENA {
-        return contains_unboxed(source, tokens, types, declarations, members, found.element, target, depth);
+        return contains_unboxed(types, declarations, members, found.element, target, depth);
     }
     false
 }
@@ -743,6 +891,7 @@ fn check_constants(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
         if nodes[item].kind != ast.CONST {
             continue;
         }
+        c.module = module_of(c.bases.as_slice(), item);
         // The type is lowered again, as stage0 does.
         c = lower_type(source, tokens, nodes, child(nodes, item, 0u64), c);
         let expected: u64 = c.result;
@@ -763,6 +912,7 @@ fn check_functions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
         if nodes[item].kind != ast.FN {
             continue;
         }
+        c.module = module_of(c.bases.as_slice(), item);
         c.live = 0u64;
         c.depth = 1u64;
         c.loop_depth = 0u64;
@@ -803,6 +953,7 @@ fn capability_positions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<No
         if nodes[item].kind == ast.IMPORT {
             continue;
         }
+        let module: u64 = module_of(c.bases.as_slice(), item);
         let name: u64 = nodes[item].word - 1u64;
         let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
         if bytes.equal(text, "PackageRead".as_slice()) || bytes.equal(text, "BuildWrite".as_slice()) {
@@ -811,11 +962,11 @@ fn capability_positions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<No
         let kind: u64 = nodes[item].kind;
         let mut holds: bool = false;
         let declaration: u64 = if kind == ast.STRUCT {
-            find_declaration(source, tokens, c.declarations.as_slice(), D_STRUCT, text)
+            find_declaration(source, tokens, c.declarations.as_slice(), module, D_STRUCT, text)
         } else if kind == ast.ENUM {
-            find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, text)
+            find_declaration(source, tokens, c.declarations.as_slice(), module, D_ENUM, text)
         } else if kind == ast.FN {
-            find_declaration(source, tokens, c.declarations.as_slice(), D_FN, text)
+            find_declaration(source, tokens, c.declarations.as_slice(), module, D_FN, text)
         } else {
             0u64
         };
@@ -1290,8 +1441,7 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         let name: u64 = nodes[node].word - 1u64;
         let record: TypeRecord = c.types[base];
         if record.tag == T_NAMED {
-            let owner_token: u64 = type_token(c.types.as_slice(), base);
-            let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_STRUCT, source.slice(tokens[owner_token].start, tokens[owner_token].end));
+            let declaration: u64 = declared(c.types.as_slice(), c.declarations.as_slice(), base, D_STRUCT);
             if declaration != 0u64 {
                 let owner: Declaration = c.declarations[declaration - 1u64];
                 let field: u64 = find_member(source, tokens, c.members.as_slice(), owner.members, owner.count, source.slice(tokens[name].start, tokens[name].end));
@@ -1328,7 +1478,14 @@ fn infer_path(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
     let first: u64 = nodes[node].word - 1u64;
     let last: u64 = nodes[node].path_last;
     let length: u64 = path_length(tokens, first, last);
-    if length == 1u64 {
+    if length == 1u64 && nodes[node].value != 0u64 {
+        // `m.C` of an imported module, which the linker resolved.
+        let constant: u64 = declaration_at(c.declarations.as_slice(), nodes[node].value - 1u64);
+        if constant != 0u64 && c.declarations[constant - 1u64].kind == D_CONST {
+            c.result = c.declarations[constant - 1u64].ty;
+            return c;
+        }
+    } else if length == 1u64 {
         let text: Slice<u8> = source.slice(tokens[first].start, tokens[first].end);
         let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, text);
         if binding != 0u64 {
@@ -1339,7 +1496,7 @@ fn infer_path(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
             c.result = found.ty;
             return c;
         }
-        let constant: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_CONST, text);
+        let constant: u64 = find_declaration(source, tokens, c.declarations.as_slice(), c.module, D_CONST, text);
         if constant != 0u64 {
             c.result = c.declarations[constant - 1u64].ty;
             return c;
@@ -1347,7 +1504,7 @@ fn infer_path(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
     } else if length == 2u64 {
         let owner: u64 = first;
         let variant: u64 = segment(tokens, first, 1u64);
-        let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, source.slice(tokens[owner].start, tokens[owner].end));
+        let declaration: u64 = find_kind(source, tokens, c.declarations.as_slice(), c.imports.as_slice(), c.module, D_ENUM, source.slice(tokens[owner].start, tokens[owner].end));
         if declaration != 0u64 {
             let found: Declaration = c.declarations[declaration - 1u64];
             let member: u64 = find_member(source, tokens, c.members.as_slice(), found.members, found.count, source.slice(tokens[variant].start, tokens[variant].end));
@@ -1372,14 +1529,14 @@ fn infer_aggregate(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
     let mut members: u64 = 0u64;
     let mut count: u64 = 0u64;
     if length == 1u64 {
-        let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_STRUCT, owner_name);
+        let declaration: u64 = find_kind(source, tokens, c.declarations.as_slice(), c.imports.as_slice(), c.module, D_STRUCT, owner_name);
         if declaration != 0u64 {
             known = true;
             members = c.declarations[declaration - 1u64].members;
             count = c.declarations[declaration - 1u64].count;
         }
     } else if length == 2u64 {
-        let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, owner_name);
+        let declaration: u64 = find_kind(source, tokens, c.declarations.as_slice(), c.imports.as_slice(), c.module, D_ENUM, owner_name);
         if declaration != 0u64 {
             let found: Declaration = c.declarations[declaration - 1u64];
             let variant: u64 = segment(tokens, first, 1u64);
@@ -1451,7 +1608,16 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
             }
         }
         if length == 1u64 {
-            let function: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_FN, source.slice(tokens[first].start, tokens[first].end));
+            let mut function: u64 = 0u64;
+            if nodes[callee].value != 0u64 {
+                // `m.f(..)` of an imported module, which the linker resolved.
+                function = declaration_at(c.declarations.as_slice(), nodes[callee].value - 1u64);
+                if function != 0u64 && c.declarations[function - 1u64].kind != D_FN {
+                    function = 0u64;
+                }
+            } else {
+                function = find_declaration(source, tokens, c.declarations.as_slice(), c.module, D_FN, source.slice(tokens[first].start, tokens[first].end));
+            }
             if function != 0u64 {
                 let found: Declaration = c.declarations[function - 1u64];
                 if found.count != arguments {
@@ -1769,8 +1935,7 @@ fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node
     // A match on an enum names every variant, or has a wildcard.
     let record: TypeRecord = c.types[scrutinee];
     if record.tag == T_NAMED && !c.wildcard {
-        let enum_token: u64 = type_token(c.types.as_slice(), scrutinee);
-        let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, source.slice(tokens[enum_token].start, tokens[enum_token].end));
+        let declaration: u64 = declared(c.types.as_slice(), c.declarations.as_slice(), scrutinee, D_ENUM);
         if declaration != 0u64 {
             let found: Declaration = c.declarations[declaration - 1u64];
             let mut missing: bool = false;
@@ -1835,13 +2000,15 @@ fn check_pattern(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pa
     if record.tag != T_NAMED {
         return report(TYPE_MISMATCH, nodes[pattern].start, c);
     }
+    // The pattern names the scrutinee's own enum, as the current module
+    // reaches it.
     let first: u64 = nodes[pattern].word - 1u64;
-    let enum_token: u64 = type_token(c.types.as_slice(), expected);
-    let enum_name: Slice<u8> = source.slice(tokens[enum_token].start, tokens[enum_token].end);
-    if path_length(tokens, first, nodes[pattern].path_last) != 2u64 || !word_is(source, tokens, first, enum_name) {
+    if path_length(tokens, first, nodes[pattern].path_last) != 2u64 || record.declaration == 0u64
+        || find_type(source, tokens, c.declarations.as_slice(), c.imports.as_slice(), c.module, source.slice(tokens[first].start, tokens[first].end)) != record.declaration
+    {
         return report(TYPE_MISMATCH, nodes[pattern].start, c);
     }
-    let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, enum_name);
+    let declaration: u64 = declared(c.types.as_slice(), c.declarations.as_slice(), expected, D_ENUM);
     let variant_token: u64 = segment(tokens, first, 1u64);
     let mut variant: u64 = 0u64;
     if declaration != 0u64 {
@@ -1958,32 +2125,30 @@ fn join_two(left: Slice<u64>, left_reachable: bool, right: Slice<u64>, right_rea
 // Whether a value of type `ty` owns storage: a Buffer, or a struct, enum or
 // array that holds one. `depth` bounds the search through named types, as
 // the visited set of stage0 does.
-fn is_resource(source: Slice<u8>, tokens: Slice<Token>, types: Slice<TypeRecord>, declarations: Slice<Declaration>, members: Slice<Member>, ty: u64, depth: u64) -> bool {
+fn is_resource(types: Slice<TypeRecord>, declarations: Slice<Declaration>, members: Slice<Member>, ty: u64, depth: u64) -> bool {
     let found: TypeRecord = types[ty];
     if found.tag == T_BUFFER {
         return true;
     }
     if found.tag == T_ARRAY {
-        return is_resource(source, tokens, types, declarations, members, found.element, depth);
+        return is_resource(types, declarations, members, found.element, depth);
     }
     if found.tag != T_NAMED || depth == 0u64 {
         return false;
     }
-    let name: u64 = found.token - 1u64;
-    let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
-    let structure: u64 = find_declaration(source, tokens, declarations, D_STRUCT, text);
+    let structure: u64 = declared(types, declarations, ty, D_STRUCT);
     if structure != 0u64 {
         let owner: Declaration = declarations[structure - 1u64];
         let mut field: u64 = owner.members;
         while field < owner.members + owner.count {
-            if is_resource(source, tokens, types, declarations, members, members[field].ty, depth - 1u64) {
+            if is_resource(types, declarations, members, members[field].ty, depth - 1u64) {
                 return true;
             }
             field += 1u64;
         }
         return false;
     }
-    let enumeration: u64 = find_declaration(source, tokens, declarations, D_ENUM, text);
+    let enumeration: u64 = declared(types, declarations, ty, D_ENUM);
     if enumeration != 0u64 {
         let owner: Declaration = declarations[enumeration - 1u64];
         let mut variant: u64 = owner.members;
@@ -1991,7 +2156,7 @@ fn is_resource(source: Slice<u8>, tokens: Slice<Token>, types: Slice<TypeRecord>
             let fields: Member = members[variant];
             let mut field: u64 = fields.members;
             while field < fields.members + fields.count {
-                if is_resource(source, tokens, types, declarations, members, members[field].ty, depth - 1u64) {
+                if is_resource(types, declarations, members, members[field].ty, depth - 1u64) {
                     return true;
                 }
                 field += 1u64;
@@ -2006,7 +2171,7 @@ fn is_resource(source: Slice<u8>, tokens: Slice<Token>, types: Slice<TypeRecord>
 fn resource(source: Slice<u8>, tokens: Slice<Token>, ty: u64, check: Check) -> Check {
     let mut c: Check = check;
     let limit: u64 = c.declarations.length() + 1u64;
-    let owns: bool = is_resource(source, tokens, c.types.as_slice(), c.declarations.as_slice(), c.members.as_slice(), ty, limit);
+    let owns: bool = is_resource(c.types.as_slice(), c.declarations.as_slice(), c.members.as_slice(), ty, limit);
     c.result = if owns { 1u64 } else { 0u64 };
     c
 }

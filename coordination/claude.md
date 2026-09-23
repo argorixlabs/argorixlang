@@ -4,11 +4,31 @@
 
 - Task: ESP-012 — resolution, types and modules in Argorix, as subtasks A
   (types and names), B (ownership and views) and C (module linker).
-- State: IN PROGRESS; A merged (PR #55), B done on `claude/check-esp012b`, C next.
+- State: DONE pending review; A merged (PR #55), B merged (PR #56), C done on
+  `claude/trabajo-pendiente-ae9bcz`.
 - Started: 2026-09-23.
 - Ficha: `tasks/espada/ESP-012.md`.
-- Paths: `compiler/check.argx`, `tests/selfhost/check/**`, `spec/core/check.md`,
-  the ficha, and the stage0 checker where the port finds a defect.
+- Paths: `compiler/check.argx`, `compiler/link.argx` (new),
+  `tests/selfhost/check/**`, `spec/core/check.md`, `spec/core/modules.md`
+  (the import rules as implemented), the ficha, and the stage0 checker and
+  linker where the port needs them (`check_core_package`, the package dump).
+
+## Handoff (ESP-012.C)
+
+- The Argorix linker (`compiler/link.argx`) and a module-aware checker. The
+  differential agrees with stage0 on 170 packages, including the compiler
+  linked with itself.
+- The stage0 driver now links and checks through
+  `argorix_semantics::check_core_package`, and `argorixc
+  core-check-package-dump` prints a package's diagnostics.
+- Open: stage0's `a__b__name` renaming can make a root item collide with a
+  dependency's item. The Argorix checker does not reproduce this; it is
+  recorded in `spec/core/check.md`.
+- Found, not fixed: `crates/argorix_core_c/src/generate.rs` (`Rng::pick` at
+  lines 1923 and 3164) does not compile with rustc 1.94.1. CI's stable
+  toolchain builds it. It is outside this lane.
+- Next: ESP-013 (lowering and emission in Argorix) once ESP-012 is merged with
+  CI green.
 
 ---
 
