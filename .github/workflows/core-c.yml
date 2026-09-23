@@ -324,3 +324,42 @@ jobs:
           name: core-c-report-regression
           path: target/core-c/report-regression.json
           if-no-files-found: ignore
+
+  stdlib:
+    name: Standard library fixtures (ESP-009)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cc: gcc
+            flags: ""
+          - cc: clang
+            flags: ""
+          - cc: gcc
+            flags: --sanitize
+          - cc: clang
+            flags: --sanitize
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build argorixc and the harness
+        run: cargo build --locked -p argorixc -p argorix-core-c
+      - name: Run the stdlib fixtures
+        # The harness passes --stdlib stdlib to argorixc, so each fixture links
+        # the modules it imports from stdlib/.
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc ${{ matrix.cc }} ${{ matrix.flags }}
+          --cases tests/selfhost/stdlib/cases.json
+          --bundle target/core-c/stdlib-bundle
+          --work-dir target/core-c/stdlib
+          --report target/core-c/report-stdlib.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: core-c-report-stdlib-${{ matrix.cc }}${{ matrix.flags && '-sanitized' || '' }}
+          path: target/core-c/report-stdlib.json
+          if-no-files-found: ignore

@@ -10,7 +10,7 @@ remain the source of truth for scope and acceptance.
 
 | Owner | Task | Branch | State | Exclusive paths | Agent log |
 | --- | --- | --- | --- | --- | --- |
-| Claude | ESP-009 — minimal standard library (stdlib in `.argx`) | `claude/stdlib-core` | IN PROGRESS | `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`, `tasks/espada/ESP-009.md`, the Core toolchain where the stdlib needs it | [coordination/claude.md](coordination/claude.md) |
+| Claude | ESP-009 — minimal standard library (stdlib in `.argx`) | `claude/stdlib-modules` (PR #47 merged) | IN PROGRESS | `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`, `tasks/espada/ESP-009.md`, the Core toolchain where the stdlib needs it | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009.F — backend gaps g17–g23 and cross-module imports (issues #39, #45) | `claude/esp009f-unblock` | DONE | Core frontend/IR/C backend, C1 runtime, `conformance/core_c/**`, `tasks/espada/ESP-009.F.md` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009.E — repeated execution must be byte-identical (subtask of ESP-009) | `claude/harness-determinism` | DONE | `crates/argorix_core_c/**`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.E.md` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009.D — differential coverage of text and the resource ceilings (subtask of ESP-009) | `claude/differential-text` | DONE (PR #41) | `crates/argorix_core_c/**`, `conformance/core_c/**`, `.github/workflows/core-c.yml`, `tasks/espada/ESP-009.D.md` | [coordination/claude.md](coordination/claude.md) |

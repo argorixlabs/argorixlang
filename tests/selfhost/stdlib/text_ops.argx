@@ -1,0 +1,48 @@
+core 0.1;
+module selfhost_stdlib.text_ops;
+
+// stdlib.text: UTF-8 validation at the ends of Table 3-7 and JSON escaping.
+// All 10 checks pass gives 1023.
+
+import stdlib.text;
+import stdlib.bytes;
+import stdlib.result;
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+fn digest(value: Slice<u8>) -> u64 {
+    result.checked_digest(text.validate(value))
+}
+
+pub fn argorix_main() -> u64 {
+    let ascii: Array<u8, 3> = [97u8, 98u8, 99u8];
+    let copyright: Array<u8, 2> = [194u8, 169u8];
+    let overlong: Array<u8, 3> = [224u8, 159u8, 128u8];
+    let surrogate: Array<u8, 4> = [65u8, 237u8, 160u8, 128u8];
+    let past_max: Array<u8, 6> = [65u8, 66u8, 244u8, 144u8, 128u8, 128u8];
+    let truncated: Array<u8, 1> = [194u8];
+    let lone: Array<u8, 1> = [128u8];
+    let last: Array<u8, 4> = [244u8, 143u8, 191u8, 191u8];
+    let mut mask: u64 = 0u64;
+
+    mask += bit(digest(ascii.as_slice()) == 0u64, 0u64);
+    mask += bit(digest(copyright.as_slice()) == 0u64, 1u64);
+    // Failures point at the first byte of the sequence that breaks a rule.
+    mask += bit(digest(overlong.as_slice()) == 1000000u64, 2u64);
+    mask += bit(digest(surrogate.as_slice()) == 1000001u64, 3u64);
+    mask += bit(digest(past_max.as_slice()) == 1000002u64, 4u64);
+    mask += bit(digest(truncated.as_slice()) == 1000000u64, 5u64);
+    mask += bit(digest(lone.as_slice()) == 1000000u64, 6u64);
+    mask += bit(digest(last.as_slice()) == 0u64, 7u64);
+
+    // a " b \ newline 0x01  ->  a \" b \\ \n \u0001
+    let raw: Array<u8, 6> = [97u8, 34u8, 98u8, 92u8, 10u8, 1u8];
+    let expected: Array<u8, 14> = [97u8, 92u8, 34u8, 98u8, 92u8, 92u8, 92u8, 110u8, 92u8, 117u8,
+        48u8, 48u8, 48u8, 49u8];
+    let escaped: Buffer<u8> = text.append_json_escaped(Buffer::new(), raw.as_slice());
+    mask += bit(bytes.equal(escaped.as_slice(), expected.as_slice()), 8u64);
+    mask += bit(text.equal(ascii.as_slice(), ascii.as_slice()), 9u64);
+    mask
+}

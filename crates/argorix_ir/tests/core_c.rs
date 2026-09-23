@@ -366,3 +366,40 @@ fn an_unused_parameter_is_marked_used_in_plain_c() {
         "the fix should stay plain C11:\n{source}"
     );
 }
+
+#[test]
+fn a_stored_slice_is_refused_by_this_backend() {
+    // Core accepts it; the backend's views carry no generation, so a stored
+    // view could outlive the storage it points into.
+    let source = "core 0.1;
+module views.stored;
+
+struct Cursor { bytes: Slice<u8>, at: u64, }
+
+fn start(bytes: Slice<u8>) -> u64 {
+    let cursor: Cursor = Cursor { bytes: bytes, at: 0u64 };
+    cursor.at
+}
+
+pub fn argorix_main() -> u64 {
+    let raw: Array<u8, 1> = [1u8];
+    start(raw.as_slice())
+}
+";
+    let program = parse_core_source(source).unwrap();
+    let checked = verify_core_program(
+        &program,
+        &CoreCheckOptions {
+            available_modules: BTreeSet::from([program.module.value.clone()]),
+        },
+    )
+    .unwrap();
+    let ir = lower_core_program(checked);
+    let verified = verify_core_ir(&ir).unwrap();
+    let error = CoreCBackend.emit(verified).unwrap_err();
+    assert_eq!(error.code, "CBackendUnsupported");
+    assert!(
+        error.message.contains("`Cursor` holds a slice"),
+        "{error:?}"
+    );
+}

@@ -84,6 +84,7 @@ void argorix_leave(argorix_budget *budget);
 void argorix_enter(argorix_budget *budget);
 void argorix_leave(argorix_budget *budget);
 size_t argorix_bounds(uint64_t index, uint64_t length);
+size_t argorix_range(uint64_t start, uint64_t end, uint64_t length);
 argorix_string argorix_decode_utf8(argorix_bytes value);
 argorix_buffer argorix_buffer_new(uint64_t element_size, uint64_t byte_limit);
 void argorix_buffer_push(argorix_buffer *buffer, const void *value);

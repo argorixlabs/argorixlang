@@ -1,0 +1,79 @@
+core 0.1;
+module stdlib.vector;
+
+// Algorithms over `Buffer<u64>` (spec/core/stdlib.md, `stdlib.vector`). Core
+// 0.1 has no user generics, so compiler-specific vectors reuse these by
+// storing indexes and ids as `u64`. Every algorithm is deterministic: equal
+// input gives equal output on every run and every compiler.
+
+import stdlib.result;
+
+// The sum, with checked arithmetic: overflow traps, it never wraps.
+pub fn sum(values: Slice<u64>) -> u64 {
+    let mut total: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < values.length() {
+        total += values[index];
+        index += 1u64;
+    }
+    total
+}
+
+pub fn contains(values: Slice<u64>, value: u64) -> bool {
+    let mut index: u64 = 0u64;
+    while index < values.length() {
+        if values[index] == value {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
+}
+
+pub fn copy(values: Slice<u64>) -> Buffer<u64> {
+    let mut out: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < values.length() {
+        out.push(values[index]);
+        index += 1u64;
+    }
+    out
+}
+
+// `values` in ascending order. Insertion sort: stable, allocation-free and
+// fast on the short, mostly ordered lists a compiler builds.
+pub fn sort(values: Buffer<u64>) -> Buffer<u64> {
+    let mut out: Buffer<u64> = values;
+    let mut next: u64 = 1u64;
+    while next < out.length() {
+        let moving: u64 = out[next];
+        let mut hole: u64 = next;
+        while hole > 0u64 && out[hole - 1u64] > moving {
+            out[hole] = out[hole - 1u64];
+            hole -= 1u64;
+        }
+        out[hole] = moving;
+        next += 1u64;
+    }
+    out
+}
+
+// Binary search in ascending `values`: where `value` is, or where it would
+// be inserted to keep the order.
+pub fn search_sorted(values: Slice<u64>, value: u64) -> Search {
+    let mut low: u64 = 0u64;
+    let mut high: u64 = values.length();
+    while low < high {
+        let middle: u64 = low + (high - low) / 2u64;
+        if values[middle] < value {
+            low = middle + 1u64;
+        } else {
+            high = middle;
+        }
+    }
+    if low < values.length() && values[low] == value {
+        Search::Found { at: low }
+    } else {
+        Search::Missing { insert_at: low }
+    }
+}

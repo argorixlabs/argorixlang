@@ -1,0 +1,16 @@
+core 0.1;
+module selfhost_stdlib.trap_slice_range;
+
+// A view narrowed past its end traps; stdlib.bytes.range is the checked
+// alternative that returns a result instead.
+
+import stdlib.bytes;
+
+fn tail(value: Slice<u8>) -> u64 {
+    value.slice(1u64, 4u64).length()
+}
+
+pub fn argorix_main() -> u64 {
+    let abc: Array<u8, 3> = [97u8, 98u8, 99u8];
+    tail(abc.as_slice())
+}

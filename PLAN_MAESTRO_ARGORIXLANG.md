@@ -3,11 +3,15 @@
 Fecha: 2026-09-19. Estado: EN EJECUCIÓN; ESP-001–008, MAT-001–007 y MAT-029 cerradas como inventario, baseline, arquitectura, especificación/prototipo Core, frontend stage0, IR verificado, ejecución C transitoria, contratos/modelos y gobernanza; self-hosting e independencia completa aún no están implementados.
 Base de inspección: `5d73d66`, workspace `1.0.0`. Comprobar revisión, ramas y CI al comenzar.
 
-Última actualización de estado: 2026-09-22 sobre `main@9c77061`. **ESP-009
-(biblioteca estándar mínima) está EN_CURSO**: su API S1 está congelada y dos
-verticales ejecutables (`Buffer<T>` y `Arena<T>`/`Handle<T>`) están en `main`;
-sus subtareas ESP-009.B a ESP-009.F están cerradas. Ninguna otra tarea cambió
-de estado. El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)
+Última actualización de estado: 2026-09-22 sobre `main@e6b6056`. **ESP-009
+(biblioteca estándar mínima) está EN_CURSO**, ahora en el carril de Claude:
+API S1 congelada, `Buffer<T>`/`Arena<T>` ejecutables, semántica de movimiento
+(PR #47) y siete módulos `.argx` (`result`, `bytes`, `text`, `vector`,
+`ordered_map`, `path`, `json`) con fixtures adversarias en gcc/clang y
+sanitizers. Falta la frontera de archivos del compilador y las medidas de
+memoria. Sus subtareas ESP-009.B a ESP-009.F están cerradas. Ninguna otra
+tarea cambió de estado.
+El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)
 y el estado operativo del día —carriles, ramas, PRs e issues abiertos— en
 [WORKBOARD.md](WORKBOARD.md) y `coordination/`.
 Este es el punto de entrada para continuar el proyecto. Prevalece sobre el plan Espada y el backlog AL donde cambie prioridades, dependencias o criterios de cierre.

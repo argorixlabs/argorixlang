@@ -129,6 +129,8 @@ struct Checker<'a> {
     /// The name of each binding id, for diagnostics.
     binding_names: Vec<String>,
     loop_flows: Vec<LoopFlow>,
+    /// Set while checking a call argument that is `x.as_slice()` itself.
+    view_argument: bool,
 }
 
 pub fn check_core_program(
@@ -174,6 +176,7 @@ impl<'a> Checker<'a> {
             next_binding: 0,
             binding_names: Vec::new(),
             loop_flows: Vec::new(),
+            view_argument: false,
         }
     }
 
@@ -748,29 +751,94 @@ impl<'a> Checker<'a> {
                         self.error("TypeMismatch", "wrong argument count", span);
                     }
                     // Parameters are passed by value: a resource argument
-                    // moves into the callee.
+                    // moves into the callee. `x.as_slice()` is the one view
+                    // of owned storage, and only as a direct argument, where
+                    // the call bounds its life.
+                    let before = self.moved.clone();
+                    let viewed: Vec<String> = arguments
+                        .iter()
+                        .filter_map(|argument| Self::viewed_root(argument).map(str::to_string))
+                        .collect();
                     for (argument, expected) in arguments.iter().zip(&function.parameters) {
+                        self.view_argument = Self::viewed_root(argument).is_some();
                         let actual = self.infer_expr(argument, Some(expected));
+                        self.view_argument = false;
                         self.consume(argument, &actual);
                         self.require_compatible(expected, &actual, argument.span);
+                    }
+                    // The storage a view points into cannot also move into the
+                    // same call, where the callee could grow or release it.
+                    for root in viewed {
+                        if let Some(binding) = self.lookup(&root) {
+                            let id = binding.id;
+                            if self.moved.contains(&id) && !before.contains(&id) && self.reachable {
+                                self.error(
+                                    "SliceAliasesMove",
+                                    format!("`{root}` is both viewed and moved by this call"),
+                                    span,
+                                );
+                            }
+                        }
                     }
                     return function.result;
                 }
             }
         }
         if let CoreExprKind::Field { value, name } = &callee.kind {
+            let view_allowed = std::mem::replace(&mut self.view_argument, false);
             let receiver = self.infer_expr(value, None);
             self.require_place_for_resource(value, &receiver);
-            return self.infer_method(receiver, &name.value, arguments, span);
+            if name.value == "push" {
+                // Growing a buffer changes it, so the place must be mutable,
+                // unless it is reached through a handle: then the arena slot
+                // changes, not the binding.
+                if let Some(root) = Self::place_root(value) {
+                    if let Some(binding) = self.lookup(root).cloned() {
+                        if !binding.mutable && !matches!(binding.ty, Ty::Handle(_)) {
+                            self.error(
+                                "ImmutableAssignmentOrUnknownName",
+                                format!("`{root}` is immutable; declare it with `let mut` to push into it"),
+                                value.span,
+                            );
+                        }
+                    }
+                }
+            }
+            return self.infer_method(receiver, &name.value, arguments, span, view_allowed);
         }
         self.infer_expr(callee, None);
         self.error("TypeMismatch", "expression is not callable", span);
         Ty::Unknown
     }
 
-    fn infer_method(&mut self, receiver: Ty, name: &str, arguments: &[CoreExpr], span: Span) -> Ty {
+    fn infer_method(
+        &mut self,
+        receiver: Ty,
+        name: &str,
+        arguments: &[CoreExpr],
+        span: Span,
+        view_allowed: bool,
+    ) -> Ty {
         let receiver = self.deref_handle(receiver);
         match (name, receiver) {
+            ("as_slice", Ty::Buffer(element) | Ty::Array(element, _)) if arguments.is_empty() => {
+                if !view_allowed && self.reachable {
+                    self.error(
+                        "SliceEscapes",
+                        "a view of owned storage can only be passed directly as an argument: `f(x.as_slice())`",
+                        span,
+                    );
+                }
+                Ty::Slice(element)
+            }
+            ("slice", Ty::Slice(element)) if arguments.len() == 2 => {
+                // A narrower view of a view; bounds are checked at run time.
+                for argument in arguments {
+                    let actual = self.infer_expr(argument, Some(&Ty::Int("u64".into())));
+                    self.require_compatible(&Ty::Int("u64".into()), &actual, argument.span);
+                }
+                Ty::Slice(element)
+            }
             ("length", Ty::Array(_, _) | Ty::Slice(_) | Ty::Buffer(_) | Ty::Bytes | Ty::String)
                 if arguments.is_empty() =>
             {
@@ -1104,6 +1172,13 @@ impl<'a> Checker<'a> {
                 array_length,
             } => {
                 let element = Box::new(self.lower_type(element));
+                if Self::contains_slice(&element) {
+                    self.error(
+                        "SliceEscapes",
+                        format!("a slice is a view into storage it does not own and cannot be held in a `{name}`"),
+                        source.span,
+                    );
+                }
                 match name.as_str() {
                     "Array" => Ty::Array(element, array_length.unwrap_or(0)),
                     "Slice" => Ty::Slice(element),
@@ -1237,6 +1312,42 @@ impl<'a> Checker<'a> {
             }
             _ => false,
         }
+    }
+
+    fn contains_slice(ty: &Ty) -> bool {
+        match ty {
+            Ty::Slice(_) => true,
+            Ty::Array(element, _)
+            | Ty::Buffer(element)
+            | Ty::Arena(element)
+            | Ty::Handle(element) => Self::contains_slice(element),
+            _ => false,
+        }
+    }
+
+    /// The local at the root of a place, if the expression is one.
+    fn place_root(expression: &CoreExpr) -> Option<&str> {
+        match &expression.kind {
+            CoreExprKind::Path(path) if path.len() == 1 => Some(&path[0]),
+            CoreExprKind::Field { value, .. } | CoreExprKind::Index { value, .. } => {
+                Self::place_root(value)
+            }
+            _ => None,
+        }
+    }
+
+    /// `x.as_slice()`, the only way to make a view of owned storage: its
+    /// receiver's root local, if the expression is that call.
+    fn viewed_root(expression: &CoreExpr) -> Option<&str> {
+        let CoreExprKind::Call { callee, .. } = &expression.kind else {
+            return None;
+        };
+        let CoreExprKind::Field { value, name } = &callee.kind else {
+            return None;
+        };
+        (name.value == "as_slice")
+            .then(|| Self::place_root(value))
+            .flatten()
     }
 
     /// A local, or a field or element of one: something that has a place in

@@ -1,0 +1,52 @@
+core 0.1;
+module selfhost_stdlib.bytes_ops;
+
+// stdlib.bytes: each check sets one bit; all 12 pass gives 4095.
+
+import stdlib.bytes;
+import stdlib.result;
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+pub fn argorix_main() -> u64 {
+    let abc: Array<u8, 3> = [97u8, 98u8, 99u8];
+    let abd: Array<u8, 3> = [97u8, 98u8, 100u8];
+    let ab: Array<u8, 2> = [97u8, 98u8];
+    let empty: Array<u8, 0> = [];
+    let mut mask: u64 = 0u64;
+
+    mask += bit(bytes.equal(abc.as_slice(), abc.as_slice()), 0u64);
+    mask += bit(!bytes.equal(abc.as_slice(), abd.as_slice()), 1u64);
+    mask += bit(bytes.compare(abc.as_slice(), abd.as_slice()) == 0i8 - 1i8, 2u64);
+    // A proper prefix sorts first; unsigned order puts 200 after 100.
+    mask += bit(bytes.compare(ab.as_slice(), abc.as_slice()) == 0i8 - 1i8, 3u64);
+    mask += bit(bytes.compare(abc.as_slice(), abc.as_slice()) == 0i8, 4u64);
+    mask += bit(bytes.starts_with(abc.as_slice(), ab.as_slice()), 5u64);
+    mask += bit(!bytes.starts_with(ab.as_slice(), abc.as_slice()), 6u64);
+    mask += bit(bytes.starts_with(abc.as_slice(), empty.as_slice()), 7u64);
+
+    let found: bool = match bytes.find(abc.as_slice(), 99u8, 0u64) {
+        Search::Found { at } => at == 2u64,
+        Search::Missing { insert_at: _ } => false,
+    };
+    mask += bit(found, 8u64);
+
+    let mut built: Buffer<u8> = bytes.copy(ab.as_slice());
+    built.push(99u8);
+    mask += bit(bytes.equal(built.as_slice(), abc.as_slice()), 9u64);
+
+    // A range past the end is a result, not a trap.
+    let refused: bool = match bytes.range(abc.as_slice(), 1u64, 4u64) {
+        BytesResult::Ok { value: _ } => false,
+        BytesResult::Err { failure } => result.failure_digest(failure) == 2000004u64,
+    };
+    mask += bit(refused, 10u64);
+
+    let digits: Buffer<u8> = bytes.append_decimal(Buffer::new(), 18446744073709551615u64);
+    let max: Array<u8, 20> = [49u8, 56u8, 52u8, 52u8, 54u8, 55u8, 52u8, 52u8, 48u8, 55u8,
+        51u8, 55u8, 48u8, 57u8, 53u8, 53u8, 49u8, 54u8, 49u8, 53u8];
+    mask += bit(bytes.equal(digits.as_slice(), max.as_slice()), 11u64);
+    mask
+}

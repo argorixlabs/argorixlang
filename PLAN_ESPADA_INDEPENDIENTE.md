@@ -222,15 +222,26 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 **Entregables:** biblioteca con API documentada y ejemplos de tokenización/árbol de símbolos.
 **Aceptación:** lógica de colecciones y serialización escrita en Argorix; no un wrapper a serde o utilidades Rust. Rendimiento y memoria suficientes para procesar una muestra representativa del compilador; registrar medidas.
 
-**Estado (2026-09-22):** EN_CURSO en el carril de Codex, rama
-`codex/stdlib-esp009`. Cerrado hasta ahora: la API/frontera S1 congelada en
-[`spec/core/stdlib.md`](spec/core/stdlib.md) y dos verticales ejecutables,
-`Buffer<T>` acotado con crecimiento comprobado y `Arena<T>`/`Handle<T>` con
-identidad sin punteros, liberación y reclamación de slots
-([PR #26](https://github.com/argorixlabs/argorixlang/pull/26)). Falta lo
-demás de la ficha: bytes/texto, vectores, mapas deterministas, resultados,
-rutas, frontera de archivos del compilador y la serialización JSON que
-consume el bootstrap, todo en `.argx`.
+**Estado (2026-09-22):** EN_CURSO, reasignada al carril de Claude (rama
+`claude/stdlib-modules`). Cerrado:
+
+- La API/frontera S1 en [`spec/core/stdlib.md`](spec/core/stdlib.md).
+- `Buffer<T>` y `Arena<T>`/`Handle<T>` ejecutables
+  ([PR #26](https://github.com/argorixlabs/argorixlang/pull/26)).
+- Semántica de movimiento y liberación determinista de recursos
+  ([PR #47](https://github.com/argorixlabs/argorixlang/pull/47)).
+- Siete módulos `.argx` en `stdlib/`: `result`, `bytes`, `text` (UTF-8 según
+  la tabla 3-7), `vector`, `ordered_map` (orden por bytes y duplicados
+  rechazados), `path` (sólo rutas relativas normales) y `json` (escritor
+  canónico y validador).
+
+Nueve fixtures, positivas y adversarias (UTF-8 inválido, claves duplicadas,
+traversal, desbordamiento, JSON mal formado, profundidad y rangos), pasan con
+gcc y clang, con y sin sanitizers. Falta:
+
+- la frontera de archivos del compilador (`stdlib.compiler_host`);
+- las medidas de memoria sobre una muestra del compilador;
+- los ejemplos de tokenización y árbol de símbolos.
 
 Subtareas cerradas por el carril de Claude, ninguna recorta criterios del
 padre:
@@ -275,10 +286,8 @@ padre:
   resuelve `b.f(..)`, `b.C` y los tipos públicos importados. Es lo que hacía
   falta para escribir la stdlib en Core modular.
 
-Ninguna de las cinco subtareas escribe `.argx` de biblioteca: ESP-009 sigue
-abierta hasta que sus colecciones y su serialización existan en Argorix. Lo
-que falta por cubrir en el arnés depende de que existan: mapas (claves
-duplicadas, orden canónico), rutas, la frontera de archivos y el JSON.
+Las cinco subtareas prepararon el backend y el arnés; los módulos `.argx` de
+la biblioteca llegaron después, sobre ese terreno (ver el estado de arriba).
 
 ### ESP-010 — Lexer y diagnósticos en Argorix
 

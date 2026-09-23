@@ -1,0 +1,100 @@
+core 0.1;
+module stdlib.path;
+
+// Relative UTF-8 package paths (spec/core/stdlib.md, `stdlib.path`). A path
+// is a sequence of segments separated by `/`. It is valid only if it is
+// already in normal form, so a valid path has exactly one spelling and two
+// different spellings never name the same file:
+//
+// - it is valid UTF-8 and not empty;
+// - it does not start with `/` (an absolute root) and has no empty segment,
+//   so there is no leading, trailing or doubled separator (which also rules
+//   out `//` UNC roots);
+// - no segment is `.` or `..`;
+// - it contains no NUL, no `\` (the other separator on some hosts) and no
+//   `:` (a drive prefix, or an alternate data stream).
+//
+// Paths only name files; opening one is the compiler host's job, which
+// re-validates it against the root it was given (`stdlib.compiler_host`).
+
+import stdlib.result;
+import stdlib.text;
+import stdlib.bytes;
+
+pub fn validate(path: Slice<u8>) -> Checked {
+    if path.length() == 0u64 {
+        return Checked::Err { failure: Failure::InvalidPath { at: 0u64 } };
+    }
+    match text.validate(path) {
+        Checked::Err { failure } => {
+            return Checked::Err { failure: failure };
+        },
+        Checked::Ok => {},
+    }
+    let mut segment_start: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index <= path.length() {
+        // The end of the path closes the last segment like a separator.
+        let at_separator: bool = index == path.length() || path[index] == 47u8;
+        if at_separator {
+            let length: u64 = index - segment_start;
+            if length == 0u64 {
+                return Checked::Err { failure: Failure::InvalidPath { at: index } };
+            }
+            if length == 1u64 && path[segment_start] == 46u8 {
+                return Checked::Err { failure: Failure::InvalidPath { at: segment_start } };
+            }
+            if length == 2u64 && path[segment_start] == 46u8 && path[segment_start + 1u64] == 46u8 {
+                return Checked::Err { failure: Failure::InvalidPath { at: segment_start } };
+            }
+            segment_start = index + 1u64;
+        } else {
+            let byte: u8 = path[index];
+            if byte == 0u8 || byte == 92u8 || byte == 58u8 {
+                return Checked::Err { failure: Failure::InvalidPath { at: index } };
+            }
+        }
+        index += 1u64;
+    }
+    Checked::Ok
+}
+
+pub fn is_valid(path: Slice<u8>) -> bool {
+    match validate(path) {
+        Checked::Ok => true,
+        Checked::Err { failure: _ } => false,
+    }
+}
+
+// `base/child`, when both are valid paths; the failure of the first invalid
+// one otherwise, with positions counted in that input.
+pub fn join(base: Slice<u8>, child: Slice<u8>) -> BytesResult {
+    match validate(base) {
+        Checked::Err { failure } => {
+            return BytesResult::Err { failure: failure };
+        },
+        Checked::Ok => {},
+    }
+    match validate(child) {
+        Checked::Err { failure } => {
+            return BytesResult::Err { failure: failure };
+        },
+        Checked::Ok => {},
+    }
+    let mut out: Buffer<u8> = bytes.copy(base);
+    out.push(47u8);
+    BytesResult::Ok { value: bytes.append(out, child) }
+}
+
+// The number of segments of a valid path.
+pub fn segment_count(path: Slice<u8>) -> u64 {
+    let mut count: u64 = 1u64;
+    let mut index: u64 = 0u64;
+    while index < path.length() {
+        if path[index] == 47u8 {
+            count += 1u64;
+        }
+        index += 1u64;
+    }
+    count
+}
