@@ -3,15 +3,18 @@
 Fecha: 2026-09-19. Estado: EN EJECUCIÓN; ESP-001–008, MAT-001–007 y MAT-029 cerradas como inventario, baseline, arquitectura, especificación/prototipo Core, frontend stage0, IR verificado, ejecución C transitoria, contratos/modelos y gobernanza; self-hosting e independencia completa aún no están implementados.
 Base de inspección: `5d73d66`, workspace `1.0.0`. Comprobar revisión, ramas y CI al comenzar.
 
-Última actualización de estado: 2026-09-22 sobre `main@e6b6056`. **ESP-009
-(biblioteca estándar mínima) está EN_CURSO**, ahora en el carril de Claude:
-API S1 congelada, `Buffer<T>`/`Arena<T>` ejecutables, semántica de movimiento
-(PR #47) y ocho módulos `.argx` (`result`, `bytes`, `text`, `vector`, `arena`,
-`ordered_map`, `path`, `json`), la frontera de archivos del compilador
-(`stdlib.compiler_host`) y medidas registradas, con fixtures adversarias en
-gcc/clang y sanitizers. Sus criterios se cumplen en la pila de PRs #48–#50;
-falta el CI sobre `main` tras la revisión. Sus subtareas ESP-009.B a
-ESP-009.F están cerradas. Ninguna otra tarea cambió de estado.
+Última actualización de estado: 2026-09-23 sobre `main@1183b90`. **ESP-009
+(biblioteca estándar mínima) está HECHA** (PRs #47, #48 y #51, con CI verde
+en `main`). Incluye:
+
+- ocho módulos `.argx` (`result`, `bytes`, `text`, `vector`, `arena`,
+  `ordered_map`, `path` y `json`);
+- la frontera de archivos del compilador (`stdlib.compiler_host`);
+- semántica de movimiento de recursos y medidas registradas.
+
+**ESP-010 (lexer en Argorix) está EN_CURSO** (PR #53): el lexer ya existe en
+`compiler/` y coincide con el lexer stage0 en 47 muestras. Ninguna otra tarea
+cambió de estado.
 El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)
 y el estado operativo del día —carriles, ramas, PRs e issues abiertos— en
 [WORKBOARD.md](WORKBOARD.md) y `coordination/`.
@@ -31,7 +34,7 @@ Este plan amplía la planificación solicitada: no inicia una reescritura silenc
 - **30 tareas adicionales MAT-001 a MAT-030**, cada una con ficha individual, dependencias, pasos, entregables y pruebas.
 - **55 tareas activas de primer nivel.** ESP-026 queda SUSTITUIDA: su mezcla de editor, puentes y agentes se reparte en MAT-013 a MAT-020, MAT-027 y las validaciones asociadas. No se cuenta como tarea 56.
 - [Registro estructurado del backlog](tasks/madurez/BACKLOG.json): estado MAT y dependencias adicionales sobre ESP.
-- Primeros cierres: [ESP-001](tasks/espada/ESP-001.md) como inventario, [ESP-002](tasks/espada/ESP-002.md) como [baseline histórico](bootstrap/baseline.json), [ESP-003](tasks/espada/ESP-003.md) como [arquitectura de independencia](bootstrap/architecture.md), [ESP-004](tasks/espada/ESP-004.md) como [especificación Core](spec/core/README.md), [ESP-005](tasks/espada/ESP-005.md) como [memoria](spec/core/memory.md)/[ABI host](spec/host-abi.md), [ESP-006](tasks/espada/ESP-006.md) como frontend Core Rust stage0, [ESP-007](tasks/espada/ESP-007.md) como IR Core verificado, [ESP-008](tasks/espada/ESP-008.md) como backend C transitorio/runtime C1 ejecutable, [MAT-001](tasks/madurez/MAT-001.md) como [contrato de producto](spec/product-contract.md), [MAT-002](tasks/madurez/MAT-002.md) como [arquitectura de confianza](spec/trust-boundaries.md), [MAT-003](tasks/madurez/MAT-003.md) como [contrato normativo](spec/language/current-v1.md), [MAT-004](tasks/madurez/MAT-004.md) como [memoria abstracta](spec/memory-model.md)/[efectos](spec/effect-system.md), [MAT-005](tasks/madurez/MAT-005.md) como [concurrencia](spec/concurrency.md)/[entrega](spec/message-delivery.md), [MAT-006](tasks/madurez/MAT-006.md) como [capacidades A1](spec/capabilities.md), [MAT-007](tasks/madurez/MAT-007.md) como identidad, secretos y procedencia y [MAT-029](tasks/madurez/MAT-029.md) como [gobernanza](GOVERNANCE.md)/[mantenimiento](operations/maintenance.md). Las otras 39 tareas siguen pendientes; de ellas, [ESP-009](PLAN_ESPADA_INDEPENDIENTE.md) está EN_CURSO con dos subtareas ya cerradas.
+- Primeros cierres: [ESP-001](tasks/espada/ESP-001.md) como inventario, [ESP-002](tasks/espada/ESP-002.md) como [baseline histórico](bootstrap/baseline.json), [ESP-003](tasks/espada/ESP-003.md) como [arquitectura de independencia](bootstrap/architecture.md), [ESP-004](tasks/espada/ESP-004.md) como [especificación Core](spec/core/README.md), [ESP-005](tasks/espada/ESP-005.md) como [memoria](spec/core/memory.md)/[ABI host](spec/host-abi.md), [ESP-006](tasks/espada/ESP-006.md) como frontend Core Rust stage0, [ESP-007](tasks/espada/ESP-007.md) como IR Core verificado, [ESP-008](tasks/espada/ESP-008.md) como backend C transitorio/runtime C1 ejecutable, [MAT-001](tasks/madurez/MAT-001.md) como [contrato de producto](spec/product-contract.md), [MAT-002](tasks/madurez/MAT-002.md) como [arquitectura de confianza](spec/trust-boundaries.md), [MAT-003](tasks/madurez/MAT-003.md) como [contrato normativo](spec/language/current-v1.md), [MAT-004](tasks/madurez/MAT-004.md) como [memoria abstracta](spec/memory-model.md)/[efectos](spec/effect-system.md), [MAT-005](tasks/madurez/MAT-005.md) como [concurrencia](spec/concurrency.md)/[entrega](spec/message-delivery.md), [MAT-006](tasks/madurez/MAT-006.md) como [capacidades A1](spec/capabilities.md), [MAT-007](tasks/madurez/MAT-007.md) como identidad, secretos y procedencia, [MAT-029](tasks/madurez/MAT-029.md) como [gobernanza](GOVERNANCE.md)/[mantenimiento](operations/maintenance.md) y [ESP-009](tasks/espada/ESP-009.md) como [biblioteca estándar mínima](spec/core/stdlib.md). Las otras 38 tareas siguen pendientes; de ellas, [ESP-010](tasks/espada/ESP-010.md) está EN_CURSO.
 - El plan AL anterior conserva contexto, pero no determina el orden de ejecución.
 
 Las tareas MAT no son una lista para ejecutar únicamente después de Espada. Sus contratos iniciales deben definir el producto y los invariantes antes de la migración. Las implementaciones esperan al compilador/runtime necesarios para evitar duplicar código que luego deba portarse.
