@@ -4,7 +4,7 @@
 
 - Task: ESP-009 — minimal standard library, the `.argx` modules of
   `spec/core/stdlib.md`.
-- State: IN PROGRESS.
+- State: IN REVIEW (PRs #48–#50).
 - Branch: `claude/stdlib-modules`, base `e6b6056` (`origin/main`, after
   PR #47 on `claude/stdlib-core`).
 - Started: 2026-09-22.
@@ -15,6 +15,16 @@
 - Paths: `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`,
   `tasks/espada/ESP-009.md`, and the Core frontend, IR, C backend and C1
   runtime where a stdlib module needs a primitive.
+- Progress (2026-09-22):
+  - PR #47 (ownership) is merged.
+  - PR #48: the stdlib modules.
+  - PR #49: arena scopes, the tokenizer example and measurements.
+  - PR #50: the compiler-host boundary.
+  - The PRs are stacked in that order. Every acceptance criterion in
+    `tasks/espada/ESP-009.md` is met on the stack except CI on `main`.
+- Open after merge: Windows has no compiler-host shim yet. JSON duplicate
+  detection and `ordered_map` insertion are quadratic
+  (`bootstrap/ESP-009-measurements.json`).
 
 ---
 
