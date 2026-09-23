@@ -14,6 +14,18 @@
     {"members": 8000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.74, "max_rss_kb": 1584},
     {"members": 16000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 3.25, "max_rss_kb": 2016}
   ],
+  "after_json_sort": {
+    "date": "2026-09-23",
+    "change": "stdlib.json finds duplicate keys with a stable merge sort instead of pairwise comparison (PR #52); the rest of the workload is unchanged.",
+    "results": [
+      {"members": 1000, "default": "ARGORIX_RESULT:0", "lifted_seconds": 0.00, "max_rss_kb": 1440},
+      {"members": 2000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.02, "max_rss_kb": 1280},
+      {"members": 4000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.08, "max_rss_kb": 1600},
+      {"members": 8000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.24, "max_rss_kb": 1600},
+      {"members": 16000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 1.35, "max_rss_kb": 2020}
+    ],
+    "reading": "16,000 members take 1.35 s instead of 3.25 s, and the default budget now covers 1,000 members instead of 600 to 800. What stays superlinear is stdlib.ordered_map.insert, which shifts sorted columns; it is the next cost to remove if the compiler needs larger maps."
+  },
   "findings": [
     "Memory is not the constraint: peak RSS stays near 2 MB at 16,000 members, and the largest buffer (the document, about 14 bytes per member) reaches the 1 MiB per-buffer ceiling only past roughly 70,000 members.",
     "Time is quadratic: each doubling of N costs about 4.3 to 4.4 times more. Two known sources: stdlib.json rejects duplicate keys by comparing each key with every earlier one, and stdlib.ordered_map inserts into sorted columns by shifting. Both are correct and deterministic; neither scales to large documents.",
