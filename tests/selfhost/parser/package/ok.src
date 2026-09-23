@@ -1,0 +1,3 @@
+core 0.1;
+module p;
+fn f(x: u64) -> u64 { x * 2u64 + 1u64 }

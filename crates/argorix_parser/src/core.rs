@@ -484,7 +484,7 @@ pub fn core_token_dump(source: &[u8]) -> String {
 }
 
 /// The escaping of `stdlib.text.append_json_escaped`.
-fn escape_json(value: &str) -> String {
+pub(crate) fn escape_json(value: &str) -> String {
     let mut out = String::new();
     for ch in value.chars() {
         match ch {
@@ -763,10 +763,16 @@ pub fn parse_core_source(source: &str) -> Result<CoreProgram, Vec<CoreDiagnostic
     CoreParser::new(tokens).parse_program()
 }
 
+/// How deep expressions, blocks, types and patterns may nest. Past it the
+/// parser reports `NestingTooDeep` instead of recursing until the host stack
+/// runs out (spec/core/ast.md).
+pub const CORE_NESTING_LIMIT: usize = 256;
+
 struct CoreParser {
     tokens: Vec<CoreToken>,
     current: usize,
     diagnostics: Vec<CoreDiagnostic>,
+    depth: usize,
 }
 
 type ParseResult<T> = Result<T, CoreDiagnostic>;
@@ -777,6 +783,7 @@ impl CoreParser {
             tokens,
             current: 0,
             diagnostics: Vec::new(),
+            depth: 0,
         }
     }
 
@@ -870,6 +877,8 @@ impl CoreParser {
     }
 
     fn parse_item(&mut self) -> ParseResult<CoreItem> {
+        // An item that failed may have left nesting levels open.
+        self.depth = 0;
         let start = self.peek().span;
         let public = if self.at_ident("pub") {
             self.advance();
@@ -1023,7 +1032,48 @@ impl CoreParser {
         Ok(fields)
     }
 
+    /// One level deeper; an error past `CORE_NESTING_LIMIT`.
+    fn nest(&mut self) -> ParseResult<()> {
+        self.depth += 1;
+        if self.depth > CORE_NESTING_LIMIT {
+            return Err(self.error(
+                "NestingTooDeep",
+                format!("nesting exceeds {CORE_NESTING_LIMIT} levels"),
+                self.peek().span,
+            ));
+        }
+        Ok(())
+    }
+
     fn parse_type(&mut self) -> ParseResult<CoreType> {
+        self.nest()?;
+        let result = self.parse_type_inner();
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_block(&mut self) -> ParseResult<CoreBlock> {
+        self.nest()?;
+        let result = self.parse_block_inner();
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_unary(&mut self, allow_aggregate: bool) -> ParseResult<CoreExpr> {
+        self.nest()?;
+        let result = self.parse_unary_inner(allow_aggregate);
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_pattern(&mut self) -> ParseResult<CorePattern> {
+        self.nest()?;
+        let result = self.parse_pattern_inner();
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_type_inner(&mut self) -> ParseResult<CoreType> {
         let name = self.expect_ident("ExpectedType", "expected type")?;
         let start = name.span;
         if !self.consume_kind(&CoreTokenKind::Less) {
@@ -1066,7 +1116,7 @@ impl CoreParser {
         })
     }
 
-    fn parse_block(&mut self) -> ParseResult<CoreBlock> {
+    fn parse_block_inner(&mut self) -> ParseResult<CoreBlock> {
         let start = self
             .expect_kind(&CoreTokenKind::LeftBrace, "ExpectedToken", "expected `{`")?
             .span;
@@ -1251,7 +1301,7 @@ impl CoreParser {
         Ok(left)
     }
 
-    fn parse_unary(&mut self, allow_aggregate: bool) -> ParseResult<CoreExpr> {
+    fn parse_unary_inner(&mut self, allow_aggregate: bool) -> ParseResult<CoreExpr> {
         if self.at_kind(&CoreTokenKind::Bang) || self.at_kind(&CoreTokenKind::Minus) {
             let token = self.advance().clone();
             let operator = if token.kind == CoreTokenKind::Bang {
@@ -1542,7 +1592,7 @@ impl CoreParser {
         })
     }
 
-    fn parse_pattern(&mut self) -> ParseResult<CorePattern> {
+    fn parse_pattern_inner(&mut self) -> ParseResult<CorePattern> {
         let token = self.advance().clone();
         let kind = match token.kind {
             CoreTokenKind::Ident(value) if value == "_" => CorePatternKind::Wildcard,

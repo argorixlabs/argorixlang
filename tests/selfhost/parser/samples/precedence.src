@@ -1,0 +1,9 @@
+core 0.1;
+module samples.precedence;
+
+fn f(a: u64, b: u64, c: bool) -> bool {
+    let x: u64 = a + b * 2u64 - a / b % 3u64 << 1u64 >> 2u64 & a | b ^ a;
+    let y: bool = !c || a < b && a <= b == (b > a) != c && -a >= b;
+    let z: u64 = -(a + b) * -a;
+    y
+}

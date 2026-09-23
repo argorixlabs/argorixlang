@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "core_version": "0.1",
+  "task": "ESP-011",
+  "purpose": "The Argorix parser in compiler/ over real files, through the compiler-host boundary, under gcc, clang and the sanitizers. The differential against the stage0 parser over the whole corpus is crates/argorixc/tests/parser_differential.rs.",
+  "cases": [
+    {
+      "id": "parse_files",
+      "file": "parse_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "package",
+        "read_budget": 200,
+        "write_budget": 2000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.ast": "Program 0.1 p @0..60\n  Fn f @20..59\n    Param x @25..31\n      Type u64 @28..31\n    Type u64 @36..39\n    Block @40..59\n      Binary + @42..57\n        Binary * @42..50\n          Path x @42..43\n          Integer 2 u64 @46..50\n        Integer 1 u64 @53..57\n",
+          "dumps/1.ast": "3:7: syntax[ExpectedIdentifier]: expected parameter name\n"
+        }
+      }
+    }
+  ]
+}

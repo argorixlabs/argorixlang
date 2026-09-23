@@ -90,10 +90,16 @@
       }
     },
     "ESP-010": {
-      "status": "EN_CURSO",
+      "status": "HECHA",
       "file": "tasks/espada/ESP-010.md",
       "evidence": "crates/argorixc/tests/lexer_differential.rs; tests/selfhost/lexer/cases.json",
-      "scope": "Lexer y diagnosticos en Argorix (compiler/); volcado canonico en spec/core/tokens.md, igual al del lexer stage0 en 47 muestras; falta leer las fuentes por la frontera de archivos (PR 53)"
+      "scope": "Lexer y diagnosticos en Argorix (compiler/); volcado canonico en spec/core/tokens.md, igual al del lexer stage0 en 49 muestras; lee sus fuentes por la frontera de archivos; PR 53, CI verde en main@6f981db"
+    },
+    "ESP-011": {
+      "status": "EN_CURSO",
+      "file": "tasks/espada/ESP-011.md",
+      "evidence": "crates/argorixc/tests/parser_differential.rs; tests/selfhost/parser/cases.json",
+      "scope": "Parser y AST en Argorix (compiler/); volcado canonico del AST igual al del parser stage0 en 135 archivos; limite de anidamiento de 256 en ambos parsers"
     }
   },
   "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad. esp_progress se actualiza al reclamar o cerrar una tarea ESP; el estado operativo del día vive en WORKBOARD.md.",

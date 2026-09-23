@@ -1,0 +1,147 @@
+core 0.1;
+module compiler.ast;
+
+// The syntax tree of Argorix Core as the Argorix parser builds it (ESP-011).
+//
+// Nodes live in one buffer and point to each other by position: `first` is
+// the first child and `next` the next sibling, each stored as position + 1 so
+// that 0 means none. A child is always built before its parent, so the tree
+// needs no handles and no node owns another. Each node keeps its byte span and
+// its label, the text the canonical dump prints (spec/core/ast.md), as a range
+// of `texts`.
+
+import stdlib.bytes;
+
+pub struct Node { kind: u64, start: u64, end: u64, label_start: u64, label_end: u64, first: u64, next: u64, }
+
+// A syntax error: its position and the ranges of its code and message in
+// `texts`.
+pub struct SyntaxError { line: u64, column: u64, code_start: u64, code_end: u64, message_start: u64, message_end: u64, }
+
+// Everything the parser changes, passed along and returned by each step:
+// Core has no mutable references. `last` is the node the step built, and
+// `failed` with `pending` is an error on its way up to the item that recovers.
+pub struct Tree {
+    nodes: Buffer<Node>,
+    texts: Buffer<u8>,
+    errors: Buffer<SyntaxError>,
+    at: u64,
+    halved: u64,
+    depth: u64,
+    failed: bool,
+    pending: SyntaxError,
+    last: u64,
+    // Where the last node of a sibling chain built by one step ends.
+    chain_end: u64,
+}
+
+// The kinds the parser itself looks at; every other node is OTHER.
+pub const OTHER: u64 = 0u64;
+pub const PATH: u64 = 1u64;
+pub const BLOCK: u64 = 2u64;
+pub const IF: u64 = 3u64;
+pub const MATCH: u64 = 4u64;
+pub const LOOP: u64 = 5u64;
+
+pub fn empty() -> Tree {
+    Tree {
+        nodes: Buffer::new(),
+        texts: Buffer::new(),
+        errors: Buffer::new(),
+        at: 0u64,
+        halved: 0u64,
+        depth: 0u64,
+        failed: false,
+        pending: SyntaxError { line: 0u64, column: 0u64, code_start: 0u64, code_end: 0u64, message_start: 0u64, message_end: 0u64 },
+        last: 0u64,
+        chain_end: 0u64,
+    }
+}
+
+// The canonical dump: the errors if there are any, otherwise the tree from
+// its last node, the program, in preorder.
+pub fn dump(tree: Tree) -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    if tree.errors.length() > 0u64 {
+        let mut index: u64 = 0u64;
+        while index < tree.errors.length() {
+            out = append_error(out, tree.texts.as_slice(), tree.errors[index]);
+            index += 1u64;
+        }
+        return out;
+    }
+    if tree.nodes.length() == 0u64 {
+        return out;
+    }
+    // Pairs of (node position, depth). `top` counts the live values, so a pop
+    // only moves it down and a push reuses the buffer where it can.
+    let mut stack: Buffer<u64> = Buffer::new();
+    let mut top: u64 = 0u64;
+    stack = put(stack, top, tree.nodes.length() - 1u64);
+    stack = put(stack, top + 1u64, 0u64);
+    top = 2u64;
+    let mut children: Buffer<u64> = Buffer::new();
+    while top > 0u64 {
+        let depth: u64 = stack[top - 1u64];
+        let position: u64 = stack[top - 2u64];
+        top -= 2u64;
+        let found: Node = tree.nodes[position];
+        out = append_node(out, tree.texts.as_slice(), found, depth);
+        // Children go on the stack last first, so the first is popped next.
+        let mut count: u64 = 0u64;
+        let mut child: u64 = found.first;
+        while child != 0u64 {
+            children = put(children, count, child - 1u64);
+            count += 1u64;
+            child = tree.nodes[child - 1u64].next;
+        }
+        while count > 0u64 {
+            count -= 1u64;
+            stack = put(stack, top, children[count]);
+            stack = put(stack, top + 1u64, depth + 1u64);
+            top += 2u64;
+        }
+    }
+    out
+}
+
+// `values` with `value` at `index`, which is at most one past the end.
+fn put(values: Buffer<u64>, index: u64, value: u64) -> Buffer<u64> {
+    let mut out: Buffer<u64> = values;
+    if index < out.length() {
+        out[index] = value;
+    } else {
+        out.push(value);
+    }
+    out
+}
+
+fn append_node(out: Buffer<u8>, texts: Slice<u8>, found: Node, depth: u64) -> Buffer<u8> {
+    let mut line: Buffer<u8> = out;
+    let mut level: u64 = 0u64;
+    while level < depth {
+        line.push(32u8);
+        line.push(32u8);
+        level += 1u64;
+    }
+    line = bytes.append(line, texts.slice(found.label_start, found.label_end));
+    line = bytes.append(line, " @".as_slice());
+    line = bytes.append_decimal(line, found.start);
+    line.push(46u8);
+    line.push(46u8);
+    line = bytes.append_decimal(line, found.end);
+    line.push(10u8);
+    line
+}
+
+fn append_error(out: Buffer<u8>, texts: Slice<u8>, found: SyntaxError) -> Buffer<u8> {
+    let mut line: Buffer<u8> = bytes.append_decimal(out, found.line);
+    line.push(58u8);
+    line = bytes.append_decimal(line, found.column);
+    line = bytes.append(line, ": syntax[".as_slice());
+    line = bytes.append(line, texts.slice(found.code_start, found.code_end));
+    line = bytes.append(line, "]: ".as_slice());
+    line = bytes.append(line, texts.slice(found.message_start, found.message_end));
+    line.push(10u8);
+    line
+}

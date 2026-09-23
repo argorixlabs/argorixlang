@@ -1096,6 +1096,15 @@ impl<'a> FunctionEmitter<'a> {
                         ),
                         (**element).clone(),
                     )),
+                    // An element of a view is a place to read from, as in
+                    // `tokens[at].line`; the checker never lets one be written.
+                    ScalarType::Slice(element) if !write => Ok((
+                        format!(
+                            "{base}.data[argorix_bounds((uint64_t){}, {base}.length)]",
+                            index.0
+                        ),
+                        (**element).clone(),
+                    )),
                     _ => Err(CoreCError::unsupported(
                         "only a Buffer or an Array element is a writable place",
                     )),
