@@ -87,6 +87,27 @@
       "expected_exit": 70,
       "expected_stdout": "",
       "expected_stderr": "ARGORIX_TRAP:ARENA_RELEASED"
+    },
+    {
+      "id": "host_files",
+      "file": "host_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:1023",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "package",
+        "read_budget": 8,
+        "write_budget": 8,
+        "build_dirs": ["out"],
+        "expected_build": {"out/copy.txt": "hello"}
+      }
+    },
+    {
+      "id": "trap_host_denied",
+      "file": "trap_host_denied.argx",
+      "expected_exit": 70,
+      "expected_stdout": "",
+      "expected_stderr": "ARGORIX_TRAP:PERMISSION_DENIED"
     }
   ]
 }

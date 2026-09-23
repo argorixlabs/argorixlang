@@ -1,0 +1,72 @@
+core 0.1;
+module selfhost_stdlib.host_files;
+
+// stdlib.compiler_host: reads under the package root and writes under the
+// build root, both through capabilities the driver lends to argorix_main.
+// Missing files, directories, traversal, missing build directories and both
+// byte budgets fail as results. All 10 checks pass gives 1023.
+//
+// The case lends package/ with a read budget of 8 bytes and a build root
+// holding out/ with a write budget of 8 bytes.
+
+import stdlib.compiler_host;
+import stdlib.bytes;
+import stdlib.result;
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+fn read_equals(package: PackageRead, file: Slice<u8>, expected: Slice<u8>) -> bool {
+    match compiler_host.read(package, file) {
+        BytesResult::Ok { value } => bytes.equal(value.as_slice(), expected),
+        BytesResult::Err { failure: _ } => false,
+    }
+}
+
+// 0 when the read succeeded, the failure digest otherwise.
+fn read_digest(package: PackageRead, file: Slice<u8>) -> u64 {
+    match compiler_host.read(package, file) {
+        BytesResult::Ok { value: _ } => 0u64,
+        BytesResult::Err { failure } => result.failure_digest(failure),
+    }
+}
+
+fn write_digest(build: BuildWrite, file: Slice<u8>, data: Slice<u8>) -> u64 {
+    result.checked_digest(compiler_host.write(build, file, data))
+}
+
+pub fn argorix_main(package: PackageRead, build: BuildWrite) -> u64 {
+    let hello_txt: Array<u8, 9> = [104u8, 101u8, 108u8, 108u8, 111u8, 46u8, 116u8, 120u8, 116u8];
+    let hello: Array<u8, 5> = [104u8, 101u8, 108u8, 108u8, 111u8];
+    // nested/data.txt
+    let data_txt: Array<u8, 15> = [110u8, 101u8, 115u8, 116u8, 101u8, 100u8, 47u8, 100u8, 97u8,
+        116u8, 97u8, 46u8, 116u8, 120u8, 116u8];
+    let abc: Array<u8, 3> = [97u8, 98u8, 99u8];
+    // missing.txt, nested, ../x
+    let missing: Array<u8, 11> = [109u8, 105u8, 115u8, 115u8, 105u8, 110u8, 103u8, 46u8, 116u8,
+        120u8, 116u8];
+    let nested: Array<u8, 6> = [110u8, 101u8, 115u8, 116u8, 101u8, 100u8];
+    let climb: Array<u8, 4> = [46u8, 46u8, 47u8, 120u8];
+    // out/copy.txt, gone/x
+    let copy_txt: Array<u8, 12> = [111u8, 117u8, 116u8, 47u8, 99u8, 111u8, 112u8, 121u8, 46u8,
+        116u8, 120u8, 116u8];
+    let gone: Array<u8, 6> = [103u8, 111u8, 110u8, 101u8, 47u8, 120u8];
+    let mut mask: u64 = 0u64;
+
+    // Reads: 5 + 3 bytes use the whole budget of 8.
+    mask += bit(read_equals(package, hello_txt.as_slice(), hello.as_slice()), 0u64);
+    mask += bit(read_equals(package, data_txt.as_slice(), abc.as_slice()), 1u64);
+    mask += bit(read_digest(package, missing.as_slice()) == 7000002u64, 2u64);
+    mask += bit(read_digest(package, nested.as_slice()) == 7000004u64, 3u64);
+    // Traversal never reaches the host: stdlib.path refuses it at byte 0.
+    mask += bit(read_digest(package, climb.as_slice()) == 4000000u64, 4u64);
+    mask += bit(read_digest(package, hello_txt.as_slice()) == 7000005u64, 5u64);
+
+    // Writes: 5 of the 8 bytes, then 3 left.
+    mask += bit(write_digest(build, copy_txt.as_slice(), hello.as_slice()) == 0u64, 6u64);
+    mask += bit(write_digest(build, gone.as_slice(), abc.as_slice()) == 7000002u64, 7u64);
+    mask += bit(write_digest(build, climb.as_slice(), abc.as_slice()) == 4000000u64, 8u64);
+    mask += bit(write_digest(build, copy_txt.as_slice(), hello.as_slice()) == 7000005u64, 9u64);
+    mask
+}

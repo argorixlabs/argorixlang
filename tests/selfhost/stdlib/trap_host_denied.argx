@@ -1,0 +1,16 @@
+core 0.1;
+module selfhost_stdlib.trap_host_denied;
+
+// A program that asks for a capability the driver does not lend stops with
+// PERMISSION_DENIED before any of its code runs.
+
+import stdlib.compiler_host;
+import stdlib.result;
+
+pub fn argorix_main(package: PackageRead) -> u64 {
+    let hello_txt: Array<u8, 9> = [104u8, 101u8, 108u8, 108u8, 111u8, 46u8, 116u8, 120u8, 116u8];
+    match compiler_host.read(package, hello_txt.as_slice()) {
+        BytesResult::Ok { value } => value.length(),
+        BytesResult::Err { failure: _ } => 0u64,
+    }
+}

@@ -235,13 +235,25 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
   rechazados), `arena` (árbol de ámbitos enlazado por handles), `path`
   (sólo rutas relativas normales) y `json` (escritor canónico y validador).
 
-Doce fixtures, positivas y adversarias (UTF-8 inválido, claves duplicadas,
+Catorce fixtures, positivas y adversarias (UTF-8 inválido, claves duplicadas,
 traversal, desbordamiento, JSON mal formado, profundidad, rangos y handles
-caducados), entre ellas un tokenizador y un árbol de símbolos de ejemplo,
-pasan con gcc y clang, con y sin sanitizers. Falta:
+caducados, archivos ausentes y presupuestos), entre ellas un tokenizador y un
+árbol de símbolos de ejemplo, pasan con gcc y clang, con y sin sanitizers.
 
-- la frontera de archivos del compilador (`stdlib.compiler_host`);
-- las medidas de memoria sobre una muestra del compilador.
+La frontera de archivos del compilador (`stdlib.compiler_host`) también está
+hecha:
+
+- capacidades `PackageRead`/`BuildWrite` que sólo recibe `argorix_main`,
+  con raíces canónicas y presupuestos de bytes;
+- rechazo de traversal y de symlinks fuera de la raíz;
+- ningún otro binario importa funciones de archivos.
+
+Las medidas sobre una carga representativa están en
+`bootstrap/ESP-009-measurements.json`: unos 2 MB de memoria con 16.000
+miembros, pero tiempo cuadrático, por la validación de claves duplicadas de
+JSON y la inserción en `ordered_map`. Todos los criterios de aceptación se
+cumplen en la pila de PRs #48–#50; falta el CI sobre `main` tras la revisión.
+Windows no tiene todavía la frontera de archivos.
 
 Subtareas cerradas por el carril de Claude, ninguna recorta criterios del
 padre:

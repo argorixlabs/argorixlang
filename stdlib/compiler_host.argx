@@ -1,0 +1,58 @@
+core 0.1;
+module stdlib.compiler_host;
+
+// The compiler-host file boundary (spec/core/stdlib.md, "Compiler-host file
+// boundary"). A `PackageRead` or `BuildWrite` capability exists only as a
+// parameter of `argorix_main`, lent by the driver together with a canonical
+// root and a byte budget; source code cannot make one, store one in a field
+// or a container, or return one.
+//
+// Each operation checks the path in Argorix with stdlib.path first, and the
+// host checks it again before touching the file system: a path that is not in
+// normal form fails here, at the byte that breaks the rule, and one that
+// resolves outside its root (through a symlink, say) fails in the host.
+//
+// Host status codes, reported as `Failure::Host { at: code }`:
+//   2 not found, 3 outside the root, 4 not a regular file, 5 over the byte
+//   budget, 6 I/O error, 7 unsupported host. (1, an invalid path, is caught
+//   by stdlib.path before the host is asked.)
+
+import stdlib.result;
+import stdlib.path;
+
+pub fn not_found() -> u64 { 2u64 }
+pub fn outside_root() -> u64 { 3u64 }
+pub fn not_a_file() -> u64 { 4u64 }
+pub fn over_budget() -> u64 { 5u64 }
+pub fn io_error() -> u64 { 6u64 }
+pub fn unsupported() -> u64 { 7u64 }
+
+// The bytes of a file under the package root.
+pub fn read(package: PackageRead, file: Slice<u8>) -> BytesResult {
+    match path.validate(file) {
+        Checked::Err { failure } => {
+            return BytesResult::Err { failure: failure };
+        },
+        Checked::Ok => {},
+    }
+    let status: u64 = package.status(file);
+    if status != 0u64 {
+        return BytesResult::Err { failure: Failure::Host { at: status } };
+    }
+    BytesResult::Ok { value: package.read(file) }
+}
+
+// Creates or replaces a file under the build root. Its directory must exist.
+pub fn write(build: BuildWrite, file: Slice<u8>, data: Slice<u8>) -> Checked {
+    match path.validate(file) {
+        Checked::Err { failure } => {
+            return Checked::Err { failure: failure };
+        },
+        Checked::Ok => {},
+    }
+    let status: u64 = build.write(file, data);
+    if status != 0u64 {
+        return Checked::Err { failure: Failure::Host { at: status } };
+    }
+    Checked::Ok
+}
