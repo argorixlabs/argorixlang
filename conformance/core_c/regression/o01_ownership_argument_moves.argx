@@ -1,0 +1,19 @@
+core 0.1;
+module regression.o01_ownership_argument_moves;
+
+fn total(values: Buffer<u8>) -> u64 {
+    let mut i: u64 = 0u64;
+    let mut sum: u64 = 0u64;
+    while i < values.length() {
+        sum += 1u64;
+        i += 1u64;
+    }
+    sum
+}
+
+pub fn argorix_main() -> u64 {
+    let mut b: Buffer<u8> = Buffer::new();
+    b.push(1u8);
+    b.push(2u8);
+    total(b)
+}

@@ -267,6 +267,62 @@
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:42",
       "expected_stderr": ""
+    },
+    {
+      "id": "o01_ownership_argument_moves",
+      "file": "o01_ownership_argument_moves.argx",
+      "was": "A Buffer passed by value was released by the callee and again by the caller: a double free under AddressSanitizer. The argument now moves into the callee, which owns it (ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": ""
+    },
+    {
+      "id": "o02_ownership_index_assignment",
+      "file": "o02_ownership_index_assignment.argx",
+      "was": "`b[i] = x` on a Buffer was rejected at emission: only a local could be assigned (ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "o03_ownership_struct_holds_buffer",
+      "file": "o03_ownership_struct_holds_buffer.argx",
+      "was": "A Buffer moved into a struct field: the struct owns it and releases it through its drop function (ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:1",
+      "expected_stderr": ""
+    },
+    {
+      "id": "o04_ownership_returned_buffer",
+      "file": "o04_ownership_returned_buffer.argx",
+      "was": "A returned Buffer was released by the callee before it returned, so the caller read an empty one and printed 0 instead of 1, silently. The returned local is now moved out first (ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:1",
+      "expected_stderr": ""
+    },
+    {
+      "id": "o05_ownership_push_through_field",
+      "file": "o05_ownership_push_through_field.argx",
+      "was": "`h.values.push(x)`, `h.values[i] = x` and `h.count = ..` on a struct holding a Buffer, after a Buffer built and returned by a function (ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "o06_ownership_enum_payload",
+      "file": "o06_ownership_enum_payload.argx",
+      "was": "A result-like enum carrying a Buffer, returned early or late, matched by value; an arm that does not bind the payload releases it (ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:42",
+      "expected_stderr": ""
+    },
+    {
+      "id": "o07_ownership_nested_buffers_and_jumps",
+      "file": "o07_ownership_nested_buffers_and_jumps.argx",
+      "was": "A Buffer of Buffers filled in a loop with `continue`, read with a `loop` and `break`, and a Buffer declared inside a loop body: each is released exactly once on every path (ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:15",
+      "expected_stderr": ""
     }
   ]
 }

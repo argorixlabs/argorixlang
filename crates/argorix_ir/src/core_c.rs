@@ -8,7 +8,8 @@ use crate::core::{
     CoreIrFunction, CoreIrItemKind, CoreIrPattern, CoreIrStatement, CoreIrStruct, CoreIrType,
     CoreIrUnaryOp, VerifiedCoreIr,
 };
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt::{self, Write};
 
@@ -342,6 +343,11 @@ impl<'a> Emitter<'a> {
             }
         }
         source.push('\n');
+        // Bodies go to their own buffer first: only once they are written is
+        // it known which resource types need a drop function, and those have
+        // to be declared before the first body that calls one.
+        let drops = RefCell::new(BTreeMap::new());
+        let mut bodies = String::new();
         for item in &program.items {
             if let CoreIrItemKind::Function(function) = &item.kind {
                 FunctionEmitter::new(
@@ -349,11 +355,14 @@ impl<'a> Emitter<'a> {
                     &self.structs,
                     &self.enums,
                     &self.constants,
+                    &drops,
                     function,
                 )
-                .emit(&mut source)?;
+                .emit(&mut bodies)?;
             }
         }
+        self.emit_drop_functions(drops.into_inner(), &mut source);
+        source.push_str(&bodies);
         self.emit_main(entry, &mut source)?;
         Ok(CoreCOutput {
             source,
@@ -490,6 +499,121 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// One `argorix_drop_<type>` per resource type the bodies release, and
+    /// per resource type those hold: a buffer of structs drops each struct,
+    /// a struct drops each resource field, an enum the fields of its live
+    /// variant. Prototypes come first, so the functions can call each other.
+    fn emit_drop_functions(&self, requested: BTreeMap<String, ScalarType>, source: &mut String) {
+        let is_resource = |ty: &ScalarType| {
+            is_resource_type(ty, &self.structs, &self.enums, &mut BTreeSet::new())
+        };
+        let mut all: BTreeMap<String, ScalarType> = BTreeMap::new();
+        let mut pending: Vec<ScalarType> = requested.into_values().collect();
+        while let Some(ty) = pending.pop() {
+            if !is_resource(&ty) || all.contains_key(&ty.mangle()) {
+                continue;
+            }
+            match &ty {
+                ScalarType::Buffer(element) | ScalarType::Array { element, .. } => {
+                    pending.push((**element).clone())
+                }
+                ScalarType::User(name) => {
+                    if let Some(layout) = self.structs.get(name) {
+                        pending.extend(layout.fields.values().cloned());
+                    } else if let Some(layout) = self.enums.get(name) {
+                        for fields in layout.variants.values() {
+                            pending.extend(fields.values().cloned());
+                        }
+                    }
+                }
+                _ => {}
+            }
+            all.insert(ty.mangle(), ty);
+        }
+        if all.is_empty() {
+            return;
+        }
+        for (mangle, ty) in &all {
+            writeln!(
+                source,
+                "static void argorix_drop_{mangle}({} *value);",
+                ty.c_name()
+            )
+            .unwrap();
+        }
+        source.push('\n');
+        for (mangle, ty) in &all {
+            writeln!(
+                source,
+                "static void argorix_drop_{mangle}({} *value) {{",
+                ty.c_name()
+            )
+            .unwrap();
+            match ty {
+                ScalarType::Buffer(element) => {
+                    if is_resource(element) {
+                        writeln!(
+                            source,
+                            "    for (uint64_t index = 0U; index < value->length; index += 1U) {{\n        argorix_drop_{}(&(({} *)(void *)value->data)[index]);\n    }}",
+                            element.mangle(),
+                            element.c_name()
+                        )
+                        .unwrap();
+                    }
+                    source.push_str("    argorix_buffer_drop(value);\n");
+                }
+                ScalarType::Array { element, length } => {
+                    writeln!(
+                        source,
+                        "    for (uint64_t index = 0U; index < {length}U; index += 1U) {{\n        argorix_drop_{}(&value->data[index]);\n    }}",
+                        element.mangle()
+                    )
+                    .unwrap();
+                }
+                ScalarType::User(name) => {
+                    if let Some(layout) = self.structs.get(name) {
+                        for (field, field_ty) in &layout.fields {
+                            if is_resource(field_ty) {
+                                writeln!(
+                                    source,
+                                    "    argorix_drop_{}(&value->argorix_f_{field});",
+                                    field_ty.mangle()
+                                )
+                                .unwrap();
+                            }
+                        }
+                    } else if let Some(layout) = self.enums.get(name) {
+                        for (variant, fields) in &layout.variants {
+                            let resources: Vec<_> = fields
+                                .iter()
+                                .filter(|(_, field_ty)| is_resource(field_ty))
+                                .collect();
+                            if resources.is_empty() {
+                                continue;
+                            }
+                            writeln!(
+                                source,
+                                "    if (value->tag == argorix_tag_{name}_{variant}) {{"
+                            )
+                            .unwrap();
+                            for (field, field_ty) in resources {
+                                writeln!(
+                                    source,
+                                    "        argorix_drop_{}(&value->data.{variant}.argorix_f_{field});",
+                                    field_ty.mangle()
+                                )
+                                .unwrap();
+                            }
+                            source.push_str("    }\n");
+                        }
+                    }
+                }
+                _ => {}
+            }
+            source.push_str("}\n\n");
+        }
+    }
+
     fn emit_prototype(
         &self,
         function: &CoreIrFunction,
@@ -568,6 +692,52 @@ struct FunctionEmitter<'a> {
     /// result temporary and its type for a `loop` used as a value, `None` for
     /// a `while` or a `loop` in statement position.
     loops: Vec<Option<(String, ScalarType)>>,
+    /// Owning locals by scope, innermost last. A local of a resource type
+    /// owns storage: it is dropped when its scope ends unless it was moved
+    /// out first, which its `argorix_live_` flag records.
+    owned: Vec<Vec<(String, ScalarType)>>,
+    /// `owned.len()` at the start of each enclosing loop body, innermost
+    /// last, so `break` and `continue` drop what the body declared.
+    loop_scopes: Vec<usize>,
+    /// Resource types whose drop function the program needs.
+    drops: &'a RefCell<BTreeMap<String, ScalarType>>,
+}
+
+/// Whether a value of this type owns storage that must be released: a
+/// `Buffer`, or a struct, enum or array that holds one. Everything else is
+/// plain data and is copied freely.
+fn is_resource_type(
+    ty: &ScalarType,
+    structs: &BTreeMap<String, StructLayout>,
+    enums: &BTreeMap<String, EnumLayout>,
+    seen: &mut BTreeSet<String>,
+) -> bool {
+    match ty {
+        ScalarType::Buffer(_) => true,
+        ScalarType::Array { element, .. } => is_resource_type(element, structs, enums, seen),
+        ScalarType::User(name) => {
+            if !seen.insert(name.clone()) {
+                return false;
+            }
+            let found = if let Some(layout) = structs.get(name) {
+                layout
+                    .fields
+                    .values()
+                    .any(|field| is_resource_type(field, structs, enums, seen))
+            } else if let Some(layout) = enums.get(name) {
+                layout.variants.values().any(|fields| {
+                    fields
+                        .values()
+                        .any(|field| is_resource_type(field, structs, enums, seen))
+                })
+            } else {
+                false
+            };
+            seen.remove(name);
+            found
+        }
+        _ => false,
+    }
 }
 
 impl<'a> FunctionEmitter<'a> {
@@ -576,6 +746,7 @@ impl<'a> FunctionEmitter<'a> {
         structs: &'a BTreeMap<String, StructLayout>,
         enums: &'a BTreeMap<String, EnumLayout>,
         constants: &'a BTreeMap<String, Constant>,
+        drops: &'a RefCell<BTreeMap<String, ScalarType>>,
         function: &'a CoreIrFunction,
     ) -> Self {
         let locals = function
@@ -597,6 +768,74 @@ impl<'a> FunctionEmitter<'a> {
             locals,
             temporary: 0,
             loops: Vec::new(),
+            owned: Vec::new(),
+            loop_scopes: Vec::new(),
+            drops,
+        }
+    }
+
+    fn is_resource(&self, ty: &ScalarType) -> bool {
+        is_resource_type(ty, self.structs, self.enums, &mut BTreeSet::new())
+    }
+
+    /// Record that `name` owns a value of `ty` from here to the end of the
+    /// current scope. Plain data needs no bookkeeping.
+    fn own(&mut self, name: &str, ty: &ScalarType, indent: usize, source: &mut String) {
+        if !self.is_resource(ty) {
+            return;
+        }
+        line(source, indent, &format!("bool argorix_live_{name} = true;"));
+        self.drops.borrow_mut().insert(ty.mangle(), ty.clone());
+        if let Some(scope) = self.owned.last_mut() {
+            scope.push((name.to_string(), ty.clone()));
+        }
+    }
+
+    /// The call that releases one value of a resource type, by address.
+    fn drop_call(&self, ty: &ScalarType, place: &str) -> String {
+        self.drops.borrow_mut().insert(ty.mangle(), ty.clone());
+        format!("argorix_drop_{}(&{place});", ty.mangle())
+    }
+
+    /// Drop every still-live owner of the scopes from `depth` inward, the
+    /// innermost first.
+    fn emit_drops_from(&self, depth: usize, indent: usize, source: &mut String) {
+        for scope in self.owned[depth.min(self.owned.len())..].iter().rev() {
+            for (name, ty) in scope.iter().rev() {
+                line(
+                    source,
+                    indent,
+                    &format!(
+                        "if (argorix_live_{name}) {{ argorix_live_{name} = false; {} }}",
+                        self.drop_call(ty, &format!("argorix_v_{name}"))
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Everything a function does on its way out: drop what it still owns
+    /// and give the call-depth budget back.
+    fn emit_exit(&self, indent: usize, source: &mut String) {
+        self.emit_drops_from(0, indent, source);
+        line(source, indent, "argorix_leave(budget);");
+    }
+
+    /// A value read out of a local of a resource type moves it: the new
+    /// owner releases it, so this local must not.
+    fn mark_moved(
+        &self,
+        expression: &CoreIrExpr,
+        ty: &ScalarType,
+        indent: usize,
+        source: &mut String,
+    ) {
+        if let CoreIrExpr::Path { segments } = expression {
+            if let [name] = segments.as_slice() {
+                if self.locals.contains_key(name) && self.is_resource(ty) {
+                    line(source, indent, &format!("argorix_live_{name} = false;"));
+                }
+            }
         }
     }
 
@@ -620,11 +859,18 @@ impl<'a> FunctionEmitter<'a> {
         for parameter in &self.function.parameters {
             writeln!(source, "    (void)argorix_v_{};", parameter.name).unwrap();
         }
+        // Parameters are passed by value: a resource argument is moved into
+        // the callee, which owns it from here on.
+        self.owned.push(Vec::new());
+        for (parameter, ty) in self.function.parameters.iter().zip(&signature.parameters) {
+            self.own(&parameter.name, ty, 1, source);
+        }
         self.emit_block(&self.function.body, 1, Some(&signature.result), source)?;
         if signature.result == ScalarType::Unit {
-            self.emit_buffer_drops(1, source);
+            self.emit_exit(1, source);
             source.push_str("    return;\n");
         }
+        self.owned.pop();
         source.push_str("}\n\n");
         Ok(())
     }
@@ -643,8 +889,8 @@ impl<'a> FunctionEmitter<'a> {
             let expected = tail_type.ok_or_else(|| {
                 CoreCError::unsupported("value block needs an expected scalar type")
             })?;
-            let value = self.emit_expr(tail, Some(expected), indent, source)?;
-            self.emit_buffer_drops(indent, source);
+            let value = self.emit_consumed(tail, Some(expected), indent, source)?;
+            self.emit_exit(indent, source);
             if *expected == ScalarType::Unit {
                 // A unit function returns nothing: its tail runs for effects,
                 // and `return <value>;` inside `void` is not valid C.
@@ -656,25 +902,93 @@ impl<'a> FunctionEmitter<'a> {
         Ok(())
     }
 
-    /// Release every `Buffer` local before leaving the function.
-    ///
-    /// `argorix_buffer_new` allocates on first push, so a buffer that is never
-    /// dropped leaks its storage. `argorix_buffer_drop` clears the pointer, so
-    /// emitting it on more than one exit path is safe. The result is computed
-    /// into a temporary before these calls, and a `Buffer` cannot be returned,
-    /// so nothing here can be read after it is freed.
-    fn emit_buffer_drops(&self, indent: usize, source: &mut String) {
-        for (name, ty) in &self.locals {
-            if matches!(ty, ScalarType::Buffer(_)) {
-                line(
-                    source,
-                    indent,
-                    &format!("argorix_buffer_drop(&argorix_v_{name});"),
-                );
-            }
+    /// Before `break` or `continue`: drop what the innermost loop body owns,
+    /// since control leaves that scope without reaching its end.
+    fn emit_loop_exit_drops(&self, indent: usize, source: &mut String) {
+        if let Some(depth) = self.loop_scopes.last() {
+            self.emit_drops_from(*depth, indent, source);
         }
-        // Give the call-depth budget back on the way out, on every exit path.
-        line(source, indent, "argorix_leave(budget);");
+    }
+
+    /// The C lvalue of a place, without moving anything out of it: a local,
+    /// a field of a place, or an element of a place. Reading `h.values` to
+    /// take its length, or pushing into it, uses the place where it is.
+    fn emit_place(
+        &mut self,
+        expression: &CoreIrExpr,
+        indent: usize,
+        source: &mut String,
+    ) -> Result<(String, ScalarType), CoreCError> {
+        match expression {
+            CoreIrExpr::Path { segments } if segments.len() == 1 => {
+                let name = &segments[0];
+                match self.locals.get(name) {
+                    Some(ty) => Ok((format!("argorix_v_{name}"), ty.clone())),
+                    None => self.emit_expr(expression, None, indent, source),
+                }
+            }
+            CoreIrExpr::Field { value, name } => {
+                let (base, base_ty) = self.emit_place(value, indent, source)?;
+                let ScalarType::User(type_name) = &base_ty else {
+                    // Through a handle, or anything else: read it as a value.
+                    return self.emit_expr(expression, None, indent, source);
+                };
+                let field_ty = self
+                    .structs
+                    .get(type_name)
+                    .and_then(|layout| layout.fields.get(name))
+                    .cloned()
+                    .ok_or_else(|| {
+                        CoreCError::unsupported(format!("unknown field `{name}` on `{type_name}`"))
+                    })?;
+                Ok((format!("{base}.argorix_f_{name}"), field_ty))
+            }
+            CoreIrExpr::Index { value, index } => {
+                let (base, base_ty) = self.emit_place(value, indent, source)?;
+                let index = self.emit_expr(
+                    index,
+                    Some(&ScalarType::Integer("u64".into())),
+                    indent,
+                    source,
+                )?;
+                match &base_ty {
+                    ScalarType::Buffer(element) => Ok((
+                        format!(
+                            "(({} *)(void *){base}.data)[argorix_bounds((uint64_t){}, {base}.length)]",
+                            element.c_name(),
+                            index.0
+                        ),
+                        (**element).clone(),
+                    )),
+                    ScalarType::Array { element, length } => Ok((
+                        format!(
+                            "{base}.data[argorix_bounds((uint64_t){}, {length}U)]",
+                            index.0
+                        ),
+                        (**element).clone(),
+                    )),
+                    _ => Err(CoreCError::unsupported(
+                        "only a Buffer or an Array element is a writable place",
+                    )),
+                }
+            }
+            _ => self.emit_expr(expression, None, indent, source),
+        }
+    }
+
+    /// Evaluate an expression whose value goes to a new owner: a binding, an
+    /// argument, a returned value, a field of a new aggregate. A resource
+    /// local read this way is moved, so it is no longer dropped here.
+    fn emit_consumed(
+        &mut self,
+        expression: &CoreIrExpr,
+        expected: Option<&ScalarType>,
+        indent: usize,
+        source: &mut String,
+    ) -> Result<(String, ScalarType), CoreCError> {
+        let value = self.emit_expr(expression, expected, indent, source)?;
+        self.mark_moved(expression, &value.1, indent, source);
+        Ok(value)
     }
 
     fn emit_statement(
@@ -691,14 +1005,49 @@ impl<'a> FunctionEmitter<'a> {
                 ..
             } => {
                 let declared = annotation.as_ref().map(ScalarType::from_ir).transpose()?;
-                let emitted = self.emit_expr(value, declared.as_ref(), indent, source)?;
+                let emitted = self.emit_consumed(value, declared.as_ref(), indent, source)?;
                 let ty = declared.unwrap_or(emitted.1);
                 line(
                     source,
                     indent,
                     &format!("{} argorix_v_{} = {};", ty.c_name(), name, emitted.0),
                 );
+                // A local that is never read is valid Core; the cast keeps its
+                // C from failing -Wunused-variable under -Werror.
+                line(source, indent, &format!("(void)argorix_v_{name};"));
+                self.own(name, &ty, indent, source);
                 self.locals.insert(name.clone(), ty);
+            }
+            CoreIrStatement::Assign {
+                target,
+                operator,
+                value,
+            } if !matches!(target, CoreIrExpr::Path { .. }) => {
+                // A field or an element: the place is written in place.
+                if *operator != CoreIrAssignOp::Assign {
+                    let (place, ty) = self.emit_place(target, indent, source)?;
+                    let right = self.emit_expr(value, Some(&ty), indent, source)?;
+                    line(
+                        source,
+                        indent,
+                        &format!(
+                            "{place} = argorix_{}_{}({place}, {});",
+                            ty.helper_suffix()?,
+                            assign_operation(*operator),
+                            right.0
+                        ),
+                    );
+                } else {
+                    // The value is computed before the place, so a trap in it
+                    // leaves the old value intact.
+                    let hint = self.infer_type(value);
+                    let right = self.emit_consumed(value, hint.as_ref(), indent, source)?;
+                    let (place, ty) = self.emit_place(target, indent, source)?;
+                    if self.is_resource(&ty) {
+                        line(source, indent, &self.drop_call(&ty, &place));
+                    }
+                    line(source, indent, &format!("{place} = {};", right.0));
+                }
             }
             CoreIrStatement::Assign {
                 target,
@@ -706,16 +1055,33 @@ impl<'a> FunctionEmitter<'a> {
                 value,
             } => {
                 let CoreIrExpr::Path { segments } = target else {
-                    return Err(CoreCError::unsupported(
-                        "scalar C assignment target must be a local path",
-                    ));
+                    unreachable!("the arm above takes every other target");
                 };
                 let name = single_path(segments)?;
                 let ty =
                     self.locals.get(name).cloned().ok_or_else(|| {
                         CoreCError::unsupported(format!("unknown local `{name}`"))
                     })?;
-                let right = self.emit_expr(value, Some(&ty), indent, source)?;
+                let right = self.emit_consumed(value, Some(&ty), indent, source)?;
+                if self.is_resource(&ty) && right.0 != format!("argorix_v_{name}") {
+                    // The old value is released before the new one takes its
+                    // place, and the local owns again whatever it held before.
+                    line(
+                        source,
+                        indent,
+                        &format!(
+                            "if (argorix_live_{name}) {{ {} }}",
+                            self.drop_call(&ty, &format!("argorix_v_{name}"))
+                        ),
+                    );
+                    line(source, indent, &format!("argorix_v_{name} = {};", right.0));
+                    line(source, indent, &format!("argorix_live_{name} = true;"));
+                    return Ok(());
+                }
+                if self.is_resource(&ty) {
+                    // `b = b;` moved `b` out and back: it still owns.
+                    line(source, indent, &format!("argorix_live_{name} = true;"));
+                }
                 let assignment = match operator {
                     CoreIrAssignOp::Assign => right.0,
                     CoreIrAssignOp::Add
@@ -752,19 +1118,21 @@ impl<'a> FunctionEmitter<'a> {
                     &format!("if (!{}) {{ break; }}", condition.0),
                 );
                 self.loops.push(None);
+                self.loop_scopes.push(self.owned.len());
                 let emitted = self.emit_scoped_block(body, indent + 1, source);
+                self.loop_scopes.pop();
                 self.loops.pop();
                 emitted?;
                 line(source, indent, "}");
             }
             CoreIrStatement::Return { value } => {
                 if let Some(value) = value {
-                    let result = &self.signatures[&self.function.name].result;
-                    let value = self.emit_expr(value, Some(result), indent, source)?;
-                    self.emit_buffer_drops(indent, source);
+                    let result = self.signatures[&self.function.name].result.clone();
+                    let value = self.emit_consumed(value, Some(&result), indent, source)?;
+                    self.emit_exit(indent, source);
                     line(source, indent, &format!("return {};", value.0));
                 } else {
-                    self.emit_buffer_drops(indent, source);
+                    self.emit_exit(indent, source);
                     line(source, indent, "return;");
                 }
             }
@@ -786,20 +1154,34 @@ impl<'a> FunctionEmitter<'a> {
                         line(source, indent, "}");
                     }
                     other => {
-                        let _ = self.emit_expr(other, None, indent, source)?;
+                        // A resource value computed and then discarded, such
+                        // as the result of a call used as a statement, has no
+                        // owner, so it is released right here.
+                        let value = self.emit_consumed(other, None, indent, source)?;
+                        if self.is_resource(&value.1) {
+                            let temp = self.bind_temp(value.0, value.1.clone(), indent, source)?;
+                            line(source, indent, &self.drop_call(&temp.1, &temp.0));
+                        }
                     }
                 }
             }
-            CoreIrStatement::Break { value: None } => line(source, indent, "break;"),
-            CoreIrStatement::Continue => line(source, indent, "continue;"),
+            CoreIrStatement::Break { value: None } => {
+                self.emit_loop_exit_drops(indent, source);
+                line(source, indent, "break;");
+            }
+            CoreIrStatement::Continue => {
+                self.emit_loop_exit_drops(indent, source);
+                line(source, indent, "continue;");
+            }
             CoreIrStatement::Break { value: Some(value) } => {
                 let Some(Some((result, ty))) = self.loops.last().cloned() else {
                     return Err(CoreCError::unsupported(
                         "a value `break` needs an enclosing `loop` used as a value",
                     ));
                 };
-                let value = self.emit_expr(value, Some(&ty), indent, source)?;
+                let value = self.emit_consumed(value, Some(&ty), indent, source)?;
                 line(source, indent, &format!("{result} = {};", value.0));
+                self.emit_loop_exit_drops(indent, source);
                 line(source, indent, "break;");
             }
         }
@@ -927,7 +1309,7 @@ impl<'a> FunctionEmitter<'a> {
                             field.name
                         ))
                     })?;
-                    let value = self.emit_expr(&field.value, Some(field_ty), indent, source)?;
+                    let value = self.emit_consumed(&field.value, Some(field_ty), indent, source)?;
                     let access = variant
                         .map(|variant| format!("data.{variant}.argorix_f_{}", field.name))
                         .unwrap_or_else(|| format!("argorix_f_{}", field.name));
@@ -950,7 +1332,7 @@ impl<'a> FunctionEmitter<'a> {
                 let temp = self.next_temp();
                 line(source, indent, &format!("{} {temp};", ty.c_name()));
                 for (index, value) in values.iter().enumerate() {
-                    let value = self.emit_expr(value, Some(element), indent, source)?;
+                    let value = self.emit_consumed(value, Some(element), indent, source)?;
                     line(
                         source,
                         indent,
@@ -960,7 +1342,7 @@ impl<'a> FunctionEmitter<'a> {
                 Ok((temp, ty))
             }
             CoreIrExpr::Index { value, index } => {
-                let value = self.emit_expr(value, None, indent, source)?;
+                let value = self.emit_place(value, indent, source)?;
                 let (element, length, buffer) = match &value.1 {
                     ScalarType::Array { element, length } => {
                         ((**element).clone(), format!("{}U", length), false)
@@ -1005,7 +1387,7 @@ impl<'a> FunctionEmitter<'a> {
                 self.bind_temp(access, element, indent, source)
             }
             CoreIrExpr::Field { value, name } => {
-                let value = self.emit_expr(value, None, indent, source)?;
+                let value = self.emit_place(value, indent, source)?;
                 let (type_name, access) = match &value.1 {
                     ScalarType::User(type_name) => {
                         (type_name, format!("{}.argorix_f_{}", value.0, name))
@@ -1114,31 +1496,28 @@ impl<'a> FunctionEmitter<'a> {
                 }
                 if let CoreIrExpr::Field { value, name } = callee.as_ref() {
                     if name == "push" {
-                        let CoreIrExpr::Path { segments } = value.as_ref() else {
-                            return Err(CoreCError::unsupported(
-                                "Buffer::push receiver must be a local",
-                            ));
-                        };
-                        let local = single_path(segments)?;
-                        let receiver_ty = self.locals.get(local).cloned().ok_or_else(|| {
-                            CoreCError::unsupported(format!("unknown local `{local}`"))
-                        })?;
-                        let ScalarType::Buffer(element) = receiver_ty else {
-                            return Err(CoreCError::unsupported(
-                                "push is only implemented for Buffer values",
-                            ));
-                        };
                         let [argument] = arguments.as_slice() else {
                             return Err(CoreCError::unsupported(
                                 "Buffer::push requires one argument",
                             ));
                         };
-                        let value = self.emit_expr(argument, Some(&element), indent, source)?;
-                        let value = self.bind_temp(value.0, (*element).clone(), indent, source)?;
+                        // The buffer is only touched by the push itself, after
+                        // the value is computed: a trap in the value leaves it
+                        // as it was, as `spec/core/stdlib.md` requires.
+                        let (receiver, receiver_ty) = self.emit_place(value, indent, source)?;
+                        let ScalarType::Buffer(element) = receiver_ty else {
+                            return Err(CoreCError::unsupported(
+                                "push is only implemented for Buffer values",
+                            ));
+                        };
+                        let pushed =
+                            self.emit_consumed(argument, Some(&element), indent, source)?;
+                        let pushed =
+                            self.bind_temp(pushed.0, (*element).clone(), indent, source)?;
                         line(
                             source,
                             indent,
-                            &format!("argorix_buffer_push(&argorix_v_{local}, &{});", value.0),
+                            &format!("argorix_buffer_push(&{receiver}, &{});", pushed.0),
                         );
                         return Ok(("0".into(), ScalarType::Unit));
                     }
@@ -1175,7 +1554,7 @@ impl<'a> FunctionEmitter<'a> {
                                 "Arena::alloc requires one argument",
                             ));
                         };
-                        let value = self.emit_expr(argument, Some(&element), indent, source)?;
+                        let value = self.emit_consumed(argument, Some(&element), indent, source)?;
                         let value = self.bind_temp(value.0, (*element).clone(), indent, source)?;
                         return self.bind_temp(
                             format!("argorix_arena_alloc(&argorix_v_{local}, &{})", value.0),
@@ -1189,7 +1568,7 @@ impl<'a> FunctionEmitter<'a> {
                             "intrinsic `{name}` does not accept arguments"
                         )));
                     }
-                    let receiver = self.emit_expr(value, None, indent, source)?;
+                    let receiver = self.emit_place(value, indent, source)?;
                     return match (name.as_str(), &receiver.1) {
                         ("length", ScalarType::Array { length, .. }) => self.bind_temp(
                             format!("{length}U"),
@@ -1243,7 +1622,7 @@ impl<'a> FunctionEmitter<'a> {
                     })?;
                 let mut emitted = Vec::new();
                 for (argument, ty) in arguments.iter().zip(&signature.parameters) {
-                    emitted.push(self.emit_expr(argument, Some(ty), indent, source)?.0);
+                    emitted.push(self.emit_consumed(argument, Some(ty), indent, source)?.0);
                 }
                 let call = format!(
                     "argorix_fn_{}(budget{})",
@@ -1262,7 +1641,7 @@ impl<'a> FunctionEmitter<'a> {
                 // The scrutinee has no type from its context, so an `if` or a
                 // block there takes the type it produces.
                 let hint = self.infer_type(value);
-                let scrutinee = self.emit_expr(value, hint.as_ref(), indent, source)?;
+                let scrutinee = self.emit_consumed(value, hint.as_ref(), indent, source)?;
                 let enum_layout = match &scrutinee.1 {
                     ScalarType::User(name) => {
                         let layout = self.enums.get(name).cloned().ok_or_else(|| {
@@ -1383,6 +1762,44 @@ impl<'a> FunctionEmitter<'a> {
                         indent,
                         &format!("if (!{matched} && ({condition})) {{"),
                     );
+                    // A match consumes a resource scrutinee: the arm it takes
+                    // owns what its pattern binds and releases the rest.
+                    let mut releases: Vec<(String, ScalarType)> = Vec::new();
+                    if self.is_resource(&scrutinee.1) {
+                        match &arm.pattern {
+                            CoreIrPattern::Wildcard => {
+                                releases.push((scrutinee.0.clone(), scrutinee.1.clone()))
+                            }
+                            CoreIrPattern::Variant { path, fields } => {
+                                if let (Some((_, layout)), [_, variant]) =
+                                    (&enum_layout, path.as_slice())
+                                {
+                                    if let Some(variant_layout) = layout.variants.get(variant) {
+                                        for (field_name, field_ty) in variant_layout {
+                                            let bound = fields.iter().any(|field| {
+                                                &field.name == field_name
+                                                    && !matches!(
+                                                        field.nested.as_deref(),
+                                                        Some(CoreIrPattern::Wildcard)
+                                                    )
+                                            });
+                                            if !bound && self.is_resource(field_ty) {
+                                                releases.push((
+                                                    format!(
+                                                        "{}.data.{}.argorix_f_{}",
+                                                        scrutinee.0, variant, field_name
+                                                    ),
+                                                    field_ty.clone(),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.owned.push(Vec::new());
                     let mut previous = Vec::new();
                     for (name, ty, expression) in bindings {
                         line(
@@ -1390,6 +1807,8 @@ impl<'a> FunctionEmitter<'a> {
                             indent + 1,
                             &format!("{} argorix_v_{} = {};", ty.c_name(), name, expression),
                         );
+                        line(source, indent + 1, &format!("(void)argorix_v_{name};"));
+                        self.own(&name, &ty, indent + 1, source);
                         previous.push((name.clone(), self.locals.insert(name, ty)));
                     }
                     // A guard runs after the bindings it may read; if it is
@@ -1403,10 +1822,13 @@ impl<'a> FunctionEmitter<'a> {
                     } else {
                         indent + 1
                     };
+                    for (place, ty) in &releases {
+                        line(source, body_indent, &self.drop_call(ty, place));
+                    }
                     match &result_ty {
                         Some(ty) => {
                             let value =
-                                self.emit_expr(&arm.value, Some(ty), body_indent, source)?;
+                                self.emit_consumed(&arm.value, Some(ty), body_indent, source)?;
                             line(source, body_indent, &format!("{result} = {};", value.0));
                         }
                         None => self.emit_statement(
@@ -1417,6 +1839,8 @@ impl<'a> FunctionEmitter<'a> {
                             source,
                         )?,
                     }
+                    self.emit_drops_from(self.owned.len() - 1, body_indent, source);
+                    self.owned.pop();
                     line(source, body_indent, &format!("{matched} = true;"));
                     if arm.guard.is_some() {
                         line(source, indent + 1, "}");
@@ -1458,7 +1882,7 @@ impl<'a> FunctionEmitter<'a> {
                     .as_ref()
                     .ok_or_else(|| CoreCError::unsupported("value if expression requires else"))?;
                 line(source, indent, "} else {");
-                let other = self.emit_expr(else_expr, Some(&ty), indent + 1, source)?;
+                let other = self.emit_consumed(else_expr, Some(&ty), indent + 1, source)?;
                 line(source, indent + 1, &format!("{temp} = {};", other.0));
                 line(source, indent, "}");
                 Ok((temp, ty))
@@ -1486,7 +1910,9 @@ impl<'a> FunctionEmitter<'a> {
                 line(source, indent, "while (true) {");
                 line(source, indent + 1, "argorix_step(budget);");
                 self.loops.push(slot.clone());
+                self.loop_scopes.push(self.owned.len());
                 let emitted = self.emit_scoped_block(body, indent + 1, source);
+                self.loop_scopes.pop();
                 self.loops.pop();
                 emitted?;
                 line(source, indent, "}");
@@ -1719,6 +2145,7 @@ impl<'a> FunctionEmitter<'a> {
         source: &mut String,
     ) -> Result<(), CoreCError> {
         let saved = self.locals.clone();
+        self.owned.push(Vec::new());
         for statement in &block.statements {
             self.emit_statement(statement, indent, source)?;
         }
@@ -1733,6 +2160,10 @@ impl<'a> FunctionEmitter<'a> {
                 source,
             )?;
         }
+        // The scope ends here on the normal path; `break`, `continue` and
+        // `return` drop it on their own way out.
+        self.emit_drops_from(self.owned.len() - 1, indent, source);
+        self.owned.pop();
         self.locals = saved;
         Ok(())
     }
@@ -1749,6 +2180,7 @@ impl<'a> FunctionEmitter<'a> {
         // collide with a name declared after it, and the saved map keeps a
         // shadowed name from carrying the inner type out of the block.
         let saved = self.locals.clone();
+        self.owned.push(Vec::new());
         line(source, indent, "{");
         for statement in &block.statements {
             self.emit_statement(statement, indent + 1, source)?;
@@ -1757,8 +2189,12 @@ impl<'a> FunctionEmitter<'a> {
             .tail
             .as_ref()
             .ok_or_else(|| CoreCError::unsupported("value block has no tail expression"))?;
-        let value = self.emit_expr(tail, Some(ty), indent + 1, source)?;
+        // The value leaves the block, so a local it names is moved out before
+        // the block's own locals are dropped.
+        let value = self.emit_consumed(tail, Some(ty), indent + 1, source)?;
         line(source, indent + 1, &format!("{target} = {};", value.0));
+        self.emit_drops_from(self.owned.len() - 1, indent + 1, source);
+        self.owned.pop();
         line(source, indent, "}");
         self.locals = saved;
         Ok(())

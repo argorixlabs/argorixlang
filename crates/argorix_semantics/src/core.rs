@@ -93,6 +93,18 @@ struct FunctionInfo {
 struct Binding {
     ty: Ty,
     mutable: bool,
+    /// Unique within a function, assigned by `define`, so a moved binding is
+    /// told apart from a later one that shadows it.
+    id: usize,
+}
+
+/// What the loop being checked has seen: the first binding id declared
+/// inside it, and the moved-sets that reach each `break` and `continue`.
+#[derive(Debug, Default)]
+struct LoopFlow {
+    outer_limit: usize,
+    breaks: Vec<BTreeSet<usize>>,
+    continues: Vec<BTreeSet<usize>>,
 }
 
 struct Checker<'a> {
@@ -107,6 +119,16 @@ struct Checker<'a> {
     expected_return: Ty,
     loop_depth: usize,
     loop_breaks: Vec<Vec<Ty>>,
+    /// Ownership: bindings of a resource type whose value has been moved on
+    /// some path reaching the current point. Using one is an error.
+    moved: BTreeSet<usize>,
+    /// Whether the current point can be reached; after `return`, `break` or
+    /// `continue` it cannot, and its moved-set does not flow anywhere.
+    reachable: bool,
+    next_binding: usize,
+    /// The name of each binding id, for diagnostics.
+    binding_names: Vec<String>,
+    loop_flows: Vec<LoopFlow>,
 }
 
 pub fn check_core_program(
@@ -147,6 +169,11 @@ impl<'a> Checker<'a> {
             expected_return: Ty::Unit,
             loop_depth: 0,
             loop_breaks: Vec::new(),
+            moved: BTreeSet::new(),
+            reachable: true,
+            next_binding: 0,
+            binding_names: Vec::new(),
+            loop_flows: Vec::new(),
         }
     }
 
@@ -288,12 +315,19 @@ impl<'a> Checker<'a> {
             };
             self.scopes.clear();
             self.scopes.push(HashMap::new());
+            self.moved.clear();
+            self.reachable = true;
+            self.loop_flows.clear();
             self.expected_return = self.lower_type(&function.return_type);
             for parameter in &function.parameters {
                 let ty = self.lower_type(&parameter.ty);
                 self.define(
                     &parameter.name.value,
-                    Binding { ty, mutable: false },
+                    Binding {
+                        ty,
+                        mutable: false,
+                        id: 0,
+                    },
                     parameter.name.span,
                 );
             }
@@ -313,7 +347,13 @@ impl<'a> Checker<'a> {
         let result = block
             .tail
             .as_ref()
-            .map(|tail| self.infer_expr(tail, None))
+            .map(|tail| {
+                // The tail is the block's value: it leaves the block, so a
+                // resource local named there is moved out.
+                let ty = self.infer_expr(tail, None);
+                self.consume(tail, &ty);
+                ty
+            })
             .unwrap_or_else(|| {
                 if block.statements.last().is_some_and(|statement| {
                     matches!(
@@ -344,6 +384,7 @@ impl<'a> Checker<'a> {
             } => {
                 let annotated = annotation.as_ref().map(|ty| self.lower_type(ty));
                 let mut actual = self.infer_expr(value, annotated.as_ref());
+                self.consume(value, &actual);
                 if let Some(expected) = annotated {
                     self.require_compatible(&expected, &actual, value.span);
                     actual = self.merge_types(&expected, &actual);
@@ -353,6 +394,7 @@ impl<'a> Checker<'a> {
                     Binding {
                         ty: actual,
                         mutable: *mutable,
+                        id: 0,
                     },
                     name.span,
                 );
@@ -364,7 +406,17 @@ impl<'a> Checker<'a> {
             } => {
                 let target_ty = self.assignment_target(target);
                 let value_ty = self.infer_expr(value, Some(&target_ty));
+                self.consume(value, &value_ty);
                 self.require_compatible(&target_ty, &value_ty, value.span);
+                // A moved local that is assigned owns a value again.
+                if let CoreExprKind::Path(path) = &target.kind {
+                    if let [name] = path.as_slice() {
+                        if let Some(binding) = self.lookup(name) {
+                            let id = binding.id;
+                            self.moved.remove(&id);
+                        }
+                    }
+                }
                 if !matches!(operator, CoreAssignOp::Assign) && !target_ty.is_integer() {
                     self.error(
                         "TypeMismatch",
@@ -376,11 +428,19 @@ impl<'a> Checker<'a> {
             CoreStatementKind::While { condition, body } => {
                 let actual = self.infer_expr(condition, Some(&Ty::Bool));
                 self.require_compatible(&Ty::Bool, &actual, condition.span);
+                let entry = (self.moved.clone(), self.reachable);
                 self.loop_depth += 1;
                 self.loop_breaks.push(Vec::new());
+                self.begin_loop();
                 self.check_block(body, true);
+                let flow = self.end_loop(&entry.0, body.span);
                 self.loop_breaks.pop();
                 self.loop_depth -= 1;
+                // After the loop: the condition was false on entry, or a
+                // `break` left it.
+                let mut branches = vec![entry];
+                branches.extend(flow.breaks.into_iter().map(|moved| (moved, true)));
+                self.join(branches);
             }
             CoreStatementKind::Break(value) => {
                 if self.loop_depth == 0 {
@@ -392,11 +452,22 @@ impl<'a> Checker<'a> {
                 } else {
                     let ty = value
                         .as_ref()
-                        .map(|value| self.infer_expr(value, None))
+                        .map(|value| {
+                            let ty = self.infer_expr(value, None);
+                            self.consume(value, &ty);
+                            ty
+                        })
                         .unwrap_or(Ty::Unit);
                     if let Some(values) = self.loop_breaks.last_mut() {
                         values.push(ty);
                     }
+                    if self.reachable {
+                        let moved = self.moved.clone();
+                        if let Some(flow) = self.loop_flows.last_mut() {
+                            flow.breaks.push(moved);
+                        }
+                    }
+                    self.reachable = false;
                 }
             }
             CoreStatementKind::Continue => {
@@ -406,18 +477,34 @@ impl<'a> Checker<'a> {
                         "`continue` is only valid inside a loop",
                         statement.span,
                     );
+                } else {
+                    if self.reachable {
+                        let moved = self.moved.clone();
+                        if let Some(flow) = self.loop_flows.last_mut() {
+                            flow.continues.push(moved);
+                        }
+                    }
+                    self.reachable = false;
                 }
             }
             CoreStatementKind::Return(value) => {
                 let expected = self.expected_return.clone();
                 let actual = value
                     .as_ref()
-                    .map(|value| self.infer_expr(value, Some(&expected)))
+                    .map(|value| {
+                        let ty = self.infer_expr(value, Some(&expected));
+                        self.consume(value, &ty);
+                        ty
+                    })
                     .unwrap_or(Ty::Unit);
                 self.require_compatible(&expected, &actual, statement.span);
+                self.reachable = false;
             }
             CoreStatementKind::Expr(expression) => {
-                self.infer_expr(expression, None);
+                // A value computed and dropped on the floor: a resource local
+                // named on its own is released here, so it counts as moved.
+                let ty = self.infer_expr(expression, None);
+                self.consume(expression, &ty);
             }
         }
     }
@@ -456,6 +543,7 @@ impl<'a> Checker<'a> {
                 let mut element = expected_element.cloned().unwrap_or(Ty::Unknown);
                 for value in values {
                     let actual = self.infer_expr(value, Some(&element));
+                    self.consume(value, &actual);
                     if element == Ty::Unknown {
                         element = actual;
                     } else {
@@ -472,22 +560,36 @@ impl<'a> Checker<'a> {
             } => {
                 let condition_ty = self.infer_expr(condition, Some(&Ty::Bool));
                 self.require_compatible(&Ty::Bool, &condition_ty, condition.span);
+                let entry = (self.moved.clone(), self.reachable);
                 let then_ty = self.check_block(then_block, true);
+                let then_flow = (self.moved.clone(), self.reachable);
+                (self.moved, self.reachable) = entry;
                 let else_ty = else_expr
                     .as_ref()
-                    .map(|value| self.infer_expr(value, expected))
+                    .map(|value| {
+                        let ty = self.infer_expr(value, expected);
+                        self.consume(value, &ty);
+                        ty
+                    })
                     .unwrap_or(Ty::Unit);
+                let else_flow = (self.moved.clone(), self.reachable);
+                self.join(vec![then_flow, else_flow]);
                 self.unify_branches(&then_ty, &else_ty, expression.span)
             }
             CoreExprKind::Match { value, arms } => {
                 self.infer_match(value, arms, expected, expression.span)
             }
             CoreExprKind::Loop(block) => {
+                let entry = self.moved.clone();
                 self.loop_depth += 1;
                 self.loop_breaks.push(Vec::new());
+                self.begin_loop();
                 self.check_block(block, true);
+                let flow = self.end_loop(&entry, block.span);
                 let breaks = self.loop_breaks.pop().unwrap_or_default();
                 self.loop_depth -= 1;
+                // Only a `break` leaves a `loop`.
+                self.join(flow.breaks.into_iter().map(|moved| (moved, true)).collect());
                 breaks
                     .into_iter()
                     .reduce(|left, right| self.unify_branches(&left, &right, expression.span))
@@ -498,6 +600,7 @@ impl<'a> Checker<'a> {
             }
             CoreExprKind::Index { value, index } => {
                 let base = self.infer_expr(value, None);
+                self.require_place_for_resource(value, &base);
                 let index_ty = self.infer_expr(index, Some(&Ty::Int("u64".into())));
                 if !index_ty.is_integer() {
                     self.error("TypeMismatch", "index must be an integer", index.span);
@@ -545,8 +648,19 @@ impl<'a> Checker<'a> {
 
     fn infer_path(&mut self, path: &[String], span: Span) -> Ty {
         if path.len() == 1 {
-            if let Some(binding) = self.lookup(&path[0]) {
-                return binding.ty.clone();
+            if let Some(binding) = self.lookup(&path[0]).cloned() {
+                if self.moved.contains(&binding.id) && self.reachable {
+                    self.error(
+                        "UseAfterMove",
+                        format!(
+                            "`{}` was moved on a path that reaches here; a `{}` has one owner at a time",
+                            path[0],
+                            binding.ty.display()
+                        ),
+                        span,
+                    );
+                }
+                return binding.ty;
             }
             if let Some(ty) = self.constants.get(&path[0]) {
                 return ty.clone();
@@ -602,6 +716,7 @@ impl<'a> Checker<'a> {
         for (name, value) in fields {
             if let Some(expected) = required.get(&name.value) {
                 let actual = self.infer_expr(value, Some(expected));
+                self.consume(value, &actual);
                 self.require_compatible(expected, &actual, value.span);
             } else {
                 self.error(
@@ -632,8 +747,11 @@ impl<'a> Checker<'a> {
                     if function.parameters.len() != arguments.len() {
                         self.error("TypeMismatch", "wrong argument count", span);
                     }
+                    // Parameters are passed by value: a resource argument
+                    // moves into the callee.
                     for (argument, expected) in arguments.iter().zip(&function.parameters) {
                         let actual = self.infer_expr(argument, Some(expected));
+                        self.consume(argument, &actual);
                         self.require_compatible(expected, &actual, argument.span);
                     }
                     return function.result;
@@ -642,6 +760,7 @@ impl<'a> Checker<'a> {
         }
         if let CoreExprKind::Field { value, name } = &callee.kind {
             let receiver = self.infer_expr(value, None);
+            self.require_place_for_resource(value, &receiver);
             return self.infer_method(receiver, &name.value, arguments, span);
         }
         self.infer_expr(callee, None);
@@ -659,6 +778,7 @@ impl<'a> Checker<'a> {
             }
             ("push", Ty::Buffer(element)) if arguments.len() == 1 => {
                 let actual = self.infer_expr(&arguments[0], Some(&element));
+                self.consume(&arguments[0], &actual);
                 if *element != Ty::Unknown {
                     self.require_compatible(&element, &actual, arguments[0].span);
                 }
@@ -666,6 +786,18 @@ impl<'a> Checker<'a> {
             }
             ("alloc", Ty::Arena(element)) if arguments.len() == 1 => {
                 let actual = self.infer_expr(&arguments[0], Some(&element));
+                if self.is_resource(&actual) {
+                    // An arena slot is freed without looking inside it, so a
+                    // value that owns storage would leak there.
+                    self.error(
+                        "ResourceInArena",
+                        format!(
+                            "a `{}` owns storage and cannot live in an arena slot",
+                            actual.display()
+                        ),
+                        arguments[0].span,
+                    );
+                }
                 self.require_compatible(&element, &actual, arguments[0].span);
                 Ty::Handle(element)
             }
@@ -690,6 +822,7 @@ impl<'a> Checker<'a> {
 
     fn infer_field(&mut self, value: &CoreExpr, name: &str, span: Span) -> Ty {
         let inferred = self.infer_expr(value, None);
+        self.require_place_for_resource(value, &inferred);
         let base = self.deref_handle(inferred);
         if let Ty::Named(type_name) = base {
             if let Some(field) = self
@@ -715,7 +848,12 @@ impl<'a> Checker<'a> {
         match operator {
             Or | And => {
                 let left_ty = self.infer_expr(left, Some(&Ty::Bool));
+                // The right side may not run, so what it moves is only
+                // maybe-moved afterwards.
+                let skipped = (self.moved.clone(), self.reachable);
                 let right_ty = self.infer_expr(right, Some(&Ty::Bool));
+                let evaluated = (self.moved.clone(), self.reachable);
+                self.join(vec![skipped, evaluated]);
                 self.require_compatible(&Ty::Bool, &left_ty, left.span);
                 self.require_compatible(&Ty::Bool, &right_ty, right.span);
                 Ty::Bool
@@ -765,10 +903,16 @@ impl<'a> Checker<'a> {
         span: Span,
     ) -> Ty {
         let scrutinee = self.infer_expr(value, None);
+        // Matching takes the scrutinee: the arm that runs owns what its
+        // pattern binds, and the backend releases the rest.
+        self.consume(value, &scrutinee);
+        let entry = (self.moved.clone(), self.reachable);
+        let mut flows = Vec::new();
         let mut result = Ty::Never;
         let mut wildcard = false;
         let mut covered = HashSet::new();
         for arm in arms {
+            (self.moved, self.reachable) = entry.clone();
             self.scopes.push(HashMap::new());
             self.check_pattern(&arm.pattern, &scrutinee, &mut wildcard, &mut covered);
             if let Some(guard) = &arm.guard {
@@ -776,13 +920,19 @@ impl<'a> Checker<'a> {
                 self.require_compatible(&Ty::Bool, &guard_ty, guard.span);
             }
             let arm_ty = self.infer_expr(&arm.value, expected);
+            self.consume(&arm.value, &arm_ty);
             result = if result == Ty::Never {
                 arm_ty
             } else {
                 self.unify_branches(&result, &arm_ty, arm.span)
             };
             self.scopes.pop();
+            flows.push((self.moved.clone(), self.reachable));
         }
+        if flows.is_empty() {
+            flows.push(entry);
+        }
+        self.join(flows);
         if let Ty::Named(name) = &scrutinee {
             if let Some(info) = self.enums.get(name) {
                 let missing: Vec<_> = info
@@ -818,6 +968,7 @@ impl<'a> Checker<'a> {
                     Binding {
                         ty: expected.clone(),
                         mutable: false,
+                        id: 0,
                     },
                     pattern.span,
                 );
@@ -869,6 +1020,7 @@ impl<'a> Checker<'a> {
                                 Binding {
                                     ty: field_ty.clone(),
                                     mutable: false,
+                                    id: 0,
                                 },
                                 name.span,
                             );
@@ -1054,7 +1206,149 @@ impl<'a> Checker<'a> {
         Ty::Unknown
     }
 
-    fn define(&mut self, name: &str, binding: Binding, span: Span) {
+    /// Whether a value of this type owns storage: a `Buffer`, or a struct,
+    /// enum or array that holds one. Such a value moves instead of copying.
+    fn is_resource(&self, ty: &Ty) -> bool {
+        self.is_resource_seen(ty, &mut HashSet::new())
+    }
+
+    fn is_resource_seen(&self, ty: &Ty, seen: &mut HashSet<String>) -> bool {
+        match ty {
+            Ty::Buffer(_) => true,
+            Ty::Array(element, _) => self.is_resource_seen(element, seen),
+            Ty::Named(name) => {
+                if !seen.insert(name.clone()) {
+                    return false;
+                }
+                if let Some(info) = self.structs.get(name) {
+                    info.fields
+                        .values()
+                        .any(|field| self.is_resource_seen(field, seen))
+                } else if let Some(info) = self.enums.get(name) {
+                    info.variants.values().any(|variant| {
+                        variant
+                            .fields
+                            .values()
+                            .any(|field| self.is_resource_seen(field, seen))
+                    })
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// A local, or a field or element of one: something that has a place in
+    /// memory and can be inspected without taking it.
+    fn is_place(expression: &CoreExpr) -> bool {
+        match &expression.kind {
+            CoreExprKind::Path(path) => path.len() == 1,
+            CoreExprKind::Field { value, .. } | CoreExprKind::Index { value, .. } => {
+                Self::is_place(value)
+            }
+            _ => false,
+        }
+    }
+
+    /// `expression`, of type `ty`, is handed to a new owner: bound, passed,
+    /// returned, stored or discarded. A resource local is moved by that; a
+    /// resource field or element cannot be, since it would leave a hole in
+    /// the value that still owns it.
+    fn consume(&mut self, expression: &CoreExpr, ty: &Ty) {
+        if !self.is_resource(ty) {
+            return;
+        }
+        match &expression.kind {
+            CoreExprKind::Path(path) if path.len() == 1 => {
+                if let Some(binding) = self.lookup(&path[0]) {
+                    let id = binding.id;
+                    self.moved.insert(id);
+                }
+            }
+            CoreExprKind::Field { .. } | CoreExprKind::Index { .. } if self.reachable => {
+                self.error(
+                    "MoveOutOfPlace",
+                    format!(
+                        "a `{}` cannot be moved out of a field or an element; the value that holds it still owns it",
+                        ty.display()
+                    ),
+                    expression.span,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    /// A resource used only to be inspected must be a place: a temporary of
+    /// that kind would have no owner to release it afterwards.
+    fn require_place_for_resource(&mut self, expression: &CoreExpr, ty: &Ty) {
+        if self.is_resource(ty) && !Self::is_place(expression) && self.reachable {
+            self.error(
+                "ResourceTemporary",
+                format!(
+                    "bind this `{}` to a local before inspecting it, so something owns it",
+                    ty.display()
+                ),
+                expression.span,
+            );
+        }
+    }
+
+    fn begin_loop(&mut self) {
+        self.loop_flows.push(LoopFlow {
+            outer_limit: self.next_binding,
+            ..LoopFlow::default()
+        });
+    }
+
+    /// Check the paths back to the loop head: a binding declared before the
+    /// loop and moved on one of them would be moved again by the next
+    /// iteration, so it has to be moved after the loop, or given a new value
+    /// before the iteration ends.
+    fn end_loop(&mut self, entry: &BTreeSet<usize>, span: Span) -> LoopFlow {
+        let flow = self.loop_flows.pop().unwrap_or_default();
+        let mut back = flow.continues.clone();
+        if self.reachable {
+            back.push(self.moved.clone());
+        }
+        let mut reported = BTreeSet::new();
+        for state in &back {
+            for id in state {
+                if *id < flow.outer_limit && !entry.contains(id) && reported.insert(*id) {
+                    let name = self.binding_names.get(*id).cloned().unwrap_or_default();
+                    self.error(
+                        "MoveInLoop",
+                        format!(
+                            "`{name}` is declared before this loop and moved inside it, so the next iteration would move it again; move it after the loop, or assign it before the iteration ends"
+                        ),
+                        span,
+                    );
+                }
+            }
+        }
+        flow
+    }
+
+    /// Join the moved-sets of the paths that meet here: a binding moved on
+    /// any of them may be moved, and cannot be used.
+    fn join(&mut self, branches: Vec<(BTreeSet<usize>, bool)>) {
+        let mut moved = BTreeSet::new();
+        let mut reachable = false;
+        for (branch, branch_reachable) in branches {
+            if branch_reachable {
+                moved.extend(branch);
+                reachable = true;
+            }
+        }
+        self.moved = moved;
+        self.reachable = reachable;
+    }
+
+    fn define(&mut self, name: &str, mut binding: Binding, span: Span) {
+        binding.id = self.next_binding;
+        self.next_binding += 1;
+        self.binding_names.push(name.to_string());
         let scope = self.scopes.last_mut().expect("scope exists");
         if scope.insert(name.to_string(), binding).is_some() {
             self.error(
