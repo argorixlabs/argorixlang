@@ -1,0 +1,198 @@
+core 0.1;
+module selfhost_stdlib.example_tokenize;
+
+// A small tokenizer written against the stdlib, as the plan's tokenization
+// example: text.validate first, keywords from an ordered_map, numbers that
+// refuse to overflow, and the byte of the first unexpected character.
+// All 8 checks pass gives 255.
+
+import stdlib.text;
+import stdlib.ordered_map;
+import stdlib.result;
+
+// Kinds: 1 fn, 2 let, 3 return (the keyword map's values), 10 identifier,
+// 11 number, 20-27 the punctuation `( ) { } ; = + ,`.
+struct Token { kind: u64, start: u64, end: u64, }
+
+enum Lexed {
+    Ok { tokens: Buffer<Token>, },
+    Err { failure: Failure, },
+    Unexpected { at: u64, },
+}
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+fn is_letter(byte: u8) -> bool {
+    (byte >= 97u8 && byte <= 122u8) || byte == 95u8
+}
+
+fn is_digit(byte: u8) -> bool {
+    byte >= 48u8 && byte <= 57u8
+}
+
+fn digit(byte: u8) -> u64 {
+    if byte == 48u8 { 0u64 } else if byte == 49u8 { 1u64 } else if byte == 50u8 { 2u64 }
+    else if byte == 51u8 { 3u64 } else if byte == 52u8 { 4u64 } else if byte == 53u8 { 5u64 }
+    else if byte == 54u8 { 6u64 } else if byte == 55u8 { 7u64 } else if byte == 56u8 { 8u64 }
+    else { 9u64 }
+}
+
+// The kind of a one-byte punctuation token, or 0.
+fn punctuation(byte: u8) -> u64 {
+    if byte == 40u8 { 20u64 } else if byte == 41u8 { 21u64 } else if byte == 123u8 { 22u64 }
+    else if byte == 125u8 { 23u64 } else if byte == 59u8 { 24u64 } else if byte == 61u8 { 25u64 }
+    else if byte == 43u8 { 26u64 } else if byte == 44u8 { 27u64 } else { 0u64 }
+}
+
+// The value of a run of digits, or the failure of one that passes u64::MAX.
+fn number_value(digits: Slice<u8>, at: u64) -> U64Result {
+    let mut total: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < digits.length() {
+        let next: u64 = digit(digits[index]);
+        if total > 1844674407370955161u64 || (total == 1844674407370955161u64 && next > 5u64) {
+            return U64Result::Err { failure: Failure::OutOfRange { at: at } };
+        }
+        total = total * 10u64 + next;
+        index += 1u64;
+    }
+    U64Result::Ok { value: total }
+}
+
+fn lex(source: Slice<u8>, keys: Slice<u8>, starts: Slice<u64>, ends: Slice<u64>, values: Slice<u64>) -> Lexed {
+    match text.validate(source) {
+        Checked::Err { failure } => {
+            return Lexed::Err { failure: failure };
+        },
+        Checked::Ok => {},
+    }
+    let mut tokens: Buffer<Token> = Buffer::new();
+    let mut at: u64 = 0u64;
+    while at < source.length() {
+        let byte: u8 = source[at];
+        let start: u64 = at;
+        if byte == 32u8 || byte == 10u8 || byte == 9u8 {
+            at += 1u64;
+        } else if is_letter(byte) {
+            while at < source.length() && (is_letter(source[at]) || is_digit(source[at])) {
+                at += 1u64;
+            }
+            let kind: u64 = match ordered_map.get(keys, starts, ends, values, source.slice(start, at)) {
+                U64Result::Ok { value } => value,
+                U64Result::Err { failure: _ } => 10u64,
+            };
+            tokens.push(Token { kind: kind, start: start, end: at });
+        } else if is_digit(byte) {
+            while at < source.length() && is_digit(source[at]) {
+                at += 1u64;
+            }
+            match number_value(source.slice(start, at), start) {
+                U64Result::Err { failure } => {
+                    return Lexed::Err { failure: failure };
+                },
+                U64Result::Ok { value: _ } => {},
+            }
+            tokens.push(Token { kind: 11u64, start: start, end: at });
+        } else {
+            let kind: u64 = punctuation(byte);
+            if kind == 0u64 {
+                return Lexed::Unexpected { at: at };
+            }
+            at += 1u64;
+            tokens.push(Token { kind: kind, start: start, end: at });
+        }
+    }
+    Lexed::Ok { tokens: tokens }
+}
+
+fn keywords() -> Map {
+    let fn_word: Array<u8, 2> = [102u8, 110u8];
+    let let_word: Array<u8, 3> = [108u8, 101u8, 116u8];
+    let return_word: Array<u8, 6> = [114u8, 101u8, 116u8, 117u8, 114u8, 110u8];
+    let mut map: Map = ordered_map.empty();
+    map = added(ordered_map.insert(map, fn_word.as_slice(), 1u64));
+    map = added(ordered_map.insert(map, let_word.as_slice(), 2u64));
+    map = added(ordered_map.insert(map, return_word.as_slice(), 3u64));
+    map
+}
+
+fn added(inserted: Inserted) -> Map {
+    match inserted {
+        Inserted::Added { map } => map,
+        Inserted::Duplicate { map, at: _ } => map,
+    }
+}
+
+// A code for how lexing ended: the token count, or 1000 + the failure digest,
+// or 2000 + the unexpected byte's position.
+fn outcome(lexed: Lexed) -> u64 {
+    match lexed {
+        Lexed::Ok { tokens } => tokens.length(),
+        Lexed::Err { failure } => 1000u64 + result.failure_digest(failure),
+        Lexed::Unexpected { at } => 2000u64 + at,
+    }
+}
+
+fn kinds_match(source: Slice<u8>, map: Map, expected: Slice<u64>) -> u64 {
+    // Bit 0: every kind as expected; bit 1: the number token is 42.
+    let mut bits: u64 = 0u64;
+    match lex(source, map.keys.as_slice(), map.starts.as_slice(), map.ends.as_slice(), map.values.as_slice()) {
+        Lexed::Ok { tokens } => {
+            if tokens.length() == expected.length() {
+                let mut same: bool = true;
+                let mut index: u64 = 0u64;
+                while index < tokens.length() {
+                    if tokens[index].kind != expected[index] {
+                        same = false;
+                    }
+                    index += 1u64;
+                }
+                if same {
+                    bits += 1u64;
+                }
+                let number: Token = tokens[17u64];
+                let value: u64 = match number_value(source.slice(number.start, number.end), number.start) {
+                    U64Result::Ok { value } => value,
+                    U64Result::Err { failure: _ } => 0u64,
+                };
+                if value == 42u64 {
+                    bits += 2u64;
+                }
+            }
+        },
+        Lexed::Err { failure: _ } => {},
+        Lexed::Unexpected { at: _ } => {},
+    }
+    bits
+}
+
+pub fn argorix_main() -> u64 {
+    // fn add(a, b) { return a + b; }\nlet x = 42;
+    let program: Array<u8, 42> = [102u8, 110u8, 32u8, 97u8, 100u8, 100u8, 40u8, 97u8, 44u8, 32u8,
+        98u8, 41u8, 32u8, 123u8, 32u8, 114u8, 101u8, 116u8, 117u8, 114u8, 110u8, 32u8, 97u8, 32u8,
+        43u8, 32u8, 98u8, 59u8, 32u8, 125u8, 10u8, 108u8, 101u8, 116u8, 32u8, 120u8, 32u8, 61u8,
+        32u8, 52u8, 50u8, 59u8];
+    let expected: Array<u64, 19> = [1u64, 10u64, 20u64, 10u64, 27u64, 10u64, 21u64, 22u64, 3u64,
+        10u64, 26u64, 10u64, 24u64, 23u64, 2u64, 10u64, 25u64, 11u64, 24u64];
+    // let @
+    let stray: Array<u8, 5> = [108u8, 101u8, 116u8, 32u8, 64u8];
+    let not_utf8: Array<u8, 2> = [108u8, 255u8];
+    let too_big: Array<u8, 20> = [57u8, 57u8, 57u8, 57u8, 57u8, 57u8, 57u8, 57u8, 57u8, 57u8,
+        57u8, 57u8, 57u8, 57u8, 57u8, 57u8, 57u8, 57u8, 57u8, 57u8];
+    let empty: Array<u8, 0> = [];
+    let map: Map = keywords();
+    let mut mask: u64 = 0u64;
+
+    mask += bit(map.starts.length() == 3u64, 0u64);
+    mask += bit(outcome(lex(program.as_slice(), map.keys.as_slice(), map.starts.as_slice(), map.ends.as_slice(), map.values.as_slice())) == 19u64, 1u64);
+    mask += bit(outcome(lex(stray.as_slice(), map.keys.as_slice(), map.starts.as_slice(), map.ends.as_slice(), map.values.as_slice())) == 2004u64, 2u64);
+    mask += bit(outcome(lex(not_utf8.as_slice(), map.keys.as_slice(), map.starts.as_slice(), map.ends.as_slice(), map.values.as_slice())) == 1001001u64, 3u64);
+    mask += bit(outcome(lex(too_big.as_slice(), map.keys.as_slice(), map.starts.as_slice(), map.ends.as_slice(), map.values.as_slice())) == 2001000u64, 4u64);
+    mask += bit(outcome(lex(empty.as_slice(), map.keys.as_slice(), map.starts.as_slice(), map.ends.as_slice(), map.values.as_slice())) == 0u64, 5u64);
+    let bits: u64 = kinds_match(program.as_slice(), map, expected.as_slice());
+    mask += bit((bits & 1u64) == 1u64, 6u64);
+    mask += bit((bits & 2u64) == 2u64, 7u64);
+    mask
+}

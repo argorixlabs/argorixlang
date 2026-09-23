@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "task": "ESP-009",
+  "date": "2026-09-22",
+  "what": "Time and peak memory of bootstrap/measure/stdlib_sample.argx: a JSON object of N members written with stdlib.json, validated, its keys indexed in stdlib.ordered_map, and its values sorted and searched with stdlib.vector.",
+  "how": "bootstrap/measure/run.sh target/linux/debug/argorixc <sizes>; gcc 12.2 -O2 on Debian bookworm (Docker, rust:1-slim-bookworm), GNU time. 'default' keeps the C1 limits (1,000,000 steps, 1 MiB per buffer); 'lifted' removes the step limit only.",
+  "results": [
+    {"members": 100, "default": "ARGORIX_RESULT:0", "lifted_seconds": 0.00, "max_rss_kb": 1280},
+    {"members": 600, "default": "ARGORIX_RESULT:0", "lifted_seconds": 0.00, "max_rss_kb": 1440},
+    {"members": 800, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.00, "max_rss_kb": 1120},
+    {"members": 1000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.01, "max_rss_kb": 1120},
+    {"members": 2000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.04, "max_rss_kb": 1440},
+    {"members": 4000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.17, "max_rss_kb": 1600},
+    {"members": 8000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 0.74, "max_rss_kb": 1584},
+    {"members": 16000, "default": "ARGORIX_TRAP:STEP_LIMIT", "lifted_seconds": 3.25, "max_rss_kb": 2016}
+  ],
+  "findings": [
+    "Memory is not the constraint: peak RSS stays near 2 MB at 16,000 members, and the largest buffer (the document, about 14 bytes per member) reaches the 1 MiB per-buffer ceiling only past roughly 70,000 members.",
+    "Time is quadratic: each doubling of N costs about 4.3 to 4.4 times more. Two known sources: stdlib.json rejects duplicate keys by comparing each key with every earlier one, and stdlib.ordered_map inserts into sorted columns by shifting. Both are correct and deterministic; neither scales to large documents.",
+    "The default step budget is a test budget: between 600 and 800 members fit. A compiler run must be given its own budget by the driver rather than rely on the default."
+  ],
+  "not_measured": [
+    "A sample of the real compiler: no Argorix compiler exists yet (ESP-010 onward). This workload stands in for its manifest and IR handling.",
+    "clang and Windows timings."
+  ]
+}
