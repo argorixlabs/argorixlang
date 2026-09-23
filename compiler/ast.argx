@@ -12,7 +12,13 @@ module compiler.ast;
 
 import stdlib.bytes;
 
-pub struct Node { kind: u64, start: u64, end: u64, label_start: u64, label_end: u64, first: u64, next: u64, }
+// What the checker needs beyond the label (spec/core/ast.md lists the kinds):
+// - `word`: the name token + 1 (0 when none), or the first token of a path;
+// - `path_last`: the last token of a path, import or module name;
+// - `value`: an integer literal's value, a bool (1 or 0), an operator's token
+//   kind, an array type's length, or an import alias token + 1;
+// - `flag`: 1 for `pub`, `mut`, a guarded arm, or an integer with a suffix.
+pub struct Node { kind: u64, start: u64, end: u64, label_start: u64, label_end: u64, first: u64, next: u64, word: u64, path_last: u64, value: u64, flag: u64, }
 
 // A syntax error: its position and the ranges of its code and message in
 // `texts`.
@@ -35,13 +41,50 @@ pub struct Tree {
     chain_end: u64,
 }
 
-// The kinds the parser itself looks at; every other node is OTHER.
+// Node kinds.
 pub const OTHER: u64 = 0u64;
 pub const PATH: u64 = 1u64;
 pub const BLOCK: u64 = 2u64;
 pub const IF: u64 = 3u64;
 pub const MATCH: u64 = 4u64;
 pub const LOOP: u64 = 5u64;
+pub const PROGRAM: u64 = 6u64;
+pub const IMPORT: u64 = 7u64;
+pub const FN: u64 = 8u64;
+pub const PARAM: u64 = 9u64;
+pub const STRUCT: u64 = 10u64;
+pub const FIELD: u64 = 11u64;
+pub const ENUM: u64 = 12u64;
+pub const VARIANT: u64 = 13u64;
+pub const CONST: u64 = 14u64;
+pub const TYPE_NAMED: u64 = 15u64;
+pub const TYPE_CONTAINER: u64 = 16u64;
+pub const LET: u64 = 17u64;
+pub const ASSIGN: u64 = 18u64;
+pub const WHILE: u64 = 19u64;
+pub const BREAK: u64 = 20u64;
+pub const CONTINUE: u64 = 21u64;
+pub const RETURN: u64 = 22u64;
+pub const EXPR: u64 = 23u64;
+pub const INTEGER: u64 = 24u64;
+pub const STRING: u64 = 25u64;
+pub const BOOL: u64 = 26u64;
+pub const UNIT: u64 = 27u64;
+pub const AGGREGATE: u64 = 28u64;
+pub const FIELD_VALUE: u64 = 29u64;
+pub const ARRAY: u64 = 30u64;
+pub const ARM: u64 = 31u64;
+pub const CALL: u64 = 32u64;
+pub const INDEX: u64 = 33u64;
+pub const FIELD_ACCESS: u64 = 34u64;
+pub const UNARY: u64 = 35u64;
+pub const BINARY: u64 = 36u64;
+pub const PATTERN_WILDCARD: u64 = 37u64;
+pub const PATTERN_BOOL: u64 = 38u64;
+pub const PATTERN_INTEGER: u64 = 39u64;
+pub const PATTERN_BINDING: u64 = 40u64;
+pub const PATTERN_VARIANT: u64 = 41u64;
+pub const PATTERN_FIELD: u64 = 42u64;
 
 pub fn empty() -> Tree {
     Tree {

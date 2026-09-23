@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "core_version": "0.1",
+  "task": "ESP-012",
+  "purpose": "The Argorix checker in compiler/ over real files, through the compiler-host boundary, under gcc, clang and the sanitizers. The differential against the stage0 checker over the whole corpus is crates/argorixc/tests/check_differential.rs.",
+  "cases": [
+    {
+      "id": "check_files",
+      "file": "check_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "package",
+        "read_budget": 200,
+        "write_budget": 2000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.check": "ok\n",
+          "dumps/1.check": "3:36: semantic[LiteralOutOfRangeOrConstantTrap]\n3:22: semantic[TypeMismatch]\n"
+        }
+      }
+    }
+  ]
+}

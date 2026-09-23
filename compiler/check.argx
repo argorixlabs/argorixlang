@@ -1,0 +1,1677 @@
+core 0.1;
+module compiler.check;
+
+// The Argorix Core checker, in Argorix (ESP-012.A): declarations, types,
+// scopes, name resolution, the typing of expressions and statements, loop
+// control, match exhaustiveness and literal ranges. It follows the stage0
+// checker (`crates/argorix_semantics/src/core.rs`) rule for rule and reports
+// the same diagnostics at the same places, in the same order.
+//
+// Ownership, views and the linker are not here yet: the moves of resources
+// (`UseAfterMove`, `MoveInLoop`, `MoveOutOfPlace`, `ResourceTemporary`,
+// `ResourceInArena`) and slice escapes (`SliceEscapes`, `SliceAliasesMove`)
+// are ESP-012.B, and a program is checked on its own, as if its locked set
+// held only itself, until ESP-012.C links modules.
+
+import stdlib.bytes;
+import compiler.token;
+import compiler.lexer;
+import compiler.ast;
+import compiler.parser;
+
+// ------------------------------------------------------------------ records
+
+// A type, interned: two types are equal exactly when their positions are.
+// `name` is a range of `names` for integers, named and capability types, and
+// `token` (+ 1) a source token spelling a named or capability type's name.
+// An integer's `length` is its width code (see `integer_code`).
+pub struct TypeRecord { tag: u64, name_start: u64, name_end: u64, element: u64, length: u64, token: u64, }
+
+// A struct, enum, function or constant. `name` is its name token.
+// `members` / `count`: its fields, variants or parameters in `members`.
+// `ty`: a constant's type or a function's result.
+pub struct Declaration { kind: u64, name: u64, node: u64, ty: u64, members: u64, count: u64, }
+
+// A field, a variant or a parameter: its name token (0 for a parameter
+// looked up by position), its type, and for a variant its own fields.
+pub struct Member { name: u64, ty: u64, members: u64, count: u64, }
+
+pub struct Binding { name: u64, ty: u64, mutable: bool, depth: u64, }
+
+pub struct Diagnostic { code: u64, at: u64, }
+
+pub struct Check {
+    types: Buffer<TypeRecord>,
+    names: Buffer<u8>,
+    declarations: Buffer<Declaration>,
+    members: Buffer<Member>,
+    bindings: Buffer<Binding>,
+    live: u64,
+    depth: u64,
+    expected_return: u64,
+    loop_depth: u64,
+    // (loop depth, type) pairs of the `break`s of the loops being checked.
+    breaks: Buffer<u64>,
+    break_live: u64,
+    // The variants a match has covered so far, from `covered_base` on.
+    covered: Buffer<u64>,
+    covered_live: u64,
+    wildcard: bool,
+    diagnostics: Buffer<Diagnostic>,
+    result: u64,
+}
+
+// Type tags.
+const T_UNKNOWN: u64 = 0u64;
+const T_NEVER: u64 = 1u64;
+const T_UNIT: u64 = 2u64;
+const T_BOOL: u64 = 3u64;
+const T_BYTES: u64 = 4u64;
+const T_STRING: u64 = 5u64;
+const T_INT: u64 = 6u64;
+const T_NAMED: u64 = 7u64;
+const T_CAPABILITY: u64 = 8u64;
+const T_ARRAY: u64 = 9u64;
+const T_SLICE: u64 = 10u64;
+const T_BUFFER: u64 = 11u64;
+const T_ARENA: u64 = 12u64;
+const T_HANDLE: u64 = 13u64;
+
+// The types every check starts with, at these positions.
+const UNKNOWN: u64 = 0u64;
+const NEVER: u64 = 1u64;
+const UNIT: u64 = 2u64;
+const BOOL: u64 = 3u64;
+const BYTES: u64 = 4u64;
+const STRING: u64 = 5u64;
+
+// Declaration kinds.
+const D_STRUCT: u64 = 1u64;
+const D_ENUM: u64 = 2u64;
+const D_FN: u64 = 3u64;
+const D_CONST: u64 = 4u64;
+
+// Diagnostic codes, in spec/core/check.md.
+pub const DUPLICATE_DECLARATION: u64 = 1u64;
+pub const IMPORT_NOT_LOCKED: u64 = 2u64;
+pub const INFINITE_TYPE: u64 = 3u64;
+pub const TYPE_MISMATCH: u64 = 4u64;
+pub const IMMUTABLE_OR_UNKNOWN: u64 = 5u64;
+pub const LITERAL_OUT_OF_RANGE: u64 = 6u64;
+pub const CONTROL_OUTSIDE_LOOP: u64 = 7u64;
+pub const STRING_NOT_INDEXABLE: u64 = 8u64;
+pub const NON_EXHAUSTIVE_MATCH: u64 = 9u64;
+pub const CAPABILITY_ESCAPES: u64 = 10u64;
+
+// ------------------------------------------------------------------ entry
+
+// The diagnostics dump of one file (see `core_check_dump` in stage0): a line
+// per diagnostic, `line:column: phase[Code]`, or `ok`, or `parse failed`.
+pub fn dump(source: Slice<u8>) -> Buffer<u8> {
+    let lexed: Lexed = lexer.lex(source);
+    let mut out: Buffer<u8> = Buffer::new();
+    if lexed.diagnostics.length() > 0u64 {
+        return bytes.append(out, "parse failed\n".as_slice());
+    }
+    let tree: Tree = parser.parse(lexed.tokens.as_slice(), source, lexed.strings.as_slice());
+    if tree.errors.length() > 0u64 {
+        return bytes.append(out, "parse failed\n".as_slice());
+    }
+    let program: u64 = tree.nodes.length() - 1u64;
+    let checked: Check = check_program(source, lexed.tokens.as_slice(), tree.nodes.as_slice(), program);
+    if checked.diagnostics.length() == 0u64 {
+        return bytes.append(out, "ok\n".as_slice());
+    }
+    let mut index: u64 = 0u64;
+    while index < checked.diagnostics.length() {
+        out = append_diagnostic(out, source, checked.diagnostics[index]);
+        index += 1u64;
+    }
+    out
+}
+
+fn append_diagnostic(out: Buffer<u8>, source: Slice<u8>, found: Diagnostic) -> Buffer<u8> {
+    // Line and column of the byte, counted as the lexer counts them.
+    let mut line: u64 = 1u64;
+    let mut column: u64 = 1u64;
+    let mut at: u64 = 0u64;
+    while at < found.at {
+        let byte: u8 = source[at];
+        if byte == 10u8 {
+            line += 1u64;
+            column = 1u64;
+        } else if byte < 128u8 || byte >= 192u8 {
+            column += 1u64;
+        }
+        at += 1u64;
+    }
+    let mut text: Buffer<u8> = bytes.append_decimal(out, line);
+    text.push(58u8);
+    text = bytes.append_decimal(text, column);
+    if found.code == IMPORT_NOT_LOCKED {
+        text = bytes.append(text, ": resolution[".as_slice());
+    } else {
+        text = bytes.append(text, ": semantic[".as_slice());
+    }
+    text = append_code(text, found.code);
+    text = bytes.append(text, "]\n".as_slice());
+    text
+}
+
+fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
+    if code == DUPLICATE_DECLARATION { return bytes.append(out, "DuplicateDeclaration".as_slice()); }
+    if code == IMPORT_NOT_LOCKED { return bytes.append(out, "ImportNotLocked".as_slice()); }
+    if code == INFINITE_TYPE { return bytes.append(out, "InfiniteType".as_slice()); }
+    if code == TYPE_MISMATCH { return bytes.append(out, "TypeMismatch".as_slice()); }
+    if code == IMMUTABLE_OR_UNKNOWN { return bytes.append(out, "ImmutableAssignmentOrUnknownName".as_slice()); }
+    if code == LITERAL_OUT_OF_RANGE { return bytes.append(out, "LiteralOutOfRangeOrConstantTrap".as_slice()); }
+    if code == CONTROL_OUTSIDE_LOOP { return bytes.append(out, "ControlOutsideLoop".as_slice()); }
+    if code == STRING_NOT_INDEXABLE { return bytes.append(out, "StringNotByteIndexable".as_slice()); }
+    if code == NON_EXHAUSTIVE_MATCH { return bytes.append(out, "NonExhaustiveMatch".as_slice()); }
+    bytes.append(out, "CapabilityEscapes".as_slice())
+}
+
+fn empty_check() -> Check {
+    let mut c: Check = Check {
+        types: Buffer::new(),
+        names: Buffer::new(),
+        declarations: Buffer::new(),
+        members: Buffer::new(),
+        bindings: Buffer::new(),
+        live: 0u64,
+        depth: 0u64,
+        expected_return: 0u64,
+        loop_depth: 0u64,
+        breaks: Buffer::new(),
+        break_live: 0u64,
+        covered: Buffer::new(),
+        covered_live: 0u64,
+        wildcard: false,
+        diagnostics: Buffer::new(),
+        result: 0u64,
+    };
+    // Unknown, never, unit, bool, bytes, string: positions 0 to 5.
+    let mut tag: u64 = 0u64;
+    while tag <= T_STRING {
+        c.types.push(TypeRecord { tag: tag, name_start: 0u64, name_end: 0u64, element: 0u64, length: 0u64, token: 0u64 });
+        tag += 1u64;
+    }
+    c
+}
+
+pub fn check_program(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64) -> Check {
+    let mut c: Check = empty_check();
+    c = collect(source, tokens, nodes, program, c);
+    c = check_imports(source, tokens, nodes, program, c);
+    c = check_recursive(source, tokens, nodes, program, c);
+    c = check_constants(source, tokens, nodes, program, c);
+    c = check_functions(source, tokens, nodes, program, c);
+    capability_positions(source, tokens, nodes, program, c)
+}
+
+// ------------------------------------------------------------------ helpers
+
+fn report(code: u64, at: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    c.diagnostics.push(Diagnostic { code: code, at: at });
+    c
+}
+
+// The n-th child of `node`, from 0.
+fn child(nodes: Slice<Node>, node: u64, n: u64) -> u64 {
+    let mut link: u64 = nodes[node].first;
+    let mut index: u64 = 0u64;
+    while index < n {
+        link = nodes[link - 1u64].next;
+        index += 1u64;
+    }
+    link - 1u64
+}
+
+fn child_count(nodes: Slice<Node>, node: u64) -> u64 {
+    let mut link: u64 = nodes[node].first;
+    let mut count: u64 = 0u64;
+    while link != 0u64 {
+        count += 1u64;
+        link = nodes[link - 1u64].next;
+    }
+    count
+}
+
+// The byte where the node's name token starts.
+fn word_at(tokens: Slice<Token>, nodes: Slice<Node>, node: u64) -> u64 {
+    tokens[nodes[node].word - 1u64].start
+}
+
+fn same_word(source: Slice<u8>, tokens: Slice<Token>, left: u64, right: u64) -> bool {
+    bytes.equal(source.slice(tokens[left].start, tokens[left].end), source.slice(tokens[right].start, tokens[right].end))
+}
+
+fn word_is(source: Slice<u8>, tokens: Slice<Token>, at: u64, text: Slice<u8>) -> bool {
+    bytes.equal(source.slice(tokens[at].start, tokens[at].end), text)
+}
+
+// The identifier tokens of a path, from `first` to `last`.
+fn path_length(tokens: Slice<Token>, first: u64, last: u64) -> u64 {
+    let mut count: u64 = 0u64;
+    let mut at: u64 = first;
+    while at <= last {
+        if tokens[at].kind == token.IDENT {
+            count += 1u64;
+        }
+        at += 1u64;
+    }
+    count
+}
+
+// The token of the n-th segment of a path, from 0.
+fn segment(tokens: Slice<Token>, first: u64, n: u64) -> u64 {
+    let mut at: u64 = first;
+    let mut seen: u64 = 0u64;
+    loop {
+        if tokens[at].kind == token.IDENT {
+            if seen == n {
+                return at;
+            }
+            seen += 1u64;
+        }
+        at += 1u64;
+    }
+}
+
+fn names_equal(names: Slice<u8>, start: u64, end: u64, text: Slice<u8>) -> bool {
+    bytes.equal(names.slice(start, end), text)
+}
+
+// ------------------------------------------------------------------ types
+
+// The type with this tag, name, element and length, interned.
+fn intern(tag: u64, name: Slice<u8>, element: u64, length: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut index: u64 = 0u64;
+    while index < c.types.length() {
+        let found: TypeRecord = c.types[index];
+        if found.tag == tag && found.element == element && found.length == length
+            && names_equal(c.names.as_slice(), found.name_start, found.name_end, name)
+        {
+            c.result = index;
+            return c;
+        }
+        index += 1u64;
+    }
+    let start: u64 = c.names.length();
+    let mut at: u64 = 0u64;
+    while at < name.length() {
+        c.names.push(name[at]);
+        at += 1u64;
+    }
+    c.types.push(TypeRecord { tag: tag, name_start: start, name_end: c.names.length(), element: element, length: length, token: 0u64 });
+    c.result = c.types.length() - 1u64;
+    c
+}
+
+fn is_integer(types: Slice<TypeRecord>, ty: u64) -> bool {
+    types[ty].tag == T_INT
+}
+
+fn integer_type(name: Slice<u8>, check: Check) -> Check {
+    intern(T_INT, name, 0u64, integer_code(name), check)
+}
+
+// A named or capability type spelled by source token `at`.
+fn named_type(tag: u64, source: Slice<u8>, tokens: Slice<Token>, at: u64, check: Check) -> Check {
+    let mut c: Check = intern(tag, source.slice(tokens[at].start, tokens[at].end), 0u64, 0u64, check);
+    let ty: u64 = c.result;
+    if c.types[ty].token == 0u64 {
+        c.types[ty].token = at + 1u64;
+    }
+    c
+}
+
+// The name of a named or capability type, as a source token.
+fn type_token(types: Slice<TypeRecord>, ty: u64) -> u64 {
+    types[ty].token - 1u64
+}
+
+const U8: u64 = 1u64;
+
+// 1 to 8 for u8, u16, u32, u64, i8, i16, i32, i64; 0 for an unknown suffix.
+fn integer_code(name: Slice<u8>) -> u64 {
+    if bytes.equal(name, "u8".as_slice()) { return 1u64; }
+    if bytes.equal(name, "u16".as_slice()) { return 2u64; }
+    if bytes.equal(name, "u32".as_slice()) { return 3u64; }
+    if bytes.equal(name, "u64".as_slice()) { return 4u64; }
+    if bytes.equal(name, "i8".as_slice()) { return 5u64; }
+    if bytes.equal(name, "i16".as_slice()) { return 6u64; }
+    if bytes.equal(name, "i32".as_slice()) { return 7u64; }
+    if bytes.equal(name, "i64".as_slice()) { return 8u64; }
+    0u64
+}
+
+fn deref_handle(types: Slice<TypeRecord>, ty: u64) -> u64 {
+    let mut current: u64 = ty;
+    while types[current].tag == T_HANDLE {
+        current = types[current].element;
+    }
+    current
+}
+
+fn compatible(types: Slice<TypeRecord>, expected: u64, actual: u64) -> bool {
+    if expected == actual || expected == UNKNOWN || expected == NEVER || actual == UNKNOWN || actual == NEVER {
+        return true;
+    }
+    let left: TypeRecord = types[expected];
+    let right: TypeRecord = types[actual];
+    if left.tag == T_BUFFER && right.tag == T_BUFFER && right.element == UNKNOWN {
+        return true;
+    }
+    if left.tag == T_ARRAY && right.tag == T_ARRAY {
+        return left.length == right.length && compatible(types, left.element, right.element);
+    }
+    if left.tag == right.tag && (left.tag == T_SLICE || left.tag == T_BUFFER || left.tag == T_ARENA || left.tag == T_HANDLE) {
+        return compatible(types, left.element, right.element);
+    }
+    false
+}
+
+fn merge_types(types: Slice<TypeRecord>, expected: u64, actual: u64) -> u64 {
+    if actual == UNKNOWN {
+        return expected;
+    }
+    let left: TypeRecord = types[expected];
+    let right: TypeRecord = types[actual];
+    if left.tag == T_BUFFER && right.tag == T_BUFFER && right.element == UNKNOWN {
+        return expected;
+    }
+    if left.tag == T_ARENA && right.tag == T_ARENA && right.element == UNKNOWN {
+        return expected;
+    }
+    actual
+}
+
+fn require_compatible(expected: u64, actual: u64, at: u64, check: Check) -> Check {
+    if compatible(check.types.as_slice(), expected, actual) {
+        return check;
+    }
+    report(TYPE_MISMATCH, at, check)
+}
+
+fn unify(left: u64, right: u64, at: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    if left == NEVER {
+        c.result = right;
+        return c;
+    }
+    if right == NEVER {
+        c.result = left;
+        return c;
+    }
+    if compatible(c.types.as_slice(), left, right) {
+        c.result = merge_types(c.types.as_slice(), left, right);
+        return c;
+    }
+    c = report(TYPE_MISMATCH, at, c);
+    c.result = UNKNOWN;
+    c
+}
+
+fn contains_capability(types: Slice<TypeRecord>, ty: u64) -> bool {
+    let found: TypeRecord = types[ty];
+    if found.tag == T_CAPABILITY {
+        return true;
+    }
+    if found.tag == T_ARRAY || found.tag == T_SLICE || found.tag == T_BUFFER || found.tag == T_ARENA || found.tag == T_HANDLE {
+        return contains_capability(types, found.element);
+    }
+    false
+}
+
+// A type written in the source, as the checker sees it.
+fn lower_type(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let name_token: u64 = nodes[node].word - 1u64;
+    let name: Slice<u8> = source.slice(tokens[name_token].start, tokens[name_token].end);
+    if nodes[node].kind == ast.TYPE_NAMED {
+        if bytes.equal(name, "unit".as_slice()) { c.result = UNIT; return c; }
+        if bytes.equal(name, "bool".as_slice()) { c.result = BOOL; return c; }
+        if bytes.equal(name, "bytes".as_slice()) { c.result = BYTES; return c; }
+        if bytes.equal(name, "string".as_slice()) { c.result = STRING; return c; }
+        if is_integer_name(name) {
+            return integer_type(name, c);
+        }
+        if bytes.equal(name, "PackageRead".as_slice()) || bytes.equal(name, "BuildWrite".as_slice()) {
+            return named_type(T_CAPABILITY, source, tokens, name_token, c);
+        }
+        return named_type(T_NAMED, source, tokens, name_token, c);
+    }
+    c = lower_type(source, tokens, nodes, child(nodes, node, 0u64), c);
+    let element: u64 = c.result;
+    if contains_capability(c.types.as_slice(), element) {
+        let at: u64 = nodes[node].start;
+        c = report(CAPABILITY_ESCAPES, at, c);
+    }
+    let empty: Array<u8, 0> = [];
+    if bytes.equal(name, "Array".as_slice()) {
+        return intern(T_ARRAY, empty.as_slice(), element, nodes[node].value, c);
+    }
+    if bytes.equal(name, "Slice".as_slice()) {
+        return intern(T_SLICE, empty.as_slice(), element, 0u64, c);
+    }
+    if bytes.equal(name, "Buffer".as_slice()) {
+        return intern(T_BUFFER, empty.as_slice(), element, 0u64, c);
+    }
+    if bytes.equal(name, "Arena".as_slice()) {
+        return intern(T_ARENA, empty.as_slice(), element, 0u64, c);
+    }
+    intern(T_HANDLE, empty.as_slice(), element, 0u64, c)
+}
+
+fn is_integer_name(name: Slice<u8>) -> bool {
+    bytes.equal(name, "u8".as_slice()) || bytes.equal(name, "u16".as_slice()) || bytes.equal(name, "u32".as_slice())
+        || bytes.equal(name, "u64".as_slice()) || bytes.equal(name, "i8".as_slice()) || bytes.equal(name, "i16".as_slice())
+        || bytes.equal(name, "i32".as_slice()) || bytes.equal(name, "i64".as_slice())
+}
+
+// Whether `value` fits the integer type of width `code`; an unknown suffix
+// fits nothing.
+fn fits(value: u64, code: u64) -> bool {
+    if code == 1u64 { return value <= 255u64; }
+    if code == 2u64 { return value <= 65535u64; }
+    if code == 3u64 { return value <= 4294967295u64; }
+    if code == 4u64 || code == 8u64 { return true; }
+    if code == 5u64 { return value <= 127u64; }
+    if code == 6u64 { return value <= 32767u64; }
+    if code == 7u64 { return value <= 2147483647u64; }
+    false
+}
+
+// ------------------------------------------------------------------ declarations
+
+// The declaration of `kind` named like token `name`, + 1, or 0.
+fn find_declaration(source: Slice<u8>, tokens: Slice<Token>, declarations: Slice<Declaration>, kind: u64, name: Slice<u8>) -> u64 {
+    let mut index: u64 = 0u64;
+    while index < declarations.length() {
+        let found: Declaration = declarations[index];
+        if (kind == 0u64 || found.kind == kind) && word_is(source, tokens, found.name, name) {
+            return index + 1u64;
+        }
+        index += 1u64;
+    }
+    0u64
+}
+
+// The member among `count` from `first` named `name`, + 1, or 0.
+fn find_member(source: Slice<u8>, tokens: Slice<Token>, members: Slice<Member>, first: u64, count: u64, name: Slice<u8>) -> u64 {
+    let mut index: u64 = first;
+    while index < first + count {
+        if word_is(source, tokens, members[index].name, name) {
+            return index + 1u64;
+        }
+        index += 1u64;
+    }
+    0u64
+}
+
+fn collect(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut link: u64 = nodes[program].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        let kind: u64 = nodes[item].kind;
+        if kind == ast.IMPORT {
+            continue;
+        }
+        let name: u64 = nodes[item].word - 1u64;
+        if find_declaration(source, tokens, c.declarations.as_slice(), 0u64, source.slice(tokens[name].start, tokens[name].end)) != 0u64 {
+            c = report(DUPLICATE_DECLARATION, tokens[name].start, c);
+            continue;
+        }
+        if kind == ast.STRUCT {
+            let first: u64 = c.members.length();
+            c = collect_fields(source, tokens, nodes, item, c);
+            let count: u64 = c.members.length() - first;
+            c.declarations.push(Declaration { kind: D_STRUCT, name: name, node: item, ty: 0u64, members: first, count: count });
+        } else if kind == ast.ENUM {
+            // Variants go first, together, then each variant's fields.
+            let first: u64 = c.members.length();
+            let variants: u64 = child_count(nodes, item);
+            let mut index: u64 = 0u64;
+            while index < variants {
+                let variant: u64 = child(nodes, item, index);
+                c.members.push(Member { name: nodes[variant].word - 1u64, ty: 0u64, members: 0u64, count: 0u64 });
+                index += 1u64;
+            }
+            index = 0u64;
+            while index < variants {
+                let variant: u64 = child(nodes, item, index);
+                let fields: u64 = c.members.length();
+                c = collect_fields(source, tokens, nodes, variant, c);
+                let count: u64 = c.members.length() - fields;
+                c.members[first + index].members = fields;
+                c.members[first + index].count = count;
+                index += 1u64;
+            }
+            c.declarations.push(Declaration { kind: D_ENUM, name: name, node: item, ty: 0u64, members: first, count: variants });
+        } else if kind == ast.FN {
+            let children: u64 = child_count(nodes, item);
+            let parameters: u64 = children - 2u64;
+            let first: u64 = c.members.length();
+            let mut index: u64 = 0u64;
+            while index < parameters {
+                let parameter: u64 = child(nodes, item, index);
+                c = lower_type(source, tokens, nodes, child(nodes, parameter, 0u64), c);
+                let ty: u64 = c.result;
+                c.members.push(Member { name: nodes[parameter].word - 1u64, ty: ty, members: 0u64, count: 0u64 });
+                index += 1u64;
+            }
+            c = lower_type(source, tokens, nodes, child(nodes, item, parameters), c);
+            let result: u64 = c.result;
+            c.declarations.push(Declaration { kind: D_FN, name: name, node: item, ty: result, members: first, count: parameters });
+        } else {
+            c = lower_type(source, tokens, nodes, child(nodes, item, 0u64), c);
+            let ty: u64 = c.result;
+            c.declarations.push(Declaration { kind: D_CONST, name: name, node: item, ty: ty, members: 0u64, count: 0u64 });
+        }
+    }
+    c
+}
+
+// The fields of a struct or a variant, appended to `members`.
+fn collect_fields(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, owner: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut link: u64 = nodes[owner].first;
+    while link != 0u64 {
+        let field: u64 = link - 1u64;
+        link = nodes[field].next;
+        c = lower_type(source, tokens, nodes, child(nodes, field, 0u64), c);
+        let ty: u64 = c.result;
+        c.members.push(Member { name: nodes[field].word - 1u64, ty: ty, members: 0u64, count: 0u64 });
+    }
+    c
+}
+
+// Checked alone, a program's locked set holds only itself.
+fn check_imports(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let module_first: u64 = nodes[program].word - 1u64;
+    let module_last: u64 = nodes[program].path_last;
+    let mut link: u64 = nodes[program].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind != ast.IMPORT {
+            continue;
+        }
+        let first: u64 = nodes[item].word - 1u64;
+        let last: u64 = nodes[item].path_last;
+        if !same_path(source, tokens, first, last, module_first, module_last) {
+            c = report(IMPORT_NOT_LOCKED, tokens[first].start, c);
+        }
+    }
+    c
+}
+
+fn same_path(source: Slice<u8>, tokens: Slice<Token>, first: u64, last: u64, other_first: u64, other_last: u64) -> bool {
+    let length: u64 = path_length(tokens, first, last);
+    if length != path_length(tokens, other_first, other_last) {
+        return false;
+    }
+    let mut index: u64 = 0u64;
+    while index < length {
+        if !same_word(source, tokens, segment(tokens, first, index), segment(tokens, other_first, index)) {
+            return false;
+        }
+        index += 1u64;
+    }
+    true
+}
+
+fn check_recursive(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut index: u64 = 0u64;
+    while index < c.declarations.length() {
+        let found: Declaration = c.declarations[index];
+        index += 1u64;
+        if found.kind != D_STRUCT {
+            continue;
+        }
+        let name: Slice<u8> = source.slice(tokens[found.name].start, tokens[found.name].end);
+        // A simple path through struct fields names each struct once, so
+        // this depth reaches everything reachable.
+        let limit: u64 = c.declarations.length() + 1u64;
+        let mut field: u64 = found.members;
+        let mut recursive: bool = false;
+        while field < found.members + found.count && !recursive {
+            recursive = contains_unboxed(source, tokens, c.types.as_slice(), c.declarations.as_slice(), c.members.as_slice(), c.members[field].ty, name, limit);
+            field += 1u64;
+        }
+        if recursive {
+            c = report(INFINITE_TYPE, tokens[found.name].start, c);
+        }
+    }
+    c
+}
+
+// Whether `ty` holds a `target` by value, not through a handle.
+fn contains_unboxed(source: Slice<u8>, tokens: Slice<Token>, types: Slice<TypeRecord>, declarations: Slice<Declaration>, members: Slice<Member>, ty: u64, target: Slice<u8>, depth: u64) -> bool {
+    let found: TypeRecord = types[ty];
+    if found.tag == T_NAMED {
+        let name: u64 = found.token - 1u64;
+        let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
+        if bytes.equal(text, target) {
+            return true;
+        }
+        if depth == 0u64 {
+            return false;
+        }
+        let declaration: u64 = find_declaration(source, tokens, declarations, D_STRUCT, text);
+        if declaration == 0u64 {
+            return false;
+        }
+        let owner: Declaration = declarations[declaration - 1u64];
+        let mut field: u64 = owner.members;
+        while field < owner.members + owner.count {
+            if contains_unboxed(source, tokens, types, declarations, members, members[field].ty, target, depth - 1u64) {
+                return true;
+            }
+            field += 1u64;
+        }
+        return false;
+    }
+    if found.tag == T_ARRAY || found.tag == T_SLICE || found.tag == T_BUFFER || found.tag == T_ARENA {
+        return contains_unboxed(source, tokens, types, declarations, members, found.element, target, depth);
+    }
+    false
+}
+
+fn check_constants(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut link: u64 = nodes[program].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind != ast.CONST {
+            continue;
+        }
+        // The type is lowered again, as stage0 does.
+        c = lower_type(source, tokens, nodes, child(nodes, item, 0u64), c);
+        let expected: u64 = c.result;
+        let value: u64 = child(nodes, item, 1u64);
+        c = infer(source, tokens, nodes, value, expected, c);
+        let actual: u64 = c.result;
+        c = require_compatible(expected, actual, nodes[value].start, c);
+    }
+    c
+}
+
+fn check_functions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut link: u64 = nodes[program].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind != ast.FN {
+            continue;
+        }
+        c.live = 0u64;
+        c.depth = 1u64;
+        c.loop_depth = 0u64;
+        c.break_live = 0u64;
+        let children: u64 = child_count(nodes, item);
+        let parameters: u64 = children - 2u64;
+        c = lower_type(source, tokens, nodes, child(nodes, item, parameters), c);
+        c.expected_return = c.result;
+        let mut index: u64 = 0u64;
+        while index < parameters {
+            let parameter: u64 = child(nodes, item, index);
+            c = lower_type(source, tokens, nodes, child(nodes, parameter, 0u64), c);
+            let ty: u64 = c.result;
+            c = define(source, tokens, nodes[parameter].word - 1u64, ty, false, c);
+            index += 1u64;
+        }
+        let body: u64 = child(nodes, item, children - 1u64);
+        c = check_block(source, tokens, nodes, body, false, c);
+        let actual: u64 = c.result;
+        let expected: u64 = c.expected_return;
+        c = require_compatible(expected, actual, nodes[body].start, c);
+    }
+    c
+}
+
+// `PackageRead` and `BuildWrite` cannot be redeclared, and a capability can
+// only be a parameter or a local.
+fn capability_positions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut link: u64 = nodes[program].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind == ast.IMPORT {
+            continue;
+        }
+        let name: u64 = nodes[item].word - 1u64;
+        let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
+        if bytes.equal(text, "PackageRead".as_slice()) || bytes.equal(text, "BuildWrite".as_slice()) {
+            c = report(DUPLICATE_DECLARATION, tokens[name].start, c);
+        }
+        let kind: u64 = nodes[item].kind;
+        let mut holds: bool = false;
+        let declaration: u64 = if kind == ast.STRUCT {
+            find_declaration(source, tokens, c.declarations.as_slice(), D_STRUCT, text)
+        } else if kind == ast.ENUM {
+            find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, text)
+        } else if kind == ast.FN {
+            find_declaration(source, tokens, c.declarations.as_slice(), D_FN, text)
+        } else {
+            0u64
+        };
+        if declaration != 0u64 {
+            let found: Declaration = c.declarations[declaration - 1u64];
+            if kind == ast.STRUCT {
+                holds = members_hold_capability(c.types.as_slice(), c.members.as_slice(), found.members, found.count);
+            } else if kind == ast.ENUM {
+                let mut variant: u64 = found.members;
+                while variant < found.members + found.count {
+                    let fields: Member = c.members[variant];
+                    if members_hold_capability(c.types.as_slice(), c.members.as_slice(), fields.members, fields.count) {
+                        holds = true;
+                    }
+                    variant += 1u64;
+                }
+            } else {
+                holds = contains_capability(c.types.as_slice(), found.ty);
+            }
+        }
+        if holds {
+            c = report(CAPABILITY_ESCAPES, tokens[name].start, c);
+        }
+    }
+    c
+}
+
+fn members_hold_capability(types: Slice<TypeRecord>, members: Slice<Member>, first: u64, count: u64) -> bool {
+    let mut index: u64 = first;
+    while index < first + count {
+        if contains_capability(types, members[index].ty) {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
+}
+
+// ------------------------------------------------------------------ scopes
+
+fn define(source: Slice<u8>, tokens: Slice<Token>, name: u64, ty: u64, mutable: bool, check: Check) -> Check {
+    let mut c: Check = check;
+    let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
+    let mut index: u64 = c.live;
+    let mut duplicate: bool = false;
+    while index > 0u64 {
+        index -= 1u64;
+        let found: Binding = c.bindings[index];
+        if found.depth != c.depth {
+            break;
+        }
+        if word_is(source, tokens, found.name, text) {
+            duplicate = true;
+        }
+    }
+    if duplicate {
+        c = report(DUPLICATE_DECLARATION, tokens[name].start, c);
+    }
+    let binding: Binding = Binding { name: name, ty: ty, mutable: mutable, depth: c.depth };
+    if c.live < c.bindings.length() {
+        let live: u64 = c.live;
+        c.bindings[live] = binding;
+    } else {
+        c.bindings.push(binding);
+    }
+    c.live += 1u64;
+    c
+}
+
+// The innermost binding named `text`, + 1, or 0.
+fn lookup(source: Slice<u8>, tokens: Slice<Token>, bindings: Slice<Binding>, live: u64, text: Slice<u8>) -> u64 {
+    let mut index: u64 = live;
+    while index > 0u64 {
+        index -= 1u64;
+        if word_is(source, tokens, bindings[index].name, text) {
+            return index + 1u64;
+        }
+    }
+    0u64
+}
+
+fn open_scope(check: Check) -> Check {
+    let mut c: Check = check;
+    c.depth += 1u64;
+    c
+}
+
+fn close_scope(check: Check) -> Check {
+    let mut c: Check = check;
+    while c.live > 0u64 && c.bindings[c.live - 1u64].depth == c.depth {
+        c.live -= 1u64;
+    }
+    c.depth -= 1u64;
+    c
+}
+
+// ------------------------------------------------------------------ blocks and statements
+
+fn is_statement(kind: u64) -> bool {
+    kind == ast.LET || kind == ast.ASSIGN || kind == ast.WHILE || kind == ast.BREAK || kind == ast.CONTINUE
+        || kind == ast.RETURN || kind == ast.EXPR
+}
+
+fn check_block(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, block: u64, scoped: bool, check: Check) -> Check {
+    let mut c: Check = check;
+    if scoped {
+        c = open_scope(c);
+    }
+    let mut last_kind: u64 = 0u64;
+    let mut tail: u64 = 0u64;
+    let mut link: u64 = nodes[block].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if is_statement(nodes[item].kind) {
+            c = statement(source, tokens, nodes, item, c);
+            last_kind = nodes[item].kind;
+        } else {
+            tail = item + 1u64;
+        }
+    }
+    if tail != 0u64 {
+        c = infer(source, tokens, nodes, tail - 1u64, UNKNOWN, c);
+    } else if last_kind == ast.RETURN || last_kind == ast.BREAK || last_kind == ast.CONTINUE {
+        c.result = NEVER;
+    } else {
+        c.result = UNIT;
+    }
+    if scoped {
+        let result: u64 = c.result;
+        c = close_scope(c);
+        c.result = result;
+    }
+    c
+}
+
+fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let kind: u64 = nodes[node].kind;
+    if kind == ast.LET {
+        let first: u64 = child(nodes, node, 0u64);
+        let annotated: bool = nodes[first].kind == ast.TYPE_NAMED || nodes[first].kind == ast.TYPE_CONTAINER;
+        let mut expected: u64 = UNKNOWN;
+        let mut value: u64 = first;
+        if annotated {
+            c = lower_type(source, tokens, nodes, first, c);
+            expected = c.result;
+            value = child(nodes, node, 1u64);
+        }
+        c = infer(source, tokens, nodes, value, expected, c);
+        let mut actual: u64 = c.result;
+        if annotated {
+            c = require_compatible(expected, actual, nodes[value].start, c);
+            actual = merge_types(c.types.as_slice(), expected, actual);
+        }
+        return define(source, tokens, nodes[node].word - 1u64, actual, nodes[node].flag == 1u64, c);
+    }
+    if kind == ast.ASSIGN {
+        let target: u64 = child(nodes, node, 0u64);
+        let value: u64 = child(nodes, node, 1u64);
+        c = assignment_target(source, tokens, nodes, target, c);
+        let target_ty: u64 = c.result;
+        c = infer(source, tokens, nodes, value, target_ty, c);
+        let value_ty: u64 = c.result;
+        c = require_compatible(target_ty, value_ty, nodes[value].start, c);
+        if nodes[node].value != token.ASSIGN && !is_integer(c.types.as_slice(), target_ty) {
+            c = report(TYPE_MISMATCH, nodes[node].start, c);
+        }
+        return c;
+    }
+    if kind == ast.WHILE {
+        let condition: u64 = child(nodes, node, 0u64);
+        c = infer(source, tokens, nodes, condition, BOOL, c);
+        let actual: u64 = c.result;
+        c = require_compatible(BOOL, actual, nodes[condition].start, c);
+        c.loop_depth += 1u64;
+        c = check_block(source, tokens, nodes, child(nodes, node, 1u64), true, c);
+        c = drop_breaks(c);
+        c.loop_depth -= 1u64;
+        return c;
+    }
+    if kind == ast.BREAK {
+        if c.loop_depth == 0u64 {
+            return report(CONTROL_OUTSIDE_LOOP, nodes[node].start, c);
+        }
+        let mut ty: u64 = UNIT;
+        if nodes[node].first != 0u64 {
+            c = infer(source, tokens, nodes, child(nodes, node, 0u64), UNKNOWN, c);
+            ty = c.result;
+        }
+        return push_break(ty, c);
+    }
+    if kind == ast.CONTINUE {
+        if c.loop_depth == 0u64 {
+            return report(CONTROL_OUTSIDE_LOOP, nodes[node].start, c);
+        }
+        return c;
+    }
+    if kind == ast.RETURN {
+        let expected: u64 = c.expected_return;
+        let mut actual: u64 = UNIT;
+        if nodes[node].first != 0u64 {
+            c = infer(source, tokens, nodes, child(nodes, node, 0u64), expected, c);
+            actual = c.result;
+        }
+        return require_compatible(expected, actual, nodes[node].start, c);
+    }
+    infer(source, tokens, nodes, child(nodes, node, 0u64), UNKNOWN, c)
+}
+
+fn push_break(ty: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let depth: u64 = c.loop_depth;
+    let at: u64 = c.break_live;
+    if at < c.breaks.length() {
+        c.breaks[at] = depth;
+        c.breaks[at + 1u64] = ty;
+    } else {
+        c.breaks.push(depth);
+        c.breaks.push(ty);
+    }
+    c.break_live += 2u64;
+    c
+}
+
+// The `break`s of the loop that ends here are dropped.
+fn drop_breaks(check: Check) -> Check {
+    let mut c: Check = check;
+    while c.break_live > 0u64 && c.breaks[c.break_live - 2u64] == c.loop_depth {
+        c.break_live -= 2u64;
+    }
+    c
+}
+
+fn assignment_target(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, target: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let kind: u64 = nodes[target].kind;
+    if kind == ast.PATH && nodes[target].word - 1u64 == nodes[target].path_last {
+        let name: u64 = nodes[target].word - 1u64;
+        let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, source.slice(tokens[name].start, tokens[name].end));
+        if binding == 0u64 {
+            c = report(IMMUTABLE_OR_UNKNOWN, nodes[target].start, c);
+            c.result = UNKNOWN;
+            return c;
+        }
+        let found: Binding = c.bindings[binding - 1u64];
+        if !found.mutable {
+            c = report(IMMUTABLE_OR_UNKNOWN, nodes[target].start, c);
+        }
+        c.result = found.ty;
+        return c;
+    }
+    if (kind == ast.FIELD_ACCESS || kind == ast.INDEX) && root_is_mutable_or_handle(source, tokens, nodes, c.types.as_slice(), c.bindings.as_slice(), c.live, target) {
+        return infer(source, tokens, nodes, target, UNKNOWN, c);
+    }
+    c = report(IMMUTABLE_OR_UNKNOWN, nodes[target].start, c);
+    infer(source, tokens, nodes, target, UNKNOWN, c)
+}
+
+fn root_is_mutable_or_handle(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, types: Slice<TypeRecord>, bindings: Slice<Binding>, live: u64, node: u64) -> bool {
+    let kind: u64 = nodes[node].kind;
+    if kind == ast.PATH && nodes[node].word - 1u64 == nodes[node].path_last {
+        let name: u64 = nodes[node].word - 1u64;
+        let binding: u64 = lookup(source, tokens, bindings, live, source.slice(tokens[name].start, tokens[name].end));
+        if binding == 0u64 {
+            return false;
+        }
+        let found: Binding = bindings[binding - 1u64];
+        return found.mutable || types[found.ty].tag == T_HANDLE;
+    }
+    if kind == ast.FIELD_ACCESS || kind == ast.INDEX {
+        return root_is_mutable_or_handle(source, tokens, nodes, types, bindings, live, child(nodes, node, 0u64));
+    }
+    false
+}
+
+// The local at the root of a place (+ 1), or 0.
+fn place_root(nodes: Slice<Node>, node: u64) -> u64 {
+    let kind: u64 = nodes[node].kind;
+    if kind == ast.PATH && nodes[node].word - 1u64 == nodes[node].path_last {
+        return nodes[node].word;
+    }
+    if kind == ast.FIELD_ACCESS || kind == ast.INDEX {
+        return place_root(nodes, child(nodes, node, 0u64));
+    }
+    0u64
+}
+
+// ------------------------------------------------------------------ expressions
+
+// The type of `node` in `result`. `expected` is the type the context asks
+// for, or UNKNOWN when it asks for none.
+fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, expected: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let kind: u64 = nodes[node].kind;
+    if kind == ast.INTEGER {
+        let found: Token = tokens[nodes[node].word - 1u64];
+        if nodes[node].flag == 1u64 {
+            c = integer_type(source.slice(found.text_start, found.text_end), c);
+        } else if expected != UNKNOWN && is_integer(c.types.as_slice(), expected) {
+            c.result = expected;
+        } else {
+            c = integer_type("i64".as_slice(), c);
+        }
+        let ty: u64 = c.result;
+        let record: TypeRecord = c.types[ty];
+        if !fits(nodes[node].value, record.length) {
+            c = report(LITERAL_OUT_OF_RANGE, nodes[node].start, c);
+        }
+        c.result = ty;
+        return c;
+    }
+    if kind == ast.STRING { c.result = STRING; return c; }
+    if kind == ast.BOOL { c.result = BOOL; return c; }
+    if kind == ast.UNIT { c.result = UNIT; return c; }
+    if kind == ast.PATH { return infer_path(source, tokens, nodes, node, c); }
+    if kind == ast.AGGREGATE { return infer_aggregate(source, tokens, nodes, node, c); }
+    if kind == ast.ARRAY {
+        let mut element: u64 = UNKNOWN;
+        if expected != UNKNOWN && c.types[expected].tag == T_ARRAY {
+            element = c.types[expected].element;
+        }
+        let mut count: u64 = 0u64;
+        let mut link: u64 = nodes[node].first;
+        while link != 0u64 {
+            let value: u64 = link - 1u64;
+            link = nodes[value].next;
+            c = infer(source, tokens, nodes, value, element, c);
+            let actual: u64 = c.result;
+            if element == UNKNOWN {
+                element = actual;
+            } else {
+                c = require_compatible(element, actual, nodes[value].start, c);
+            }
+            count += 1u64;
+        }
+        let empty: Array<u8, 0> = [];
+        return intern(T_ARRAY, empty.as_slice(), element, count, c);
+    }
+    if kind == ast.BLOCK { return check_block(source, tokens, nodes, node, true, c); }
+    if kind == ast.IF {
+        let condition: u64 = child(nodes, node, 0u64);
+        c = infer(source, tokens, nodes, condition, BOOL, c);
+        let condition_ty: u64 = c.result;
+        c = require_compatible(BOOL, condition_ty, nodes[condition].start, c);
+        c = check_block(source, tokens, nodes, child(nodes, node, 1u64), true, c);
+        let then_ty: u64 = c.result;
+        let mut else_ty: u64 = UNIT;
+        if child_count(nodes, node) == 3u64 {
+            c = infer(source, tokens, nodes, child(nodes, node, 2u64), expected, c);
+            else_ty = c.result;
+        }
+        return unify(then_ty, else_ty, nodes[node].start, c);
+    }
+    if kind == ast.MATCH { return infer_match(source, tokens, nodes, node, expected, c); }
+    if kind == ast.LOOP {
+        c.loop_depth += 1u64;
+        let base: u64 = c.break_live;
+        c = check_block(source, tokens, nodes, child(nodes, node, 0u64), true, c);
+        // The types of this loop's `break`s, unified in order.
+        let mut result: u64 = NEVER;
+        let mut first: bool = true;
+        let mut at: u64 = base;
+        while at < c.break_live {
+            let ty: u64 = c.breaks[at + 1u64];
+            if first {
+                result = ty;
+                first = false;
+            } else {
+                c = unify(result, ty, nodes[node].start, c);
+                result = c.result;
+            }
+            at += 2u64;
+        }
+        c.break_live = base;
+        c.loop_depth -= 1u64;
+        c.result = result;
+        return c;
+    }
+    if kind == ast.CALL { return infer_call(source, tokens, nodes, node, c); }
+    if kind == ast.INDEX {
+        let value: u64 = child(nodes, node, 0u64);
+        let index: u64 = child(nodes, node, 1u64);
+        c = infer(source, tokens, nodes, value, UNKNOWN, c);
+        let base: u64 = c.result;
+        c = integer_type("u64".as_slice(), c);
+        let unsigned: u64 = c.result;
+        c = infer(source, tokens, nodes, index, unsigned, c);
+        let index_ty: u64 = c.result;
+        if !is_integer(c.types.as_slice(), index_ty) {
+            c = report(TYPE_MISMATCH, nodes[index].start, c);
+        }
+        let target: u64 = deref_handle(c.types.as_slice(), base);
+        let record: TypeRecord = c.types[target];
+        if record.tag == T_STRING {
+            c = report(STRING_NOT_INDEXABLE, nodes[node].start, c);
+            c.result = UNKNOWN;
+            return c;
+        }
+        if record.tag == T_ARRAY || record.tag == T_SLICE || record.tag == T_BUFFER {
+            c.result = record.element;
+            return c;
+        }
+        if record.tag == T_BYTES {
+            return integer_type("u8".as_slice(), c);
+        }
+        c = report(TYPE_MISMATCH, nodes[value].start, c);
+        c.result = UNKNOWN;
+        return c;
+    }
+    if kind == ast.FIELD_ACCESS {
+        c = infer(source, tokens, nodes, child(nodes, node, 0u64), UNKNOWN, c);
+        let base: u64 = deref_handle(c.types.as_slice(), c.result);
+        let name: u64 = nodes[node].word - 1u64;
+        let record: TypeRecord = c.types[base];
+        if record.tag == T_NAMED {
+            let owner_token: u64 = type_token(c.types.as_slice(), base);
+            let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_STRUCT, source.slice(tokens[owner_token].start, tokens[owner_token].end));
+            if declaration != 0u64 {
+                let owner: Declaration = c.declarations[declaration - 1u64];
+                let field: u64 = find_member(source, tokens, c.members.as_slice(), owner.members, owner.count, source.slice(tokens[name].start, tokens[name].end));
+                if field != 0u64 {
+                    c.result = c.members[field - 1u64].ty;
+                    return c;
+                }
+            }
+        }
+        c = report(TYPE_MISMATCH, tokens[name].start, c);
+        c.result = UNKNOWN;
+        return c;
+    }
+    if kind == ast.UNARY {
+        c = infer(source, tokens, nodes, child(nodes, node, 0u64), expected, c);
+        let actual: u64 = c.result;
+        if nodes[node].value == token.BANG && actual == BOOL {
+            c.result = BOOL;
+            return c;
+        }
+        if nodes[node].value == token.MINUS && is_integer(c.types.as_slice(), actual) {
+            c.result = actual;
+            return c;
+        }
+        c = report(TYPE_MISMATCH, nodes[node].start, c);
+        c.result = UNKNOWN;
+        return c;
+    }
+    infer_binary(source, tokens, nodes, node, c)
+}
+
+fn infer_path(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let first: u64 = nodes[node].word - 1u64;
+    let last: u64 = nodes[node].path_last;
+    let length: u64 = path_length(tokens, first, last);
+    if length == 1u64 {
+        let text: Slice<u8> = source.slice(tokens[first].start, tokens[first].end);
+        let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, text);
+        if binding != 0u64 {
+            c.result = c.bindings[binding - 1u64].ty;
+            return c;
+        }
+        let constant: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_CONST, text);
+        if constant != 0u64 {
+            c.result = c.declarations[constant - 1u64].ty;
+            return c;
+        }
+    } else if length == 2u64 {
+        let owner: u64 = first;
+        let variant: u64 = segment(tokens, first, 1u64);
+        let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, source.slice(tokens[owner].start, tokens[owner].end));
+        if declaration != 0u64 {
+            let found: Declaration = c.declarations[declaration - 1u64];
+            let member: u64 = find_member(source, tokens, c.members.as_slice(), found.members, found.count, source.slice(tokens[variant].start, tokens[variant].end));
+            if member != 0u64 && c.members[member - 1u64].count == 0u64 {
+                return named_type(T_NAMED, source, tokens, owner, c);
+            }
+        }
+    }
+    c = report(IMMUTABLE_OR_UNKNOWN, nodes[node].start, c);
+    c.result = UNKNOWN;
+    c
+}
+
+fn infer_aggregate(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let first: u64 = nodes[node].word - 1u64;
+    let last: u64 = nodes[node].path_last;
+    let length: u64 = path_length(tokens, first, last);
+    let owner_name: Slice<u8> = source.slice(tokens[first].start, tokens[first].end);
+    // The fields the aggregate needs, as a range of `members`.
+    let mut known: bool = false;
+    let mut members: u64 = 0u64;
+    let mut count: u64 = 0u64;
+    if length == 1u64 {
+        let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_STRUCT, owner_name);
+        if declaration != 0u64 {
+            known = true;
+            members = c.declarations[declaration - 1u64].members;
+            count = c.declarations[declaration - 1u64].count;
+        }
+    } else if length == 2u64 {
+        let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, owner_name);
+        if declaration != 0u64 {
+            let found: Declaration = c.declarations[declaration - 1u64];
+            let variant: u64 = segment(tokens, first, 1u64);
+            let member: u64 = find_member(source, tokens, c.members.as_slice(), found.members, found.count, source.slice(tokens[variant].start, tokens[variant].end));
+            if member != 0u64 {
+                known = true;
+                members = c.members[member - 1u64].members;
+                count = c.members[member - 1u64].count;
+            }
+        }
+    }
+    if !known {
+        c = report(TYPE_MISMATCH, nodes[node].start, c);
+        c.result = UNKNOWN;
+        return c;
+    }
+    let mut link: u64 = nodes[node].first;
+    while link != 0u64 {
+        let field: u64 = link - 1u64;
+        link = nodes[field].next;
+        let name: u64 = nodes[field].word - 1u64;
+        let member: u64 = find_member(source, tokens, c.members.as_slice(), members, count, source.slice(tokens[name].start, tokens[name].end));
+        if member != 0u64 {
+            let expected: u64 = c.members[member - 1u64].ty;
+            let value: u64 = child(nodes, field, 0u64);
+            c = infer(source, tokens, nodes, value, expected, c);
+            let actual: u64 = c.result;
+            c = require_compatible(expected, actual, nodes[value].start, c);
+        } else {
+            c = report(TYPE_MISMATCH, nodes[field].start, c);
+        }
+    }
+    // Every required field the aggregate leaves out.
+    let mut index: u64 = members;
+    while index < members + count {
+        let wanted: u64 = c.members[index].name;
+        let mut given: bool = false;
+        let mut other: u64 = nodes[node].first;
+        while other != 0u64 {
+            let field: u64 = other - 1u64;
+            other = nodes[field].next;
+            if same_word(source, tokens, nodes[field].word - 1u64, wanted) {
+                given = true;
+            }
+        }
+        if !given {
+            c = report(TYPE_MISMATCH, nodes[node].start, c);
+        }
+        index += 1u64;
+    }
+    named_type(T_NAMED, source, tokens, first, c)
+}
+
+fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let callee: u64 = child(nodes, node, 0u64);
+    let arguments: u64 = child_count(nodes, node) - 1u64;
+    let empty: Array<u8, 0> = [];
+    if nodes[callee].kind == ast.PATH {
+        let first: u64 = nodes[callee].word - 1u64;
+        let length: u64 = path_length(tokens, first, nodes[callee].path_last);
+        if length == 2u64 && arguments == 0u64 && word_is(source, tokens, segment(tokens, first, 1u64), "new".as_slice()) {
+            if word_is(source, tokens, first, "Buffer".as_slice()) {
+                return intern(T_BUFFER, empty.as_slice(), UNKNOWN, 0u64, c);
+            }
+            if word_is(source, tokens, first, "Arena".as_slice()) {
+                return intern(T_ARENA, empty.as_slice(), UNKNOWN, 0u64, c);
+            }
+        }
+        if length == 1u64 {
+            let function: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_FN, source.slice(tokens[first].start, tokens[first].end));
+            if function != 0u64 {
+                let found: Declaration = c.declarations[function - 1u64];
+                if found.count != arguments {
+                    c = report(TYPE_MISMATCH, nodes[node].start, c);
+                }
+                let mut index: u64 = 0u64;
+                while index < arguments && index < found.count {
+                    let argument: u64 = child(nodes, node, index + 1u64);
+                    let expected: u64 = c.members[found.members + index].ty;
+                    c = infer(source, tokens, nodes, argument, expected, c);
+                    let actual: u64 = c.result;
+                    c = require_compatible(expected, actual, nodes[argument].start, c);
+                    index += 1u64;
+                }
+                c.result = found.ty;
+                return c;
+            }
+        }
+    }
+    if nodes[callee].kind == ast.FIELD_ACCESS {
+        let receiver_node: u64 = child(nodes, callee, 0u64);
+        c = infer(source, tokens, nodes, receiver_node, UNKNOWN, c);
+        let receiver: u64 = c.result;
+        let method: u64 = nodes[callee].word - 1u64;
+        if word_is(source, tokens, method, "push".as_slice()) {
+            // Growing a buffer changes it, unless it is reached through a
+            // handle.
+            let root: u64 = place_root(nodes, receiver_node);
+            if root != 0u64 {
+                let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, source.slice(tokens[root - 1u64].start, tokens[root - 1u64].end));
+                if binding != 0u64 {
+                    let found: Binding = c.bindings[binding - 1u64];
+                    if !found.mutable && c.types[found.ty].tag != T_HANDLE {
+                        c = report(IMMUTABLE_OR_UNKNOWN, nodes[receiver_node].start, c);
+                    }
+                }
+            }
+        }
+        return infer_method(source, tokens, nodes, node, receiver, method, arguments, c);
+    }
+    c = infer(source, tokens, nodes, callee, UNKNOWN, c);
+    c = report(TYPE_MISMATCH, nodes[node].start, c);
+    c.result = UNKNOWN;
+    c
+}
+
+fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, receiver_type: u64, method: u64, arguments: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let receiver: u64 = deref_handle(c.types.as_slice(), receiver_type);
+    let record: TypeRecord = c.types[receiver];
+    let tag: u64 = record.tag;
+    let name: Slice<u8> = source.slice(tokens[method].start, tokens[method].end);
+    let empty: Array<u8, 0> = [];
+    if bytes.equal(name, "as_slice".as_slice()) && arguments == 0u64 {
+        if tag == T_BUFFER || tag == T_ARRAY {
+            return intern(T_SLICE, empty.as_slice(), record.element, 0u64, c);
+        }
+        if tag == T_STRING {
+            c = integer_type("u8".as_slice(), c);
+            let byte: u64 = c.result;
+            return intern(T_SLICE, empty.as_slice(), byte, 0u64, c);
+        }
+    }
+    if bytes.equal(name, "slice".as_slice()) && tag == T_SLICE && arguments == 2u64 {
+        c = integer_type("u64".as_slice(), c);
+        let unsigned: u64 = c.result;
+        let mut index: u64 = 0u64;
+        while index < 2u64 {
+            let argument: u64 = child(nodes, node, index + 1u64);
+            c = infer(source, tokens, nodes, argument, unsigned, c);
+            let actual: u64 = c.result;
+            c = require_compatible(unsigned, actual, nodes[argument].start, c);
+            index += 1u64;
+        }
+        c.result = receiver;
+        return c;
+    }
+    if bytes.equal(name, "length".as_slice()) && arguments == 0u64
+        && (tag == T_ARRAY || tag == T_SLICE || tag == T_BUFFER || tag == T_BYTES || tag == T_STRING)
+    {
+        return integer_type("u64".as_slice(), c);
+    }
+    if bytes.equal(name, "push".as_slice()) && tag == T_BUFFER && arguments == 1u64 {
+        let argument: u64 = child(nodes, node, 1u64);
+        c = infer(source, tokens, nodes, argument, record.element, c);
+        let actual: u64 = c.result;
+        if record.element != UNKNOWN {
+            c = require_compatible(record.element, actual, nodes[argument].start, c);
+        }
+        c.result = UNIT;
+        return c;
+    }
+    if bytes.equal(name, "alloc".as_slice()) && tag == T_ARENA && arguments == 1u64 {
+        let argument: u64 = child(nodes, node, 1u64);
+        c = infer(source, tokens, nodes, argument, record.element, c);
+        let actual: u64 = c.result;
+        c = require_compatible(record.element, actual, nodes[argument].start, c);
+        return intern(T_HANDLE, empty.as_slice(), record.element, 0u64, c);
+    }
+    if bytes.equal(name, "release".as_slice()) && tag == T_ARENA && arguments == 0u64 {
+        c.result = UNIT;
+        return c;
+    }
+    if tag == T_CAPABILITY {
+        let capability: u64 = type_token(c.types.as_slice(), receiver);
+        let read: bool = word_is(source, tokens, capability, "PackageRead".as_slice())
+            && (bytes.equal(name, "status".as_slice()) || bytes.equal(name, "read".as_slice())) && arguments == 1u64;
+        let write: bool = word_is(source, tokens, capability, "BuildWrite".as_slice()) && bytes.equal(name, "write".as_slice()) && arguments == 2u64;
+        if read || write {
+            c = integer_type("u8".as_slice(), c);
+            let byte: u64 = c.result;
+            c = intern(T_SLICE, empty.as_slice(), byte, 0u64, c);
+            let view: u64 = c.result;
+            let mut index: u64 = 0u64;
+            while index < arguments {
+                let argument: u64 = child(nodes, node, index + 1u64);
+                c = infer(source, tokens, nodes, argument, view, c);
+                let actual: u64 = c.result;
+                c = require_compatible(view, actual, nodes[argument].start, c);
+                index += 1u64;
+            }
+            if read && bytes.equal(name, "read".as_slice()) {
+                return intern(T_BUFFER, empty.as_slice(), byte, 0u64, c);
+            }
+            return integer_type("u64".as_slice(), c);
+        }
+    }
+    if bytes.equal(name, "as_bytes".as_slice()) && tag == T_ARRAY && arguments == 0u64 {
+        let element: TypeRecord = c.types[record.element];
+        if element.tag == T_INT && element.length == U8 {
+            c.result = BYTES;
+            return c;
+        }
+    }
+    if bytes.equal(name, "decode_utf8_or_trap".as_slice()) && tag == T_BYTES && arguments == 0u64 {
+        c.result = STRING;
+        return c;
+    }
+    if bytes.equal(name, "wrapping_add".as_slice()) && tag == T_INT && arguments == 1u64 {
+        let argument: u64 = child(nodes, node, 1u64);
+        c = infer(source, tokens, nodes, argument, receiver, c);
+        let actual: u64 = c.result;
+        c = require_compatible(receiver, actual, nodes[argument].start, c);
+        c.result = receiver;
+        return c;
+    }
+    c = report(TYPE_MISMATCH, nodes[node].start, c);
+    c.result = UNKNOWN;
+    c
+}
+
+fn infer_binary(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let operator: u64 = nodes[node].value;
+    let left: u64 = child(nodes, node, 0u64);
+    let right: u64 = child(nodes, node, 1u64);
+    let at: u64 = nodes[node].start;
+    if operator == token.PIPE_PIPE || operator == token.AMP_AMP {
+        c = infer(source, tokens, nodes, left, BOOL, c);
+        let left_ty: u64 = c.result;
+        c = infer(source, tokens, nodes, right, BOOL, c);
+        let right_ty: u64 = c.result;
+        c = require_compatible(BOOL, left_ty, nodes[left].start, c);
+        c = require_compatible(BOOL, right_ty, nodes[right].start, c);
+        c.result = BOOL;
+        return c;
+    }
+    c = infer(source, tokens, nodes, left, UNKNOWN, c);
+    let left_ty: u64 = c.result;
+    c = infer(source, tokens, nodes, right, left_ty, c);
+    let right_ty: u64 = c.result;
+    if operator == token.EQUAL_EQUAL || operator == token.BANG_EQUAL {
+        c = require_compatible(left_ty, right_ty, at, c);
+        c.result = BOOL;
+        return c;
+    }
+    if !is_integer(c.types.as_slice(), left_ty) || !is_integer(c.types.as_slice(), right_ty) {
+        c = report(TYPE_MISMATCH, at, c);
+    }
+    c = require_compatible(left_ty, right_ty, at, c);
+    if operator == token.LESS || operator == token.LESS_EQUAL || operator == token.GREATER || operator == token.GREATER_EQUAL {
+        c.result = BOOL;
+        return c;
+    }
+    if (operator == token.SLASH || operator == token.PERCENT) && nodes[right].kind == ast.INTEGER && nodes[right].value == 0u64 {
+        c = report(LITERAL_OUT_OF_RANGE, nodes[right].start, c);
+    }
+    c.result = left_ty;
+    c
+}
+
+fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, expected: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    c = infer(source, tokens, nodes, child(nodes, node, 0u64), UNKNOWN, c);
+    let scrutinee: u64 = c.result;
+    let saved_wildcard: bool = c.wildcard;
+    let base: u64 = c.covered_live;
+    c.wildcard = false;
+    let mut result: u64 = NEVER;
+    let mut link: u64 = nodes[child(nodes, node, 0u64)].next;
+    while link != 0u64 {
+        let arm: u64 = link - 1u64;
+        link = nodes[arm].next;
+        c = open_scope(c);
+        c = check_pattern(source, tokens, nodes, child(nodes, arm, 0u64), scrutinee, c);
+        let mut value: u64 = child(nodes, arm, 1u64);
+        if nodes[arm].flag == 1u64 {
+            let guard: u64 = value;
+            c = infer(source, tokens, nodes, guard, BOOL, c);
+            let guard_ty: u64 = c.result;
+            c = require_compatible(BOOL, guard_ty, nodes[guard].start, c);
+            value = child(nodes, arm, 2u64);
+        }
+        c = infer(source, tokens, nodes, value, expected, c);
+        let arm_ty: u64 = c.result;
+        if result == NEVER {
+            result = arm_ty;
+        } else {
+            c = unify(result, arm_ty, nodes[arm].start, c);
+            result = c.result;
+        }
+        c = close_scope(c);
+    }
+    // A match on an enum names every variant, or has a wildcard.
+    let record: TypeRecord = c.types[scrutinee];
+    if record.tag == T_NAMED && !c.wildcard {
+        let enum_token: u64 = type_token(c.types.as_slice(), scrutinee);
+        let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, source.slice(tokens[enum_token].start, tokens[enum_token].end));
+        if declaration != 0u64 {
+            let found: Declaration = c.declarations[declaration - 1u64];
+            let mut missing: bool = false;
+            let mut variant: u64 = found.members;
+            while variant < found.members + found.count {
+                let mut seen: bool = false;
+                let mut at: u64 = base;
+                while at < c.covered_live {
+                    if same_word(source, tokens, c.covered[at], c.members[variant].name) {
+                        seen = true;
+                    }
+                    at += 1u64;
+                }
+                if !seen {
+                    missing = true;
+                }
+                variant += 1u64;
+            }
+            if missing {
+                c = report(NON_EXHAUSTIVE_MATCH, nodes[node].start, c);
+            }
+        }
+    }
+    c.covered_live = base;
+    c.wildcard = saved_wildcard;
+    c.result = result;
+    c
+}
+
+fn cover(name: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let at: u64 = c.covered_live;
+    if at < c.covered.length() {
+        c.covered[at] = name;
+    } else {
+        c.covered.push(name);
+    }
+    c.covered_live += 1u64;
+    c
+}
+
+fn check_pattern(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pattern: u64, expected: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let kind: u64 = nodes[pattern].kind;
+    if kind == ast.PATTERN_WILDCARD {
+        c.wildcard = true;
+        return c;
+    }
+    if kind == ast.PATTERN_BINDING {
+        return define_at(source, tokens, nodes[pattern].word - 1u64, nodes[pattern].start, expected, c);
+    }
+    if kind == ast.PATTERN_BOOL {
+        return require_compatible(BOOL, expected, nodes[pattern].start, c);
+    }
+    if kind == ast.PATTERN_INTEGER {
+        if !is_integer(c.types.as_slice(), expected) {
+            c = report(TYPE_MISMATCH, nodes[pattern].start, c);
+        }
+        return c;
+    }
+    let record: TypeRecord = c.types[expected];
+    if record.tag != T_NAMED {
+        return report(TYPE_MISMATCH, nodes[pattern].start, c);
+    }
+    let first: u64 = nodes[pattern].word - 1u64;
+    let enum_token: u64 = type_token(c.types.as_slice(), expected);
+    let enum_name: Slice<u8> = source.slice(tokens[enum_token].start, tokens[enum_token].end);
+    if path_length(tokens, first, nodes[pattern].path_last) != 2u64 || !word_is(source, tokens, first, enum_name) {
+        return report(TYPE_MISMATCH, nodes[pattern].start, c);
+    }
+    let declaration: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_ENUM, enum_name);
+    let variant_token: u64 = segment(tokens, first, 1u64);
+    let mut variant: u64 = 0u64;
+    if declaration != 0u64 {
+        let found: Declaration = c.declarations[declaration - 1u64];
+        variant = find_member(source, tokens, c.members.as_slice(), found.members, found.count, source.slice(tokens[variant_token].start, tokens[variant_token].end));
+    }
+    if variant == 0u64 {
+        return report(TYPE_MISMATCH, nodes[pattern].start, c);
+    }
+    c = cover(variant_token, c);
+    let fields: Member = c.members[variant - 1u64];
+    let mut link: u64 = nodes[pattern].first;
+    while link != 0u64 {
+        let field: u64 = link - 1u64;
+        link = nodes[field].next;
+        let name: u64 = nodes[field].word - 1u64;
+        let member: u64 = find_member(source, tokens, c.members.as_slice(), fields.members, fields.count, source.slice(tokens[name].start, tokens[name].end));
+        if member == 0u64 {
+            c = report(TYPE_MISMATCH, nodes[field].start, c);
+        } else {
+            let field_ty: u64 = c.members[member - 1u64].ty;
+            if nodes[field].first != 0u64 {
+                c = check_pattern(source, tokens, nodes, child(nodes, field, 0u64), field_ty, c);
+            } else {
+                c = define(source, tokens, name, field_ty, false, c);
+            }
+        }
+    }
+    c
+}
+
+// `define`, but the duplicate is reported at `at` rather than at the name.
+fn define_at(source: Slice<u8>, tokens: Slice<Token>, name: u64, at: u64, ty: u64, check: Check) -> Check {
+    let before: u64 = check.diagnostics.length();
+    let mut c: Check = define(source, tokens, name, ty, false, check);
+    if c.diagnostics.length() > before {
+        c.diagnostics[before].at = at;
+    }
+    c
+}

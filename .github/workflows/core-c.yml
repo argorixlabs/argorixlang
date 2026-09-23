@@ -377,6 +377,15 @@ jobs:
           --bundle target/core-c/parser-bundle
           --work-dir target/core-c/parser
           --report target/core-c/report-parser.json
+      - name: Run the checker fixtures (ESP-012)
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc ${{ matrix.cc }} ${{ matrix.flags }}
+          --cases tests/selfhost/check/cases.json
+          --bundle target/core-c/check-bundle
+          --work-dir target/core-c/check
+          --report target/core-c/report-check.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:

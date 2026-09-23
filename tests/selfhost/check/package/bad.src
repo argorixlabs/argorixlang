@@ -1,0 +1,3 @@
+core 0.1;
+module q;
+fn f(x: u64) -> bool { let y: u8 = 300u8; x }

@@ -10,3 +10,5 @@ tests/selfhost/lexer/samples/** -text
 tests/selfhost/lexer/package/** -text
 tests/selfhost/parser/package/** -text
 tests/selfhost/parser/samples/** -text
+tests/selfhost/check/samples/** -text
+tests/selfhost/check/package/** -text

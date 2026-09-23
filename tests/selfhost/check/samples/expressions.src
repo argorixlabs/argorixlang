@@ -1,0 +1,28 @@
+core 0.1;
+module samples.expressions;
+
+struct Point { x: u64, y: u64, }
+enum Shape { Dot, Box { w: u64, h: u64, }, }
+
+fn f(a: u64, b: bool, s: string, p: Point) -> u64 {
+    let x: u64 = a + b;
+    let y: bool = a < true;
+    let z: u64 = a / 0u64 % (0u64);
+    let w: i8 = 200;
+    let q: u64 = unknown + p.missing + p.x;
+    let r: u8 = s[0u64];
+    let t: u64 = a[0u64];
+    let u: Point = Point { x: 1u64, z: 2u64 };
+    let v: Shape = Shape::Box { w: 1u64 };
+    let e: Shape = Shape::Dot;
+    let g: Shape = Shape::Nope;
+    let h: u64 = f(a, b);
+    let i: u64 = f(a, b, s, p, a);
+    let j: u64 = a.frobnicate();
+    let k: u64 = 3u64(4u64);
+    let l: bool = !a;
+    let m: u64 = -b;
+    let n: u64 = if b { 1u64 } else { true };
+    let o: u64 = if a { 1u64 } else { 2u64 };
+    a
+}
