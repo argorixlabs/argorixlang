@@ -48,8 +48,9 @@ now also sorted.
 | Subtask | Codes |
 | --- | --- |
 | ESP-012.A (done) | `DuplicateDeclaration`, `ImportNotLocked`, `InfiniteType`, `TypeMismatch`, `ImmutableAssignmentOrUnknownName`, `LiteralOutOfRangeOrConstantTrap`, `ControlOutsideLoop`, `StringNotByteIndexable`, `NonExhaustiveMatch`, `CapabilityEscapes` |
-| ESP-012.B | `UseAfterMove`, `MoveInLoop`, `MoveOutOfPlace`, `ResourceTemporary`, `ResourceInArena`, `SliceEscapes`, `SliceAliasesMove` |
+| ESP-012.B (done) | `UseAfterMove`, `MoveInLoop`, `MoveOutOfPlace`, `ResourceTemporary`, `ResourceInArena`, `SliceEscapes`, `SliceAliasesMove` |
 | ESP-012.C | module linking: `UnknownImportedSymbol` and the other resolution errors of `core_link` |
 
-Until a subtask lands, the differential removes its codes from the stage0 dump
-before comparing.
+With A and B in place, the differential compares the whole stage0 dump. The
+linker (C) is the remaining piece: until it lands, files are checked one at a
+time.

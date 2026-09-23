@@ -1,11 +1,11 @@
-//! ESP-012.A: the Argorix checker (`compiler/check.argx`) against the stage0 one.
+//! ESP-012: the Argorix checker (`compiler/check.argx`) against the stage0 one.
 //!
 //! `tests/selfhost/check/check_files.argx` is compiled through the transitional
 //! C backend and run with a package root holding every sample. It reads each
 //! sample through the compiler-host boundary, checks it with the Argorix checker
 //! and writes its diagnostics dump (`spec/core/check.md`). Each dump must
 //! equal, byte for byte, what the stage0 checker produces (`argorixc
-//! core-check-dump`) without the codes of ESP-012.B. The samples are the cases in
+//! core-check-dump`). The samples are the cases in
 //! `tests/selfhost/check/samples/`, the parser and lexer samples, the compiler's own
 //! sources, the standard library, the stdlib, runtime and regression fixtures
 //! and the Core spec corpus.
@@ -22,43 +22,13 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Codes of ESP-012.B (ownership and views), which the Argorix checker does not
-/// report yet.
-const LATER_CODES: [&str; 7] = [
-    "UseAfterMove",
-    "MoveInLoop",
-    "MoveOutOfPlace",
-    "ResourceTemporary",
-    "ResourceInArena",
-    "SliceEscapes",
-    "SliceAliasesMove",
-];
-
-/// The dump without the lines of `LATER_CODES`; `ok` if nothing is left.
-fn without_later_codes(dump: &str) -> String {
-    let kept: String = dump
-        .lines()
-        .filter(|line| {
-            !LATER_CODES
-                .iter()
-                .any(|code| line.ends_with(&format!("[{code}]")))
-        })
-        .map(|line| format!("{line}\n"))
-        .collect();
-    if kept.is_empty() {
-        "ok\n".into()
-    } else {
-        kept
-    }
-}
-
 /// The stage0 dump, on a stack as large as `argorixc` gives itself: the
 /// deep-nesting samples recurse further than a test thread's default stack.
 fn on_large_stack(source: &[u8]) -> String {
     let source = source.to_vec();
     std::thread::Builder::new()
         .stack_size(64 << 20)
-        .spawn(move || without_later_codes(&core_check_dump(&source)))
+        .spawn(move || core_check_dump(&source))
         .unwrap()
         .join()
         .unwrap()

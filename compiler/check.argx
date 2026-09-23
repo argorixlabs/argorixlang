@@ -1,17 +1,20 @@
 core 0.1;
 module compiler.check;
 
-// The Argorix Core checker, in Argorix (ESP-012.A): declarations, types,
-// scopes, name resolution, the typing of expressions and statements, loop
-// control, match exhaustiveness and literal ranges. It follows the stage0
+// The Argorix Core checker, in Argorix (ESP-012). It follows the stage0
 // checker (`crates/argorix_semantics/src/core.rs`) rule for rule and reports
-// the same diagnostics at the same places, in the same order.
+// the same diagnostics at the same places, in the same order:
 //
-// Ownership, views and the linker are not here yet: the moves of resources
-// (`UseAfterMove`, `MoveInLoop`, `MoveOutOfPlace`, `ResourceTemporary`,
-// `ResourceInArena`) and slice escapes (`SliceEscapes`, `SliceAliasesMove`)
-// are ESP-012.B, and a program is checked on its own, as if its locked set
-// held only itself, until ESP-012.C links modules.
+// - ESP-012.A: declarations, types, scopes, name resolution, the typing of
+//   expressions and statements, loop control, match exhaustiveness, literal
+//   ranges and capability positions;
+// - ESP-012.B: ownership of resources (a Buffer, or a value holding one moves
+//   instead of copying; every path is followed, and a binding moved on any
+//   path that reaches a use is an error) and views (`x.as_slice()` only as a
+//   direct argument, never alongside a move of `x`).
+//
+// A program is checked on its own, as if its locked set held only itself,
+// until ESP-012.C links modules.
 
 import stdlib.bytes;
 import compiler.token;
@@ -36,7 +39,9 @@ pub struct Declaration { kind: u64, name: u64, node: u64, ty: u64, members: u64,
 // looked up by position), its type, and for a variant its own fields.
 pub struct Member { name: u64, ty: u64, members: u64, count: u64, }
 
-pub struct Binding { name: u64, ty: u64, mutable: bool, depth: u64, }
+// `id` is unique within the program, as in stage0, so a moved binding is told
+// apart from a later one that shadows it.
+pub struct Binding { name: u64, ty: u64, mutable: bool, depth: u64, id: u64, }
 
 pub struct Diagnostic { code: u64, at: u64, }
 
@@ -59,6 +64,21 @@ pub struct Check {
     wildcard: bool,
     diagnostics: Buffer<Diagnostic>,
     result: u64,
+    // Ownership (ESP-012.B): the ids of the bindings moved on some path that
+    // reaches the current point, and whether it can be reached at all.
+    moved: Buffer<u64>,
+    reachable: bool,
+    next_binding: u64,
+    // Set while checking a call argument that is `x.as_slice()` itself.
+    view_argument: bool,
+    // The moved-sets that leave the loops being checked: records of
+    // [kind, count, ids...], `BREAK_EXIT` or `CONTINUE_EXIT`.
+    exits: Buffer<u64>,
+    exits_live: u64,
+    // Per loop being checked: (the first binding id declared inside it, the
+    // start of its exits).
+    loops: Buffer<u64>,
+    loops_live: u64,
 }
 
 // Type tags.
@@ -102,6 +122,16 @@ pub const CONTROL_OUTSIDE_LOOP: u64 = 7u64;
 pub const STRING_NOT_INDEXABLE: u64 = 8u64;
 pub const NON_EXHAUSTIVE_MATCH: u64 = 9u64;
 pub const CAPABILITY_ESCAPES: u64 = 10u64;
+pub const USE_AFTER_MOVE: u64 = 11u64;
+pub const MOVE_IN_LOOP: u64 = 12u64;
+pub const MOVE_OUT_OF_PLACE: u64 = 13u64;
+pub const RESOURCE_TEMPORARY: u64 = 14u64;
+pub const RESOURCE_IN_ARENA: u64 = 15u64;
+pub const SLICE_ESCAPES: u64 = 16u64;
+pub const SLICE_ALIASES_MOVE: u64 = 17u64;
+
+const BREAK_EXIT: u64 = 1u64;
+const CONTINUE_EXIT: u64 = 2u64;
 
 // ------------------------------------------------------------------ entry
 
@@ -168,7 +198,14 @@ fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
     if code == CONTROL_OUTSIDE_LOOP { return bytes.append(out, "ControlOutsideLoop".as_slice()); }
     if code == STRING_NOT_INDEXABLE { return bytes.append(out, "StringNotByteIndexable".as_slice()); }
     if code == NON_EXHAUSTIVE_MATCH { return bytes.append(out, "NonExhaustiveMatch".as_slice()); }
-    bytes.append(out, "CapabilityEscapes".as_slice())
+    if code == CAPABILITY_ESCAPES { return bytes.append(out, "CapabilityEscapes".as_slice()); }
+    if code == USE_AFTER_MOVE { return bytes.append(out, "UseAfterMove".as_slice()); }
+    if code == MOVE_IN_LOOP { return bytes.append(out, "MoveInLoop".as_slice()); }
+    if code == MOVE_OUT_OF_PLACE { return bytes.append(out, "MoveOutOfPlace".as_slice()); }
+    if code == RESOURCE_TEMPORARY { return bytes.append(out, "ResourceTemporary".as_slice()); }
+    if code == RESOURCE_IN_ARENA { return bytes.append(out, "ResourceInArena".as_slice()); }
+    if code == SLICE_ESCAPES { return bytes.append(out, "SliceEscapes".as_slice()); }
+    bytes.append(out, "SliceAliasesMove".as_slice())
 }
 
 fn empty_check() -> Check {
@@ -189,6 +226,14 @@ fn empty_check() -> Check {
         wildcard: false,
         diagnostics: Buffer::new(),
         result: 0u64,
+        moved: Buffer::new(),
+        reachable: true,
+        next_binding: 0u64,
+        view_argument: false,
+        exits: Buffer::new(),
+        exits_live: 0u64,
+        loops: Buffer::new(),
+        loops_live: 0u64,
     };
     // Unknown, never, unit, bool, bytes, string: positions 0 to 5.
     let mut tag: u64 = 0u64;
@@ -449,6 +494,10 @@ fn lower_type(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
     if contains_capability(c.types.as_slice(), element) {
         let at: u64 = nodes[node].start;
         c = report(CAPABILITY_ESCAPES, at, c);
+    }
+    if contains_slice(c.types.as_slice(), element) {
+        let at: u64 = nodes[node].start;
+        c = report(SLICE_ESCAPES, at, c);
     }
     let empty: Array<u8, 0> = [];
     if bytes.equal(name, "Array".as_slice()) {
@@ -718,6 +767,10 @@ fn check_functions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
         c.depth = 1u64;
         c.loop_depth = 0u64;
         c.break_live = 0u64;
+        c.moved = Buffer::new();
+        c.reachable = true;
+        c.exits_live = 0u64;
+        c.loops_live = 0u64;
         let children: u64 = child_count(nodes, item);
         let parameters: u64 = children - 2u64;
         c = lower_type(source, tokens, nodes, child(nodes, item, parameters), c);
@@ -821,7 +874,8 @@ fn define(source: Slice<u8>, tokens: Slice<Token>, name: u64, ty: u64, mutable: 
     if duplicate {
         c = report(DUPLICATE_DECLARATION, tokens[name].start, c);
     }
-    let binding: Binding = Binding { name: name, ty: ty, mutable: mutable, depth: c.depth };
+    let binding: Binding = Binding { name: name, ty: ty, mutable: mutable, depth: c.depth, id: c.next_binding };
+    c.next_binding += 1u64;
     if c.live < c.bindings.length() {
         let live: u64 = c.live;
         c.bindings[live] = binding;
@@ -885,7 +939,10 @@ fn check_block(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, bloc
         }
     }
     if tail != 0u64 {
+        // The tail leaves the block, so a resource local named there moves.
         c = infer(source, tokens, nodes, tail - 1u64, UNKNOWN, c);
+        let ty: u64 = c.result;
+        c = consume(source, tokens, nodes, tail - 1u64, ty, c);
     } else if last_kind == ast.RETURN || last_kind == ast.BREAK || last_kind == ast.CONTINUE {
         c.result = NEVER;
     } else {
@@ -914,6 +971,7 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
         }
         c = infer(source, tokens, nodes, value, expected, c);
         let mut actual: u64 = c.result;
+        c = consume(source, tokens, nodes, value, actual, c);
         if annotated {
             c = require_compatible(expected, actual, nodes[value].start, c);
             actual = merge_types(c.types.as_slice(), expected, actual);
@@ -927,7 +985,17 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
         let target_ty: u64 = c.result;
         c = infer(source, tokens, nodes, value, target_ty, c);
         let value_ty: u64 = c.result;
+        c = consume(source, tokens, nodes, value, value_ty, c);
         c = require_compatible(target_ty, value_ty, nodes[value].start, c);
+        // A moved local that is assigned owns a value again.
+        if nodes[target].kind == ast.PATH && nodes[target].word - 1u64 == nodes[target].path_last {
+            let name: u64 = nodes[target].word - 1u64;
+            let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, source.slice(tokens[name].start, tokens[name].end));
+            if binding != 0u64 {
+                let id: u64 = c.bindings[binding - 1u64].id;
+                c = unmark(id, c);
+            }
+        }
         if nodes[node].value != token.ASSIGN && !is_integer(c.types.as_slice(), target_ty) {
             c = report(TYPE_MISMATCH, nodes[node].start, c);
         }
@@ -938,11 +1006,16 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
         c = infer(source, tokens, nodes, condition, BOOL, c);
         let actual: u64 = c.result;
         c = require_compatible(BOOL, actual, nodes[condition].start, c);
+        let entry: Buffer<u64> = copy_ids(c.moved.as_slice());
+        let entry_reachable: bool = c.reachable;
         c.loop_depth += 1u64;
-        c = check_block(source, tokens, nodes, child(nodes, node, 1u64), true, c);
+        c = begin_loop(c);
+        let body: u64 = child(nodes, node, 1u64);
+        c = check_block(source, tokens, nodes, body, true, c);
+        c = end_loop(entry.as_slice(), nodes[body].start, c);
         c = drop_breaks(c);
         c.loop_depth -= 1u64;
-        return c;
+        return close_loop(entry.as_slice(), entry_reachable, c);
     }
     if kind == ast.BREAK {
         if c.loop_depth == 0u64 {
@@ -950,27 +1023,43 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
         }
         let mut ty: u64 = UNIT;
         if nodes[node].first != 0u64 {
-            c = infer(source, tokens, nodes, child(nodes, node, 0u64), UNKNOWN, c);
+            let value: u64 = child(nodes, node, 0u64);
+            c = infer(source, tokens, nodes, value, UNKNOWN, c);
             ty = c.result;
+            c = consume(source, tokens, nodes, value, ty, c);
         }
-        return push_break(ty, c);
+        c = push_break(ty, c);
+        c = record_exit(BREAK_EXIT, c);
+        c.reachable = false;
+        return c;
     }
     if kind == ast.CONTINUE {
         if c.loop_depth == 0u64 {
             return report(CONTROL_OUTSIDE_LOOP, nodes[node].start, c);
         }
+        c = record_exit(CONTINUE_EXIT, c);
+        c.reachable = false;
         return c;
     }
     if kind == ast.RETURN {
         let expected: u64 = c.expected_return;
         let mut actual: u64 = UNIT;
         if nodes[node].first != 0u64 {
-            c = infer(source, tokens, nodes, child(nodes, node, 0u64), expected, c);
+            let value: u64 = child(nodes, node, 0u64);
+            c = infer(source, tokens, nodes, value, expected, c);
             actual = c.result;
+            c = consume(source, tokens, nodes, value, actual, c);
         }
-        return require_compatible(expected, actual, nodes[node].start, c);
+        c = require_compatible(expected, actual, nodes[node].start, c);
+        c.reachable = false;
+        return c;
     }
-    infer(source, tokens, nodes, child(nodes, node, 0u64), UNKNOWN, c)
+    // A value dropped on the floor: a resource local named on its own is
+    // released here, so it counts as moved.
+    let value: u64 = child(nodes, node, 0u64);
+    c = infer(source, tokens, nodes, value, UNKNOWN, c);
+    let ty: u64 = c.result;
+    consume(source, tokens, nodes, value, ty, c)
 }
 
 fn push_break(ty: u64, check: Check) -> Check {
@@ -1092,6 +1181,7 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
             link = nodes[value].next;
             c = infer(source, tokens, nodes, value, element, c);
             let actual: u64 = c.result;
+            c = consume(source, tokens, nodes, value, actual, c);
             if element == UNKNOWN {
                 element = actual;
             } else {
@@ -1108,20 +1198,37 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         c = infer(source, tokens, nodes, condition, BOOL, c);
         let condition_ty: u64 = c.result;
         c = require_compatible(BOOL, condition_ty, nodes[condition].start, c);
+        let entry: Buffer<u64> = copy_ids(c.moved.as_slice());
+        let entry_reachable: bool = c.reachable;
         c = check_block(source, tokens, nodes, child(nodes, node, 1u64), true, c);
         let then_ty: u64 = c.result;
+        let then_moved: Buffer<u64> = copy_ids(c.moved.as_slice());
+        let then_reachable: bool = c.reachable;
+        c.moved = copy_ids(entry.as_slice());
+        c.reachable = entry_reachable;
         let mut else_ty: u64 = UNIT;
         if child_count(nodes, node) == 3u64 {
-            c = infer(source, tokens, nodes, child(nodes, node, 2u64), expected, c);
+            let other: u64 = child(nodes, node, 2u64);
+            c = infer(source, tokens, nodes, other, expected, c);
             else_ty = c.result;
+            c = consume(source, tokens, nodes, other, else_ty, c);
         }
+        let else_moved: Buffer<u64> = copy_ids(c.moved.as_slice());
+        let else_reachable: bool = c.reachable;
+        c = join_two(then_moved.as_slice(), then_reachable, else_moved.as_slice(), else_reachable, c);
         return unify(then_ty, else_ty, nodes[node].start, c);
     }
     if kind == ast.MATCH { return infer_match(source, tokens, nodes, node, expected, c); }
     if kind == ast.LOOP {
+        let entry: Buffer<u64> = copy_ids(c.moved.as_slice());
         c.loop_depth += 1u64;
         let base: u64 = c.break_live;
-        c = check_block(source, tokens, nodes, child(nodes, node, 0u64), true, c);
+        c = begin_loop(c);
+        let body: u64 = child(nodes, node, 0u64);
+        c = check_block(source, tokens, nodes, body, true, c);
+        c = end_loop(entry.as_slice(), nodes[body].start, c);
+        // Only a `break` leaves a `loop`.
+        c = close_loop(entry.as_slice(), false, c);
         // The types of this loop's `break`s, unified in order.
         let mut result: u64 = NEVER;
         let mut first: bool = true;
@@ -1148,6 +1255,7 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         let index: u64 = child(nodes, node, 1u64);
         c = infer(source, tokens, nodes, value, UNKNOWN, c);
         let base: u64 = c.result;
+        c = require_place(source, tokens, nodes, value, base, c);
         c = integer_type("u64".as_slice(), c);
         let unsigned: u64 = c.result;
         c = infer(source, tokens, nodes, index, unsigned, c);
@@ -1174,8 +1282,11 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         return c;
     }
     if kind == ast.FIELD_ACCESS {
-        c = infer(source, tokens, nodes, child(nodes, node, 0u64), UNKNOWN, c);
-        let base: u64 = deref_handle(c.types.as_slice(), c.result);
+        let value: u64 = child(nodes, node, 0u64);
+        c = infer(source, tokens, nodes, value, UNKNOWN, c);
+        let inferred: u64 = c.result;
+        c = require_place(source, tokens, nodes, value, inferred, c);
+        let base: u64 = deref_handle(c.types.as_slice(), inferred);
         let name: u64 = nodes[node].word - 1u64;
         let record: TypeRecord = c.types[base];
         if record.tag == T_NAMED {
@@ -1221,7 +1332,11 @@ fn infer_path(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
         let text: Slice<u8> = source.slice(tokens[first].start, tokens[first].end);
         let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, text);
         if binding != 0u64 {
-            c.result = c.bindings[binding - 1u64].ty;
+            let found: Binding = c.bindings[binding - 1u64];
+            if contains_id(c.moved.as_slice(), found.id) && c.reachable {
+                c = report(USE_AFTER_MOVE, nodes[node].start, c);
+            }
+            c.result = found.ty;
             return c;
         }
         let constant: u64 = find_declaration(source, tokens, c.declarations.as_slice(), D_CONST, text);
@@ -1292,6 +1407,7 @@ fn infer_aggregate(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
             let value: u64 = child(nodes, field, 0u64);
             c = infer(source, tokens, nodes, value, expected, c);
             let actual: u64 = c.result;
+            c = consume(source, tokens, nodes, value, actual, c);
             c = require_compatible(expected, actual, nodes[value].start, c);
         } else {
             c = report(TYPE_MISMATCH, nodes[field].start, c);
@@ -1341,13 +1457,42 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
                 if found.count != arguments {
                     c = report(TYPE_MISMATCH, nodes[node].start, c);
                 }
+                // Parameters are passed by value: a resource argument moves into
+                // the callee. `x.as_slice()` is a view only as a direct argument.
+                let before: Buffer<u64> = copy_ids(c.moved.as_slice());
+                let mut viewed: Buffer<u64> = Buffer::new();
                 let mut index: u64 = 0u64;
+                while index < arguments {
+                    let root: u64 = viewed_root(source, tokens, nodes, child(nodes, node, index + 1u64));
+                    if root != 0u64 {
+                        viewed.push(root);
+                    }
+                    index += 1u64;
+                }
+                index = 0u64;
                 while index < arguments && index < found.count {
                     let argument: u64 = child(nodes, node, index + 1u64);
                     let expected: u64 = c.members[found.members + index].ty;
+                    c.view_argument = is_view(source, tokens, nodes, argument);
                     c = infer(source, tokens, nodes, argument, expected, c);
+                    c.view_argument = false;
                     let actual: u64 = c.result;
+                    c = consume(source, tokens, nodes, argument, actual, c);
                     c = require_compatible(expected, actual, nodes[argument].start, c);
+                    index += 1u64;
+                }
+                // The storage a view points into cannot also move into the same
+                // call.
+                index = 0u64;
+                while index < viewed.length() {
+                    let root: u64 = viewed[index] - 1u64;
+                    let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, source.slice(tokens[root].start, tokens[root].end));
+                    if binding != 0u64 {
+                        let id: u64 = c.bindings[binding - 1u64].id;
+                        if contains_id(c.moved.as_slice(), id) && !contains_id(before.as_slice(), id) && c.reachable {
+                            c = report(SLICE_ALIASES_MOVE, nodes[node].start, c);
+                        }
+                    }
                     index += 1u64;
                 }
                 c.result = found.ty;
@@ -1356,9 +1501,12 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
         }
     }
     if nodes[callee].kind == ast.FIELD_ACCESS {
+        let view_allowed: bool = c.view_argument;
+        c.view_argument = false;
         let receiver_node: u64 = child(nodes, callee, 0u64);
         c = infer(source, tokens, nodes, receiver_node, UNKNOWN, c);
         let receiver: u64 = c.result;
+        c = require_place(source, tokens, nodes, receiver_node, receiver, c);
         let method: u64 = nodes[callee].word - 1u64;
         if word_is(source, tokens, method, "push".as_slice()) {
             // Growing a buffer changes it, unless it is reached through a
@@ -1374,7 +1522,7 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
                 }
             }
         }
-        return infer_method(source, tokens, nodes, node, receiver, method, arguments, c);
+        return infer_method(source, tokens, nodes, node, receiver, method, arguments, view_allowed, c);
     }
     c = infer(source, tokens, nodes, callee, UNKNOWN, c);
     c = report(TYPE_MISMATCH, nodes[node].start, c);
@@ -1382,14 +1530,18 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
     c
 }
 
-fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, receiver_type: u64, method: u64, arguments: u64, check: Check) -> Check {
+fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, receiver_type: u64, method: u64, arguments: u64, view_allowed: bool, check: Check) -> Check {
     let mut c: Check = check;
     let receiver: u64 = deref_handle(c.types.as_slice(), receiver_type);
     let record: TypeRecord = c.types[receiver];
     let tag: u64 = record.tag;
     let name: Slice<u8> = source.slice(tokens[method].start, tokens[method].end);
     let empty: Array<u8, 0> = [];
-    if bytes.equal(name, "as_slice".as_slice()) && arguments == 0u64 {
+    if bytes.equal(name, "as_slice".as_slice()) && arguments == 0u64 && (tag == T_BUFFER || tag == T_ARRAY || tag == T_STRING) {
+        // A view of owned storage, only as a direct argument.
+        if !view_allowed && c.reachable {
+            c = report(SLICE_ESCAPES, nodes[node].start, c);
+        }
         if tag == T_BUFFER || tag == T_ARRAY {
             return intern(T_SLICE, empty.as_slice(), record.element, 0u64, c);
         }
@@ -1422,6 +1574,7 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
         let argument: u64 = child(nodes, node, 1u64);
         c = infer(source, tokens, nodes, argument, record.element, c);
         let actual: u64 = c.result;
+        c = consume(source, tokens, nodes, argument, actual, c);
         if record.element != UNKNOWN {
             c = require_compatible(record.element, actual, nodes[argument].start, c);
         }
@@ -1432,6 +1585,11 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
         let argument: u64 = child(nodes, node, 1u64);
         c = infer(source, tokens, nodes, argument, record.element, c);
         let actual: u64 = c.result;
+        // An arena slot is freed without looking inside it.
+        c = resource(source, tokens, actual, c);
+        if c.result == 1u64 {
+            c = report(RESOURCE_IN_ARENA, nodes[argument].start, c);
+        }
         c = require_compatible(record.element, actual, nodes[argument].start, c);
         return intern(T_HANDLE, empty.as_slice(), record.element, 0u64, c);
     }
@@ -1452,7 +1610,9 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
             let mut index: u64 = 0u64;
             while index < arguments {
                 let argument: u64 = child(nodes, node, index + 1u64);
+                c.view_argument = viewed_root(source, tokens, nodes, argument) != 0u64;
                 c = infer(source, tokens, nodes, argument, view, c);
+                c.view_argument = false;
                 let actual: u64 = c.result;
                 c = require_compatible(view, actual, nodes[argument].start, c);
                 index += 1u64;
@@ -1496,8 +1656,14 @@ fn infer_binary(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
     if operator == token.PIPE_PIPE || operator == token.AMP_AMP {
         c = infer(source, tokens, nodes, left, BOOL, c);
         let left_ty: u64 = c.result;
+        // The right side may not run: what it moves is only maybe-moved.
+        let skipped: Buffer<u64> = copy_ids(c.moved.as_slice());
+        let skipped_reachable: bool = c.reachable;
         c = infer(source, tokens, nodes, right, BOOL, c);
         let right_ty: u64 = c.result;
+        let evaluated: Buffer<u64> = copy_ids(c.moved.as_slice());
+        let evaluated_reachable: bool = c.reachable;
+        c = join_two(skipped.as_slice(), skipped_reachable, evaluated.as_slice(), evaluated_reachable, c);
         c = require_compatible(BOOL, left_ty, nodes[left].start, c);
         c = require_compatible(BOOL, right_ty, nodes[right].start, c);
         c.result = BOOL;
@@ -1529,8 +1695,16 @@ fn infer_binary(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
 
 fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, expected: u64, check: Check) -> Check {
     let mut c: Check = check;
-    c = infer(source, tokens, nodes, child(nodes, node, 0u64), UNKNOWN, c);
+    let value_node: u64 = child(nodes, node, 0u64);
+    c = infer(source, tokens, nodes, value_node, UNKNOWN, c);
     let scrutinee: u64 = c.result;
+    // Matching takes the scrutinee.
+    c = consume(source, tokens, nodes, value_node, scrutinee, c);
+    let entry: Buffer<u64> = copy_ids(c.moved.as_slice());
+    let entry_reachable: bool = c.reachable;
+    // Each arm's moved-set, as [reachable, count, ids...].
+    let mut flows: Buffer<u64> = Buffer::new();
+    let mut arms: u64 = 0u64;
     let saved_wildcard: bool = c.wildcard;
     let base: u64 = c.covered_live;
     c.wildcard = false;
@@ -1539,6 +1713,8 @@ fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node
     while link != 0u64 {
         let arm: u64 = link - 1u64;
         link = nodes[arm].next;
+        c.moved = copy_ids(entry.as_slice());
+        c.reachable = entry_reachable;
         c = open_scope(c);
         c = check_pattern(source, tokens, nodes, child(nodes, arm, 0u64), scrutinee, c);
         let mut value: u64 = child(nodes, arm, 1u64);
@@ -1551,6 +1727,7 @@ fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node
         }
         c = infer(source, tokens, nodes, value, expected, c);
         let arm_ty: u64 = c.result;
+        c = consume(source, tokens, nodes, value, arm_ty, c);
         if result == NEVER {
             result = arm_ty;
         } else {
@@ -1558,6 +1735,36 @@ fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node
             result = c.result;
         }
         c = close_scope(c);
+        flows.push(if c.reachable { 1u64 } else { 0u64 });
+        flows.push(c.moved.length());
+        let mut index: u64 = 0u64;
+        while index < c.moved.length() {
+            flows.push(c.moved[index]);
+            index += 1u64;
+        }
+        arms += 1u64;
+    }
+    // The arms meet after the match; with none, the entry does.
+    if arms == 0u64 {
+        c.moved = copy_ids(entry.as_slice());
+        c.reachable = entry_reachable;
+    } else {
+        c.moved = Buffer::new();
+        c.reachable = false;
+        let mut record: u64 = 0u64;
+        while record < flows.length() {
+            let count: u64 = flows[record + 1u64];
+            if flows[record] == 1u64 {
+                let mut index: u64 = 0u64;
+                while index < count {
+                    let id: u64 = flows[record + 2u64 + index];
+                    c = mark_moved(id, c);
+                    index += 1u64;
+                }
+                c.reachable = true;
+            }
+            record += 2u64 + count;
+        }
     }
     // A match on an enum names every variant, or has a wildcard.
     let record: TypeRecord = c.types[scrutinee];
@@ -1673,5 +1880,323 @@ fn define_at(source: Slice<u8>, tokens: Slice<Token>, name: u64, at: u64, ty: u6
     if c.diagnostics.length() > before {
         c.diagnostics[before].at = at;
     }
+    c
+}
+
+// ------------------------------------------------------------------ ownership (ESP-012.B)
+
+fn contains_id(ids: Slice<u64>, id: u64) -> bool {
+    let mut index: u64 = 0u64;
+    while index < ids.length() {
+        if ids[index] == id {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
+}
+
+fn copy_ids(ids: Slice<u64>) -> Buffer<u64> {
+    let mut out: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < ids.length() {
+        out.push(ids[index]);
+        index += 1u64;
+    }
+    out
+}
+
+fn mark_moved(id: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    if !contains_id(c.moved.as_slice(), id) {
+        c.moved.push(id);
+    }
+    c
+}
+
+fn unmark(id: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut kept: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < c.moved.length() {
+        if c.moved[index] != id {
+            kept.push(c.moved[index]);
+        }
+        index += 1u64;
+    }
+    c.moved = kept;
+    c
+}
+
+// Adds `ids` to the moved-set.
+fn add_ids(ids: Slice<u64>, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut index: u64 = 0u64;
+    while index < ids.length() {
+        c = mark_moved(ids[index], c);
+        index += 1u64;
+    }
+    c
+}
+
+// The moved-set and reachability where two paths meet.
+fn join_two(left: Slice<u64>, left_reachable: bool, right: Slice<u64>, right_reachable: bool, check: Check) -> Check {
+    let mut c: Check = check;
+    c.moved = Buffer::new();
+    c.reachable = false;
+    if left_reachable {
+        c = add_ids(left, c);
+        c.reachable = true;
+    }
+    if right_reachable {
+        c = add_ids(right, c);
+        c.reachable = true;
+    }
+    c
+}
+
+// Whether a value of type `ty` owns storage: a Buffer, or a struct, enum or
+// array that holds one. `depth` bounds the search through named types, as
+// the visited set of stage0 does.
+fn is_resource(source: Slice<u8>, tokens: Slice<Token>, types: Slice<TypeRecord>, declarations: Slice<Declaration>, members: Slice<Member>, ty: u64, depth: u64) -> bool {
+    let found: TypeRecord = types[ty];
+    if found.tag == T_BUFFER {
+        return true;
+    }
+    if found.tag == T_ARRAY {
+        return is_resource(source, tokens, types, declarations, members, found.element, depth);
+    }
+    if found.tag != T_NAMED || depth == 0u64 {
+        return false;
+    }
+    let name: u64 = found.token - 1u64;
+    let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
+    let structure: u64 = find_declaration(source, tokens, declarations, D_STRUCT, text);
+    if structure != 0u64 {
+        let owner: Declaration = declarations[structure - 1u64];
+        let mut field: u64 = owner.members;
+        while field < owner.members + owner.count {
+            if is_resource(source, tokens, types, declarations, members, members[field].ty, depth - 1u64) {
+                return true;
+            }
+            field += 1u64;
+        }
+        return false;
+    }
+    let enumeration: u64 = find_declaration(source, tokens, declarations, D_ENUM, text);
+    if enumeration != 0u64 {
+        let owner: Declaration = declarations[enumeration - 1u64];
+        let mut variant: u64 = owner.members;
+        while variant < owner.members + owner.count {
+            let fields: Member = members[variant];
+            let mut field: u64 = fields.members;
+            while field < fields.members + fields.count {
+                if is_resource(source, tokens, types, declarations, members, members[field].ty, depth - 1u64) {
+                    return true;
+                }
+                field += 1u64;
+            }
+            variant += 1u64;
+        }
+    }
+    false
+}
+
+// `result` is 1 when `ty` owns storage, 0 otherwise.
+fn resource(source: Slice<u8>, tokens: Slice<Token>, ty: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let limit: u64 = c.declarations.length() + 1u64;
+    let owns: bool = is_resource(source, tokens, c.types.as_slice(), c.declarations.as_slice(), c.members.as_slice(), ty, limit);
+    c.result = if owns { 1u64 } else { 0u64 };
+    c
+}
+
+// A local, or a field or element of one.
+fn is_place(nodes: Slice<Node>, node: u64) -> bool {
+    let kind: u64 = nodes[node].kind;
+    if kind == ast.PATH {
+        return nodes[node].word - 1u64 == nodes[node].path_last;
+    }
+    if kind == ast.FIELD_ACCESS || kind == ast.INDEX {
+        return is_place(nodes, child(nodes, node, 0u64));
+    }
+    false
+}
+
+// `node`, of type `ty`, is handed to a new owner. A resource local is moved;
+// a resource field or element cannot be.
+fn consume(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, ty: u64, check: Check) -> Check {
+    let mut c: Check = resource(source, tokens, ty, check);
+    if c.result == 0u64 {
+        c.result = ty;
+        return c;
+    }
+    let kind: u64 = nodes[node].kind;
+    if kind == ast.PATH && nodes[node].word - 1u64 == nodes[node].path_last {
+        let name: u64 = nodes[node].word - 1u64;
+        let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, source.slice(tokens[name].start, tokens[name].end));
+        if binding != 0u64 {
+            let id: u64 = c.bindings[binding - 1u64].id;
+            c = mark_moved(id, c);
+        }
+    } else if (kind == ast.FIELD_ACCESS || kind == ast.INDEX) && c.reachable {
+        c = report(MOVE_OUT_OF_PLACE, nodes[node].start, c);
+    }
+    c.result = ty;
+    c
+}
+
+// A resource that is only inspected must be a place.
+fn require_place(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, ty: u64, check: Check) -> Check {
+    let mut c: Check = resource(source, tokens, ty, check);
+    if c.result == 1u64 && !is_place(nodes, node) && c.reachable {
+        c = report(RESOURCE_TEMPORARY, nodes[node].start, c);
+    }
+    c.result = ty;
+    c
+}
+
+// Whether `node` is `x.as_slice()` itself, whatever `x` is.
+fn is_view(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64) -> bool {
+    if nodes[node].kind != ast.CALL {
+        return false;
+    }
+    let callee: u64 = child(nodes, node, 0u64);
+    nodes[callee].kind == ast.FIELD_ACCESS && word_is(source, tokens, nodes[callee].word - 1u64, "as_slice".as_slice())
+}
+
+// The root local (+ 1) of `x` in `x.as_slice()`, or 0.
+fn viewed_root(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64) -> u64 {
+    if !is_view(source, tokens, nodes, node) {
+        return 0u64;
+    }
+    place_root(nodes, child(nodes, child(nodes, node, 0u64), 0u64))
+}
+
+fn contains_slice(types: Slice<TypeRecord>, ty: u64) -> bool {
+    let found: TypeRecord = types[ty];
+    if found.tag == T_SLICE {
+        return true;
+    }
+    if found.tag == T_ARRAY || found.tag == T_BUFFER || found.tag == T_ARENA || found.tag == T_HANDLE {
+        return contains_slice(types, found.element);
+    }
+    false
+}
+
+// A path leaves the loop being checked, by `break` or `continue`, carrying
+// the moved-set it reaches there with.
+fn record_exit(kind: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    if !c.reachable {
+        return c;
+    }
+    let mut values: Buffer<u64> = Buffer::new();
+    values.push(kind);
+    values.push(c.moved.length());
+    let mut index: u64 = 0u64;
+    while index < c.moved.length() {
+        values.push(c.moved[index]);
+        index += 1u64;
+    }
+    index = 0u64;
+    while index < values.length() {
+        let at: u64 = c.exits_live;
+        if at < c.exits.length() {
+            c.exits[at] = values[index];
+        } else {
+            c.exits.push(values[index]);
+        }
+        c.exits_live += 1u64;
+        index += 1u64;
+    }
+    c
+}
+
+fn begin_loop(check: Check) -> Check {
+    let mut c: Check = check;
+    let first: u64 = c.next_binding;
+    let start: u64 = c.exits_live;
+    let at: u64 = c.loops_live;
+    if at < c.loops.length() {
+        c.loops[at] = first;
+        c.loops[at + 1u64] = start;
+    } else {
+        c.loops.push(first);
+        c.loops.push(start);
+    }
+    c.loops_live += 2u64;
+    c
+}
+
+// The paths back to the loop head, its `continue`s and the end of the body
+// if that can be reached: a binding declared before the loop and moved on one
+// of them would be moved again by the next iteration.
+fn end_loop(entry: Slice<u64>, at: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let outer_limit: u64 = c.loops[c.loops_live - 2u64];
+    let start: u64 = c.loops[c.loops_live - 1u64];
+    let mut reported: Buffer<u64> = Buffer::new();
+    let mut back: Buffer<u64> = Buffer::new();
+    let mut record: u64 = start;
+    while record < c.exits_live {
+        let kind: u64 = c.exits[record];
+        let count: u64 = c.exits[record + 1u64];
+        if kind == CONTINUE_EXIT {
+            let mut index: u64 = 0u64;
+            while index < count {
+                back.push(c.exits[record + 2u64 + index]);
+                index += 1u64;
+            }
+        }
+        record += 2u64 + count;
+    }
+    if c.reachable {
+        let mut index: u64 = 0u64;
+        while index < c.moved.length() {
+            back.push(c.moved[index]);
+            index += 1u64;
+        }
+    }
+    let mut index: u64 = 0u64;
+    while index < back.length() {
+        let id: u64 = back[index];
+        if id < outer_limit && !contains_id(entry, id) && !contains_id(reported.as_slice(), id) {
+            reported.push(id);
+            c = report(MOVE_IN_LOOP, at, c);
+        }
+        index += 1u64;
+    }
+    c
+}
+
+// After a loop the paths that leave it by `break` meet, and for a `while`
+// also the entry, where the condition was false.
+fn close_loop(entry: Slice<u64>, entry_reachable: bool, check: Check) -> Check {
+    let mut c: Check = check;
+    let start: u64 = c.loops[c.loops_live - 1u64];
+    c.moved = Buffer::new();
+    c.reachable = false;
+    if entry_reachable {
+        c = add_ids(entry, c);
+        c.reachable = true;
+    }
+    let mut record: u64 = start;
+    while record < c.exits_live {
+        let kind: u64 = c.exits[record];
+        let count: u64 = c.exits[record + 1u64];
+        if kind == BREAK_EXIT {
+            let mut index: u64 = 0u64;
+            while index < count {
+                let id: u64 = c.exits[record + 2u64 + index];
+                c = mark_moved(id, c);
+                index += 1u64;
+            }
+            c.reachable = true;
+        }
+        record += 2u64 + count;
+    }
+    c.exits_live = start;
+    c.loops_live -= 2u64;
     c
 }

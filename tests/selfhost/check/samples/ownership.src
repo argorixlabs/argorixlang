@@ -1,0 +1,102 @@
+core 0.1;
+module samples.ownership;
+
+struct Holder { values: Buffer<u8>, count: u64, }
+enum Maybe { None, Some { values: Buffer<u8>, }, }
+struct Node { value: u64, }
+
+fn take(b: Buffer<u8>) -> u64 { b.length() }
+fn look(view: Slice<u8>) -> u64 { view.length() }
+fn both(view: Slice<u8>, owned: Buffer<u8>) -> u64 { view.length() + owned.length() }
+fn make() -> Buffer<u8> { let b: Buffer<u8> = Buffer::new(); b }
+fn holder() -> Holder { Holder { values: make(), count: 0u64 } }
+
+fn moves(flag: bool) -> u64 {
+    let a: Buffer<u8> = make();
+    take(a);
+    take(a);
+    let b: Buffer<u8> = make();
+    if flag { take(b); }
+    take(b);
+    let c: Buffer<u8> = make();
+    let d: bool = flag && take(c) > 0u64;
+    take(c);
+    let mut e: Buffer<u8> = make();
+    take(e);
+    e = make();
+    take(e);
+    0u64
+}
+
+fn loops(flag: bool) -> u64 {
+    let a: Buffer<u8> = make();
+    while flag {
+        take(a);
+    }
+    let b: Buffer<u8> = make();
+    loop {
+        take(b);
+        break;
+    }
+    let c: Buffer<u8> = make();
+    let mut n: u64 = 0u64;
+    while n < 3u64 {
+        n += 1u64;
+        if flag {
+            take(c);
+            continue;
+        }
+    }
+    let d: Buffer<u8> = make();
+    loop {
+        if flag {
+            take(d);
+            continue;
+        }
+        break;
+    }
+    0u64
+}
+
+fn places(h: Holder, arena: Arena<Node>) -> u64 {
+    let moved: Buffer<u8> = h.values;
+    let length: u64 = make().length();
+    let other: u64 = holder().values.length();
+    let mut nodes: Arena<Holder> = Arena::new();
+    let slot: Handle<Holder> = nodes.alloc(holder());
+    0u64
+}
+
+fn views(flag: bool) -> u64 {
+    let b: Buffer<u8> = make();
+    let kept: Slice<u8> = b.as_slice();
+    let fine: u64 = look(b.as_slice());
+    let c: Buffer<u8> = make();
+    let aliased: u64 = both(c.as_slice(), c);
+    let text: u64 = look("abc".as_slice());
+    let bad: u64 = "abc".as_slice().length();
+    0u64
+}
+
+fn matching(m: Maybe) -> u64 {
+    let n: u64 = match m {
+        Maybe::None => 0u64,
+        Maybe::Some { values } => take(values),
+    };
+    match m {
+        Maybe::None => 1u64,
+        Maybe::Some { values: _ } => 2u64,
+    }
+}
+
+fn returns() -> Buffer<u8> {
+    let a: Buffer<u8> = make();
+    let b: Buffer<u8> = a;
+    if true {
+        return a;
+    }
+    b
+}
+
+struct Stored { view: Slice<u8>, }
+fn buffers_of_views() -> Buffer<Slice<u8>> { Buffer::new() }

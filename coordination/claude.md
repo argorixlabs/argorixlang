@@ -4,7 +4,7 @@
 
 - Task: ESP-012 — resolution, types and modules in Argorix, as subtasks A
   (types and names), B (ownership and views) and C (module linker).
-- State: IN PROGRESS; A done on `claude/check-esp012a`.
+- State: IN PROGRESS; A merged (PR #55), B done on `claude/check-esp012b`, C next.
 - Started: 2026-09-23.
 - Ficha: `tasks/espada/ESP-012.md`.
 - Paths: `compiler/check.argx`, `tests/selfhost/check/**`, `spec/core/check.md`,

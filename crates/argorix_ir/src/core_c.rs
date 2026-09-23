@@ -1178,7 +1178,9 @@ impl<'a> FunctionEmitter<'a> {
                 } else {
                     // The value is computed before the place, so a trap in it
                     // leaves the old value intact.
-                    let hint = self.infer_type(value);
+                    // The place's type comes first: `h.values = Buffer::new()` has no type
+                    // of its own to go by.
+                    let hint = self.infer_type(target).or_else(|| self.infer_type(value));
                     let right = self.emit_consumed(value, hint.as_ref(), indent, source)?;
                     let (place, ty) = self.emit_place(target, true, indent, source)?;
                     if self.is_resource(&ty) {
