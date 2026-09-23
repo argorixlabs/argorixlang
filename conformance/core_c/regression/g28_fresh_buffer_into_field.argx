@@ -1,0 +1,19 @@
+core 0.1;
+module regression.g28_fresh_buffer_into_field;
+
+// Assigning `Buffer::new()` to a field was refused: the value has no type of
+// its own and the backend did not take the one of the place it goes to
+// ("Buffer::new requires an expected Buffer type"). The Argorix checker
+// resets its moved-set this way (ESP-012.B).
+
+struct Holder { values: Buffer<u64>, count: u64, }
+
+pub fn argorix_main() -> u64 {
+    let mut h: Holder = Holder { values: Buffer::new(), count: 0u64 };
+    h.values.push(7u64);
+    h.values.push(8u64);
+    let before: u64 = h.values.length();
+    h.values = Buffer::new();
+    h.values.push(5u64);
+    before * 10u64 + h.values.length() * 100u64 + h.values[0u64]
+}

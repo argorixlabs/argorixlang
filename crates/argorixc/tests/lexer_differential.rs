@@ -121,6 +121,8 @@ fn the_argorix_lexer_matches_the_stage0_lexer_when_cc_is_available() {
     let compile = Command::new(compiler)
         .args(["-std=c11", "-O1", "-Wall", "-Wextra", "-Werror"])
         .arg("-DARGORIX_STEP_LIMIT=4000000000ULL")
+        // The token buffers of the largest sources pass the 1 MiB default.
+        .arg("-DARGORIX_BUFFER_LIMIT_BYTES=268435456U")
         .arg("-I")
         .arg(root().join("bootstrap/c"))
         .arg(root().join("bootstrap/c/argorix_core_runtime.c"))

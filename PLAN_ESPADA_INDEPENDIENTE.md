@@ -340,11 +340,16 @@ ahora en 256 niveles con un diagnóstico.
 **Aceptación:** valida sus fuentes; detecta símbolos duplicados, tipos incorrectos, retornos ausentes, handles mal usados e imports inválidos; decisiones de error tienen pruebas independientes.
 
 **Estado (2026-09-23):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-012.md)),
-dividida en tres subtareas. ESP-012.A está hecha: el checker de declaraciones,
-tipos, scopes, nombres, expresiones, control de flujo, exhaustividad y
-literales está en `compiler/check.argx`. Sus diagnósticos coinciden con los del
-checker stage0 en 140 archivos. Faltan ESP-012.B (ownership y vistas) y
-ESP-012.C (grafo de módulos y linker).
+dividida en tres subtareas, dos de ellas hechas:
+
+- ESP-012.A (PR #55): el checker de declaraciones, tipos, scopes, nombres,
+  expresiones, control de flujo, exhaustividad y literales, en
+  `compiler/check.argx`;
+- ESP-012.B: el ownership de recursos (moves por cada camino, bucles, lugares,
+  arenas) y las vistas.
+
+Los diagnósticos coinciden con los del checker stage0, sin excluir ningún
+código, en 141 archivos. Falta ESP-012.C (grafo de módulos y linker).
 
 ### ESP-013 — Lowering y emisión en Argorix
 

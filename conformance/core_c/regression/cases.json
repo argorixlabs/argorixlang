@@ -355,6 +355,14 @@
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:102",
       "expected_stderr": ""
+    },
+    {
+      "id": "g28_fresh_buffer_into_field",
+      "file": "g28_fresh_buffer_into_field.argx",
+      "was": "Assigning Buffer::new() to a field was refused with CBackendUnsupported: the value has no type of its own and the place type was not used as its hint (found by the Argorix checker, ESP-012.B).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:125",
+      "expected_stderr": ""
     }
   ]
 }

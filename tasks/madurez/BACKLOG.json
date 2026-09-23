@@ -105,7 +105,7 @@
       "status": "EN_CURSO",
       "file": "tasks/espada/ESP-012.md",
       "evidence": "crates/argorixc/tests/check_differential.rs; tests/selfhost/check/cases.json",
-      "scope": "Resolucion, tipos y modulos en Argorix; ESP-012.A (checker de tipos y nombres en compiler/check.argx) hecha, igual al checker stage0 en 140 archivos; faltan ESP-012.B (ownership y vistas) y ESP-012.C (linker)"
+      "scope": "Resolucion, tipos y modulos en Argorix; ESP-012.A (tipos y nombres, PR 55) y ESP-012.B (ownership y vistas) hechas en compiler/check.argx, iguales al checker stage0 en 141 archivos; falta ESP-012.C (linker)"
     }
   },
   "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad. esp_progress se actualiza al reclamar o cerrar una tarea ESP; el estado operativo del día vive en WORKBOARD.md.",
