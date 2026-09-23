@@ -9,8 +9,8 @@ use argorix_parser::{
     parse_source, Diagnostic, Program,
 };
 use argorix_semantics::{
-    check_core_program, check_program_with_options, core_link_order, link_core_program,
-    verify_core_program, CheckOptions, CoreCheckOptions, CoreLinkError,
+    check_core_package, check_program_with_options, verify_core_program, CheckOptions,
+    CoreCheckOptions, CoreLinkError,
 };
 use clap::{Parser, Subcommand};
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,6 +56,12 @@ enum Command {
     CoreAst { file: PathBuf },
     /// Print the checker diagnostics of one Core file, checked on its own.
     CoreCheckDump { file: PathBuf },
+    /// Print the diagnostics of a Core package: the root file first, then the
+    /// files that make up its locked compilation set, in that order.
+    CoreCheckPackageDump {
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
     /// Lower checked Argorix Core 0.1 source into transitional C11.
     CoreEmitC {
         file: PathBuf,
@@ -128,6 +134,15 @@ fn run() -> Result<()> {
             let source =
                 fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
             print!("{}", argorix_semantics::core_check_dump(&source));
+        }
+        Command::CoreCheckPackageDump { files } => {
+            let sources = files
+                .iter()
+                .map(|file| {
+                    fs::read(file).with_context(|| format!("failed to read `{}`", file.display()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            print!("{}", argorix_semantics::core_package_check_dump(&sources));
         }
         Command::CoreAst { file } => {
             let source =
@@ -495,25 +510,14 @@ fn compile_core(
     let options = CoreCheckOptions {
         available_modules: available_modules.clone(),
     };
-    let link_error = |error: CoreLinkError| -> anyhow::Error {
-        let (file, source) = &files[&error.module];
-        core_diagnostics_error(&error.diagnostics, file, source)
-    };
-
     // Dependencies are checked first, each linked as a root of its own, so a
     // diagnostic is always rendered against the file that contains it.
-    let order = core_link_order(&program, &modules, &duplicates).map_err(link_error)?;
-    for name in order.iter().filter(|name| **name != root_name) {
-        let linked =
-            link_core_program(&modules[name], &modules, &duplicates).map_err(link_error)?;
-        check_core_program(&linked, &options).map_err(|diagnostics| {
-            let (file, source) = &files[name];
-            core_diagnostics_error(&diagnostics, file, source)
-        })?;
-    }
-    let linked = link_core_program(&program, &modules, &duplicates).map_err(link_error)?;
-    check_core_program(&linked, &options)
-        .map_err(|diagnostics| core_diagnostics_error(&diagnostics, &file, &source))?;
+    let (order, linked) = check_core_package(&program, &modules, &duplicates, &options).map_err(
+        |error: CoreLinkError| {
+            let (file, source) = &files[&error.module];
+            core_diagnostics_error(&error.diagnostics, file, source)
+        },
+    )?;
     Ok(CheckedCoreSource {
         program: linked,
         root: program,

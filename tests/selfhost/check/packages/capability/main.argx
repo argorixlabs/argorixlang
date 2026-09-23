@@ -1,0 +1,8 @@
+core 0.1;
+module demo.main;
+
+import demo.io;
+
+pub fn argorix_main(package: PackageRead) -> u64 {
+    io.size(package, "a".as_slice()) + io.size(1u32, "b".as_slice())
+}

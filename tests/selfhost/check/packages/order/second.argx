@@ -1,0 +1,6 @@
+core 0.1;
+module demo.second;
+
+import demo.first;
+
+pub fn two() -> u32 { first.missing() }

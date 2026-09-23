@@ -1,0 +1,8 @@
+core 0.1;
+module demo.main;
+
+import demo.helper;
+
+fn helper() -> u32 { 0u32 }
+
+pub fn argorix_main() -> u32 { helper() }

@@ -1,0 +1,20 @@
+core 0.1;
+module demo.main;
+
+import demo.answers;
+
+enum Local { Yes, No, }
+
+pub fn argorix_main() -> u32 {
+    let answer: Answer = answers.pick(true);
+    let partial: u32 = match answer {
+        Answer::Yes => 1u32,
+    };
+    let wrong: u32 = match answers.pick(false) {
+        Local::Yes => 1u32,
+        _ => 0u32,
+    };
+    let value: Answer = Answer::No;
+    let local: Local = Answer::Yes;
+    partial + wrong
+}

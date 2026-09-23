@@ -22,6 +22,7 @@
 //! rejected outright: the spec allows cycles of signatures through handles
 //! after joint resolution, which stage0 does not implement.
 
+use crate::core::{check_core_program, CoreCheckOptions};
 use argorix_parser::core::*;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -112,6 +113,33 @@ pub fn link_core_program(
         items,
         span: root.span,
     })
+}
+
+/// Check a package as the driver does: every module `root` reaches is linked
+/// and checked as a root of its own, dependencies first, and the root last.
+/// A failure names the module whose source contains it, the first in link
+/// order that fails. Returns the link order and the linked root.
+pub fn check_core_package(
+    root: &CoreProgram,
+    modules: &BTreeMap<String, CoreProgram>,
+    duplicates: &BTreeSet<String>,
+    options: &CoreCheckOptions,
+) -> Result<(Vec<String>, CoreProgram), CoreLinkError> {
+    let order = core_link_order(root, modules, duplicates)?;
+    let root_name = &root.module.value;
+    for name in order.iter().filter(|name| *name != root_name) {
+        let linked = link_core_program(&modules[name], modules, duplicates)?;
+        check_core_program(&linked, options).map_err(|diagnostics| CoreLinkError {
+            module: name.clone(),
+            diagnostics,
+        })?;
+    }
+    let linked = link_core_program(root, modules, duplicates)?;
+    check_core_program(&linked, options).map_err(|diagnostics| CoreLinkError {
+        module: root_name.clone(),
+        diagnostics,
+    })?;
+    Ok((order, linked))
 }
 
 fn visit(
@@ -555,7 +583,6 @@ impl<'a> Linker<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{check_core_program, CoreCheckOptions};
 
     fn parse(source: &str) -> CoreProgram {
         parse_core_source(source).expect("test source parses")

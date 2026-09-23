@@ -1,0 +1,11 @@
+core 0.1;
+module demo.main;
+
+import demo.middle;
+
+// `Leaf` belongs to `demo.leaf`, which the root does not import.
+pub fn argorix_main() -> u32 {
+    let wrapped: Wrapper = middle.wrap(3u32);
+    let leaf: Leaf = wrapped.leaf;
+    wrapped.leaf.value + middle.unwrap(wrapped)
+}

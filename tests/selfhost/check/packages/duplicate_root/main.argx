@@ -1,0 +1,4 @@
+core 0.1;
+module demo.main;
+
+pub fn argorix_main() -> u32 { 0u32 }

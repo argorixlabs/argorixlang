@@ -1,0 +1,6 @@
+core 0.1;
+module demo.answers;
+
+pub enum Answer { Yes, No, }
+
+pub fn pick(yes: bool) -> Answer { if yes { Answer::Yes } else { Answer::No } }

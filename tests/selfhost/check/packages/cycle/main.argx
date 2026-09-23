@@ -1,0 +1,6 @@
+core 0.1;
+module demo.a;
+
+import demo.b;
+
+pub fn one() -> u32 { b.two() }

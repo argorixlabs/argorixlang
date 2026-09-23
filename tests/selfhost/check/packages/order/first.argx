@@ -1,0 +1,5 @@
+core 0.1;
+module demo.first;
+
+// Checked before `demo.second` is linked, so this is what fails.
+pub fn one() -> u32 { false }

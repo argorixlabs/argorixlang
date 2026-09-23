@@ -1,0 +1,10 @@
+core 0.1;
+module demo.middle;
+
+import demo.leaf;
+
+pub struct Wrapper { leaf: Leaf, }
+
+pub fn wrap(value: u32) -> Wrapper { Wrapper { leaf: leaf.make(value) } }
+
+pub fn unwrap(wrapped: Wrapper) -> u32 { wrapped.leaf.value }
