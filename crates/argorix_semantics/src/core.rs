@@ -764,7 +764,7 @@ impl<'a> Checker<'a> {
                         .filter_map(|argument| Self::viewed_root(argument).map(str::to_string))
                         .collect();
                     for (argument, expected) in arguments.iter().zip(&function.parameters) {
-                        self.view_argument = Self::viewed_root(argument).is_some();
+                        self.view_argument = Self::is_view(argument);
                         let actual = self.infer_expr(argument, Some(expected));
                         self.view_argument = false;
                         self.consume(argument, &actual);
@@ -834,6 +834,17 @@ impl<'a> Checker<'a> {
                     );
                 }
                 Ty::Slice(element)
+            }
+            // The UTF-8 bytes of a string, under the same rule as any view.
+            ("as_slice", Ty::String) if arguments.is_empty() => {
+                if !view_allowed && self.reachable {
+                    self.error(
+                        "SliceEscapes",
+                        "a view of a string can only be passed directly as an argument: `f(s.as_slice())`",
+                        span,
+                    );
+                }
+                Ty::Slice(Box::new(Ty::Int("u8".into())))
             }
             ("slice", Ty::Slice(element)) if arguments.len() == 2 => {
                 // A narrower view of a view; bounds are checked at run time.
@@ -1440,6 +1451,14 @@ impl<'a> Checker<'a> {
 
     /// `x.as_slice()`, the only way to make a view of owned storage: its
     /// receiver's root local, if the expression is that call.
+    /// Whether an argument is `x.as_slice()` itself, whatever `x` is.
+    fn is_view(expression: &CoreExpr) -> bool {
+        let CoreExprKind::Call { callee, .. } = &expression.kind else {
+            return false;
+        };
+        matches!(&callee.kind, CoreExprKind::Field { name, .. } if name.value == "as_slice")
+    }
+
     fn viewed_root(expression: &CoreExpr) -> Option<&str> {
         let CoreExprKind::Call { callee, .. } = &expression.kind else {
             return None;

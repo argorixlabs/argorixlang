@@ -348,6 +348,11 @@ pub fn emit_once(
     if stdlib.is_dir() {
         command.arg("--stdlib").arg(stdlib);
     }
+    // Likewise the Argorix compiler's own modules in `compiler/` (ESP-010).
+    let compiler = root.join("compiler");
+    if compiler.is_dir() {
+        command.arg("--modules").arg(compiler);
+    }
     let result = command
         .arg("core-emit-c")
         .arg(source)

@@ -1,0 +1,85 @@
+core 0.1;
+module selfhost_lexer.lexer_basics;
+
+// compiler.lexer on small inputs, checked by structure rather than by dump:
+// operator splitting, nested comments, suffixes, escapes, and every lexical
+// diagnostic with its line and column. All 11 checks pass gives 2047.
+
+import compiler.lexer;
+import compiler.token;
+import compiler.diagnostics;
+
+fn bit(passed: bool, index: u64) -> u64 {
+    if passed { 1u64 << index } else { 0u64 }
+}
+
+fn kinds_are(source: Slice<u8>, expected: Slice<u64>) -> bool {
+    let lexed: Lexed = lexer.lex(source);
+    if lexed.diagnostics.length() != 0u64 || lexed.tokens.length() != expected.length() {
+        return false;
+    }
+    let mut index: u64 = 0u64;
+    while index < expected.length() {
+        if lexed.tokens[index].kind != expected[index] {
+            return false;
+        }
+        index += 1u64;
+    }
+    true
+}
+
+// code * 1000000 + line * 1000 + column of the first diagnostic, or 0.
+fn first_diagnostic(source: Slice<u8>) -> u64 {
+    let lexed: Lexed = lexer.lex(source);
+    if lexed.diagnostics.length() == 0u64 {
+        return 0u64;
+    }
+    let found: Diagnostic = lexed.diagnostics[0u64];
+    found.code * 1000000u64 + found.line * 1000u64 + found.column
+}
+
+// line * 1000 + column of token `index`.
+fn position(source: Slice<u8>, index: u64) -> u64 {
+    let lexed: Lexed = lexer.lex(source);
+    let found: Token = lexed.tokens[index];
+    found.line * 1000u64 + found.column
+}
+
+fn suffixed_seven(source: Slice<u8>) -> bool {
+    let lexed: Lexed = lexer.lex(source);
+    let found: Token = lexed.tokens[0u64];
+    lexed.tokens.length() == 2u64 && found.kind == token.INTEGER && found.value == 7u64
+        && found.text_end - found.text_start == 2u64 && source[found.text_start] == 117u8
+}
+
+fn tab_escape(source: Slice<u8>) -> bool {
+    let lexed: Lexed = lexer.lex(source);
+    let found: Token = lexed.tokens[0u64];
+    found.kind == token.STRING && found.text_end - found.text_start == 3u64
+        && lexed.strings[found.text_start + 1u64] == 9u8
+}
+
+pub fn argorix_main() -> u64 {
+    let path_kinds: Array<u64, 4> = [token.IDENT, token.COLON_COLON, token.IDENT, token.EOF];
+    let shift_kinds: Array<u64, 5> = [token.IDENT, token.SHIFT_RIGHT, token.ASSIGN, token.INTEGER, token.EOF];
+    let accented: Array<u8, 4> = [195u8, 169u8, 32u8, 120u8];
+    let not_utf8: Array<u8, 3> = [97u8, 10u8, 255u8];
+    let crlf: Array<u8, 4> = [97u8, 13u8, 10u8, 98u8];
+    let mut mask: u64 = 0u64;
+
+    mask += bit(kinds_are("a::b".as_slice(), path_kinds.as_slice()), 0u64);
+    // `>>=` is a shift followed by `=`, as in the stage0 lexer.
+    mask += bit(kinds_are("x >>= 1".as_slice(), shift_kinds.as_slice()), 1u64);
+    mask += bit(suffixed_seven("/* /* */ */ 7u8".as_slice()), 2u64);
+    mask += bit(tab_escape("\"a\\tb\"".as_slice()), 3u64);
+    mask += bit(first_diagnostic("/*x".as_slice()) == 2001001u64, 4u64);
+    mask += bit(first_diagnostic("\"ab".as_slice()) == 4001001u64, 5u64);
+    // `é` is one unexpected character, and the next token is in column 3.
+    mask += bit(first_diagnostic(accented.as_slice()) == 1001001u64 && position(accented.as_slice(), 0u64) == 1003u64, 6u64);
+    mask += bit(first_diagnostic(not_utf8.as_slice()) == 6002001u64, 7u64);
+    mask += bit(first_diagnostic("18446744073709551616".as_slice()) == 3001001u64, 8u64);
+    // A backslash at the end of the file leaves the string open.
+    mask += bit(first_diagnostic("\"\\".as_slice()) == 4001001u64, 9u64);
+    mask += bit(position(crlf.as_slice(), 1u64) == 2001u64, 10u64);
+    mask
+}

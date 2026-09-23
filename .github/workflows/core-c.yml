@@ -358,6 +358,16 @@ jobs:
           --bundle target/core-c/stdlib-bundle
           --work-dir target/core-c/stdlib
           --report target/core-c/report-stdlib.json
+      - name: Run the lexer fixtures (ESP-010)
+        # And --modules compiler, so they reach the Argorix lexer in compiler/.
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc ${{ matrix.cc }} ${{ matrix.flags }}
+          --cases tests/selfhost/lexer/cases.json
+          --bundle target/core-c/lexer-bundle
+          --work-dir target/core-c/lexer
+          --report target/core-c/report-lexer.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:

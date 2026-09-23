@@ -1325,6 +1325,28 @@ impl<'a> FunctionEmitter<'a> {
         source: &mut String,
     ) -> Result<(String, ScalarType), CoreCError> {
         match expression {
+            CoreIrExpr::String { value } => {
+                // Static, immutable UTF-8: a C string literal with every byte
+                // that is not plain printable ASCII written as a three-digit
+                // octal escape, which cannot run into the next character.
+                let mut literal = String::new();
+                for byte in value.bytes() {
+                    match byte {
+                        b'"' | b'\\' | b'?' => write!(literal, "\\{:03o}", byte).unwrap(),
+                        32..=126 => literal.push(byte as char),
+                        _ => write!(literal, "\\{:03o}", byte).unwrap(),
+                    }
+                }
+                self.bind_temp(
+                    format!(
+                        "(argorix_string){{(const uint8_t *)\"{literal}\", {}U}}",
+                        value.len()
+                    ),
+                    ScalarType::String,
+                    indent,
+                    source,
+                )
+            }
             CoreIrExpr::Integer { value, suffix } => {
                 let ty = suffix
                     .as_ref()
@@ -1741,6 +1763,34 @@ impl<'a> FunctionEmitter<'a> {
                         );
                         return self.bind_temp(text, view_ty.clone(), indent, source);
                     }
+                    if name == "wrapping_add" {
+                        // Modular by definition (spec/core/evaluation.md): the
+                        // sum is taken in uint64_t, where C defines wrap-around,
+                        // and cast back to the operand's width.
+                        let [argument] = arguments.as_slice() else {
+                            return Err(CoreCError::unsupported(
+                                "wrapping_add requires one argument",
+                            ));
+                        };
+                        let left = self.emit_expr(value, None, indent, source)?;
+                        let ScalarType::Integer(_) = &left.1 else {
+                            return Err(CoreCError::unsupported(
+                                "wrapping_add requires an integer",
+                            ));
+                        };
+                        let right = self.emit_expr(argument, Some(&left.1), indent, source)?;
+                        return self.bind_temp(
+                            format!(
+                                "({})((uint64_t){} + (uint64_t){})",
+                                left.1.c_name(),
+                                left.0,
+                                right.0
+                            ),
+                            left.1,
+                            indent,
+                            source,
+                        );
+                    }
                     if !arguments.is_empty() {
                         return Err(CoreCError::unsupported(format!(
                             "intrinsic `{name}` does not accept arguments"
@@ -1787,6 +1837,21 @@ impl<'a> FunctionEmitter<'a> {
                             let slice = ScalarType::Slice(element.clone());
                             self.bind_temp(
                                 format!("({}){{{}.data, {}U}}", slice.c_name(), receiver.0, length),
+                                slice,
+                                indent,
+                                source,
+                            )
+                        }
+                        ("as_slice", ScalarType::String) => {
+                            let slice =
+                                ScalarType::Slice(Box::new(ScalarType::Integer("u8".into())));
+                            self.bind_temp(
+                                format!(
+                                    "({}){{{}.data, {}.length}}",
+                                    slice.c_name(),
+                                    receiver.0,
+                                    receiver.0
+                                ),
                                 slice,
                                 indent,
                                 source,
@@ -2126,9 +2191,6 @@ impl<'a> FunctionEmitter<'a> {
                 })
             }
             CoreIrExpr::Unit => Ok(("0".into(), ScalarType::Unit)),
-            _ => Err(CoreCError::unsupported(format!(
-                "expression `{expression:?}` is outside the scalar C profile"
-            ))),
         }
     }
 

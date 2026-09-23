@@ -2,6 +2,22 @@
 
 ## Current claim
 
+- Task: ESP-010 — lexer and diagnostics in Argorix.
+- State: IN PROGRESS. It starts while ESP-009 lands in PR #51 and uses nothing
+  from that PR.
+- Branch: `claude/lexer-esp010`, base `47f3d6b` (`origin/main`).
+- Started: 2026-09-23.
+- Ficha: `tasks/espada/ESP-010.md`.
+- Paths:
+  - `compiler/**`, `tests/selfhost/lexer/**`, `spec/core/tokens.md` and
+    the ficha;
+  - the stage0 Core lexer where it disagreed with the port (a string ending
+    in a backslash at the end of the input);
+  - the `argorixc` token dump and `--modules`;
+  - the C backend for string literals and `wrapping_add`.
+
+## ESP-009 claim (in review)
+
 - Task: ESP-009 — minimal standard library, the `.argx` modules of
   `spec/core/stdlib.md`.
 - State: IN REVIEW (PRs #48–#50).

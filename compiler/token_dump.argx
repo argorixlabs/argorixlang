@@ -1,0 +1,102 @@
+core 0.1;
+module compiler.token_dump;
+
+// The canonical token dump of spec/core/tokens.md, byte for byte what
+// `argorixc core-tokens` prints for the same source: one line per token, or
+// one line per diagnostic when lexing found any. `fnv1a` condenses a dump
+// into one number a test can compare.
+
+import stdlib.bytes;
+import stdlib.text;
+import compiler.token;
+import compiler.diagnostics;
+import compiler.lexer;
+
+pub fn dump(source: Slice<u8>) -> Buffer<u8> {
+    let lexed: Lexed = lexer.lex(source);
+    let mut out: Buffer<u8> = Buffer::new();
+    let mut index: u64 = 0u64;
+    if lexed.diagnostics.length() > 0u64 {
+        while index < lexed.diagnostics.length() {
+            out = diagnostics.append_rendered(out, source, lexed.diagnostics[index]);
+            out.push(10u8);
+            index += 1u64;
+        }
+        return out;
+    }
+    while index < lexed.tokens.length() {
+        out = append_token(out, source, lexed.strings.as_slice(), lexed.tokens[index]);
+        out.push(10u8);
+        index += 1u64;
+    }
+    out
+}
+
+fn append_token(out: Buffer<u8>, source: Slice<u8>, strings: Slice<u8>, found: Token) -> Buffer<u8> {
+    let mut row: Buffer<u8> = bytes.append_decimal(out, found.line);
+    row.push(58u8);
+    row = bytes.append_decimal(row, found.column);
+    row.push(32u8);
+    row = bytes.append_decimal(row, found.start);
+    row.push(32u8);
+    row = bytes.append_decimal(row, found.end);
+    row.push(32u8);
+    row = token.append_name(row, found.kind);
+    if found.kind == token.IDENT {
+        row.push(32u8);
+        row = bytes.append(row, source.slice(found.start, found.end));
+    } else if found.kind == token.INTEGER {
+        row.push(32u8);
+        row = bytes.append_decimal(row, found.value);
+        if found.text_start < found.text_end {
+            row.push(32u8);
+            row = bytes.append(row, source.slice(found.text_start, found.text_end));
+        }
+    } else if found.kind == token.STRING {
+        row.push(32u8);
+        row.push(34u8);
+        row = text.append_json_escaped(row, strings.slice(found.text_start, found.text_end));
+        row.push(34u8);
+    }
+    row
+}
+
+// FNV-1a, 64-bit: offset basis 14695981039346656037, prime 2^40 + 435.
+pub fn fnv1a(data: Slice<u8>) -> u64 {
+    let mut hash: u64 = 14695981039346656037u64;
+    let mut index: u64 = 0u64;
+    while index < data.length() {
+        hash = hash ^ widen(data[index]);
+        // hash * (2^40 + 256 + 128 + 32 + 16 + 2 + 1), modulo 2^64.
+        let mut product: u64 = hash << 40u64;
+        product = product.wrapping_add(hash << 8u64);
+        product = product.wrapping_add(hash << 7u64);
+        product = product.wrapping_add(hash << 5u64);
+        product = product.wrapping_add(hash << 4u64);
+        product = product.wrapping_add(hash << 1u64);
+        hash = product.wrapping_add(hash);
+        index += 1u64;
+    }
+    hash
+}
+
+// A byte as a u64: Core has no numeric conversion, so one bit at a time.
+fn widen(byte: u8) -> u64 {
+    let mut rest: u8 = byte;
+    let mut value: u64 = 0u64;
+    if rest >= 128u8 { rest -= 128u8; value += 128u64; }
+    if rest >= 64u8 { rest -= 64u8; value += 64u64; }
+    if rest >= 32u8 { rest -= 32u8; value += 32u64; }
+    if rest >= 16u8 { rest -= 16u8; value += 16u64; }
+    if rest >= 8u8 { rest -= 8u8; value += 8u64; }
+    if rest >= 4u8 { rest -= 4u8; value += 4u64; }
+    if rest >= 2u8 { rest -= 2u8; value += 2u64; }
+    if rest >= 1u8 { value += 1u64; }
+    value
+}
+
+// The FNV-1a of the dump of `source`.
+pub fn digest(source: Slice<u8>) -> u64 {
+    let printed: Buffer<u8> = dump(source);
+    fnv1a(printed.as_slice())
+}

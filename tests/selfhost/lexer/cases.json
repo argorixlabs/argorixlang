@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "core_version": "0.1",
+  "task": "ESP-010",
+  "purpose": "Fixtures of the Argorix lexer in compiler/. The differential against the stage0 lexer is crates/argorixc/tests/lexer_differential.rs; these check structure and run under gcc, clang and the sanitizers.",
+  "cases": [
+    {
+      "id": "lexer_basics",
+      "file": "lexer_basics.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2047",
+      "expected_stderr": ""
+    }
+  ]
+}
