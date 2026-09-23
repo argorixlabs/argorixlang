@@ -331,6 +331,14 @@
       "expected_exit": 0,
       "expected_stdout": "ARGORIX_RESULT:63",
       "expected_stderr": ""
+    },
+    {
+      "id": "g25_write_through_handle",
+      "file": "g25_write_through_handle.argx",
+      "was": "A field assigned through a handle was written to a temporary copy, so the arena kept the old value (silent wrong result: 10 instead of 33); a node linking to its own type through a handle was refused as containing itself by value (found by stdlib.arena, ESP-009).",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:33",
+      "expected_stderr": ""
     }
   ]
 }

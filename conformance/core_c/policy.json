@@ -17,6 +17,10 @@
     "posix_spawn", "posix_spawnp", "fork", "vfork", "clone", "clone3",
     "dlopen", "dlmopen"
   ],
+  "host_only_imports": [
+    "open", "open64", "openat", "openat64", "creat", "fopen", "fopen64",
+    "realpath", "opendir", "stat", "stat64", "lstat", "fstatat", "mkdir", "unlink", "rename"
+  ],
   "forbidden_byte_markers": ["/.cargo/", "/.rustup/", "/rustc/", "RUST_BACKTRACE"],
   "execution_timeout_seconds": 10
 }

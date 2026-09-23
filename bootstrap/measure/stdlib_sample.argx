@@ -1,0 +1,59 @@
+core 0.1;
+module measure.stdlib_sample;
+
+// A representative stdlib workload for ESP-009's measurements: write a JSON
+// object of MEMBERS members with the canonical writer, validate it, index
+// its keys in an ordered_map, and sort and search a vector of the values.
+// bootstrap/measure/run.sh substitutes MEMBERS and records time and memory.
+
+import stdlib.json;
+import stdlib.ordered_map;
+import stdlib.vector;
+import stdlib.bytes;
+import stdlib.result;
+
+const MEMBERS: u64 = 100u64;
+
+fn key_of(index: u64) -> Buffer<u8> {
+    let mut name: Buffer<u8> = Buffer::new();
+    name.push(107u8);
+    bytes.append_decimal(name, index)
+}
+
+fn added(inserted: Inserted) -> Map {
+    match inserted {
+        Inserted::Added { map } => map,
+        Inserted::Duplicate { map, at: _ } => map,
+    }
+}
+
+pub fn argorix_main() -> u64 {
+    // Values run backwards so the sort has work to do.
+    let mut doc: Buffer<u8> = json.begin_object(Buffer::new());
+    let mut values: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < MEMBERS {
+        let name: Buffer<u8> = key_of(index);
+        doc = json.unsigned(json.key(doc, index == 0u64, name.as_slice()), MEMBERS - index);
+        values.push(MEMBERS - index);
+        index += 1u64;
+    }
+    doc = json.end_object(doc);
+    let valid: u64 = result.checked_digest(json.validate(doc.as_slice()));
+
+    let mut map: Map = ordered_map.empty();
+    index = 0u64;
+    while index < MEMBERS {
+        let name: Buffer<u8> = key_of(index);
+        map = added(ordered_map.insert(map, name.as_slice(), index));
+        index += 1u64;
+    }
+    let sorted: Buffer<u64> = vector.sort(values);
+    let found: u64 = match vector.search_sorted(sorted.as_slice(), 1u64) {
+        Search::Found { at } => at,
+        Search::Missing { insert_at: _ } => 999u64,
+    };
+    // 0 when everything holds: a valid document, every key indexed once, and
+    // the smallest value first.
+    valid + (map.starts.length() - MEMBERS) + found
+}

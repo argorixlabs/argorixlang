@@ -3420,6 +3420,7 @@ pub fn build_corpus(seed: u64, count: usize, out: &Path) -> Result<GeneratedMani
             expected_exit: exit,
             expected_stdout: stdout,
             expected_stderr: stderr,
+            host: None,
         });
     }
     let manifest = GeneratedManifest {
