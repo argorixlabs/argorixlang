@@ -1,0 +1,37 @@
+core 0.1;
+module selfhost_native.hello_object;
+
+// The object writer and the encoder (ESP-016.A), end to end: `main` calls
+// the shim to print 42 and returns 0. The object is written to
+// `hello.o` in the build root, for the system linker.
+
+import stdlib.compiler_host;
+import stdlib.result;
+import stdlib.bytes;
+import compiler.x86;
+import compiler.elf;
+
+pub fn argorix_main(build: BuildWrite) -> u64 {
+    // main: push rbp; mov rbp, rsp; mov rdi, 42; call print; xor eax, eax;
+    // pop rbp; ret. After the push, RSP is 16-byte aligned for the call.
+    let mut code: Buffer<u8> = x86.push(Buffer::new(), x86.RBP);
+    code = x86.mov(code, x86.RBP, x86.RSP);
+    code = x86.mov_imm(code, x86.RDI, 42u64);
+    code = x86.call(code);
+    let mut calls: Buffer<u64> = Buffer::new();
+    calls.push(code.length() - 4u64);
+    calls.push(1u64);
+    code = x86.xor(code, x86.RAX, x86.RAX);
+    code = x86.pop(code, x86.RBP);
+    code = x86.ret(code);
+    let mut names: Buffer<u8> = bytes.append(Buffer::new(), "main".as_slice());
+    let mut ends: Buffer<u64> = Buffer::new();
+    ends.push(names.length());
+    names = bytes.append(names, "argorix_rt_print_u64".as_slice());
+    ends.push(names.length());
+    let mut defined: Buffer<u64> = Buffer::new();
+    defined.push(1u64);
+    defined.push(0u64);
+    let object: Buffer<u8> = elf.relocatable(code.as_slice(), names.as_slice(), ends.as_slice(), defined.as_slice(), calls.as_slice());
+    result.checked_digest(compiler_host.write(build, "hello.o".as_slice(), object.as_slice()))
+}
