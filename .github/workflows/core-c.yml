@@ -497,11 +497,16 @@ jobs:
           name: stage1-c
           path: target/stage1
       - name: Build the bootstrap environment (a C compiler and Python only)
+        # BuildKit keeps a base image out of the local store, so the base is
+        # pulled first, its digest recorded, and the image built from that
+        # digest.
         run: |
-          docker build --build-arg CC_PACKAGE=${{ matrix.cc }} -t argorix-selfhost bootstrap/container
+          docker pull debian:stable-slim
+          base="$(docker image inspect debian:stable-slim --format '{{index .RepoDigests 0}}')"
           mkdir -p target/selfhost
           docker image inspect debian:stable-slim --format '{{json .RepoDigests}}' > target/selfhost/base-image.json
           cat target/selfhost/base-image.json
+          docker build --build-arg BASE_IMAGE="$base" --build-arg CC_PACKAGE=${{ matrix.cc }} -t argorix-selfhost bootstrap/container
       - name: stage1 builds stage2, stage2 builds stage3, with no network
         run: >-
           docker run --rm --network none --user "$(id -u):$(id -g)"
