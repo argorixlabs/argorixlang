@@ -694,7 +694,6 @@ fn verifier_mutations(base: &serde_json::Value) -> Vec<(String, Vec<u8>)> {
             }),
         );
     }
-    drop(add);
     for (name, text) in [
         ("truncated", "{\"ir_version\": \"0.1\""),
         ("trailing", "{\"ir_version\":\"0.1\",\"core_version\":\"0.1\",\"module\":\"m\",\"items\":[]} x"),
