@@ -1,0 +1,6 @@
+core 0.1;
+module refusals.entry_unit;
+
+pub fn argorix_main() -> unit {
+    unit
+}

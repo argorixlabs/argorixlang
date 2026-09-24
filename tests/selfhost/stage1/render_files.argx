@@ -6,7 +6,8 @@ module selfhost_stage1.render_files;
 // lists one package per line: its files' relative paths separated by spaces,
 // the root first. Each package is read and its rendered diagnostics, named by
 // those paths, written to `dumps/<n>.txt` in the build root, where n counts
-// from 0; a package that links and checks gives an empty file. The result is
+// from 0. A package that checks gives the C backend's refusal, or an empty
+// file when the backend takes it. The result is
 // the number of files written, or 1000000 plus the failure digest of the
 // first read or write that failed.
 
@@ -72,6 +73,9 @@ fn render_one(package: PackageRead, build: BuildWrite, line: Slice<u8>, number: 
     let mut name: Buffer<u8> = bytes.append(Buffer::new(), "dumps/".as_slice());
     name = bytes.append_decimal(name, number);
     name = bytes.append(name, ".txt".as_slice());
-    let printed: Buffer<u8> = report.render(paths.as_slice(), path_ends.as_slice(), sources.as_slice(), ends.as_slice());
+    let mut printed: Buffer<u8> = report.render(paths.as_slice(), path_ends.as_slice(), sources.as_slice(), ends.as_slice());
+    if printed.length() == 0u64 {
+        printed = report.unsupported(sources.as_slice(), ends.as_slice());
+    }
     result.checked_digest(compiler_host.write(build, name.as_slice(), printed.as_slice()))
 }

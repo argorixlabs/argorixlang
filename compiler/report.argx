@@ -20,6 +20,7 @@ import compiler.ast;
 import compiler.diagnostics;
 import compiler.link;
 import compiler.check;
+import compiler.c_emit;
 
 // The diagnostics of the package in `sources` (see `compiler.link.dump`),
 // whose files are named by `paths` (see `compiler.pipeline.manifest`), or
@@ -88,10 +89,10 @@ pub fn render(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, ends:
     out
 }
 
-// What the C backend says when it refuses a package that checks.
-pub fn unsupported(root: Slice<u8>) -> Buffer<u8> {
-    let out: Buffer<u8> = bytes.append(Buffer::new(), root);
-    bytes.append(out, ": CBackendUnsupported: this program uses a construct the transitional C backend does not emit\n".as_slice())
+// What the C backend says when it refuses a package that checks, as stage0
+// says it (see `compiler.c_emit.refusal`).
+pub fn unsupported(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
+    c_emit.refusal(sources, ends)
 }
 
 fn lexical(path: Slice<u8>, source: Slice<u8>, found: Slice<Diagnostic>) -> Buffer<u8> {

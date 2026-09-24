@@ -1,0 +1,6 @@
+core 0.1;
+module refusals.entry_parameter;
+
+pub fn argorix_main(value: u64) -> u64 {
+    value
+}

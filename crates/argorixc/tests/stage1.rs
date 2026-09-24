@@ -371,9 +371,7 @@ fn stage1_reports_each_outcome_when_cc_is_available() {
     let build = work.join("refused-build");
     assert_eq!(run(&stage1, &refused, &build), "2");
     assert_eq!(written(&build), ["out.json", "out.txt"]);
-    assert!(fs::read_to_string(build.join("out.txt"))
-        .unwrap()
-        .starts_with("src/main.argx: CBackendUnsupported: "));
+    assert_eq!(fs::read_to_string(build.join("out.txt")).unwrap(), error);
 
     // Build files that are not valid: nothing but the reason is written, and
     // only when the `diagnostics` line was read.

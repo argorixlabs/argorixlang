@@ -48,6 +48,8 @@ pub struct CConst { name_start: u64, name_end: u64, ty: u64, value: u64, }
 
 pub struct CEmit {
     failed: bool,
+    // Why the program was refused, worded as stage0 words it.
+    reason: Buffer<u8>,
     types: Buffer<CType>,
     names: Buffer<u8>,
     functions: Buffer<CFunction>,
@@ -125,9 +127,28 @@ pub fn dump(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
     bytes.append(Buffer::new(), e.out.as_slice())
 }
 
+// Why this backend refuses the package in `sources`, as stage0's
+// `argorixc core-emit-c` puts it: `CBackendUnsupported: ` and the reason, on
+// one line. Nothing when the package does not check or is not refused.
+pub fn refusal(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
+    let linked: Linked = link.link(sources, ends);
+    if linked.status != link.LINKED {
+        return Buffer::new();
+    }
+    let e: CEmit = program(sources, linked.unit.tokens.as_slice(), linked.unit.strings.as_slice(), linked.walk.nodes.as_slice(), linked.walk.targets.as_slice(), linked.unit.programs.as_slice(), linked.unit.bases.as_slice(), linked.linking.bindings.as_slice(), linked.program, empty());
+    if !e.failed {
+        return Buffer::new();
+    }
+    let mut text: Buffer<u8> = bytes.append(Buffer::new(), "CBackendUnsupported: ".as_slice());
+    text = bytes.append(text, e.reason.as_slice());
+    text.push(10u8);
+    text
+}
+
 fn empty() -> CEmit {
     let mut e: CEmit = CEmit {
         failed: false,
+        reason: Buffer::new(),
         types: Buffer::new(),
         names: Buffer::new(),
         functions: Buffer::new(),
@@ -167,10 +188,106 @@ fn empty() -> CEmit {
     e
 }
 
-fn fail(e: CEmit) -> CEmit {
+// The program is refused, for `reason`: stage0's `CBackendUnsupported`
+// message for the same refusal. The first reason is the one kept.
+fn refuse(e: CEmit, reason: Slice<u8>) -> CEmit {
+    if e.failed {
+        return e;
+    }
     let mut x: CEmit = e;
     x.failed = true;
+    x.reason = copy(reason);
     x
+}
+
+// `before`, `name` and `after`, one after another.
+fn quoted(before: Slice<u8>, name: Slice<u8>, after: Slice<u8>) -> Buffer<u8> {
+    let text: Buffer<u8> = bytes.append(copy(before), name);
+    bytes.append(text, after)
+}
+
+// "unknown field `name` on `type`".
+fn unknown_field(name: Slice<u8>, owner: Slice<u8>) -> Buffer<u8> {
+    let text: Buffer<u8> = quoted("unknown field `".as_slice(), name, "` on `".as_slice());
+    quoted(text.as_slice(), owner, "`".as_slice())
+}
+
+// A type as Rust's `{:?}` prints stage0's `ScalarType`.
+fn append_debug(out: Buffer<u8>, types: Slice<CType>, names: Slice<u8>, ty: u64) -> Buffer<u8> {
+    let found: CType = types[ty];
+    let tag: u64 = found.tag;
+    if tag == T_UNIT { return bytes.append(out, "Unit".as_slice()); }
+    if tag == T_BOOL { return bytes.append(out, "Bool".as_slice()); }
+    if tag == T_BYTES { return bytes.append(out, "Bytes".as_slice()); }
+    if tag == T_STRING { return bytes.append(out, "String".as_slice()); }
+    let mut text: Buffer<u8> = out;
+    if tag == T_INTEGER || tag == T_USER || tag == T_CAPABILITY {
+        if tag == T_INTEGER {
+            text = bytes.append(text, "Integer(\"".as_slice());
+        } else if tag == T_USER {
+            text = bytes.append(text, "User(\"".as_slice());
+        } else {
+            text = bytes.append(text, "Capability(\"".as_slice());
+        }
+        text = range(text, names, found.name_start, found.name_end);
+        return bytes.append(text, "\")".as_slice());
+    }
+    if tag == T_ARRAY {
+        text = bytes.append(text, "Array { element: ".as_slice());
+        text = append_debug(text, types, names, found.element);
+        text = bytes.append(text, ", length: ".as_slice());
+        text = bytes.append_decimal(text, found.length);
+        return bytes.append(text, " }".as_slice());
+    }
+    if tag == T_SLICE {
+        text = bytes.append(text, "Slice(".as_slice());
+    } else if tag == T_BUFFER {
+        text = bytes.append(text, "Buffer(".as_slice());
+    } else if tag == T_ARENA {
+        text = bytes.append(text, "Arena(".as_slice());
+    } else {
+        text = bytes.append(text, "Handle(".as_slice());
+    }
+    text = append_debug(text, types, names, found.element);
+    bytes.append(text, ")".as_slice())
+}
+
+// "qualified path `a::b` is outside the scalar C profile", for a path of
+// more than one segment.
+fn qualified(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64) -> Buffer<u8> {
+    let joined: Buffer<u8> = path_text(s, t, n, g, p, b, bi, node);
+    quoted("qualified path `".as_slice(), joined.as_slice(), "` is outside the scalar C profile".as_slice())
+}
+
+// A path's segments, as the IR names them, joined by `::`.
+fn path_text(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64) -> Buffer<u8> {
+    let mut text: Buffer<u8> = Buffer::new();
+    let count: u64 = ir.segments(t, n, g, node);
+    let mut index: u64 = 0u64;
+    while index < count {
+        if index > 0u64 {
+            text = bytes.append(text, "::".as_slice());
+        }
+        text = ir.append_segment(text, s, t, n, g, p, b, bi, node, index);
+        index += 1u64;
+    }
+    text
+}
+
+// A type as Rust's `{:?}` prints the IR's `CoreIrType`.
+fn append_ir_debug(out: Buffer<u8>, s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64) -> Buffer<u8> {
+    let name: u64 = n[node].word - 1u64;
+    let mut text: Buffer<u8> = out;
+    if n[node].kind == ast.TYPE_NAMED {
+        text = bytes.append(text, "Named { name: \"".as_slice());
+        text = ir.append_type_text(text, s, t, n, p, b, bi, ir.module_of(b, node), name);
+        return bytes.append(text, "\" }".as_slice());
+    }
+    text = bytes.append(text, "Container { name: \"".as_slice());
+    text = range(text, s, t[name].start, t[name].end);
+    text = bytes.append(text, "\", element: ".as_slice());
+    text = append_ir_debug(text, s, t, n, p, b, bi, n[node].first - 1u64);
+    bytes.append(text, ", array_length: None }".as_slice())
 }
 
 // ------------------------------------------------------------------ text
@@ -308,7 +425,9 @@ fn from_type(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Sl
     if bytes.equal(container, "Handle".as_slice()) {
         return intern(T_HANDLE, empty_name.as_slice(), element, 0u64, x);
     }
-    fail(x)
+    let described: Buffer<u8> = append_ir_debug(Buffer::new(), s, t, n, p, b, bi, node);
+    let reason: Buffer<u8> = quoted("container type `".as_slice(), described.as_slice(), "` is not lowered by this C profile".as_slice());
+    refuse(x, reason.as_slice())
 }
 
 fn container(tag: u64, element: u64, e: CEmit) -> CEmit {
@@ -421,6 +540,48 @@ fn widen(byte: u8) -> u64 {
         weight = weight / 2u64;
     }
     value
+}
+
+// Whether the name `start..end` of `names` sorts before `other_start..other_end`.
+fn name_before(names: Slice<u8>, start: u64, end: u64, other_start: u64, other_end: u64) -> bool {
+    bytes.compare(names.slice(start, end), names.slice(other_start, other_end)) < 0i8
+}
+
+// The name of the first struct, then the first enum, in name order whose
+// fields hold a slice, or nothing.
+fn slice_holder(types: Slice<CType>, names: Slice<u8>, structs: Slice<CRecord>, enums: Slice<CRecord>, variants: Slice<CRecord>, fields: Slice<CField>) -> Buffer<u8> {
+    let mut index: u64 = 0u64;
+    while index < structs.length() {
+        let record: CRecord = structs[index];
+        if fields_hold_slice(types, fields, record.first, record.count) {
+            return range(Buffer::new(), names, record.name_start, record.name_end);
+        }
+        index += 1u64;
+    }
+    index = 0u64;
+    while index < enums.length() {
+        let record: CRecord = enums[index];
+        let mut variant: u64 = record.first;
+        while variant < record.first + record.count {
+            if fields_hold_slice(types, fields, variants[variant].first, variants[variant].count) {
+                return range(Buffer::new(), names, record.name_start, record.name_end);
+            }
+            variant += 1u64;
+        }
+        index += 1u64;
+    }
+    Buffer::new()
+}
+
+fn fields_hold_slice(types: Slice<CType>, fields: Slice<CField>, first: u64, count: u64) -> bool {
+    let mut index: u64 = first;
+    while index < first + count {
+        if contains_slice(types, fields[index].ty) {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
 }
 
 fn contains_slice(types: Slice<CType>, ty: u64) -> bool {
@@ -797,23 +958,34 @@ fn program(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slic
     }
     // A view of Buffer or Array storage carries no generation to check, so a
     // program where one could outlive its call is refused.
+    // Stage0 names the first function in name order that returns one.
+    let mut returning: u64 = 0u64;
     let mut index: u64 = 0u64;
     while index < x.functions.length() {
-        if contains_slice(x.types.as_slice(), x.functions[index].result) {
-            return fail(x);
+        let found: CFunction = x.functions[index];
+        if contains_slice(x.types.as_slice(), found.result) {
+            if returning == 0u64 || name_before(x.names.as_slice(), found.name_start, found.name_end, x.functions[returning - 1u64].name_start, x.functions[returning - 1u64].name_end) {
+                returning = index + 1u64;
+            }
         }
         index += 1u64;
     }
-    index = 0u64;
-    while index < x.fields.length() {
-        if contains_slice(x.types.as_slice(), x.fields[index].ty) {
-            return fail(x);
-        }
-        index += 1u64;
+    if returning != 0u64 {
+        let found: CFunction = x.functions[returning - 1u64];
+        let name: Buffer<u8> = range(Buffer::new(), x.names.as_slice(), found.name_start, found.name_end);
+        let reason: Buffer<u8> = quoted("`".as_slice(), name.as_slice(), "` returns a slice; this backend only passes views down".as_slice());
+        return refuse(x, reason.as_slice());
+    }
+    // And the first struct, then the first enum, in name order that holds
+    // one.
+    let holder: Buffer<u8> = slice_holder(x.types.as_slice(), x.names.as_slice(), x.structs.as_slice(), x.enums.as_slice(), x.variants.as_slice(), x.fields.as_slice());
+    if holder.length() > 0u64 {
+        let reason: Buffer<u8> = quoted("`".as_slice(), holder.as_slice(), "` holds a slice; this backend only passes views down".as_slice());
+        return refuse(x, reason.as_slice());
     }
     let entry: u64 = find_function(x.functions.as_slice(), x.names.as_slice(), "argorix_main".as_slice());
     if entry == 0u64 {
-        return fail(x);
+        return refuse(x, "module must define `argorix_main`".as_slice());
     }
     // The entry takes nothing, or at most one `PackageRead` and one
     // `BuildWrite`, and returns a scalar.
@@ -824,11 +996,11 @@ fn program(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slic
     while index < main.first + main.count {
         let ty: CType = x.types[x.params[index]];
         if ty.tag != T_CAPABILITY {
-            return fail(x);
+            return refuse(x, "`argorix_main` must return a scalar and take no parameters, or at most one `PackageRead` and one `BuildWrite`".as_slice());
         }
         let is_read: bool = same(x.names.as_slice(), ty.name_start, ty.name_end, "PackageRead".as_slice());
         if (is_read && read) || (!is_read && write) {
-            return fail(x);
+            return refuse(x, "`argorix_main` must return a scalar and take no parameters, or at most one `PackageRead` and one `BuildWrite`".as_slice());
         }
         if is_read {
             read = true;
@@ -839,7 +1011,7 @@ fn program(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slic
     }
     let result_tag: u64 = x.types[main.result].tag;
     if result_tag != T_BOOL && result_tag != T_INTEGER {
-        return fail(x);
+        return refuse(x, "`argorix_main` must return a scalar and take no parameters, or at most one `PackageRead` and one `BuildWrite`".as_slice());
     }
     // Only a program that can hold a capability gets the host shim.
     let mut uses_host: bool = false;
@@ -1086,12 +1258,15 @@ fn emit_named(e: CEmit, which: u64) -> CEmit {
     if state == 2u64 {
         return x;
     }
+    let is_struct: bool = which < x.structs.length();
     if state == 1u64 {
         // A type that contains itself by value.
-        return fail(x);
+        let record: CRecord = if is_struct { x.structs[which] } else { x.enums[which - x.structs.length()] };
+        let name: Buffer<u8> = range(Buffer::new(), x.names.as_slice(), record.name_start, record.name_end);
+        let reason: Buffer<u8> = quoted("type `".as_slice(), name.as_slice(), "` contains itself by value".as_slice());
+        return refuse(x, reason.as_slice());
     }
     x.named_state[which] = 1u64;
-    let is_struct: bool = which < x.structs.length();
     let record: CRecord = if is_struct { x.structs[which] } else { x.enums[which - x.structs.length()] };
     let name: Buffer<u8> = range(Buffer::new(), x.names.as_slice(), record.name_start, record.name_end);
     if is_struct {
@@ -1916,14 +2091,20 @@ fn emit_place(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
         let name: Buffer<u8> = word(s, t, n, node);
         if write && x.types[base_ty].tag == T_HANDLE {
             let element: u64 = x.types[base_ty].element;
+            if x.types[element].tag != T_USER {
+                return refuse(x, "handle field access requires a struct element".as_slice());
+            }
+            let owner: Buffer<u8> = range(Buffer::new(), x.names.as_slice(), x.types[element].name_start, x.types[element].name_end);
             x = struct_of(x, element);
             if x.result == 0u64 {
-                return fail(x);
+                let reason: Buffer<u8> = unknown_field(name.as_slice(), owner.as_slice());
+                return refuse(x, reason.as_slice());
             }
             let record: CRecord = x.structs[x.result - 1u64];
             let field: u64 = find_field(x.fields.as_slice(), x.names.as_slice(), record.first, record.count, name.as_slice());
             if field == 0u64 {
-                return fail(x);
+                let reason: Buffer<u8> = unknown_field(name.as_slice(), owner.as_slice());
+                return refuse(x, reason.as_slice());
             }
             let field_ty: u64 = x.fields[field - 1u64].ty;
             let element_c: Buffer<u8> = append_c_name(Buffer::new(), x.types.as_slice(), x.names.as_slice(), element);
@@ -1943,14 +2124,17 @@ fn emit_place(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
             // Read it as a value.
             return emit_expr(s, t, st, n, g, p, b, bi, node, NONE, indent, x);
         }
+        let owner: Buffer<u8> = range(Buffer::new(), x.names.as_slice(), x.types[base_ty].name_start, x.types[base_ty].name_end);
         x = struct_of(x, base_ty);
         if x.result == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = unknown_field(name.as_slice(), owner.as_slice());
+            return refuse(x, reason.as_slice());
         }
         let record: CRecord = x.structs[x.result - 1u64];
         let field: u64 = find_field(x.fields.as_slice(), x.names.as_slice(), record.first, record.count, name.as_slice());
         if field == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = unknown_field(name.as_slice(), owner.as_slice());
+            return refuse(x, reason.as_slice());
         }
         let field_ty: u64 = x.fields[field - 1u64].ty;
         let mut text: Buffer<u8> = bytes.append(base, ".argorix_f_".as_slice());
@@ -1998,7 +2182,7 @@ fn emit_place(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
             text = bytes.append(text, base.as_slice());
             text = bytes.append(text, ".length)]".as_slice());
         } else {
-            return fail(x);
+            return refuse(x, "only a Buffer or an Array element is a writable place".as_slice());
         }
         return set_value(x, text.as_slice(), found.element);
     }
@@ -2092,7 +2276,7 @@ fn emit_statement(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, 
         return line(x, indent, "break;".as_slice());
     }
     if x.loops_live == 0u64 || x.loops[(x.loops_live - 1u64) * 3u64] == 0u64 {
-        return fail(x);
+        return refuse(x, "a value `break` needs an enclosing `loop` used as a value".as_slice());
     }
     let temp: u64 = x.loops[(x.loops_live - 1u64) * 3u64 + 1u64];
     let ty: u64 = x.loops[(x.loops_live - 1u64) * 3u64 + 2u64];
@@ -2147,7 +2331,7 @@ fn emit_assign(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
                 return x;
             }
             if x.types[ty].tag != T_INTEGER {
-                return fail(x);
+                return refuse(x, "checked arithmetic requires an integer".as_slice());
             }
             let mut text: Buffer<u8> = bytes.append(copy(place.as_slice()), " = ".as_slice());
             let prefix: Buffer<u8> = helper(x.types.as_slice(), x.names.as_slice(), ty);
@@ -2191,12 +2375,14 @@ fn emit_assign(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
         return line(x, indent, text.as_slice());
     }
     if ir.segments(t, n, g, target) != 1u64 {
-        return fail(x);
+        let reason: Buffer<u8> = qualified(s, t, n, g, p, b, bi, target);
+        return refuse(x, reason.as_slice());
     }
     let name: Buffer<u8> = segment(s, t, n, g, p, b, bi, target, 0u64);
     let ty: u64 = find_local(s, x.locals.as_slice(), x.locals_live, name.as_slice());
     if ty == NONE {
-        return fail(x);
+        let reason: Buffer<u8> = quoted("unknown local `".as_slice(), name.as_slice(), "`".as_slice());
+        return refuse(x, reason.as_slice());
     }
     x = emit_consumed(s, t, st, n, g, p, b, bi, value, ty, indent, x);
     if x.failed {
@@ -2231,7 +2417,7 @@ fn emit_assign(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
         assignment = copy(right.as_slice());
     } else {
         if x.types[ty].tag != T_INTEGER {
-            return fail(x);
+            return refuse(x, "checked arithmetic requires an integer".as_slice());
         }
         assignment = helper(x.types.as_slice(), x.names.as_slice(), ty);
         assignment = append_operation(assignment, operator);
@@ -2335,11 +2521,11 @@ fn block_assignment(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>
         // A value block without a tail must leave by return, break or
         // continue.
         if last == 0u64 {
-            return fail(x);
+            return refuse(x, "value block has no tail expression".as_slice());
         }
         let kind: u64 = n[last - 1u64].kind;
         if kind != ast.RETURN && kind != ast.BREAK && kind != ast.CONTINUE {
-            return fail(x);
+            return refuse(x, "value block has no tail expression".as_slice());
         }
         x = close_scope(x);
         x = line(x, indent, "}".as_slice());
@@ -2436,8 +2622,11 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
             x = integer(s.slice(found.text_start, found.text_end), x);
             ty = x.result;
         }
-        if ty == NONE || x.types[ty].tag != T_INTEGER {
-            return fail(x);
+        if ty == NONE {
+            return refuse(x, "integer literal needs a type".as_slice());
+        }
+        if x.types[ty].tag != T_INTEGER {
+            return refuse(x, "integer literal has non-integer type".as_slice());
         }
         let mut text: Buffer<u8> = bytes.append_decimal(Buffer::new(), n[node].value);
         if is_unsigned(x.types.as_slice(), x.names.as_slice(), ty) {
@@ -2461,14 +2650,17 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
         return emit_aggregate_value(s, t, st, n, g, p, b, bi, node, expected, indent, x);
     }
     if kind == ast.ARRAY {
-        if expected == NONE || x.types[expected].tag != T_ARRAY {
-            return fail(x);
+        if expected == NONE {
+            return refuse(x, "array literal needs an expected array type".as_slice());
+        }
+        if x.types[expected].tag != T_ARRAY {
+            return refuse(x, "array literal has a non-array expected type".as_slice());
         }
         let element: u64 = x.types[expected].element;
         let length: u64 = x.types[expected].length;
         let count: u64 = child_count(n, node);
         if count != length {
-            return fail(x);
+            return refuse(x, "array literal length mismatch".as_slice());
         }
         x = next_temp(x);
         let temp: Buffer<u8> = temp_name(x.result);
@@ -2530,7 +2722,7 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
             }
             buffer = found.tag == T_BUFFER;
         } else {
-            return fail(x);
+            return refuse(x, "indexing requires Array, Slice, Buffer, or bytes".as_slice());
         }
         x = integer("u64".as_slice(), x);
         let unsigned: u64 = x.result;
@@ -2570,7 +2762,7 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
         } else if x.types[value_ty].tag == T_HANDLE {
             owner = x.types[value_ty].element;
             if x.types[owner].tag != T_USER {
-                return fail(x);
+                return refuse(x, "handle field access requires a struct element".as_slice());
             }
             let element_c: Buffer<u8> = append_c_name(Buffer::new(), x.types.as_slice(), x.names.as_slice(), owner);
             text = bytes.append(text, "((const ".as_slice());
@@ -2583,17 +2775,20 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
             text = bytes.append(text, element_c.as_slice());
             text = bytes.append(text, "), false))->argorix_f_".as_slice());
         } else {
-            return fail(x);
+            return refuse(x, "field access currently requires a struct or struct handle".as_slice());
         }
         text = bytes.append(text, name.as_slice());
+        let owner_name: Buffer<u8> = range(Buffer::new(), x.names.as_slice(), x.types[owner].name_start, x.types[owner].name_end);
         x = struct_of(x, owner);
         if x.result == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = unknown_field(name.as_slice(), owner_name.as_slice());
+            return refuse(x, reason.as_slice());
         }
         let record: CRecord = x.structs[x.result - 1u64];
         let field: u64 = find_field(x.fields.as_slice(), x.names.as_slice(), record.first, record.count, name.as_slice());
         if field == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = unknown_field(name.as_slice(), owner_name.as_slice());
+            return refuse(x, reason.as_slice());
         }
         let field_ty: u64 = x.fields[field - 1u64].ty;
         return bind_temp(text.as_slice(), field_ty, indent, x);
@@ -2608,8 +2803,11 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
         if n[node].value == token.BANG {
             text = bytes.append(local_name("(!".as_slice(), x.value.as_slice()), ")".as_slice());
         } else {
-            if x.types[ty].tag != T_INTEGER || x.names[x.types[ty].name_start] != 105u8 {
-                return fail(x);
+            if x.types[ty].tag != T_INTEGER {
+                return refuse(x, "negation requires an integer".as_slice());
+            }
+            if x.names[x.types[ty].name_start] != 105u8 {
+                return refuse(x, "negating an unsigned value has no representable result".as_slice());
             }
             text = helper(x.types.as_slice(), x.names.as_slice(), ty);
             text = bytes.append(text, "neg(".as_slice());
@@ -2629,7 +2827,7 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
     }
     if kind == ast.IF {
         if expected == NONE {
-            return fail(x);
+            return refuse(x, "if expression needs an expected scalar type".as_slice());
         }
         x = emit_expr(s, t, st, n, g, p, b, bi, child(n, node, 0u64), BOOL, indent, x);
         if x.failed {
@@ -2641,8 +2839,11 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
         let text: Buffer<u8> = bytes.append(local_name("if (".as_slice(), condition.as_slice()), ") {".as_slice());
         x = line(x, indent, text.as_slice());
         x = block_assignment(s, t, st, n, g, p, b, bi, child(n, node, 1u64), temp.as_slice(), expected, indent + 1u64, x);
-        if x.failed || child_count(n, node) < 3u64 {
-            return fail(x);
+        if x.failed {
+            return x;
+        }
+        if child_count(n, node) < 3u64 {
+            return refuse(x, "value if expression requires else".as_slice());
         }
         x = line(x, indent, "} else {".as_slice());
         x = emit_consumed(s, t, st, n, g, p, b, bi, child(n, node, 2u64), expected, indent + 1u64, x);
@@ -2658,7 +2859,7 @@ fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
     }
     if kind == ast.BLOCK {
         if expected == NONE {
-            return fail(x);
+            return refuse(x, "value block needs an expected scalar type".as_slice());
         }
         x = zeroed_temp(expected, indent, x);
         let temp: Buffer<u8> = temp_name(x.result);
@@ -2700,21 +2901,29 @@ fn emit_path(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
     if count == 2u64 {
         let name: Buffer<u8> = segment(s, t, n, g, p, b, bi, node, 0u64);
         let variant: Buffer<u8> = segment(s, t, n, g, p, b, bi, node, 1u64);
+        let joined: Buffer<u8> = path_text(s, t, n, g, p, b, bi, node);
         let enumeration: u64 = find_record(x.enums.as_slice(), x.names.as_slice(), name.as_slice());
         if enumeration == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = quoted("unknown enum variant `".as_slice(), joined.as_slice(), "`".as_slice());
+            return refuse(x, reason.as_slice());
         }
         let record: CRecord = x.enums[enumeration - 1u64];
         let found: u64 = find_variant(x.variants.as_slice(), x.names.as_slice(), record.first, record.count, variant.as_slice());
-        if found == 0u64 || x.variants[found - 1u64].count != 0u64 {
-            return fail(x);
+        if found == 0u64 {
+            let reason: Buffer<u8> = quoted("unknown enum variant `".as_slice(), joined.as_slice(), "`".as_slice());
+            return refuse(x, reason.as_slice());
+        }
+        if x.variants[found - 1u64].count != 0u64 {
+            let reason: Buffer<u8> = quoted("variant `".as_slice(), joined.as_slice(), "` requires fields".as_slice());
+            return refuse(x, reason.as_slice());
         }
         x = intern_named(T_USER, name.as_slice(), x);
         let ty: u64 = x.result;
         return unit_variant(name.as_slice(), variant.as_slice(), ty, indent, x);
     }
     if count != 1u64 {
-        return fail(x);
+        let reason: Buffer<u8> = qualified(s, t, n, g, p, b, bi, node);
+        return refuse(x, reason.as_slice());
     }
     let name: Buffer<u8> = segment(s, t, n, g, p, b, bi, node, 0u64);
     let ty: u64 = find_local(s, x.locals.as_slice(), x.locals_live, name.as_slice());
@@ -2725,7 +2934,8 @@ fn emit_path(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
     // A local shadows a constant of the same name.
     let constant: u64 = find_constant(x.constants.as_slice(), x.names.as_slice(), name.as_slice());
     if constant == 0u64 {
-        return fail(x);
+        let reason: Buffer<u8> = quoted("path `".as_slice(), name.as_slice(), "` is not a scalar local".as_slice());
+        return refuse(x, reason.as_slice());
     }
     let found: CConst = x.constants[constant - 1u64];
     emit_expr(s, t, st, n, g, p, b, bi, found.value, found.ty, indent, x)
@@ -2758,14 +2968,16 @@ fn emit_aggregate_value(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<N
     let mut x: CEmit = e;
     let count: u64 = ir.segments(t, n, g, node);
     if count != 1u64 && count != 2u64 {
-        return fail(x);
+        let joined: Buffer<u8> = path_text(s, t, n, g, p, b, bi, node);
+        let reason: Buffer<u8> = quoted("aggregate path `".as_slice(), joined.as_slice(), "` is not supported".as_slice());
+        return refuse(x, reason.as_slice());
     }
     let name: Buffer<u8> = segment(s, t, n, g, p, b, bi, node, 0u64);
     x = intern_named(T_USER, name.as_slice(), x);
     let own_type: u64 = x.result;
     let ty: u64 = if expected != NONE { expected } else { own_type };
     if ty != own_type {
-        return fail(x);
+        return refuse(x, "aggregate path does not match its expected type".as_slice());
     }
     x = next_temp(x);
     let temp: Buffer<u8> = temp_name(x.result);
@@ -2779,14 +2991,17 @@ fn emit_aggregate_value(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<N
     let mut variant: Buffer<u8> = Buffer::new();
     if count == 2u64 {
         variant = segment(s, t, n, g, p, b, bi, node, 1u64);
+        let joined: Buffer<u8> = path_text(s, t, n, g, p, b, bi, node);
         let enumeration: u64 = find_record(x.enums.as_slice(), x.names.as_slice(), name.as_slice());
         if enumeration == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = quoted("unknown enum variant `".as_slice(), joined.as_slice(), "`".as_slice());
+            return refuse(x, reason.as_slice());
         }
         let record: CRecord = x.enums[enumeration - 1u64];
         let found: u64 = find_variant(x.variants.as_slice(), x.names.as_slice(), record.first, record.count, variant.as_slice());
         if found == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = quoted("unknown enum variant `".as_slice(), joined.as_slice(), "`".as_slice());
+            return refuse(x, reason.as_slice());
         }
         first = x.variants[found - 1u64].first;
         fields = x.variants[found - 1u64].count;
@@ -2805,7 +3020,8 @@ fn emit_aggregate_value(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<N
     } else {
         let structure: u64 = find_record(x.structs.as_slice(), x.names.as_slice(), name.as_slice());
         if structure == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = quoted("`".as_slice(), name.as_slice(), "` is not a lowered struct".as_slice());
+            return refuse(x, reason.as_slice());
         }
         first = x.structs[structure - 1u64].first;
         fields = x.structs[structure - 1u64].count;
@@ -2817,7 +3033,8 @@ fn emit_aggregate_value(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<N
         let field_name: Buffer<u8> = word(s, t, n, field);
         let found: u64 = find_field(x.fields.as_slice(), x.names.as_slice(), first, fields, field_name.as_slice());
         if found == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = unknown_field(field_name.as_slice(), name.as_slice());
+            return refuse(x, reason.as_slice());
         }
         let field_ty: u64 = x.fields[found - 1u64].ty;
         x = emit_consumed(s, t, st, n, g, p, b, bi, n[field].first - 1u64, field_ty, indent, x);
@@ -2905,7 +3122,7 @@ fn emit_binary(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
         || operator == token.SHIFT_LEFT || operator == token.SHIFT_RIGHT
     {
         if x.types[left_ty].tag != T_INTEGER {
-            return fail(x);
+            return refuse(x, "checked arithmetic requires an integer".as_slice());
         }
         text = helper(x.types.as_slice(), x.names.as_slice(), left_ty);
         if operator == token.SHIFT_LEFT {
@@ -2956,8 +3173,11 @@ fn emit_call(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
     let callee: u64 = child(n, node, 0u64);
     let arguments: u64 = child_count(n, node) - 1u64;
     if arguments == 0u64 && is_path(s, t, n, g, p, b, bi, callee, "Buffer".as_slice(), "new".as_slice()) {
-        if expected == NONE || x.types[expected].tag != T_BUFFER {
-            return fail(x);
+        if expected == NONE {
+            return refuse(x, "Buffer::new requires an expected Buffer type".as_slice());
+        }
+        if x.types[expected].tag != T_BUFFER {
+            return refuse(x, "Buffer::new has a non-Buffer expected type".as_slice());
         }
         let mut text: Buffer<u8> = bytes.append(Buffer::new(), "argorix_buffer_new(sizeof(".as_slice());
         text = append_c_name(text, x.types.as_slice(), x.names.as_slice(), x.types[expected].element);
@@ -2965,8 +3185,11 @@ fn emit_call(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
         return bind_temp(text.as_slice(), expected, indent, x);
     }
     if arguments == 0u64 && is_path(s, t, n, g, p, b, bi, callee, "Arena".as_slice(), "new".as_slice()) {
-        if expected == NONE || x.types[expected].tag != T_ARENA {
-            return fail(x);
+        if expected == NONE {
+            return refuse(x, "Arena::new requires an expected Arena type".as_slice());
+        }
+        if x.types[expected].tag != T_ARENA {
+            return refuse(x, "Arena::new has a non-Arena expected type".as_slice());
         }
         let element: u64 = x.types[expected].element;
         let mut text: Buffer<u8> = bytes.append(Buffer::new(), "argorix_arena_new(sizeof(".as_slice());
@@ -2979,13 +3202,18 @@ fn emit_call(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
     if n[callee].kind == ast.FIELD_ACCESS {
         return emit_method(s, t, st, n, g, p, b, bi, node, callee, arguments, indent, x);
     }
-    if n[callee].kind != ast.PATH || ir.segments(t, n, g, callee) != 1u64 {
-        return fail(x);
+    if n[callee].kind != ast.PATH {
+        return refuse(x, "scalar C profile supports direct function calls only".as_slice());
+    }
+    if ir.segments(t, n, g, callee) != 1u64 {
+        let reason: Buffer<u8> = qualified(s, t, n, g, p, b, bi, callee);
+        return refuse(x, reason.as_slice());
     }
     let name: Buffer<u8> = segment(s, t, n, g, p, b, bi, callee, 0u64);
     let found: u64 = find_function(x.functions.as_slice(), x.names.as_slice(), name.as_slice());
     if found == 0u64 {
-        return fail(x);
+        let reason: Buffer<u8> = quoted("unknown function `".as_slice(), name.as_slice(), "`".as_slice());
+        return refuse(x, reason.as_slice());
     }
     let function: CFunction = x.functions[found - 1u64];
     let mut call: Buffer<u8> = local_name("argorix_fn_".as_slice(), name.as_slice());
@@ -3021,11 +3249,14 @@ fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
     if bytes.equal(name.as_slice(), "push".as_slice()) {
         // The buffer is only touched by the push itself, after the value.
         if arguments != 1u64 {
-            return fail(x);
+            return refuse(x, "Buffer::push requires one argument".as_slice());
         }
         x = emit_place(s, t, st, n, g, p, b, bi, value, true, indent, x);
-        if x.failed || x.types[x.vty].tag != T_BUFFER {
-            return fail(x);
+        if x.failed {
+            return x;
+        }
+        if x.types[x.vty].tag != T_BUFFER {
+            return refuse(x, "push is only implemented for Buffer values".as_slice());
         }
         let receiver: Buffer<u8> = copy(x.value.as_slice());
         let element: u64 = x.types[x.vty].element;
@@ -3043,25 +3274,33 @@ fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
         return set_value(x, "0".as_slice(), UNIT);
     }
     if bytes.equal(name.as_slice(), "alloc".as_slice()) || bytes.equal(name.as_slice(), "release".as_slice()) {
-        if n[value].kind != ast.PATH || ir.segments(t, n, g, value) != 1u64 {
-            return fail(x);
+        if n[value].kind != ast.PATH {
+            return refuse(x, "Arena method receiver must be a local".as_slice());
+        }
+        if ir.segments(t, n, g, value) != 1u64 {
+            let reason: Buffer<u8> = qualified(s, t, n, g, p, b, bi, value);
+            return refuse(x, reason.as_slice());
         }
         let local: Buffer<u8> = segment(s, t, n, g, p, b, bi, value, 0u64);
         let ty: u64 = find_local(s, x.locals.as_slice(), x.locals_live, local.as_slice());
-        if ty == NONE || x.types[ty].tag != T_ARENA {
-            return fail(x);
+        if ty == NONE {
+            let reason: Buffer<u8> = quoted("unknown local `".as_slice(), local.as_slice(), "`".as_slice());
+            return refuse(x, reason.as_slice());
+        }
+        if x.types[ty].tag != T_ARENA {
+            return refuse(x, "arena method requires an Arena value".as_slice());
         }
         let element: u64 = x.types[ty].element;
         if bytes.equal(name.as_slice(), "release".as_slice()) {
             if arguments != 0u64 {
-                return fail(x);
+                return refuse(x, "Arena::release accepts no arguments".as_slice());
             }
             let text: Buffer<u8> = bytes.append(local_name("argorix_arena_release(&argorix_v_".as_slice(), local.as_slice()), ");".as_slice());
             x = line(x, indent, text.as_slice());
             return set_value(x, "0".as_slice(), UNIT);
         }
         if arguments != 1u64 {
-            return fail(x);
+            return refuse(x, "Arena::alloc requires one argument".as_slice());
         }
         x = emit_consumed(s, t, st, n, g, p, b, bi, child(n, node, 1u64), element, indent, x);
         if x.failed {
@@ -3080,11 +3319,14 @@ fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
     if bytes.equal(name.as_slice(), "slice".as_slice()) {
         // A narrower view, checked against the one it narrows.
         if arguments != 2u64 {
-            return fail(x);
+            return refuse(x, "slice requires two arguments".as_slice());
         }
         x = emit_place(s, t, st, n, g, p, b, bi, value, false, indent, x);
-        if x.failed || x.types[x.vty].tag != T_SLICE {
-            return fail(x);
+        if x.failed {
+            return x;
+        }
+        if x.types[x.vty].tag != T_SLICE {
+            return refuse(x, "slice narrows a Slice".as_slice());
         }
         let view: Buffer<u8> = copy(x.value.as_slice());
         let view_ty: u64 = x.vty;
@@ -3120,11 +3362,14 @@ fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
     if bytes.equal(name.as_slice(), "wrapping_add".as_slice()) {
         // Modular: the sum is taken in uint64_t and cast back.
         if arguments != 1u64 {
-            return fail(x);
+            return refuse(x, "wrapping_add requires one argument".as_slice());
         }
         x = emit_expr(s, t, st, n, g, p, b, bi, value, NONE, indent, x);
-        if x.failed || x.types[x.vty].tag != T_INTEGER {
-            return fail(x);
+        if x.failed {
+            return x;
+        }
+        if x.types[x.vty].tag != T_INTEGER {
+            return refuse(x, "wrapping_add requires an integer".as_slice());
         }
         let left: Buffer<u8> = copy(x.value.as_slice());
         let ty: u64 = x.vty;
@@ -3142,13 +3387,15 @@ fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
         return bind_temp(text.as_slice(), ty, indent, x);
     }
     if arguments != 0u64 {
-        return fail(x);
+        let reason: Buffer<u8> = quoted("intrinsic `".as_slice(), name.as_slice(), "` does not accept arguments".as_slice());
+        return refuse(x, reason.as_slice());
     }
     x = emit_place(s, t, st, n, g, p, b, bi, value, false, indent, x);
     if x.failed {
         return x;
     }
     let receiver: Buffer<u8> = copy(x.value.as_slice());
+    let receiver_ty: u64 = x.vty;
     let found: CType = x.types[x.vty];
     let tag: u64 = found.tag;
     x = integer("u64".as_slice(), x);
@@ -3164,7 +3411,7 @@ fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
             let text: Buffer<u8> = bytes.append(copy(receiver.as_slice()), ".length".as_slice());
             return bind_temp(text.as_slice(), unsigned, indent, x);
         }
-        return fail(x);
+        return not_defined(name.as_slice(), receiver_ty, x);
     }
     if bytes.equal(name.as_slice(), "as_slice".as_slice()) && (tag == T_BUFFER || tag == T_ARRAY || tag == T_STRING) {
         let element: u64 = if tag == T_STRING { byte } else { found.element };
@@ -3201,7 +3448,14 @@ fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
         let text: Buffer<u8> = bytes.append(local_name("argorix_decode_utf8(".as_slice(), receiver.as_slice()), ")".as_slice());
         return bind_temp(text.as_slice(), STRING, indent, x);
     }
-    fail(x)
+    not_defined(name.as_slice(), receiver_ty, x)
+}
+
+// "intrinsic `name` is not defined for <the receiver's type>".
+fn not_defined(name: Slice<u8>, receiver: u64, e: CEmit) -> CEmit {
+    let mut reason: Buffer<u8> = quoted("intrinsic `".as_slice(), name, "` is not defined for ".as_slice());
+    reason = append_debug(reason, e.types.as_slice(), e.names.as_slice(), receiver);
+    refuse(e, reason.as_slice())
 }
 
 // A compiler-host operation on a capability. The views are bound first, so
@@ -3268,7 +3522,13 @@ fn host_call(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Sl
         text = bytes.append(text, ".length)".as_slice());
         return bind_temp(text.as_slice(), code, indent, x);
     }
-    fail(x)
+    let owner: Buffer<u8> = range(Buffer::new(), x.names.as_slice(), x.types[capability].name_start, x.types[capability].name_end);
+    let mut reason: Buffer<u8> = quoted("`".as_slice(), owner.as_slice(), "` has no operation `".as_slice());
+    reason = bytes.append(reason, method);
+    reason = bytes.append(reason, "` with ".as_slice());
+    reason = bytes.append_decimal(reason, arguments);
+    reason = bytes.append(reason, " arguments".as_slice());
+    refuse(x, reason.as_slice())
 }
 
 // ------------------------------------------------------------------ match
@@ -3295,10 +3555,11 @@ fn emit_match(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
     if scrutinee_tag == T_USER {
         layout = find_record(x.enums.as_slice(), x.names.as_slice(), enum_name.as_slice());
         if layout == 0u64 {
-            return fail(x);
+            let reason: Buffer<u8> = quoted("`".as_slice(), enum_name.as_slice(), "` is not a lowered enum".as_slice());
+            return refuse(x, reason.as_slice());
         }
     } else if scrutinee_tag != T_BOOL && scrutinee_tag != T_INTEGER {
-        return fail(x);
+        return refuse(x, "match scrutinee must be a bool, an integer or an enum".as_slice());
     }
     x = next_temp(x);
     let result: Buffer<u8> = temp_name(x.result);
@@ -3333,18 +3594,24 @@ fn emit_match(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
         let mut release_types: Buffer<u64> = Buffer::new();
         let mut condition: Buffer<u8> = Buffer::new();
         if kind == ast.PATTERN_VARIANT {
-            if layout == 0u64 || ir.segments(t, n, g, pattern) != 2u64 {
-                return fail(x);
+            if layout == 0u64 {
+                return refuse(x, "variant pattern on a scrutinee that is not an enum".as_slice());
+            }
+            if ir.segments(t, n, g, pattern) != 2u64 {
+                return refuse(x, "variant match path must contain enum and variant".as_slice());
             }
             let pattern_enum: Buffer<u8> = segment(s, t, n, g, p, b, bi, pattern, 0u64);
             let variant: Buffer<u8> = segment(s, t, n, g, p, b, bi, pattern, 1u64);
             if !bytes.equal(pattern_enum.as_slice(), enum_name.as_slice()) {
-                return fail(x);
+                return refuse(x, "variant pattern enum does not match scrutinee".as_slice());
             }
             let record: CRecord = x.enums[layout - 1u64];
             let found: u64 = find_variant(x.variants.as_slice(), x.names.as_slice(), record.first, record.count, variant.as_slice());
             if found == 0u64 {
-                return fail(x);
+                let mut reason: Buffer<u8> = quoted("unknown variant `".as_slice(), enum_name.as_slice(), "::".as_slice());
+                reason = bytes.append(reason, variant.as_slice());
+                reason = bytes.append(reason, "`".as_slice());
+                return refuse(x, reason.as_slice());
             }
             let variant_layout: CRecord = x.variants[found - 1u64];
             let mut field_link: u64 = n[pattern].first;
@@ -3354,7 +3621,8 @@ fn emit_match(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
                 let field_name: Buffer<u8> = word(s, t, n, field);
                 let member: u64 = find_field(x.fields.as_slice(), x.names.as_slice(), variant_layout.first, variant_layout.count, field_name.as_slice());
                 if member == 0u64 {
-                    return fail(x);
+                    let reason: Buffer<u8> = quoted("unknown pattern field `".as_slice(), field_name.as_slice(), "`".as_slice());
+                    return refuse(x, reason.as_slice());
                 }
                 let field_ty: u64 = x.fields[member - 1u64].ty;
                 let mut binding: u64 = n[field].word;
@@ -3365,7 +3633,7 @@ fn emit_match(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
                     } else if n[nested].kind == ast.PATTERN_WILDCARD {
                         binding = 0u64;
                     } else {
-                        return fail(x);
+                        return refuse(x, "nested non-binding patterns are not implemented yet".as_slice());
                     }
                 }
                 if binding != 0u64 {
@@ -3430,7 +3698,7 @@ fn emit_match(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
             condition = bytes.append(condition, "true".as_slice());
         } else if kind == ast.PATTERN_BOOL {
             if scrutinee_ty != BOOL {
-                return fail(x);
+                return refuse(x, "bool pattern on a scrutinee that is not a bool".as_slice());
             }
             if n[pattern].value != 1u64 {
                 condition.push(33u8);
@@ -3438,7 +3706,7 @@ fn emit_match(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
             condition = bytes.append(condition, scrutinee.as_slice());
         } else {
             if scrutinee_tag != T_INTEGER {
-                return fail(x);
+                return refuse(x, "integer pattern on a scrutinee that is not an integer".as_slice());
             }
             condition = bytes.append(copy(scrutinee.as_slice()), " == (".as_slice());
             condition = append_c_name(condition, x.types.as_slice(), x.names.as_slice(), scrutinee_ty);

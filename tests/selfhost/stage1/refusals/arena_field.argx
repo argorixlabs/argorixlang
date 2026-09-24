@@ -1,0 +1,10 @@
+core 0.1;
+module refusals.arena_field;
+
+struct Holder { values: Arena<u64>, }
+
+pub fn argorix_main() -> u64 {
+    let mut holder: Holder = Holder { values: Arena::new() };
+    let handle: Handle<u64> = holder.values.alloc(1u64);
+    0u64
+}

@@ -139,7 +139,7 @@ fn compile(package: PackageRead, build: BuildWrite, text: Slice<u8>, b: Build, p
         diagnostics = report.render(paths, path_ends, sources.as_slice(), ends.as_slice());
     } else if bytes.equal(c.as_slice(), "unsupported\n".as_slice()) {
         outcome = UNSUPPORTED;
-        diagnostics = report.unsupported(paths.slice(0u64, path_ends[0u64]));
+        diagnostics = report.unsupported(sources.as_slice(), ends.as_slice());
     }
     let mut written: u64 = result.checked_digest(compiler_host.write(build, text.slice(b.diagnostics_start, b.diagnostics_end), diagnostics.as_slice()));
     if written != 0u64 {

@@ -120,6 +120,7 @@ fn packages() -> Vec<(String, Vec<String>)> {
         "tests/selfhost/check/samples",
         "tests/selfhost/parser/samples",
         "tests/selfhost/lexer/samples",
+        "tests/selfhost/stage1/refusals",
     ] {
         for root in files(directory, &["argx", "src"]) {
             found.push(with(&root, &[]));
@@ -335,10 +336,11 @@ fn stage1_diagnostics_match_stage0_when_cc_is_available() {
     eprintln!("roots not compared (not UTF-8): {skipped}");
 }
 
-/// What stage0's `core-emit-c` prints after `Error: ` for a package that does
-/// not check, or nothing for one that does. It renders the diagnostics of one
-/// file: the root when it does not lex or parse, otherwise the first module in
-/// link order that fails. Stage1 names a root declared twice without the
+/// What stage0's `core-emit-c` prints after `Error: ` for a package, or
+/// nothing when it emits C. For a package that does not check, the
+/// diagnostics of one file: the root when it does not lex or parse, otherwise
+/// the first module in link order that fails. For one that checks, the C
+/// backend's refusal. Stage1 names a root declared twice without the
 /// directory stage0 names, since it reads files, not directories.
 fn rendered(paths: &[String], files: &[Vec<u8>]) -> Option<String> {
     use argorix_parser::core::{parse_core_source, CoreDiagnostic};
@@ -370,7 +372,7 @@ fn rendered(paths: &[String], files: &[Vec<u8>]) -> Option<String> {
             &package.duplicates,
             &package.options,
         ) {
-            Ok(_) => String::new(),
+            Ok((_, linked)) => refusal(&linked, &package.options),
             Err(error) => {
                 let position = package.positions[&error.module];
                 let source = std::str::from_utf8(&files[position]).unwrap();
@@ -378,6 +380,23 @@ fn rendered(paths: &[String], files: &[Vec<u8>]) -> Option<String> {
             }
         },
     )
+}
+
+/// What `core-emit-c` prints after `Error: ` for a linked program that
+/// checks: the C backend's refusal, or nothing when it emits the program.
+fn refusal(
+    linked: &argorix_parser::core::CoreProgram,
+    options: &argorix_semantics::CoreCheckOptions,
+) -> String {
+    use argorix_ir::{lower_core_program, verify_core_ir, CoreCBackend, CoreIrBackend};
+    let checked = argorix_semantics::verify_core_program(linked, options)
+        .expect("a package that links checks");
+    let ir = lower_core_program(checked);
+    let verified = verify_core_ir(&ir).expect("checked IR verifies");
+    match CoreCBackend.emit(verified) {
+        Ok(_) => String::new(),
+        Err(error) => format!("{error}\n"),
+    }
 }
 
 /// Compile generated C with the declared profile and the budgets the
