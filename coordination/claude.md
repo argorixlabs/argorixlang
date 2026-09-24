@@ -2,6 +2,22 @@
 
 ## Current claim
 
+- Task: ESP-013 — lowering and emission in Argorix, as subtasks A (IR and
+  canonical JSON), B (verifier), C (C backend) and D (pipeline and manifest).
+- State: IN PROGRESS; A done on `claude/trabajo-pendiente-ae9bcz`, stacked on
+  ESP-012.C in the same branch (PR #57), at the maintainer's request to go on
+  with all pending work.
+- Started: 2026-09-24.
+- Ficha: `tasks/espada/ESP-013.md`.
+- Paths: `compiler/ir.argx` (new), `compiler/link.argx`, `tests/selfhost/ir/**`,
+  `spec/core/ir.md`, the ficha, `crates/argorix_ir/src/core.rs` (package IR
+  dump), `crates/argorix_semantics/src/core_check_dump.rs` (package loading),
+  the `argorixc` package dumps, `.github/workflows/core-c.yml` (IR fixtures).
+
+---
+
+# Previous claim: ESP-012
+
 - Task: ESP-012 — resolution, types and modules in Argorix, as subtasks A
   (types and names), B (ownership and views) and C (module linker).
 - State: DONE pending review; A merged (PR #55), B merged (PR #56), C done on

@@ -62,6 +62,12 @@ enum Command {
         #[arg(required = true)]
         files: Vec<PathBuf>,
     },
+    /// Print the canonical IR of a Core package, as compact JSON: the root
+    /// file first, then the files of its locked compilation set.
+    CoreIrPackageDump {
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
     /// Lower checked Argorix Core 0.1 source into transitional C11.
     CoreEmitC {
         file: PathBuf,
@@ -143,6 +149,15 @@ fn run() -> Result<()> {
                 })
                 .collect::<Result<Vec<_>>>()?;
             print!("{}", argorix_semantics::core_package_check_dump(&sources));
+        }
+        Command::CoreIrPackageDump { files } => {
+            let sources = files
+                .iter()
+                .map(|file| {
+                    fs::read(file).with_context(|| format!("failed to read `{}`", file.display()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            print!("{}", argorix_ir::core_package_ir_dump(&sources));
         }
         Command::CoreAst { file } => {
             let source =

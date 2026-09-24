@@ -1,0 +1,915 @@
+core 0.1;
+module compiler.ir;
+
+// Argorix Core IR 0.1, in Argorix (ESP-013.A). It lowers a linked and checked
+// package (`compiler.link`) into the IR of `spec/core/ir.md` and writes its
+// canonical JSON: the compact serialization whose SHA-256 is the IR's
+// semantic fingerprint. The document is the one stage0 builds
+// (`crates/argorix_ir/src/core.rs`), byte for byte:
+//
+// - the program is the root's module, with every module it reaches linked
+//   in, dependencies first; no import is left, so the locked set holds only
+//   the root;
+// - items of the root keep their names, and every other item is renamed
+//   `a__b__name` for module `a.b`, along with every reference to it: a type,
+//   the first segment of `T::V`, an aggregate or a variant pattern, a path of
+//   one name that is not a local, and `m.f` / `m.C` of an import;
+// - the effect policy is every effect the items use, in the order of
+//   `CoreIrEffect`.
+//
+// The tree already has the IR's shape: statements, expressions and patterns
+// map one to one. Lowering is the renaming and the effects.
+
+import stdlib.bytes;
+import compiler.token;
+import compiler.ast;
+import compiler.link;
+
+// Effects, as bits, in the order the policy lists them.
+const MEMORY_READ: u64 = 1u64;
+const MEMORY_WRITE: u64 = 2u64;
+const ALLOCATE: u64 = 4u64;
+const TRAP: u64 = 8u64;
+const HOST_BUILD_WRITE: u64 = 16u64;
+const HOST_PACKAGE_READ: u64 = 32u64;
+
+
+// ------------------------------------------------------------------ entry
+
+// The canonical IR of the package in `sources` (see `compiler.link.dump`),
+// followed by a newline, or `check failed` when it does not link and check.
+pub fn dump(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
+    let linked: Linked = link.link(sources, ends);
+    let mut out: Buffer<u8> = Buffer::new();
+    if linked.status != link.LINKED {
+        return bytes.append(out, "check failed\n".as_slice());
+    }
+    let lowered: Buffer<u8> = items(sources, linked.unit.tokens.as_slice(), linked.unit.strings.as_slice(), linked.walk.nodes.as_slice(), linked.walk.targets.as_slice(), linked.unit.programs.as_slice(), linked.unit.bases.as_slice(), linked.linking.bindings.as_slice(), linked.program, Buffer::new());
+    let effects: u64 = program_effects(sources, linked.unit.tokens.as_slice(), linked.walk.nodes.as_slice(), linked.unit.programs.as_slice(), linked.unit.bases.as_slice(), linked.linking.bindings.as_slice(), linked.program);
+    out = bytes.append(out, "{\"ir_version\":\"0.1\",\"core_version\":\"".as_slice());
+    let root: Node = linked.walk.nodes[linked.unit.programs[0u64] - 1u64];
+    // `core 0 . 1 ; module path`: the version is the three tokens that end
+    // three before the module path.
+    let version: u64 = root.word - 1u64 - 3u64;
+    out = bytes.append(out, sources.slice(linked.unit.tokens[version - 2u64].start, linked.unit.tokens[version].end));
+    out = bytes.append(out, "\",\"module\":".as_slice());
+    let mut module: Buffer<u8> = Buffer::new();
+    module = append_module(module, sources, linked.unit.tokens.as_slice(), root.word - 1u64, root.path_last, 46u8);
+    out = append_string(out, module.as_slice());
+    out = bytes.append(out, ",\"imports\":[],\"locked_modules\":[".as_slice());
+    out = append_string(out, module.as_slice());
+    out = bytes.append(out, "],\"effect_policy\":[".as_slice());
+    out = append_effects(out, effects);
+    out = bytes.append(out, "],\"items\":[".as_slice());
+    out = bytes.append(out, lowered.as_slice());
+    bytes.append(out, "]}\n".as_slice())
+}
+
+fn append_effects(out: Buffer<u8>, effects: u64) -> Buffer<u8> {
+    let mut text: Buffer<u8> = out;
+    let mut first: bool = true;
+    let mut bit: u64 = 1u64;
+    while bit <= HOST_PACKAGE_READ {
+        if effects & bit != 0u64 {
+            if !first {
+                text.push(44u8);
+            }
+            first = false;
+            if bit == MEMORY_READ { text = bytes.append(text, "{\"effect\":\"memory_read\"}".as_slice()); }
+            if bit == MEMORY_WRITE { text = bytes.append(text, "{\"effect\":\"memory_write\"}".as_slice()); }
+            if bit == ALLOCATE { text = bytes.append(text, "{\"effect\":\"allocate\"}".as_slice()); }
+            if bit == TRAP { text = bytes.append(text, "{\"effect\":\"trap\"}".as_slice()); }
+            if bit == HOST_BUILD_WRITE { text = bytes.append(text, "{\"effect\":\"host\",\"detail\":\"build.write\"}".as_slice()); }
+            if bit == HOST_PACKAGE_READ { text = bytes.append(text, "{\"effect\":\"host\",\"detail\":\"package.read\"}".as_slice()); }
+        }
+        bit = bit * 2u64;
+    }
+    text
+}
+
+// ------------------------------------------------------------------ text
+
+// A JSON string, escaped as serde_json escapes it.
+fn append_string(out: Buffer<u8>, value: Slice<u8>) -> Buffer<u8> {
+    let mut text: Buffer<u8> = out;
+    text.push(34u8);
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        let byte: u8 = value[index];
+        if byte == 34u8 || byte == 92u8 {
+            text.push(92u8);
+            text.push(byte);
+        } else if byte == 8u8 {
+            text.push(92u8);
+            text.push(98u8);
+        } else if byte == 12u8 {
+            text.push(92u8);
+            text.push(102u8);
+        } else if byte == 10u8 {
+            text.push(92u8);
+            text.push(110u8);
+        } else if byte == 13u8 {
+            text.push(92u8);
+            text.push(114u8);
+        } else if byte == 9u8 {
+            text.push(92u8);
+            text.push(116u8);
+        } else if byte < 32u8 {
+            text = bytes.append(text, "\\u00".as_slice());
+            text.push(hex(byte / 16u8));
+            text.push(hex(byte % 16u8));
+        } else {
+            text.push(byte);
+        }
+        index += 1u64;
+    }
+    text.push(34u8);
+    text
+}
+
+fn hex(digit: u8) -> u8 {
+    if digit < 10u8 {
+        return 48u8 + digit;
+    }
+    87u8 + digit
+}
+
+// The identifiers of a module path, joined by `separator`, or by `__` when
+// the separator is 0.
+fn append_module(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, first: u64, last: u64, separator: u8) -> Buffer<u8> {
+    let mut text: Buffer<u8> = out;
+    let mut at: u64 = first;
+    let mut started: bool = false;
+    while at <= last {
+        if tokens[at].kind == token.IDENT {
+            if started {
+                if separator == 0u8 {
+                    text.push(95u8);
+                    text.push(95u8);
+                } else {
+                    text.push(separator);
+                }
+            }
+            started = true;
+            text = bytes.append(text, sources.slice(tokens[at].start, tokens[at].end));
+        }
+        at += 1u64;
+    }
+    text
+}
+
+// The file whose nodes include `node`.
+fn module_of(bases: Slice<u64>, node: u64) -> u64 {
+    let mut index: u64 = 0u64;
+    while index + 2u64 < bases.length() && bases[index + 1u64] <= node {
+        index += 1u64;
+    }
+    index
+}
+
+// The linked name of an item, as a JSON string: its own name in the root,
+// `a__b__name` in module `a.b`.
+fn append_item_name(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, item: u64) -> Buffer<u8> {
+    let module: u64 = module_of(bases, item);
+    let mut name: Buffer<u8> = Buffer::new();
+    if module != 0u64 {
+        let program: Node = nodes[programs[module] - 1u64];
+        name = append_module(name, sources, tokens, program.word - 1u64, program.path_last, 0u8);
+        name.push(95u8);
+        name.push(95u8);
+    }
+    name = bytes.append(name, sources.slice(tokens[nodes[item].word - 1u64].start, tokens[nodes[item].word - 1u64].end));
+    append_string(out, name.as_slice())
+}
+
+// ------------------------------------------------------------------ names
+
+// The struct or enum a type name reaches from `module` (+ 1), or 0: its own,
+// or a public one of a module it imports directly.
+fn resolve_type(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, name: u64) -> u64 {
+    let own: u64 = own_item(sources, tokens, nodes, programs, bases, module, name);
+    if own != 0u64 && is_type(nodes, own - 1u64) {
+        return own;
+    }
+    let mut index: u64 = 0u64;
+    while index < bindings.length() {
+        if bindings[index] == module {
+            let target: u64 = bindings[index + 2u64];
+            let item: u64 = own_item(sources, tokens, nodes, programs, bases, target, name);
+            if item != 0u64 && is_type(nodes, item - 1u64) && is_public(sources, tokens, nodes, programs, bases, target, name) {
+                return item;
+            }
+        }
+        index += 3u64;
+    }
+    0u64
+}
+
+fn is_type(nodes: Slice<Node>, item: u64) -> bool {
+    nodes[item].kind == ast.STRUCT || nodes[item].kind == ast.ENUM
+}
+
+// The last item of `module` named like token `name` (+ 1), or 0: of items
+// named alike, stage0 lets the last decide the kind. Once linked, a module's
+// last item chains to the next module's first, so its own items are the ones
+// among its nodes.
+fn own_item(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, module: u64, name: u64) -> u64 {
+    let mut found: u64 = 0u64;
+    let mut link: u64 = nodes[programs[module] - 1u64].first;
+    while link != 0u64 && link - 1u64 >= bases[module] && link - 1u64 < bases[module + 1u64] {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind != ast.IMPORT && bytes.equal(sources.slice(tokens[nodes[item].word - 1u64].start, tokens[nodes[item].word - 1u64].end), sources.slice(tokens[name].start, tokens[name].end)) {
+            found = item + 1u64;
+        }
+    }
+    found
+}
+
+// Whether any item of `module` named like token `name` is public.
+fn is_public(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, module: u64, name: u64) -> bool {
+    let mut link: u64 = nodes[programs[module] - 1u64].first;
+    while link != 0u64 && link - 1u64 >= bases[module] && link - 1u64 < bases[module + 1u64] {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind != ast.IMPORT && nodes[item].flag == 1u64 && bytes.equal(sources.slice(tokens[nodes[item].word - 1u64].start, tokens[nodes[item].word - 1u64].end), sources.slice(tokens[name].start, tokens[name].end)) {
+            return true;
+        }
+    }
+    false
+}
+
+// A type name, renamed when it reaches a struct or enum.
+fn append_type_name(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, name: u64) -> Buffer<u8> {
+    let item: u64 = resolve_type(sources, tokens, nodes, programs, bases, bindings, module, name);
+    if item != 0u64 {
+        return append_item_name(out, sources, tokens, nodes, programs, bases, item - 1u64);
+    }
+    append_string(out, sources.slice(tokens[name].start, tokens[name].end))
+}
+
+// The segments of the path `first..last`, the first renamed as a type when
+// `typed` asks for it.
+fn append_segments(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, first: u64, last: u64, typed: bool) -> Buffer<u8> {
+    let mut text: Buffer<u8> = out;
+    text.push(91u8);
+    let mut at: u64 = first;
+    let mut started: bool = false;
+    while at <= last {
+        if tokens[at].kind == token.IDENT {
+            if started {
+                text.push(44u8);
+                text = append_string(text, sources.slice(tokens[at].start, tokens[at].end));
+            } else if typed {
+                text = append_type_name(text, sources, tokens, nodes, programs, bases, bindings, module, at);
+            } else {
+                text = append_string(text, sources.slice(tokens[at].start, tokens[at].end));
+            }
+            started = true;
+        }
+        at += 1u64;
+    }
+    text.push(93u8);
+    text
+}
+
+fn segment_count(tokens: Slice<Token>, first: u64, last: u64) -> u64 {
+    let mut count: u64 = 0u64;
+    let mut at: u64 = first;
+    while at <= last {
+        if tokens[at].kind == token.IDENT {
+            count += 1u64;
+        }
+        at += 1u64;
+    }
+    count
+}
+
+// ------------------------------------------------------------------ tree
+
+fn child(nodes: Slice<Node>, node: u64, n: u64) -> u64 {
+    let mut link: u64 = nodes[node].first;
+    let mut index: u64 = 0u64;
+    while index < n {
+        link = nodes[link - 1u64].next;
+        index += 1u64;
+    }
+    link - 1u64
+}
+
+fn child_count(nodes: Slice<Node>, node: u64) -> u64 {
+    let mut link: u64 = nodes[node].first;
+    let mut count: u64 = 0u64;
+    while link != 0u64 {
+        count += 1u64;
+        link = nodes[link - 1u64].next;
+    }
+    count
+}
+
+fn put(out: Buffer<u8>, text: Slice<u8>) -> Buffer<u8> {
+    bytes.append(out, text)
+}
+
+fn put_string(out: Buffer<u8>, text: Slice<u8>) -> Buffer<u8> {
+    append_string(out, text)
+}
+
+fn put_decimal(out: Buffer<u8>, value: u64) -> Buffer<u8> {
+    bytes.append_decimal(out, value)
+}
+
+fn put_bool(out: Buffer<u8>, value: bool) -> Buffer<u8> {
+    if value {
+        return bytes.append(out, "true".as_slice());
+    }
+    bytes.append(out, "false".as_slice())
+}
+
+// ------------------------------------------------------------------ items
+
+fn items(sources: Slice<u8>, tokens: Slice<Token>, strings: Slice<u8>, nodes: Slice<Node>, targets: Slice<u64>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, program: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = emit;
+    let mut first: bool = true;
+    let mut link: u64 = nodes[program].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        let kind: u64 = nodes[item].kind;
+        if kind == ast.IMPORT {
+            continue;
+        }
+        if !first {
+            e = put(e, ",".as_slice());
+        }
+        first = false;
+        let module: u64 = module_of(bases, item);
+        e = put(e, "{\"public\":".as_slice());
+        e = put_bool(e, nodes[item].flag == 1u64);
+        if kind == ast.FN {
+            e = put(e, ",\"item\":\"function\",\"name\":".as_slice());
+        } else if kind == ast.STRUCT {
+            e = put(e, ",\"item\":\"struct\",\"name\":".as_slice());
+        } else if kind == ast.ENUM {
+            e = put(e, ",\"item\":\"enum\",\"name\":".as_slice());
+        } else {
+            e = put(e, ",\"item\":\"const\",\"name\":".as_slice());
+        }
+        e = append_item_name(e, sources, tokens, nodes, programs, bases, item);
+        if kind == ast.FN {
+            let parameters: u64 = child_count(nodes, item) - 2u64;
+            e = put(e, ",\"parameters\":[".as_slice());
+            let mut index: u64 = 0u64;
+            while index < parameters {
+                let parameter: u64 = child(nodes, item, index);
+                if index > 0u64 {
+                    e = put(e, ",".as_slice());
+                }
+                e = put(e, "{\"name\":".as_slice());
+                e = put_string(e, sources.slice(tokens[nodes[parameter].word - 1u64].start, tokens[nodes[parameter].word - 1u64].end));
+                e = put(e, ",\"ty\":".as_slice());
+                let ty: u64 = child(nodes, parameter, 0u64);
+                e = lower_type(sources, tokens, nodes, programs, bases, bindings, module, ty, e);
+                e = put(e, "}".as_slice());
+                index += 1u64;
+            }
+            e = put(e, "],\"return_type\":".as_slice());
+            e = lower_type(sources, tokens, nodes, programs, bases, bindings, module, child(nodes, item, parameters), e);
+            e = put(e, ",\"body\":".as_slice());
+            e = lower_block(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, item, parameters + 1u64), e);
+        } else if kind == ast.STRUCT {
+            e = put(e, ",\"fields\":".as_slice());
+            e = lower_fields(sources, tokens, nodes, programs, bases, bindings, module, item, e);
+        } else if kind == ast.ENUM {
+            e = put(e, ",\"variants\":[".as_slice());
+            let mut variant: u64 = nodes[item].first;
+            let mut started: bool = false;
+            while variant != 0u64 {
+                let at: u64 = variant - 1u64;
+                variant = nodes[at].next;
+                if started {
+                    e = put(e, ",".as_slice());
+                }
+                started = true;
+                e = put(e, "{\"name\":".as_slice());
+                e = put_string(e, sources.slice(tokens[nodes[at].word - 1u64].start, tokens[nodes[at].word - 1u64].end));
+                e = put(e, ",\"fields\":".as_slice());
+                e = lower_fields(sources, tokens, nodes, programs, bases, bindings, module, at, e);
+                e = put(e, "}".as_slice());
+            }
+            e = put(e, "]".as_slice());
+        } else {
+            e = put(e, ",\"ty\":".as_slice());
+            e = lower_type(sources, tokens, nodes, programs, bases, bindings, module, child(nodes, item, 0u64), e);
+            e = put(e, ",\"value\":".as_slice());
+            e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, item, 1u64), e);
+        }
+        e = put(e, "}".as_slice());
+    }
+    e
+}
+
+fn lower_fields(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, owner: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = put(emit, "[".as_slice());
+    let mut link: u64 = nodes[owner].first;
+    let mut started: bool = false;
+    while link != 0u64 {
+        let field: u64 = link - 1u64;
+        link = nodes[field].next;
+        if started {
+            e = put(e, ",".as_slice());
+        }
+        started = true;
+        e = put(e, "{\"name\":".as_slice());
+        e = put_string(e, sources.slice(tokens[nodes[field].word - 1u64].start, tokens[nodes[field].word - 1u64].end));
+        e = put(e, ",\"ty\":".as_slice());
+        e = lower_type(sources, tokens, nodes, programs, bases, bindings, module, child(nodes, field, 0u64), e);
+        e = put(e, "}".as_slice());
+    }
+    put(e, "]".as_slice())
+}
+
+fn lower_type(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, ty: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = emit;
+    let name: u64 = nodes[ty].word - 1u64;
+    if nodes[ty].kind == ast.TYPE_NAMED {
+        e = put(e, "{\"type\":\"named\",\"name\":".as_slice());
+        e = append_type_name(e, sources, tokens, nodes, programs, bases, bindings, module, name);
+        return put(e, "}".as_slice());
+    }
+    e = put(e, "{\"type\":\"container\",\"name\":".as_slice());
+    e = put_string(e, sources.slice(tokens[name].start, tokens[name].end));
+    e = put(e, ",\"element\":".as_slice());
+    e = lower_type(sources, tokens, nodes, programs, bases, bindings, module, child(nodes, ty, 0u64), e);
+    if bytes.equal(sources.slice(tokens[name].start, tokens[name].end), "Array".as_slice()) {
+        e = put(e, ",\"array_length\":".as_slice());
+        e = put_decimal(e, nodes[ty].value);
+    }
+    put(e, "}".as_slice())
+}
+
+// ------------------------------------------------------------------ blocks and statements
+
+fn is_statement(kind: u64) -> bool {
+    kind == ast.LET || kind == ast.ASSIGN || kind == ast.WHILE || kind == ast.BREAK || kind == ast.CONTINUE
+        || kind == ast.RETURN || kind == ast.EXPR
+}
+
+fn lower_block(sources: Slice<u8>, tokens: Slice<Token>, strings: Slice<u8>, nodes: Slice<Node>, targets: Slice<u64>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, block: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = put(emit, "{\"statements\":[".as_slice());
+    let mut tail: u64 = 0u64;
+    let mut started: bool = false;
+    let mut link: u64 = nodes[block].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if !is_statement(nodes[item].kind) {
+            tail = item + 1u64;
+            continue;
+        }
+        if started {
+            e = put(e, ",".as_slice());
+        }
+        started = true;
+        e = lower_statement(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, item, e);
+    }
+    e = put(e, "]".as_slice());
+    if tail != 0u64 {
+        e = put(e, ",\"tail\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, tail - 1u64, e);
+    }
+    put(e, "}".as_slice())
+}
+
+fn lower_statement(sources: Slice<u8>, tokens: Slice<Token>, strings: Slice<u8>, nodes: Slice<Node>, targets: Slice<u64>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, node: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = emit;
+    let kind: u64 = nodes[node].kind;
+    if kind == ast.LET {
+        e = put(e, "{\"statement\":\"let\",\"mutable\":".as_slice());
+        e = put_bool(e, nodes[node].flag == 1u64);
+        e = put(e, ",\"name\":".as_slice());
+        e = put_string(e, sources.slice(tokens[nodes[node].word - 1u64].start, tokens[nodes[node].word - 1u64].end));
+        let first: u64 = child(nodes, node, 0u64);
+        let mut value: u64 = first;
+        if nodes[first].kind == ast.TYPE_NAMED || nodes[first].kind == ast.TYPE_CONTAINER {
+            e = put(e, ",\"annotation\":".as_slice());
+            e = lower_type(sources, tokens, nodes, programs, bases, bindings, module, first, e);
+            value = child(nodes, node, 1u64);
+        }
+        e = put(e, ",\"value\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, value, e);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.ASSIGN {
+        let target: u64 = child(nodes, node, 0u64);
+        e = put(e, "{\"statement\":\"assign\",\"target\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, target, e);
+        e = put(e, ",\"operator\":".as_slice());
+        let operator: u64 = nodes[node].value;
+        if operator == token.PLUS_ASSIGN {
+            e = put(e, "\"add\"".as_slice());
+        } else if operator == token.MINUS_ASSIGN {
+            e = put(e, "\"subtract\"".as_slice());
+        } else if operator == token.STAR_ASSIGN {
+            e = put(e, "\"multiply\"".as_slice());
+        } else if operator == token.SLASH_ASSIGN {
+            e = put(e, "\"divide\"".as_slice());
+        } else if operator == token.PERCENT_ASSIGN {
+            e = put(e, "\"remainder\"".as_slice());
+        } else {
+            e = put(e, "\"assign\"".as_slice());
+        }
+        e = put(e, ",\"value\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 1u64), e);
+        if nodes[target].kind == ast.FIELD_ACCESS || nodes[target].kind == ast.INDEX {
+        }
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.WHILE {
+        e = put(e, "{\"statement\":\"while\",\"condition\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+        e = put(e, ",\"body\":".as_slice());
+        e = lower_block(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 1u64), e);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.CONTINUE {
+        return put(e, "{\"statement\":\"continue\"}".as_slice());
+    }
+    if kind == ast.BREAK || kind == ast.RETURN {
+        if kind == ast.BREAK {
+            e = put(e, "{\"statement\":\"break\"".as_slice());
+        } else {
+            e = put(e, "{\"statement\":\"return\"".as_slice());
+        }
+        if nodes[node].first != 0u64 {
+            e = put(e, ",\"value\":".as_slice());
+            e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+        }
+        return put(e, "}".as_slice());
+    }
+    e = put(e, "{\"statement\":\"expr\",\"value\":".as_slice());
+    e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+    put(e, "}".as_slice())
+}
+
+// ------------------------------------------------------------------ expressions
+
+// The children of `node` from the n-th on, as a JSON array of expressions.
+fn lower_list(sources: Slice<u8>, tokens: Slice<Token>, strings: Slice<u8>, nodes: Slice<Node>, targets: Slice<u64>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, node: u64, from: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = put(emit, "[".as_slice());
+    let mut link: u64 = nodes[node].first;
+    let mut index: u64 = 0u64;
+    while link != 0u64 {
+        let found: u64 = link - 1u64;
+        link = nodes[found].next;
+        if index >= from {
+            if index > from {
+                e = put(e, ",".as_slice());
+            }
+            e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, found, e);
+        }
+        index += 1u64;
+    }
+    put(e, "]".as_slice())
+}
+
+fn lower_expr(sources: Slice<u8>, tokens: Slice<Token>, strings: Slice<u8>, nodes: Slice<Node>, targets: Slice<u64>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, node: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = emit;
+    let kind: u64 = nodes[node].kind;
+    if kind == ast.INTEGER {
+        e = put(e, "{\"expression\":\"integer\",\"value\":".as_slice());
+        e = put_decimal(e, nodes[node].value);
+        if nodes[node].flag == 1u64 {
+            let found: Token = tokens[nodes[node].word - 1u64];
+            e = put(e, ",\"suffix\":".as_slice());
+            e = put_string(e, sources.slice(found.text_start, found.text_end));
+        }
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.STRING {
+        let found: Token = tokens[nodes[node].word - 1u64];
+        e = put(e, "{\"expression\":\"string\",\"value\":".as_slice());
+        e = put_string(e, strings.slice(found.text_start, found.text_end));
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.BOOL {
+        e = put(e, "{\"expression\":\"bool\",\"value\":".as_slice());
+        e = put_bool(e, nodes[node].value == 1u64);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.UNIT {
+        return put(e, "{\"expression\":\"unit\"}".as_slice());
+    }
+    if kind == ast.PATH {
+        e = put(e, "{\"expression\":\"path\",\"segments\":".as_slice());
+        e = lower_path(sources, tokens, nodes, targets, programs, bases, bindings, module, node, e);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.AGGREGATE {
+        e = put(e, "{\"expression\":\"aggregate\",\"path\":".as_slice());
+        e = append_segments(e, sources, tokens, nodes, programs, bases, bindings, module, nodes[node].word - 1u64, nodes[node].path_last, true);
+        e = put(e, ",\"fields\":[".as_slice());
+        let mut link: u64 = nodes[node].first;
+        let mut started: bool = false;
+        while link != 0u64 {
+            let field: u64 = link - 1u64;
+            link = nodes[field].next;
+            if started {
+                e = put(e, ",".as_slice());
+            }
+            started = true;
+            e = put(e, "{\"name\":".as_slice());
+            e = put_string(e, sources.slice(tokens[nodes[field].word - 1u64].start, tokens[nodes[field].word - 1u64].end));
+            e = put(e, ",\"value\":".as_slice());
+            e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, field, 0u64), e);
+            e = put(e, "}".as_slice());
+        }
+        return put(e, "]}".as_slice());
+    }
+    if kind == ast.ARRAY {
+        e = put(e, "{\"expression\":\"array\",\"values\":".as_slice());
+        e = lower_list(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, node, 0u64, e);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.BLOCK || kind == ast.LOOP {
+        if kind == ast.BLOCK {
+            e = put(e, "{\"expression\":\"block\",\"body\":".as_slice());
+            e = lower_block(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, node, e);
+        } else {
+            e = put(e, "{\"expression\":\"loop\",\"body\":".as_slice());
+            e = lower_block(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+        }
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.IF {
+        e = put(e, "{\"expression\":\"if\",\"condition\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+        e = put(e, ",\"then_block\":".as_slice());
+        e = lower_block(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 1u64), e);
+        if child_count(nodes, node) == 3u64 {
+            e = put(e, ",\"else_expr\":".as_slice());
+            e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 2u64), e);
+        }
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.MATCH {
+        e = put(e, "{\"expression\":\"match\",\"value\":".as_slice());
+        let scrutinee: u64 = child(nodes, node, 0u64);
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, scrutinee, e);
+        e = put(e, ",\"arms\":[".as_slice());
+        let mut link: u64 = nodes[scrutinee].next;
+        let mut started: bool = false;
+        while link != 0u64 {
+            let arm: u64 = link - 1u64;
+            link = nodes[arm].next;
+            if started {
+                e = put(e, ",".as_slice());
+            }
+            started = true;
+            e = put(e, "{\"pattern\":".as_slice());
+            e = lower_pattern(sources, tokens, nodes, programs, bases, bindings, module, child(nodes, arm, 0u64), e);
+            let mut value: u64 = child(nodes, arm, 1u64);
+            if nodes[arm].flag == 1u64 {
+                e = put(e, ",\"guard\":".as_slice());
+                e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, value, e);
+                value = child(nodes, arm, 2u64);
+            }
+            e = put(e, ",\"value\":".as_slice());
+            e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, value, e);
+            e = put(e, "}".as_slice());
+        }
+        return put(e, "]}".as_slice());
+    }
+    if kind == ast.CALL {
+        let callee: u64 = child(nodes, node, 0u64);
+        e = put(e, "{\"expression\":\"call\",\"callee\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, callee, e);
+        e = put(e, ",\"arguments\":".as_slice());
+        e = lower_list(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, node, 1u64, e);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.INDEX {
+        e = put(e, "{\"expression\":\"index\",\"value\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+        e = put(e, ",\"index\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 1u64), e);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.FIELD_ACCESS {
+        e = put(e, "{\"expression\":\"field\",\"value\":".as_slice());
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+        e = put(e, ",\"name\":".as_slice());
+        e = put_string(e, sources.slice(tokens[nodes[node].word - 1u64].start, tokens[nodes[node].word - 1u64].end));
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.UNARY {
+        if nodes[node].value == token.BANG {
+            e = put(e, "{\"expression\":\"unary\",\"operator\":\"not\",\"value\":".as_slice());
+        } else {
+            e = put(e, "{\"expression\":\"unary\",\"operator\":\"negate\",\"value\":".as_slice());
+        }
+        e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+        return put(e, "}".as_slice());
+    }
+    // A binary operation.
+    let operator: u64 = nodes[node].value;
+    if operator == token.SLASH || operator == token.PERCENT {
+    }
+    e = put(e, "{\"expression\":\"binary\",\"left\":".as_slice());
+    e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 0u64), e);
+    e = put(e, ",\"operator\":\"".as_slice());
+    e = append_binary(e, operator);
+    e = put(e, "\",\"right\":".as_slice());
+    e = lower_expr(sources, tokens, strings, nodes, targets, programs, bases, bindings, module, child(nodes, node, 1u64), e);
+    put(e, "}".as_slice())
+}
+
+fn append_binary(out: Buffer<u8>, operator: u64) -> Buffer<u8> {
+    if operator == token.PIPE_PIPE { return bytes.append(out, "or".as_slice()); }
+    if operator == token.AMP_AMP { return bytes.append(out, "and".as_slice()); }
+    if operator == token.EQUAL_EQUAL { return bytes.append(out, "equal".as_slice()); }
+    if operator == token.BANG_EQUAL { return bytes.append(out, "not_equal".as_slice()); }
+    if operator == token.LESS { return bytes.append(out, "less".as_slice()); }
+    if operator == token.LESS_EQUAL { return bytes.append(out, "less_equal".as_slice()); }
+    if operator == token.GREATER { return bytes.append(out, "greater".as_slice()); }
+    if operator == token.GREATER_EQUAL { return bytes.append(out, "greater_equal".as_slice()); }
+    if operator == token.PIPE { return bytes.append(out, "bit_or".as_slice()); }
+    if operator == token.CARET { return bytes.append(out, "bit_xor".as_slice()); }
+    if operator == token.AMP { return bytes.append(out, "bit_and".as_slice()); }
+    if operator == token.SHIFT_LEFT { return bytes.append(out, "shift_left".as_slice()); }
+    if operator == token.SHIFT_RIGHT { return bytes.append(out, "shift_right".as_slice()); }
+    if operator == token.PLUS { return bytes.append(out, "add".as_slice()); }
+    if operator == token.MINUS { return bytes.append(out, "subtract".as_slice()); }
+    if operator == token.STAR { return bytes.append(out, "multiply".as_slice()); }
+    if operator == token.SLASH { return bytes.append(out, "divide".as_slice()); }
+    bytes.append(out, "remainder".as_slice())
+}
+
+// A path: the item a linked reference carries, the item of its own module a
+// single name reaches, or its segments with a type renamed in `T::V`.
+fn lower_path(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, targets: Slice<u64>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, node: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = emit;
+    let mut item: u64 = nodes[node].value;
+    if item == 0u64 {
+        item = targets[node];
+    }
+    if item != 0u64 {
+        e = put(e, "[".as_slice());
+        e = append_item_name(e, sources, tokens, nodes, programs, bases, item - 1u64);
+        return put(e, "]".as_slice());
+    }
+    let first: u64 = nodes[node].word - 1u64;
+    let last: u64 = nodes[node].path_last;
+    e = append_segments(e, sources, tokens, nodes, programs, bases, bindings, module, first, last, segment_count(tokens, first, last) == 2u64);
+    e
+}
+
+// The effects a call has by what it calls: allocation for `Buffer::new()`
+// and `Arena::new()`, and the memory effects of the built-in methods.
+fn call_effects(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, callee: u64) -> u64 {
+    let kind: u64 = nodes[callee].kind;
+    if kind == ast.PATH && nodes[callee].value == 0u64 {
+        let first: u64 = nodes[callee].word - 1u64;
+        let last: u64 = nodes[callee].path_last;
+        if segment_count(tokens, first, last) != 2u64 || resolve_type(sources, tokens, nodes, programs, bases, bindings, module, first) != 0u64 {
+            return 0u64;
+        }
+        let owner: Slice<u8> = sources.slice(tokens[first].start, tokens[first].end);
+        let method: Slice<u8> = sources.slice(tokens[last].start, tokens[last].end);
+        if bytes.equal(method, "new".as_slice()) && (bytes.equal(owner, "Buffer".as_slice()) || bytes.equal(owner, "Arena".as_slice())) {
+            return ALLOCATE;
+        }
+        return 0u64;
+    }
+    if kind != ast.FIELD_ACCESS {
+        return 0u64;
+    }
+    let name: Slice<u8> = sources.slice(tokens[nodes[callee].word - 1u64].start, tokens[nodes[callee].word - 1u64].end);
+    if bytes.equal(name, "push".as_slice()) || bytes.equal(name, "release".as_slice()) {
+        return MEMORY_WRITE;
+    }
+    if bytes.equal(name, "alloc".as_slice()) {
+        return ALLOCATE | MEMORY_WRITE;
+    }
+    if bytes.equal(name, "decode_utf8_or_trap".as_slice()) {
+        return TRAP;
+    }
+    if bytes.equal(name, "length".as_slice()) || bytes.equal(name, "as_bytes".as_slice()) {
+        return MEMORY_READ;
+    }
+    0u64
+}
+
+// ------------------------------------------------------------------ effects
+
+// Every effect the items of the program use (`collect_effects` in stage0):
+// the host effect of each capability parameter, and what the expressions do.
+fn program_effects(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, program: u64) -> u64 {
+    let mut effects: u64 = 0u64;
+    let mut link: u64 = nodes[program].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        let kind: u64 = nodes[item].kind;
+        if kind != ast.FN && kind != ast.CONST {
+            continue;
+        }
+        let module: u64 = module_of(bases, item);
+        if kind == ast.FN {
+            let parameters: u64 = child_count(nodes, item) - 2u64;
+            let mut index: u64 = 0u64;
+            while index < parameters {
+                let ty: u64 = child(nodes, child(nodes, item, index), 0u64);
+                // A capability parameter is the only way a host effect reaches
+                // a function.
+                if nodes[ty].kind == ast.TYPE_NAMED && resolve_type(sources, tokens, nodes, programs, bases, bindings, module, nodes[ty].word - 1u64) == 0u64 {
+                    let name: Slice<u8> = sources.slice(tokens[nodes[ty].word - 1u64].start, tokens[nodes[ty].word - 1u64].end);
+                    if bytes.equal(name, "PackageRead".as_slice()) {
+                        effects = effects | HOST_PACKAGE_READ;
+                    }
+                    if bytes.equal(name, "BuildWrite".as_slice()) {
+                        effects = effects | HOST_BUILD_WRITE;
+                    }
+                }
+                index += 1u64;
+            }
+        }
+        effects = effects | tree_effects(sources, tokens, nodes, programs, bases, bindings, module, item);
+    }
+    effects
+}
+
+// The effects of the expressions under `node`. Types and patterns have none.
+fn tree_effects(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, node: u64) -> u64 {
+    let kind: u64 = nodes[node].kind;
+    let mut effects: u64 = 0u64;
+    if kind == ast.CALL {
+        effects = call_effects(sources, tokens, nodes, programs, bases, bindings, module, child(nodes, node, 0u64));
+    } else if kind == ast.INDEX {
+        effects = MEMORY_READ | TRAP;
+    } else if kind == ast.FIELD_ACCESS {
+        effects = MEMORY_READ;
+    } else if kind == ast.BINARY && (nodes[node].value == token.SLASH || nodes[node].value == token.PERCENT) {
+        effects = TRAP;
+    } else if kind == ast.ASSIGN {
+        let target: u64 = child(nodes, node, 0u64);
+        if nodes[target].kind == ast.FIELD_ACCESS || nodes[target].kind == ast.INDEX {
+            effects = MEMORY_WRITE;
+        }
+    }
+    let mut link: u64 = nodes[node].first;
+    while link != 0u64 {
+        let found: u64 = link - 1u64;
+        link = nodes[found].next;
+        effects = effects | tree_effects(sources, tokens, nodes, programs, bases, bindings, module, found);
+    }
+    effects
+}
+
+// ------------------------------------------------------------------ patterns
+
+fn lower_pattern(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, pattern: u64, emit: Buffer<u8>) -> Buffer<u8> {
+    let mut e: Buffer<u8> = emit;
+    let kind: u64 = nodes[pattern].kind;
+    if kind == ast.PATTERN_WILDCARD {
+        return put(e, "{\"pattern\":\"wildcard\"}".as_slice());
+    }
+    if kind == ast.PATTERN_BOOL {
+        e = put(e, "{\"pattern\":\"bool\",\"value\":".as_slice());
+        e = put_bool(e, nodes[pattern].value == 1u64);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.PATTERN_INTEGER {
+        e = put(e, "{\"pattern\":\"integer\",\"value\":".as_slice());
+        e = put_decimal(e, nodes[pattern].value);
+        return put(e, "}".as_slice());
+    }
+    if kind == ast.PATTERN_BINDING {
+        e = put(e, "{\"pattern\":\"binding\",\"name\":".as_slice());
+        e = put_string(e, sources.slice(tokens[nodes[pattern].word - 1u64].start, tokens[nodes[pattern].word - 1u64].end));
+        return put(e, "}".as_slice());
+    }
+    let first: u64 = nodes[pattern].word - 1u64;
+    let last: u64 = nodes[pattern].path_last;
+    e = put(e, "{\"pattern\":\"variant\",\"path\":".as_slice());
+    e = append_segments(e, sources, tokens, nodes, programs, bases, bindings, module, first, last, segment_count(tokens, first, last) == 2u64);
+    e = put(e, ",\"fields\":[".as_slice());
+    let mut link: u64 = nodes[pattern].first;
+    let mut started: bool = false;
+    while link != 0u64 {
+        let field: u64 = link - 1u64;
+        link = nodes[field].next;
+        if started {
+            e = put(e, ",".as_slice());
+        }
+        started = true;
+        e = put(e, "{\"name\":".as_slice());
+        e = put_string(e, sources.slice(tokens[nodes[field].word - 1u64].start, tokens[nodes[field].word - 1u64].end));
+        if nodes[field].first != 0u64 {
+            e = put(e, ",\"nested\":".as_slice());
+            e = lower_pattern(sources, tokens, nodes, programs, bases, bindings, module, nodes[field].first - 1u64, e);
+        }
+        e = put(e, "}".as_slice());
+    }
+    put(e, "]}".as_slice())
+}

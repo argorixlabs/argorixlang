@@ -2,6 +2,9 @@
 
 Status: normative bootstrap contract for ESP-007. The Rust implementation in
 `argorix_ir::core` is stage0 and must be replaced by Argorix sources in ESP-013.
+`compiler/ir.argx` lowers a linked package to the same canonical JSON, byte for
+byte (ESP-013.A, `crates/argorixc/tests/link_differential.rs`); the verifier
+and backend are still stage0.
 
 ## Boundary
 

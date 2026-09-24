@@ -1,0 +1,8 @@
+core 0.1;
+module demo.helper;
+
+pub const SCALE: u32 = 20u32;
+
+pub fn twice(value: u32) -> u32 { bump(value) + value - 2u32 }
+
+fn bump(value: u32) -> u32 { value + 2u32 }

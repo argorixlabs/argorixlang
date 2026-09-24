@@ -1,0 +1,6 @@
+core 0.1;
+module demo.helper_two;
+
+pub const OFFSET: u32 = 1u32;
+
+pub fn shift(value: u32) -> u32 { value + OFFSET }

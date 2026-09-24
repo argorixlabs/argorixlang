@@ -222,7 +222,8 @@ fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
     bytes.append(out, "SliceAliasesMove".as_slice())
 }
 
-fn empty_check() -> Check {
+// A check of nothing, with the types every check starts with.
+pub fn empty_check() -> Check {
     let mut c: Check = Check {
         types: Buffer::new(),
         names: Buffer::new(),

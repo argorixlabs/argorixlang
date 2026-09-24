@@ -42,12 +42,13 @@ pub const UNKNOWN_IMPORTED_SYMBOL: u64 = 5u64;
 pub const PRIVATE_SYMBOL: u64 = 6u64;
 
 // The files merged into one tree. Token and node positions are shifted so
-// that tokens point into the concatenated sources and nodes to each other.
-// `bases` holds the first node of each file and one past the last;
-// `programs` the program node of each file (+ 1), or 0 when it does not
-// parse.
+// that tokens point into the concatenated sources, a string token's text into
+// `strings`, and nodes to each other. `bases` holds the first node of each file
+// and one past the last; `programs` the program node of each file (+ 1), or 0
+// when it does not parse.
 pub struct Unit {
     tokens: Buffer<Token>,
+    strings: Buffer<u8>,
     nodes: Buffer<Node>,
     bases: Buffer<u64>,
     programs: Buffer<u64>,
@@ -71,14 +72,38 @@ pub struct Linking {
 }
 
 // A walk over one module's items: the tree it rewrites, the locals in scope
-// as (name token, depth) pairs, and the errors it finds.
+// as (name token, depth) pairs, and the errors it finds. `targets` holds, for
+// each path of one name that is not a local, the item of its own module it
+// names (+ 1): the paths stage0 renames along with the item.
 pub struct Walk {
     nodes: Buffer<Node>,
     locals: Buffer<u64>,
     live: u64,
     depth: u64,
     errors: Buffer<u64>,
+    targets: Buffer<u64>,
 }
+
+// A package, linked and checked. `status` is one of the constants below.
+// When it is FAILED, `failing` (+ 1) is the file of the first module in link
+// order that fails: with its link errors in `link_errors`, as (code, byte)
+// pairs, or else with the diagnostics of `checked` inside its file. `program`
+// is the node that chains every item in link order.
+pub struct Linked {
+    status: u64,
+    unit: Unit,
+    linking: Linking,
+    walk: Walk,
+    checked: Check,
+    failing: u64,
+    link_errors: Buffer<u64>,
+    program: u64,
+}
+
+pub const LINKED: u64 = 0u64;
+pub const PARSE_FAILED: u64 = 1u64;
+pub const ROOT_TWICE: u64 = 2u64;
+pub const FAILED: u64 = 3u64;
 
 // ------------------------------------------------------------------ entry
 
@@ -89,26 +114,65 @@ pub struct Walk {
 // `parse failed` when the root does not parse, or `root module declared
 // twice`.
 pub fn dump(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
+    let linked: Linked = link(sources, ends);
     let mut out: Buffer<u8> = Buffer::new();
-    let merged: Unit = merge(sources, ends);
-    if merged.programs[0u64] == 0u64 {
+    if linked.status == PARSE_FAILED {
         return bytes.append(out, "parse failed\n".as_slice());
     }
-    let mut l: Linking = register(sources, merged.tokens.as_slice(), merged.nodes.as_slice(), merged.programs.as_slice());
-    if l.duplicated.length() > 0u64 && is_duplicated(sources, merged.tokens.as_slice(), merged.nodes.as_slice(), merged.programs.as_slice(), l.duplicated.as_slice(), module_first(merged.nodes.as_slice(), merged.programs.as_slice(), 0u64), module_last(merged.nodes.as_slice(), merged.programs.as_slice(), 0u64)) {
+    if linked.status == ROOT_TWICE {
         return bytes.append(out, "root module declared twice\n".as_slice());
+    }
+    if linked.status == LINKED {
+        return bytes.append(out, "ok\n".as_slice());
+    }
+    let module: u64 = linked.failing - 1u64;
+    if linked.link_errors.length() > 0u64 {
+        return append_errors(out, sources, ends, module, linked.link_errors.as_slice());
+    }
+    let start: u64 = file_start(ends, module);
+    let mut at: u64 = 0u64;
+    while at < linked.checked.diagnostics.length() {
+        let diagnostic: Diagnostic = linked.checked.diagnostics[at];
+        if diagnostic.at >= start && diagnostic.at < ends[module] {
+            out = bytes.append_decimal(out, module);
+            out.push(58u8);
+            out = check.append_diagnostic(out, sources.slice(start, ends[module]), Diagnostic { code: diagnostic.code, at: diagnostic.at - start });
+        }
+        at += 1u64;
+    }
+    out
+}
+
+// The package in `sources` (see `dump`), linked and checked.
+pub fn link(sources: Slice<u8>, ends: Slice<u64>) -> Linked {
+    let merged: Unit = merge(sources, ends);
+    let mut l: Linking = empty_linking();
+    let mut w: Walk = Walk { nodes: Buffer::new(), locals: Buffer::new(), live: 0u64, depth: 0u64, errors: Buffer::new(), targets: Buffer::new() };
+    if merged.programs[0u64] == 0u64 {
+        return Linked { status: PARSE_FAILED, unit: merged, linking: l, walk: w, checked: check.empty_check(), failing: 0u64, link_errors: Buffer::new(), program: 0u64 };
+    }
+    l = register(sources, merged.tokens.as_slice(), merged.nodes.as_slice(), merged.programs.as_slice());
+    if l.duplicated.length() > 0u64 && is_duplicated(sources, merged.tokens.as_slice(), merged.nodes.as_slice(), merged.programs.as_slice(), l.duplicated.as_slice(), module_first(merged.nodes.as_slice(), merged.programs.as_slice(), 0u64), module_last(merged.nodes.as_slice(), merged.programs.as_slice(), 0u64)) {
+        return Linked { status: ROOT_TWICE, unit: merged, linking: l, walk: w, checked: check.empty_check(), failing: 0u64, link_errors: Buffer::new(), program: 0u64 };
     }
     l = visit(sources, merged.tokens.as_slice(), merged.nodes.as_slice(), merged.programs.as_slice(), 0u64, l);
     if l.failed != 0u64 {
-        return append_errors(out, sources, ends, l.failed - 1u64, l.errors.as_slice());
+        let failed: u64 = l.failed;
+        let errors: Buffer<u64> = copy(l.errors.as_slice());
+        return Linked { status: FAILED, unit: merged, linking: l, walk: w, checked: check.empty_check(), failing: failed, link_errors: errors, program: 0u64 };
     }
     // Each module's bindings, then its references, in link order. A module
     // that fails keeps its errors and the modules after it are still linked:
     // they cannot matter to the ones before it.
     let mut link_errors: Buffer<u64> = Buffer::new();
     let mut failing: u64 = 0u64;
-    let mut w: Walk = Walk { nodes: copy_nodes(merged.nodes.as_slice()), locals: Buffer::new(), live: 0u64, depth: 0u64, errors: Buffer::new() };
+    w.nodes = copy_nodes(merged.nodes.as_slice());
     let mut index: u64 = 0u64;
+    while index < w.nodes.length() {
+        w.targets.push(0u64);
+        index += 1u64;
+    }
+    index = 0u64;
     while index < l.order.length() {
         let module: u64 = l.order[index];
         l = bind(sources, merged.tokens.as_slice(), w.nodes.as_slice(), merged.programs.as_slice(), module, l);
@@ -134,6 +198,7 @@ pub fn dump(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
     // One program of every item, in link order.
     let program: u64 = w.nodes.length();
     w = chain(merged.programs.as_slice(), l.order.as_slice(), w);
+    w.targets.push(0u64);
     let checked: Check = check.check_unit(sources, merged.tokens.as_slice(), w.nodes.as_slice(), program, merged.bases.as_slice(), l.imports.as_slice());
     // The first module in link order that fails: a module is linked before it
     // is checked, and the modules before it passed both.
@@ -141,30 +206,23 @@ pub fn dump(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
     while index < l.order.length() {
         let module: u64 = l.order[index];
         if failing == module + 1u64 {
-            return append_errors(out, sources, ends, module, link_errors.as_slice());
+            return Linked { status: FAILED, unit: merged, linking: l, walk: w, checked: checked, failing: failing, link_errors: link_errors, program: program };
         }
         let start: u64 = file_start(ends, module);
-        let mut found: bool = false;
         let mut at: u64 = 0u64;
         while at < checked.diagnostics.length() {
-            let diagnostic: Diagnostic = checked.diagnostics[at];
-            if diagnostic.at >= start && diagnostic.at < ends[module] {
-                out = bytes.append_decimal(out, module);
-                out.push(58u8);
-                out = check.append_diagnostic(out, sources.slice(start, ends[module]), Diagnostic { code: diagnostic.code, at: diagnostic.at - start });
-                found = true;
+            let found: u64 = checked.diagnostics[at].at;
+            if found >= start && found < ends[module] {
+                return Linked { status: FAILED, unit: merged, linking: l, walk: w, checked: checked, failing: module + 1u64, link_errors: Buffer::new(), program: program };
             }
             at += 1u64;
         }
-        if found {
-            return out;
-        }
         index += 1u64;
     }
-    bytes.append(out, "ok\n".as_slice())
+    Linked { status: LINKED, unit: merged, linking: l, walk: w, checked: checked, failing: 0u64, link_errors: Buffer::new(), program: program }
 }
 
-fn file_start(ends: Slice<u64>, file: u64) -> u64 {
+pub fn file_start(ends: Slice<u64>, file: u64) -> u64 {
     if file == 0u64 {
         return 0u64;
     }
@@ -239,7 +297,7 @@ fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
 
 // Every file lexed and parsed, and its tokens and nodes appended to one tree.
 fn merge(sources: Slice<u8>, ends: Slice<u64>) -> Unit {
-    let mut merged: Unit = Unit { tokens: Buffer::new(), nodes: Buffer::new(), bases: Buffer::new(), programs: Buffer::new() };
+    let mut merged: Unit = Unit { tokens: Buffer::new(), strings: Buffer::new(), nodes: Buffer::new(), bases: Buffer::new(), programs: Buffer::new() };
     let mut file: u64 = 0u64;
     while file < ends.length() {
         merged.bases.push(merged.nodes.length());
@@ -259,14 +317,21 @@ fn merge(sources: Slice<u8>, ends: Slice<u64>) -> Unit {
         }
         let token_base: u64 = merged.tokens.length();
         let node_base: u64 = merged.nodes.length();
+        let string_base: u64 = merged.strings.length();
+        let mut byte: u64 = 0u64;
+        while byte < lexed.strings.length() {
+            merged.strings.push(lexed.strings[byte]);
+            byte += 1u64;
+        }
         let mut index: u64 = 0u64;
         while index < lexed.tokens.length() {
             let mut found: Token = lexed.tokens[index];
             found.start += start;
             found.end += start;
-            // A string's text is in the lexer's own buffer, which nothing
-            // after parsing reads.
-            if found.kind != token.STRING {
+            if found.kind == token.STRING {
+                found.text_start += string_base;
+                found.text_end += string_base;
+            } else {
                 found.text_start += start;
                 found.text_end += start;
             }
@@ -389,8 +454,8 @@ fn is_duplicated(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, p
 
 // The root, then each file of the set that parses, unless a file registered
 // before it declares the same module; then that module is duplicated.
-fn register(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>) -> Linking {
-    let mut l: Linking = Linking {
+fn empty_linking() -> Linking {
+    Linking {
         registered: Buffer::new(),
         duplicated: Buffer::new(),
         state: Buffer::new(),
@@ -400,7 +465,11 @@ fn register(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, progra
         bindings: Buffer::new(),
         imported: Buffer::new(),
         imports: Buffer::new(),
-    };
+    }
+}
+
+fn register(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>) -> Linking {
+    let mut l: Linking = empty_linking();
     let mut file: u64 = 0u64;
     while file < programs.length() {
         l.state.push(0u64);
@@ -665,6 +734,16 @@ fn node(sources: Slice<u8>, tokens: Slice<Token>, programs: Slice<u64>, bindings
         }
         return w;
     }
+    if kind == ast.PATH {
+        let found: Node = w.nodes[at];
+        if found.word - 1u64 == found.path_last && found.value == 0u64 && !is_local(sources, tokens, w.locals.as_slice(), w.live, found.path_last) {
+            let item: u64 = own_item(sources, tokens, w.nodes.as_slice(), programs, module, found.path_last);
+            if item != 0u64 && (w.nodes[item - 1u64].kind == ast.FN || w.nodes[item - 1u64].kind == ast.CONST) {
+                w.targets[at] = item;
+            }
+        }
+        return w;
+    }
     if kind == ast.FIELD_ACCESS {
         let base: u64 = w.nodes[at].first - 1u64;
         let found: Node = w.nodes[base];
@@ -700,6 +779,21 @@ fn bind_pattern(pattern: u64, walk: Walk) -> Walk {
         }
     }
     w
+}
+
+// The last item of `module` named like token `name` (+ 1), or 0: of items
+// named alike, stage0 lets the last decide the kind.
+fn own_item(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, module: u64, name: u64) -> u64 {
+    let mut found: u64 = 0u64;
+    let mut link: u64 = nodes[programs[module] - 1u64].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = nodes[item].next;
+        if nodes[item].kind != ast.IMPORT && same_word(sources, tokens, nodes[item].word - 1u64, name) {
+            found = item + 1u64;
+        }
+    }
+    found
 }
 
 // `b.x` at node `at`, where `b` binds module `target`: the public function or

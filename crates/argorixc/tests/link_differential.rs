@@ -1,12 +1,16 @@
-//! ESP-012.C: the Argorix linker and checker (`compiler/link.argx`) against
-//! the stage0 driver's way of checking a package.
+//! ESP-012.C and ESP-013.A: the Argorix linker and checker
+//! (`compiler/link.argx`) and IR lowering (`compiler/ir.argx`) against stage0.
 //!
-//! `tests/selfhost/check/link_files.argx` is compiled through the transitional
-//! C backend and run with a package root holding every source file. It reads
-//! each package through the compiler-host boundary, links and checks it, and
-//! writes its diagnostics dump (`spec/core/check.md`). Each dump must equal,
-//! byte for byte, what the stage0 driver's `check_core_package` produces
-//! (`argorixc core-check-package-dump`).
+//! A harness is compiled through the transitional C backend and run with a
+//! package root holding every source file. It reads each package through the
+//! compiler-host boundary and writes one dump per package, which must equal,
+//! byte for byte, what stage0 produces for the same files:
+//!
+//! - `tests/selfhost/check/link_files.argx` writes the diagnostics dump
+//!   (`spec/core/check.md`), against the stage0 driver's `check_core_package`
+//!   (`argorixc core-check-package-dump`);
+//! - `tests/selfhost/ir/ir_files.argx` writes the canonical IR JSON
+//!   (`spec/core/ir.md`), against `argorix_ir::core_package_ir_dump`.
 //!
 //! The packages are the compiler, which links the Argorix checker and linker
 //! with themselves, each module of the standard library, the programs that
@@ -16,6 +20,7 @@
 // The differential needs a Unix C toolchain; elsewhere this file is empty.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
+use argorix_ir::core_package_ir_dump;
 use argorix_semantics::core_package_check_dump;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -28,10 +33,10 @@ fn root() -> PathBuf {
 
 /// The stage0 dump, on a stack as large as `argorixc` gives itself: the
 /// deep-nesting samples recurse further than a test thread's default stack.
-fn on_large_stack(sources: Vec<Vec<u8>>) -> String {
+fn on_large_stack(oracle: fn(&[Vec<u8>]) -> String, sources: Vec<Vec<u8>>) -> String {
     std::thread::Builder::new()
         .stack_size(64 << 20)
-        .spawn(move || core_package_check_dump(&sources))
+        .spawn(move || oracle(&sources))
         .unwrap()
         .join()
         .unwrap()
@@ -123,6 +128,25 @@ fn packages() -> Vec<(String, Vec<String>)> {
 #[cfg(unix)]
 #[test]
 fn the_argorix_linker_matches_the_stage0_driver_when_cc_is_available() {
+    differential(
+        "tests/selfhost/check/link_files.argx",
+        "link",
+        core_package_check_dump,
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_argorix_ir_matches_the_stage0_ir_when_cc_is_available() {
+    differential(
+        "tests/selfhost/ir/ir_files.argx",
+        "ir",
+        core_package_ir_dump,
+    );
+}
+
+#[cfg(unix)]
+fn differential(harness: &str, extension: &str, oracle: fn(&[Vec<u8>]) -> String) {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
         .find(|name| Command::new(name).arg("--version").output().is_ok());
@@ -135,7 +159,7 @@ fn the_argorix_linker_matches_the_stage0_driver_when_cc_is_available() {
         .iter()
         .any(|(root, _)| root == "compiler/link.argx"));
 
-    let work = env::temp_dir().join(format!("argorix-link-{}", std::process::id()));
+    let work = env::temp_dir().join(format!("argorix-{extension}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&work);
     let package_root = work.join("package");
     let build = work.join("build");
@@ -166,14 +190,14 @@ fn the_argorix_linker_matches_the_stage0_driver_when_cc_is_available() {
     }
     fs::write(package_root.join("packages.txt"), &list).unwrap();
 
-    let c_file = work.join("link_files.c");
+    let c_file = work.join("harness.c");
     let emit = Command::new(env!("CARGO_BIN_EXE_argorixc"))
         .arg("--stdlib")
         .arg(root().join("stdlib"))
         .arg("--modules")
         .arg(root().join("compiler"))
         .arg("core-emit-c")
-        .arg(root().join("tests/selfhost/check/link_files.argx"))
+        .arg(root().join(harness))
         .arg("--output")
         .arg(&c_file)
         .output()
@@ -183,7 +207,7 @@ fn the_argorix_linker_matches_the_stage0_driver_when_cc_is_available() {
         "emission failed: {}",
         String::from_utf8_lossy(&emit.stderr)
     );
-    let executable = work.join("link_files");
+    let executable = work.join("harness");
     // Linking every package takes more than the default test budget of steps.
     let compile = Command::new(compiler)
         .args(["-std=c11", "-O1", "-Wall", "-Wextra", "-Werror"])
@@ -226,8 +250,8 @@ fn the_argorix_linker_matches_the_stage0_driver_when_cc_is_available() {
             .iter()
             .map(|file| fs::read(root().join(file)).unwrap())
             .collect();
-        let expected = on_large_stack(sources);
-        let actual = fs::read(build.join(format!("dumps/{index}.link"))).unwrap();
+        let expected = on_large_stack(oracle, sources);
+        let actual = fs::read(build.join(format!("dumps/{index}.{extension}"))).unwrap();
         if actual != expected.as_bytes() {
             let first = expected
                 .lines()
@@ -240,7 +264,7 @@ fn the_argorix_linker_matches_the_stage0_driver_when_cc_is_available() {
     }
     assert!(
         failed.is_empty(),
-        "the Argorix linker disagrees:\n{}",
+        "the Argorix {extension} dump disagrees:\n{}",
         failed.join("\n")
     );
     if env::var_os("ARGORIX_KEEP_WORK").is_none() {
