@@ -5,7 +5,10 @@ not the native backend required for the final Argorix toolchain. Two
 implementations follow this contract: the stage0 emitter in
 `crates/argorix_ir/src/core_c.rs`, and `compiler/c_emit.argx` (ESP-013.C). The
 Argorix one writes the same C byte for byte, and reproduces itself
-(`crates/argorixc/tests/link_differential.rs`).
+(`crates/argorixc/tests/link_differential.rs`). It also refuses the same
+programs for the same reasons: `compiler.c_emit.refusal` gives stage0's
+`CBackendUnsupported` message for each refusal (ESP-014.D), and stage1
+writes it to its diagnostics file (`spec/core/stage1.md`).
 
 ## Trusted boundary
 

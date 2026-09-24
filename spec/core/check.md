@@ -21,8 +21,9 @@ set holds only itself and any import is `ImportNotLocked`.
 
       line:column: phase[Code]
 
-Messages are not part of the dump yet. The code and the position are what
-the two checkers must agree on.
+Messages are not part of the dump: the code and the position are what the
+two checkers must agree on here. Since ESP-014.A the Argorix checker also
+words each message as stage0 does; see "Messages" below.
 
 ## Package dump
 
@@ -103,3 +104,27 @@ a root item spelled like the renamed item of a dependency, such as a root
 `DuplicateDeclaration` in stage0 and nothing in the Argorix checker. No
 source has a reason to spell such a name, and the renaming is stage0's
 choice for its C backend, not a rule of `modules.md`.
+
+## Messages (ESP-014.A)
+
+The Argorix checker and linker record, with each diagnostic, the byte span it
+points at and its message, worded as stage0 words it. `compiler.report`
+renders them as `argorixc core-emit-c` does (`spec/core/stage1.md`), and
+`stage1_diagnostics_match_stage0_when_cc_is_available` compares the rendered
+text with stage0's over every package of the differential.
+
+- Types are displayed as stage0's `Ty::display` displays them: `unit`,
+  `u32`, `Buffer<u8>`, `Array<u8, 4>`, `Handle<Point>`, `<unknown>` and `!`.
+  A struct or enum of another module than the one being checked carries the
+  name stage0's linker gives it: its module's path with `__` for each dot,
+  then `__` and its name, as in `demo__leaf__Leaf`.
+- An unknown path is spelled with `::` between its segments, and an unknown
+  module with `.`.
+- Where stage0 sorts names, the Argorix checker sorts them the same way, by
+  their bytes:
+  - the fields an aggregate leaves out, one diagnostic each;
+  - the variants a match leaves out, in one message;
+  - the bindings a loop moves, one diagnostic each, taken path by path and in
+    the order they were declared within each path.
+- The span is the one stage0 reports: the node's, or for a name the token's.
+  A binding pattern that repeats a local points at the whole pattern.

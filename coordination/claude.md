@@ -2,13 +2,31 @@
 
 ## Current claim
 
+- Task: ESP-014 — the first complete self-hosted compiler, as subtasks A
+  (diagnostics as stage0 words and renders them), B (the driver and its build
+  file), C (stage1 built by stage0 and run without Rust, with its provenance)
+  and D (the C backend's refusal reasons).
+- State: every subtask done on `claude/trabajo-pendiente-ae9bcz`, rebased on
+  `main@89d67d0` after ESP-013 merged in #58; up for review.
+- Started: 2026-09-24.
+- Ficha: `tasks/espada/ESP-014.md`.
+- Paths: `compiler/main.argx` and `compiler/report.argx` (new), messages and
+  spans in `compiler/check.argx`, `compiler/link.argx`, `compiler/parser.argx`,
+  `compiler/ast.argx`, `compiler/diagnostics.argx` and `compiler/c_emit.argx`,
+  `argorix.build`, `bootstrap/stage1.py`, `tests/selfhost/stage1/**`,
+  `tests/selfhost/check/samples/messages.src`, `spec/core/stage1.md`,
+  `spec/core/check.md`, `spec/core/c-backend.md`, the ficha,
+  `crates/argorixc/tests/stage1.rs` and `link_differential.rs`, and the
+  stage1 jobs and fixtures of `.github/workflows/core-c.yml`.
+
+---
+
+# Previous claim: ESP-013 (DONE)
+
 - Task: ESP-013 — lowering and emission in Argorix, as subtasks A (IR and
   canonical JSON), B (verifier), C (C backend) and D (pipeline and manifest).
-- State: IN PROGRESS; A (IR) and C (C backend, with a self-emission fixed
-  point) done on `claude/trabajo-pendiente-ae9bcz`, rebased on `main@def7a46`
-  after ESP-012.C merged in #57, then D (pipeline and manifest with SHA-256)
-  and B (IR verifier), all in PR #58. Every subtask is done; the task closes
-  when #58 merges with CI green.
+- State: DONE on 2026-09-24; A–D merged in PR #58. CI is green on
+  `main@89d67d0`.
 - Started: 2026-09-24.
 - Ficha: `tasks/espada/ESP-013.md`.
 - Paths: `compiler/ir.argx`, `compiler/ir_verify.argx`, `compiler/c_emit.argx`,
@@ -18,6 +36,17 @@
   `spec/core/ir.md`, the ficha, `crates/argorix_ir/src/core.rs` (package IR
   dump), `crates/argorix_semantics/src/core_check_dump.rs` (package loading),
   the `argorixc` package dumps, `.github/workflows/core-c.yml` (IR fixtures).
+
+## Handoff (ESP-013)
+
+- The whole path from Core source to C runs in Argorix, byte-identical to
+  stage0 on every package of the differential, with a fixed point of the C
+  backend on itself.
+- Found: stage0 cannot read back the IR of a program nested past serde_json's
+  recursion limit (`deep_unary_ok.src`); recorded in `spec/core/ir.md`.
+- The pre-existing `generate.rs` compile error was specific to rustc 1.94.1;
+  rustc 1.98 (CI's stable) builds the whole workspace.
+- Next: ESP-014, the driver and stage1.
 
 ---
 

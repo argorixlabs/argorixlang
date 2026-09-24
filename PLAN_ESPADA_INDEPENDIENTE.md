@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57). ESP-013 está EN_CURSO; ESP-014 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58). ESP-014 está EN_CURSO; ESP-015 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -108,8 +108,8 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | HECHA |
 | ESP-011 | Parser y AST en Argorix | 010 | HECHA |
 | ESP-012 | Resolución, tipos y módulos en Argorix | 011 | HECHA |
-| ESP-013 | Lowering y emisión en Argorix | 012 | EN_CURSO |
-| ESP-014 | Primer compilador self-hosted completo | 013 | PENDIENTE |
+| ESP-013 | Lowering y emisión en Argorix | 012 | HECHA |
+| ESP-014 | Primer compilador self-hosted completo | 013 | EN_CURSO |
 | ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | PENDIENTE |
 | ESP-016 | Backend nativo inicial | 015 | PENDIENTE |
 | ESP-017 | Segundo destino y bootstrap nativo | 016 | PENDIENTE |
@@ -361,8 +361,8 @@ verde en `main@def7a46`.
 **Entregables:** pipeline escrito en `.argx` y comparación de comportamiento por backend.
 **Aceptación:** compila programas del corpus y componentes del compilador; no importa generar C idéntico a stage0, sí preservar semántica. Las diferencias de resultados deben explicarse contra especificación.
 
-**Estado (2026-09-24):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-013.md)),
-en cuatro subtareas:
+**Estado (2026-09-24):** HECHA en el carril de Claude ([ficha](tasks/espada/ESP-013.md)),
+fusionada en el PR #58 con CI verde en `main@89d67d0`, en cuatro subtareas:
 
 - ESP-013.A: el IR canónico en `compiler/ir.argx`, idéntico byte a byte al de
   stage0 en 170 paquetes.
@@ -373,8 +373,7 @@ en cuatro subtareas:
 - ESP-013.B: el verificador del IR en `compiler/ir_verify.argx`, que lee el
   JSON como serde y coincide con stage0 en 248 documentos.
 
-Las cuatro subtareas están hechas; la tarea se cierra al fusionarse con CI
-verde.
+Las cuatro subtareas están hechas.
 
 ### ESP-014 — Primer compilador self-hosted completo
 
@@ -383,6 +382,24 @@ verde.
 **Pasos:** añadir lectura de proyecto, argumentos, diagnósticos y emisión; construir stage1 con stage0; ejecutar stage1 sobre todas sus fuentes; quitar dependencias accidentales a procesos/helper Rust.
 **Entregables:** stage1 y manifiesto de su origen, fuentes, herramientas y hashes.
 **Aceptación:** stage1 puede generar un compilador funcional a partir de sus fuentes completas; no solo compila un «hello world» o un parser. Cada fase del compilador es Argorix; C sigue declarado como backend temporal.
+
+**Estado (2026-09-24):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-014.md)),
+en cuatro subtareas:
+
+- ESP-014.A: los diagnósticos con los mensajes de stage0, renderizados como
+  los imprime `argorixc core-emit-c` (`compiler/report.argx`); coinciden byte
+  a byte en los 189 paquetes del diferencial.
+- ESP-014.B: el driver `compiler/main.argx`, que lee `argorix.build` (el perfil
+  compiler-host no da línea de órdenes) y escribe el C, el manifiesto y los
+  diagnósticos (`spec/core/stage1.md`).
+- ESP-014.C: stage0 construye stage1, y stage1 compila sus 24 fuentes al mismo
+  C que stage0; ese C, compilado, repite la construcción. En CI stage1 se
+  construye y se compila a sí mismo en un contenedor sin Rust, con gcc y con
+  clang, y `bootstrap/stage1.py` escribe el manifiesto de procedencia.
+- ESP-014.D: los rechazos del backend C, con el mensaje de stage0.
+
+Las cuatro subtareas están hechas; la tarea se cierra al fusionarse con CI
+verde.
 
 ### ESP-015 — Bootstrap stage2/stage3 sin Rust
 
