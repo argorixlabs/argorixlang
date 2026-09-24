@@ -87,28 +87,66 @@ pub struct CEmit {
     loops_live: u64,
     loop_scopes: Buffer<u64>,
     loop_scopes_live: u64,
+    // The native backend's state (`compiler.native`, ESP-016), which shares
+    // these tables and checks; this backend leaves it empty.
+    // Machine code, and the read-only data that follows it.
+    code: Buffer<u8>,
+    data: Buffer<u8>,
+    // (kind, at, target) triples resolved once the code is complete.
+    fixups: Buffer<u64>,
+    // The runtime functions called, as names ended at `extern_ends`.
+    externs: Buffer<u8>,
+    extern_ends: Buffer<u64>,
+    // Values and places, as nodes of six words, and the one just emitted.
+    tree: Buffer<u64>,
+    node: u64,
+    // Frame bytes in use below the frame pointer, the most in use at once,
+    // and the largest argument block the function passes.
+    frame: u64,
+    frame_max: u64,
+    outgoing: u64,
+    // Per local (parallel to `locals`) its node; per owner (parallel to
+    // `owned`) its node and its live flag's slot.
+    local_nodes: Buffer<u64>,
+    owned_nodes: Buffer<u64>,
+    // Per loop its start; the jumps out of loops still to patch.
+    loop_code: Buffer<u64>,
+    breaks: Buffer<u64>,
+    breaks_live: u64,
+    // Layouts: per type (size + 1, alignment, offset of an enum's data), per
+    // field its offset, per function (code offset + 1, argument block size),
+    // per parameter its offset in the block, and per dropped type (type, code
+    // offset) pairs.
+    sizes: Buffer<u64>,
+    offsets: Buffer<u64>,
+    entries: Buffer<u64>,
+    param_offsets: Buffer<u64>,
+    drop_code: Buffer<u64>,
+    main_at: u64,
+    // Steps, depth, buffer bytes, arena bytes and arena slots.
+    limits: Buffer<u64>,
 }
 
 // Type tags.
-const T_UNIT: u64 = 1u64;
-const T_BOOL: u64 = 2u64;
-const T_BYTES: u64 = 3u64;
-const T_STRING: u64 = 4u64;
-const T_INTEGER: u64 = 5u64;
-const T_USER: u64 = 6u64;
-const T_CAPABILITY: u64 = 7u64;
-const T_SLICE: u64 = 8u64;
-const T_BUFFER: u64 = 9u64;
-const T_ARENA: u64 = 10u64;
-const T_HANDLE: u64 = 11u64;
-const T_ARRAY: u64 = 12u64;
+pub const T_UNIT: u64 = 1u64;
+pub const T_BOOL: u64 = 2u64;
+pub const T_BYTES: u64 = 3u64;
+pub const T_STRING: u64 = 4u64;
+pub const T_INTEGER: u64 = 5u64;
+pub const T_USER: u64 = 6u64;
+pub const T_CAPABILITY: u64 = 7u64;
+pub const T_SLICE: u64 = 8u64;
+pub const T_BUFFER: u64 = 9u64;
+pub const T_ARENA: u64 = 10u64;
+pub const T_HANDLE: u64 = 11u64;
+pub const T_ARRAY: u64 = 12u64;
 
 // The types every emission starts with, at these positions.
-const NONE: u64 = 0u64;
-const UNIT: u64 = 1u64;
-const BOOL: u64 = 2u64;
-const BYTES: u64 = 3u64;
-const STRING: u64 = 4u64;
+pub const NONE: u64 = 0u64;
+pub const UNIT: u64 = 1u64;
+pub const BOOL: u64 = 2u64;
+pub const BYTES: u64 = 3u64;
+pub const STRING: u64 = 4u64;
 
 // ------------------------------------------------------------------ entry
 
@@ -145,7 +183,7 @@ pub fn refusal(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
     text
 }
 
-fn empty() -> CEmit {
+pub fn empty() -> CEmit {
     let mut e: CEmit = CEmit {
         failed: false,
         reason: Buffer::new(),
@@ -178,6 +216,28 @@ fn empty() -> CEmit {
         loops_live: 0u64,
         loop_scopes: Buffer::new(),
         loop_scopes_live: 0u64,
+        code: Buffer::new(),
+        data: Buffer::new(),
+        fixups: Buffer::new(),
+        externs: Buffer::new(),
+        extern_ends: Buffer::new(),
+        tree: Buffer::new(),
+        node: 0u64,
+        frame: 0u64,
+        frame_max: 0u64,
+        outgoing: 0u64,
+        local_nodes: Buffer::new(),
+        owned_nodes: Buffer::new(),
+        loop_code: Buffer::new(),
+        breaks: Buffer::new(),
+        breaks_live: 0u64,
+        sizes: Buffer::new(),
+        offsets: Buffer::new(),
+        entries: Buffer::new(),
+        param_offsets: Buffer::new(),
+        drop_code: Buffer::new(),
+        main_at: 0u64,
+        limits: Buffer::new(),
     };
     // No type, unit, bool, bytes, string: positions 0 to 4.
     let mut tag: u64 = 0u64;
@@ -190,7 +250,7 @@ fn empty() -> CEmit {
 
 // The program is refused, for `reason`: stage0's `CBackendUnsupported`
 // message for the same refusal. The first reason is the one kept.
-fn refuse(e: CEmit, reason: Slice<u8>) -> CEmit {
+pub fn refuse(e: CEmit, reason: Slice<u8>) -> CEmit {
     if e.failed {
         return e;
     }
@@ -201,13 +261,13 @@ fn refuse(e: CEmit, reason: Slice<u8>) -> CEmit {
 }
 
 // `before`, `name` and `after`, one after another.
-fn quoted(before: Slice<u8>, name: Slice<u8>, after: Slice<u8>) -> Buffer<u8> {
+pub fn quoted(before: Slice<u8>, name: Slice<u8>, after: Slice<u8>) -> Buffer<u8> {
     let text: Buffer<u8> = bytes.append(copy(before), name);
     bytes.append(text, after)
 }
 
 // "unknown field `name` on `type`".
-fn unknown_field(name: Slice<u8>, owner: Slice<u8>) -> Buffer<u8> {
+pub fn unknown_field(name: Slice<u8>, owner: Slice<u8>) -> Buffer<u8> {
     let text: Buffer<u8> = quoted("unknown field `".as_slice(), name, "` on `".as_slice());
     quoted(text.as_slice(), owner, "`".as_slice())
 }
@@ -254,13 +314,13 @@ fn append_debug(out: Buffer<u8>, types: Slice<CType>, names: Slice<u8>, ty: u64)
 
 // "qualified path `a::b` is outside the scalar C profile", for a path of
 // more than one segment.
-fn qualified(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64) -> Buffer<u8> {
+pub fn qualified(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64) -> Buffer<u8> {
     let joined: Buffer<u8> = path_text(s, t, n, g, p, b, bi, node);
     quoted("qualified path `".as_slice(), joined.as_slice(), "` is outside the scalar C profile".as_slice())
 }
 
 // A path's segments, as the IR names them, joined by `::`.
-fn path_text(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64) -> Buffer<u8> {
+pub fn path_text(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64) -> Buffer<u8> {
     let mut text: Buffer<u8> = Buffer::new();
     let count: u64 = ir.segments(t, n, g, node);
     let mut index: u64 = 0u64;
@@ -349,7 +409,7 @@ fn next_temp(e: CEmit) -> CEmit {
 
 // ------------------------------------------------------------------ types
 
-fn intern(tag: u64, name: Slice<u8>, element: u64, length: u64, e: CEmit) -> CEmit {
+pub fn intern(tag: u64, name: Slice<u8>, element: u64, length: u64, e: CEmit) -> CEmit {
     let mut x: CEmit = e;
     let mut index: u64 = 0u64;
     while index < x.types.length() {
@@ -371,11 +431,11 @@ fn intern(tag: u64, name: Slice<u8>, element: u64, length: u64, e: CEmit) -> CEm
     x
 }
 
-fn intern_named(tag: u64, name: Slice<u8>, e: CEmit) -> CEmit {
+pub fn intern_named(tag: u64, name: Slice<u8>, e: CEmit) -> CEmit {
     intern(tag, name, 0u64, 0u64, e)
 }
 
-fn integer(name: Slice<u8>, e: CEmit) -> CEmit {
+pub fn integer(name: Slice<u8>, e: CEmit) -> CEmit {
     intern(T_INTEGER, name, 0u64, 0u64, e)
 }
 
@@ -386,7 +446,7 @@ fn is_integer_name(name: Slice<u8>) -> bool {
 }
 
 // A type written in the source, as `ScalarType::from_ir` reads the IR's.
-fn from_type(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
+pub fn from_type(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
     let name: u64 = n[node].word - 1u64;
     if n[node].kind == ast.TYPE_NAMED {
         let text: Buffer<u8> = ir.append_type_text(Buffer::new(), s, t, n, p, b, bi, ir.module_of(b, node), name);
@@ -430,7 +490,7 @@ fn from_type(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Sl
     refuse(x, reason.as_slice())
 }
 
-fn container(tag: u64, element: u64, e: CEmit) -> CEmit {
+pub fn container(tag: u64, element: u64, e: CEmit) -> CEmit {
     let empty_name: Array<u8, 0> = [];
     intern(tag, empty_name.as_slice(), element, 0u64, e)
 }
@@ -505,12 +565,12 @@ fn append_mangle(out: Buffer<u8>, types: Slice<CType>, names: Slice<u8>, ty: u64
 }
 
 // Whether a type is an unsigned integer.
-fn is_unsigned(types: Slice<CType>, names: Slice<u8>, ty: u64) -> bool {
+pub fn is_unsigned(types: Slice<CType>, names: Slice<u8>, ty: u64) -> bool {
     types[ty].tag == T_INTEGER && names[types[ty].name_start] == 117u8
 }
 
 // FNV-1a over the mangled name: the type identity arenas and handles check.
-fn core_type_id(types: Slice<CType>, names: Slice<u8>, ty: u64) -> u64 {
+pub fn core_type_id(types: Slice<CType>, names: Slice<u8>, ty: u64) -> u64 {
     let text: Buffer<u8> = append_mangle(Buffer::new(), types, names, ty);
     let mut hash: u64 = 2166136261u64;
     let mut index: u64 = 0u64;
@@ -656,7 +716,7 @@ fn resource(types: Slice<CType>, names: Slice<u8>, structs: Slice<CRecord>, enum
 }
 
 // `result` is 1 when a type owns storage, 0 otherwise.
-fn owns(e: CEmit, ty: u64) -> CEmit {
+pub fn owns(e: CEmit, ty: u64) -> CEmit {
     let mut x: CEmit = e;
     let none: Array<u64, 0> = [];
     let found: bool = resource(x.types.as_slice(), x.names.as_slice(), x.structs.as_slice(), x.enums.as_slice(), x.variants.as_slice(), x.fields.as_slice(), ty, none.as_slice());
@@ -735,7 +795,7 @@ fn sort_types(list: Buffer<u64>, types: Slice<CType>, names: Slice<u8>, by_mangl
 }
 
 // The record among `records` named `name` (+ 1), or 0.
-fn find_record(records: Slice<CRecord>, names: Slice<u8>, name: Slice<u8>) -> u64 {
+pub fn find_record(records: Slice<CRecord>, names: Slice<u8>, name: Slice<u8>) -> u64 {
     let mut index: u64 = 0u64;
     while index < records.length() {
         if same(names, records[index].name_start, records[index].name_end, name) {
@@ -747,7 +807,7 @@ fn find_record(records: Slice<CRecord>, names: Slice<u8>, name: Slice<u8>) -> u6
 }
 
 // The field among `count` from `first` named `name` (+ 1), or 0.
-fn find_field(fields: Slice<CField>, names: Slice<u8>, first: u64, count: u64, name: Slice<u8>) -> u64 {
+pub fn find_field(fields: Slice<CField>, names: Slice<u8>, first: u64, count: u64, name: Slice<u8>) -> u64 {
     let mut index: u64 = first;
     while index < first + count {
         if same(names, fields[index].name_start, fields[index].name_end, name) {
@@ -759,7 +819,7 @@ fn find_field(fields: Slice<CField>, names: Slice<u8>, first: u64, count: u64, n
 }
 
 // The variant among `count` from `first` named `name` (+ 1), or 0.
-fn find_variant(variants: Slice<CRecord>, names: Slice<u8>, first: u64, count: u64, name: Slice<u8>) -> u64 {
+pub fn find_variant(variants: Slice<CRecord>, names: Slice<u8>, first: u64, count: u64, name: Slice<u8>) -> u64 {
     let mut index: u64 = first;
     while index < first + count {
         if same(names, variants[index].name_start, variants[index].name_end, name) {
@@ -770,7 +830,7 @@ fn find_variant(variants: Slice<CRecord>, names: Slice<u8>, first: u64, count: u
     0u64
 }
 
-fn find_function(functions: Slice<CFunction>, names: Slice<u8>, name: Slice<u8>) -> u64 {
+pub fn find_function(functions: Slice<CFunction>, names: Slice<u8>, name: Slice<u8>) -> u64 {
     let mut index: u64 = 0u64;
     while index < functions.length() {
         if same(names, functions[index].name_start, functions[index].name_end, name) {
@@ -781,7 +841,7 @@ fn find_function(functions: Slice<CFunction>, names: Slice<u8>, name: Slice<u8>)
     0u64
 }
 
-fn find_constant(constants: Slice<CConst>, names: Slice<u8>, name: Slice<u8>) -> u64 {
+pub fn find_constant(constants: Slice<CConst>, names: Slice<u8>, name: Slice<u8>) -> u64 {
     let mut index: u64 = 0u64;
     while index < constants.length() {
         if same(names, constants[index].name_start, constants[index].name_end, name) {
@@ -804,7 +864,7 @@ fn add_name(e: CEmit, text: Slice<u8>) -> CEmit {
     x
 }
 
-fn child(n: Slice<Node>, node: u64, index: u64) -> u64 {
+pub fn child(n: Slice<Node>, node: u64, index: u64) -> u64 {
     let mut link: u64 = n[node].first;
     let mut at: u64 = 0u64;
     while at < index {
@@ -814,7 +874,7 @@ fn child(n: Slice<Node>, node: u64, index: u64) -> u64 {
     link - 1u64
 }
 
-fn child_count(n: Slice<Node>, node: u64) -> u64 {
+pub fn child_count(n: Slice<Node>, node: u64) -> u64 {
     let mut link: u64 = n[node].first;
     let mut count: u64 = 0u64;
     while link != 0u64 {
@@ -824,7 +884,7 @@ fn child_count(n: Slice<Node>, node: u64) -> u64 {
     count
 }
 
-fn word(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, node: u64) -> Buffer<u8> {
+pub fn word(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, node: u64) -> Buffer<u8> {
     let at: u64 = n[node].word - 1u64;
     range(Buffer::new(), s, t[at].start, t[at].end)
 }
@@ -951,7 +1011,10 @@ fn collect(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Slic
 
 // ------------------------------------------------------------------ program
 
-fn program(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, root: u64, e: CEmit) -> CEmit {
+// The tables of every item, and the checks on the whole program, before
+// anything is written: `result` is the entry's function. The native backend
+// (`compiler.native`) starts from the same point.
+pub fn prepare(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, root: u64, e: CEmit) -> CEmit {
     let mut x: CEmit = collect(s, t, n, p, b, bi, root, e);
     if x.failed {
         return x;
@@ -1013,9 +1076,19 @@ fn program(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slic
     if result_tag != T_BOOL && result_tag != T_INTEGER {
         return refuse(x, "`argorix_main` must return a scalar and take no parameters, or at most one `PackageRead` and one `BuildWrite`".as_slice());
     }
+    x.result = entry - 1u64;
+    x
+}
+
+fn program(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, root: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = prepare(s, t, n, p, b, bi, root, e);
+    if x.failed {
+        return x;
+    }
+    let entry: u64 = x.result + 1u64;
     // Only a program that can hold a capability gets the host shim.
     let mut uses_host: bool = false;
-    index = 0u64;
+    let mut index: u64 = 0u64;
     while index < x.params.length() {
         if x.types[x.params[index]].tag == T_CAPABILITY {
             uses_host = true;
@@ -1128,7 +1201,7 @@ fn program(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slic
     emit_main(x, entry - 1u64)
 }
 
-fn copy_ids(values: Slice<u64>) -> Buffer<u64> {
+pub fn copy_ids(values: Slice<u64>) -> Buffer<u64> {
     let mut out: Buffer<u64> = Buffer::new();
     let mut index: u64 = 0u64;
     while index < values.length() {
@@ -1138,7 +1211,7 @@ fn copy_ids(values: Slice<u64>) -> Buffer<u64> {
     out
 }
 
-fn contains(values: Slice<u64>, value: u64) -> bool {
+pub fn contains(values: Slice<u64>, value: u64) -> bool {
     let mut index: u64 = 0u64;
     while index < values.length() {
         if values[index] == value {
@@ -1164,7 +1237,7 @@ fn collect_array(e: CEmit, ty: u64) -> CEmit {
 
 // The typedefs the `let` annotations of a body need, found as stage0 walks
 // the IR: guards and callees are not visited.
-fn arrays_in_block(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, block: u64, e: CEmit) -> CEmit {
+pub fn arrays_in_block(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, block: u64, e: CEmit) -> CEmit {
     let mut x: CEmit = e;
     let mut link: u64 = n[block].first;
     while link != 0u64 && !x.failed {
@@ -1707,7 +1780,7 @@ fn emit_main(e: CEmit, entry: u64) -> CEmit {
 
 // ------------------------------------------------------------------ function state
 
-fn add_local(e: CEmit, start: u64, end: u64, ty: u64) -> CEmit {
+pub fn add_local(e: CEmit, start: u64, end: u64, ty: u64) -> CEmit {
     let mut x: CEmit = e;
     let at: u64 = x.locals_live * 3u64;
     if at < x.locals.length() {
@@ -1724,7 +1797,7 @@ fn add_local(e: CEmit, start: u64, end: u64, ty: u64) -> CEmit {
 }
 
 // The type of the innermost local named `name`, or NONE.
-fn find_local(s: Slice<u8>, locals: Slice<u64>, live: u64, name: Slice<u8>) -> u64 {
+pub fn find_local(s: Slice<u8>, locals: Slice<u64>, live: u64, name: Slice<u8>) -> u64 {
     let mut index: u64 = live;
     while index > 0u64 {
         index -= 1u64;
@@ -1735,7 +1808,7 @@ fn find_local(s: Slice<u8>, locals: Slice<u64>, live: u64, name: Slice<u8>) -> u
     NONE
 }
 
-fn open_scope(e: CEmit) -> CEmit {
+pub fn open_scope(e: CEmit) -> CEmit {
     let mut x: CEmit = e;
     let at: u64 = x.scopes_live;
     if at < x.scopes.length() {
@@ -1749,14 +1822,14 @@ fn open_scope(e: CEmit) -> CEmit {
 }
 
 // The innermost scope ends; what it owned is no longer tracked.
-fn close_scope(e: CEmit) -> CEmit {
+pub fn close_scope(e: CEmit) -> CEmit {
     let mut x: CEmit = e;
     x.scopes_live -= 1u64;
     x.owned_live = x.scopes[x.scopes_live];
     x
 }
 
-fn push_loop(e: CEmit, slot: u64, temp: u64, ty: u64) -> CEmit {
+pub fn push_loop(e: CEmit, slot: u64, temp: u64, ty: u64) -> CEmit {
     let mut x: CEmit = e;
     let at: u64 = x.loops_live * 3u64;
     if at < x.loops.length() {
@@ -1780,14 +1853,14 @@ fn push_loop(e: CEmit, slot: u64, temp: u64, ty: u64) -> CEmit {
     x
 }
 
-fn pop_loop(e: CEmit) -> CEmit {
+pub fn pop_loop(e: CEmit) -> CEmit {
     let mut x: CEmit = e;
     x.loops_live -= 1u64;
     x.loop_scopes_live -= 1u64;
     x
 }
 
-fn register_drop(e: CEmit, ty: u64) -> CEmit {
+pub fn register_drop(e: CEmit, ty: u64) -> CEmit {
     let mut x: CEmit = e;
     if !contains(x.drops.as_slice(), ty) {
         x.drops.push(ty);
@@ -1915,13 +1988,13 @@ fn zeroed_temp(ty: u64, indent: u64, e: CEmit) -> CEmit {
     x
 }
 
-fn is_statement(kind: u64) -> bool {
+pub fn is_statement(kind: u64) -> bool {
     kind == ast.LET || kind == ast.ASSIGN || kind == ast.WHILE || kind == ast.BREAK || kind == ast.CONTINUE
         || kind == ast.RETURN || kind == ast.EXPR
 }
 
 // The tail of a block (+ 1), or 0.
-fn tail_of(n: Slice<Node>, block: u64) -> u64 {
+pub fn tail_of(n: Slice<Node>, block: u64) -> u64 {
     let mut link: u64 = n[block].first;
     let mut tail: u64 = 0u64;
     while link != 0u64 {
@@ -1935,13 +2008,13 @@ fn tail_of(n: Slice<Node>, block: u64) -> u64 {
 }
 
 // The IR segments of a path node.
-fn segment(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, index: u64) -> Buffer<u8> {
+pub fn segment(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, index: u64) -> Buffer<u8> {
     ir.append_segment(Buffer::new(), s, t, n, g, p, b, bi, node, index)
 }
 
 // Whether emitting an expression runs C statements that may assign to a
 // local an earlier operand still reads by name.
-fn runs_statements(n: Slice<Node>, node: u64) -> bool {
+pub fn runs_statements(n: Slice<Node>, node: u64) -> bool {
     let kind: u64 = n[node].kind;
     if kind == ast.BLOCK || kind == ast.IF || kind == ast.MATCH || kind == ast.LOOP || kind == ast.CALL {
         return true;
@@ -1955,7 +2028,7 @@ fn runs_statements(n: Slice<Node>, node: u64) -> bool {
     false
 }
 
-fn is_comparison(operator: u64) -> bool {
+pub fn is_comparison(operator: u64) -> bool {
     operator == token.EQUAL_EQUAL || operator == token.BANG_EQUAL || operator == token.LESS || operator == token.LESS_EQUAL
         || operator == token.GREATER || operator == token.GREATER_EQUAL
 }
@@ -1969,7 +2042,7 @@ fn helper(types: Slice<CType>, names: Slice<u8>, ty: u64) -> Buffer<u8> {
 }
 
 // The fields of the struct a user type names: (first, count), or none.
-fn struct_of(e: CEmit, ty: u64) -> CEmit {
+pub fn struct_of(e: CEmit, ty: u64) -> CEmit {
     let mut x: CEmit = e;
     x.result = 0u64;
     if x.types[ty].tag != T_USER {
@@ -2294,7 +2367,7 @@ fn emit_statement(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, 
 }
 
 
-fn operation(operator: u64) -> u64 {
+pub fn operation(operator: u64) -> u64 {
     // 0 add, 1 sub, 2 mul, 3 div, 4 rem, for assignments and arithmetic.
     if operator == token.PLUS_ASSIGN || operator == token.PLUS { return 0u64; }
     if operator == token.MINUS_ASSIGN || operator == token.MINUS { return 1u64; }
@@ -3159,7 +3232,7 @@ fn emit_binary(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
 }
 
 // Whether the path node is exactly `owner::method`.
-fn is_path(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, owner: Slice<u8>, method: Slice<u8>) -> bool {
+pub fn is_path(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, owner: Slice<u8>, method: Slice<u8>) -> bool {
     if n[node].kind != ast.PATH || ir.segments(t, n, g, node) != 2u64 {
         return false;
     }
@@ -3452,7 +3525,7 @@ fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: 
 }
 
 // "intrinsic `name` is not defined for <the receiver's type>".
-fn not_defined(name: Slice<u8>, receiver: u64, e: CEmit) -> CEmit {
+pub fn not_defined(name: Slice<u8>, receiver: u64, e: CEmit) -> CEmit {
     let mut reason: Buffer<u8> = quoted("intrinsic `".as_slice(), name, "` is not defined for ".as_slice());
     reason = append_debug(reason, e.types.as_slice(), e.names.as_slice(), receiver);
     refuse(e, reason.as_slice())
@@ -3804,7 +3877,7 @@ fn emit_match(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: S
 
 // The type an expression produces, without emitting anything, in `result`,
 // or NONE: used where the context gives none.
-fn infer_type(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
+pub fn infer_type(s: Slice<u8>, t: Slice<Token>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
     let mut x: CEmit = e;
     x.result = NONE;
     let kind: u64 = n[node].kind;

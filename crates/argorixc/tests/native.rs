@@ -5,6 +5,10 @@
 //! - The object writer (`compiler/elf.argx`) writes an ELF64 relocatable
 //!   object that GNU `ld` links, with the runtime shim
 //!   (`bootstrap/native/`), into a program that runs.
+//! - The backend (`compiler/native.argx`), run by stage1, against the C
+//!   backend over the package corpus of `link_differential.rs`: the same
+//!   status for every package, the same reason for every refusal, and, for
+//!   every program both compile, the same exit status, output and errors.
 //!
 //! These need a Linux x86-64 host with binutils and a C compiler for the
 //! harnesses and the shim. Elsewhere they return early.
@@ -15,12 +19,12 @@
 )]
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 use std::{env, fs};
 
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+mod corpus;
+use corpus::{packages, root};
 
 fn available(tool: &str) -> bool {
     Command::new(tool).arg("--version").output().is_ok()
@@ -382,6 +386,190 @@ fn a_native_object_links_and_runs_when_binutils_are_available() {
     let run = Command::new(&executable).output().unwrap();
     assert!(run.status.success());
     assert_eq!(String::from_utf8_lossy(&run.stdout), "ARGORIX_RESULT:42\n");
+    if env::var_os("ARGORIX_KEEP_WORK").is_none() {
+        fs::remove_dir_all(work).unwrap();
+    }
+}
+
+/// Stage1, built by stage0 and the C backend, with the limits the compiler's
+/// own build needs.
+fn build_stage1(work: &Path) -> PathBuf {
+    let c_file = work.join("stage1.c");
+    let emit = Command::new(env!("CARGO_BIN_EXE_argorixc"))
+        .arg("--stdlib")
+        .arg(root().join("stdlib"))
+        .arg("core-emit-c")
+        .arg(root().join("compiler/main.argx"))
+        .arg("--output")
+        .arg(&c_file)
+        .output()
+        .unwrap();
+    assert!(
+        emit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&emit.stderr)
+    );
+    let executable = work.join("stage1");
+    let compile = Command::new("cc")
+        .args(["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror"])
+        .arg("-DARGORIX_STEP_LIMIT=400000000000ULL")
+        .arg("-DARGORIX_BUFFER_LIMIT_BYTES=268435456U")
+        .arg("-I")
+        .arg(root().join("bootstrap/c"))
+        .arg(root().join("bootstrap/c/argorix_core_runtime.c"))
+        .arg(&c_file)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        compile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    executable
+}
+
+/// Runs stage1 on a package whose build file writes `out.bin` with `key`
+/// (`c` or `object`): its result and diagnostics.
+fn stage1_build(stage1: &Path, package: &Path, key: &str, build: &Path) -> (String, Vec<u8>) {
+    let _ = fs::remove_dir_all(build);
+    fs::create_dir_all(build).unwrap();
+    let text = fs::read_to_string(package.join("files.txt")).unwrap();
+    let names: Vec<&str> = text.lines().collect();
+    let mut lines = vec!["argorix-build 1".to_string(), format!("root {}", names[0])];
+    lines.extend(names[1..].iter().map(|name| format!("module {name}")));
+    lines.push(format!("{key} out.bin"));
+    lines.push("manifest out.json".to_string());
+    lines.push("diagnostics out.txt".to_string());
+    fs::write(package.join("argorix.build"), lines.join("\n") + "\n").unwrap();
+    let run = Command::new(stage1)
+        .arg("--package-root")
+        .arg(package)
+        .args(["--read-budget", "100000000"])
+        .arg("--build-root")
+        .arg(build)
+        .args(["--write-budget", "100000000"])
+        .output()
+        .unwrap();
+    let result = String::from_utf8_lossy(&run.stdout).trim().to_string();
+    let diagnostics = fs::read(build.join("out.txt")).unwrap_or_default();
+    (result, diagnostics)
+}
+
+/// A program's exit status, output and errors, or `None` when it runs over
+/// the time allowed.
+fn execute(executable: &Path) -> Option<(Option<i32>, Vec<u8>, Vec<u8>)> {
+    let mut child = Command::new(executable)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if started.elapsed() > Duration::from_secs(60) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let output = child.wait_with_output().unwrap();
+    Some((output.status.code(), output.stdout, output.stderr))
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn the_native_backend_matches_the_c_backend_when_binutils_are_available() {
+    if !available("cc")
+        || !available("ld")
+        || !Path::new("/usr/lib/x86_64-linux-gnu/crt1.o").exists()
+    {
+        eprintln!("cc, ld or the C start files unavailable; the native differential runs in CI");
+        return;
+    }
+    let work = work_dir("differential");
+    let stage1 = build_stage1(&work);
+    let shim = build_shim(&work);
+    let (mut emitted, mut refused, mut failed, mut skipped) = (0, 0, 0, 0);
+    let mut mismatches = Vec::new();
+    for (index, (root_file, files)) in packages().into_iter().enumerate() {
+        // Stage0 refuses a root that is not UTF-8, so the C differential
+        // leaves it out; so does this one.
+        if std::str::from_utf8(&fs::read(root().join(&root_file)).unwrap()).is_err() {
+            skipped += 1;
+            continue;
+        }
+        let package = work.join(format!("package-{index}"));
+        fs::create_dir_all(&package).unwrap();
+        let mut names = Vec::new();
+        for (at, file) in files.iter().enumerate() {
+            let name = format!("f{at}.argx");
+            fs::copy(root().join(file), package.join(&name)).unwrap();
+            names.push(name);
+        }
+        fs::write(package.join("files.txt"), names.join("\n")).unwrap();
+        let c_build = work.join(format!("c-{index}"));
+        let native_build = work.join(format!("native-{index}"));
+        let (c_result, c_diagnostics) = stage1_build(&stage1, &package, "c", &c_build);
+        let (native_result, native_diagnostics) =
+            stage1_build(&stage1, &package, "object", &native_build);
+        if c_result != native_result {
+            mismatches.push(format!("{root_file}: C {c_result}, native {native_result}"));
+            continue;
+        }
+        match c_result.as_str() {
+            "ARGORIX_RESULT:1" => {
+                failed += 1;
+                if c_diagnostics != native_diagnostics {
+                    mismatches.push(format!("{root_file}: the diagnostics differ"));
+                }
+            }
+            "ARGORIX_RESULT:2" => {
+                refused += 1;
+                let c_text = String::from_utf8_lossy(&c_diagnostics).replacen(
+                    "CBackendUnsupported",
+                    "NativeBackendUnsupported",
+                    1,
+                );
+                if c_text.as_bytes() != native_diagnostics {
+                    mismatches.push(format!(
+                        "{root_file}: refused for different reasons: {c_text:?}, {:?}",
+                        String::from_utf8_lossy(&native_diagnostics)
+                    ));
+                }
+            }
+            "ARGORIX_RESULT:0" => {
+                emitted += 1;
+                let c_file = c_build.join("program.c");
+                fs::rename(c_build.join("out.bin"), &c_file).unwrap();
+                let c_executable = c_build.join("program");
+                let compile = Command::new("cc")
+                    .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-I"])
+                    .arg(root().join("bootstrap/c"))
+                    .arg(&c_file)
+                    .arg(root().join("bootstrap/c/argorix_core_runtime.c"))
+                    .arg("-o")
+                    .arg(&c_executable)
+                    .output()
+                    .unwrap();
+                assert!(compile.status.success(), "{root_file}");
+                let native_executable = native_build.join("program");
+                link(&native_build.join("out.bin"), &shim, &native_executable);
+                let from_c = execute(&c_executable);
+                let from_native = execute(&native_executable);
+                if from_c != from_native {
+                    mismatches.push(format!("{root_file}: C {from_c:?}, native {from_native:?}"));
+                }
+            }
+            other => mismatches.push(format!("{root_file}: stage1 returned {other}")),
+        }
+    }
+    eprintln!(
+        "native against C: {emitted} run the same, {refused} refused alike, {failed} fail to check alike, {skipped} not UTF-8"
+    );
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    assert!(emitted >= 80 && refused >= 30 && failed >= 60);
     if env::var_os("ARGORIX_KEEP_WORK").is_none() {
         fs::remove_dir_all(work).unwrap();
     }

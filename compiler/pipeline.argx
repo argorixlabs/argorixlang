@@ -31,15 +31,72 @@ pub fn compile(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
 // names one after another, ended at `path_ends`, in the order of `sources`;
 // `output` is what `compile` returned for them.
 pub fn manifest(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, ends: Slice<u64>, output: Slice<u8>) -> Buffer<u8> {
-    let linked: Linked = link.link(sources, ends);
-    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "{\"manifest_version\":1,\"core_version\":\"0.1\",\"backend\":\"argorix-core-c 0.1\",\"status\":\"".as_slice());
+    let mut status: Buffer<u8> = bytes.copy("emitted".as_slice());
     if bytes.equal(output, "check failed\n".as_slice()) {
-        out = bytes.append(out, "check failed".as_slice());
+        status = bytes.copy("check failed".as_slice());
     } else if bytes.equal(output, "unsupported\n".as_slice()) {
-        out = bytes.append(out, "unsupported".as_slice());
-    } else {
-        out = bytes.append(out, "emitted".as_slice());
+        status = bytes.copy("unsupported".as_slice());
     }
+    let mut out: Buffer<u8> = head("argorix-core-c 0.1".as_slice(), status.as_slice(), paths, path_ends, sources, ends);
+    // The profile the C is written for (spec/core/c-backend.md), and the
+    // ceilings it assumes unless the build overrides them.
+    out = bytes.append(out, "],\"options\":{\"c_standard\":\"c11\",\"flags\":[\"-std=c11\",\"-Wall\",\"-Wextra\",\"-Werror\"],\"runtime_abi\":\"C1\",\"host_shim\":".as_slice());
+    // The header, which names the host shim when the program uses it, is
+    // within the first kilobyte.
+    let header: u64 = if output.length() < 1024u64 { output.length() } else { 1024u64 };
+    if contains(output.slice(0u64, header), "#include \"argorix_core_host.h\"".as_slice()) {
+        out = bytes.append(out, "true".as_slice());
+    } else {
+        out = bytes.append(out, "false".as_slice());
+    }
+    out = bytes.append(out, ",\"defaults\":{\"ARGORIX_STEP_LIMIT\":1000000,\"ARGORIX_DEPTH_LIMIT\":50000,\"ARGORIX_BUFFER_LIMIT_BYTES\":1048576,\"ARGORIX_ARENA_LIMIT_BYTES\":1048576,\"ARGORIX_ARENA_SLOT_LIMIT\":1024}},\"output\":{\"bytes\":".as_slice());
+    out = bytes.append_decimal(out, output.length());
+    out = bytes.append(out, ",\"sha256\":\"".as_slice());
+    out = sha256.append_hex(out, output);
+    bytes.append(out, "\"}}\n".as_slice())
+}
+
+// The manifest of a native build (ESP-016): the same record, for the object
+// `compiler.native` wrote with `status` (its `EMITTED`, `CHECK_FAILED` or
+// `UNSUPPORTED`), and the target, runtime and limits the object was built
+// for. The output is null when there is no object.
+pub fn native_manifest(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, ends: Slice<u64>, status: u64, object: Slice<u8>, limits: Slice<u64>) -> Buffer<u8> {
+    let mut name: Buffer<u8> = bytes.copy("emitted".as_slice());
+    if status == 1u64 {
+        name = bytes.copy("check failed".as_slice());
+    } else if status == 2u64 {
+        name = bytes.copy("unsupported".as_slice());
+    }
+    let mut out: Buffer<u8> = head("argorix-core-native 0.1".as_slice(), name.as_slice(), paths, path_ends, sources, ends);
+    out = bytes.append(out, "],\"options\":{\"target\":\"x86_64-linux\",\"object\":\"elf64-relocatable\",\"runtime_abi\":\"C1\",\"limits\":{\"steps\":".as_slice());
+    out = bytes.append_decimal(out, limits[0u64]);
+    out = bytes.append(out, ",\"depth\":".as_slice());
+    out = bytes.append_decimal(out, limits[1u64]);
+    out = bytes.append(out, ",\"buffer_bytes\":".as_slice());
+    out = bytes.append_decimal(out, limits[2u64]);
+    out = bytes.append(out, ",\"arena_bytes\":".as_slice());
+    out = bytes.append_decimal(out, limits[3u64]);
+    out = bytes.append(out, ",\"arena_slots\":".as_slice());
+    out = bytes.append_decimal(out, limits[4u64]);
+    out = bytes.append(out, "}},\"output\":".as_slice());
+    if status != 0u64 {
+        return bytes.append(out, "null}\n".as_slice());
+    }
+    out = bytes.append(out, "{\"bytes\":".as_slice());
+    out = bytes.append_decimal(out, object.length());
+    out = bytes.append(out, ",\"sha256\":\"".as_slice());
+    out = sha256.append_hex(out, object);
+    bytes.append(out, "\"}}\n".as_slice())
+}
+
+// A manifest up to its sources: the backend, the status, the root, the
+// modules in link order and each source with its digest.
+fn head(backend: Slice<u8>, status: Slice<u8>, paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
+    let linked: Linked = link.link(sources, ends);
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "{\"manifest_version\":1,\"core_version\":\"0.1\",\"backend\":\"".as_slice());
+    out = bytes.append(out, backend);
+    out = bytes.append(out, "\",\"status\":\"".as_slice());
+    out = bytes.append(out, status);
     out = bytes.append(out, "\",\"root\":".as_slice());
     if linked.unit.programs[0u64] == 0u64 {
         out = bytes.append(out, "null".as_slice());
@@ -79,22 +136,7 @@ pub fn manifest(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, end
         out = bytes.append(out, "\"}".as_slice());
         index += 1u64;
     }
-    // The profile the C is written for (spec/core/c-backend.md), and the
-    // ceilings it assumes unless the build overrides them.
-    out = bytes.append(out, "],\"options\":{\"c_standard\":\"c11\",\"flags\":[\"-std=c11\",\"-Wall\",\"-Wextra\",\"-Werror\"],\"runtime_abi\":\"C1\",\"host_shim\":".as_slice());
-    // The header, which names the host shim when the program uses it, is
-    // within the first kilobyte.
-    let header: u64 = if output.length() < 1024u64 { output.length() } else { 1024u64 };
-    if contains(output.slice(0u64, header), "#include \"argorix_core_host.h\"".as_slice()) {
-        out = bytes.append(out, "true".as_slice());
-    } else {
-        out = bytes.append(out, "false".as_slice());
-    }
-    out = bytes.append(out, ",\"defaults\":{\"ARGORIX_STEP_LIMIT\":1000000,\"ARGORIX_DEPTH_LIMIT\":50000,\"ARGORIX_BUFFER_LIMIT_BYTES\":1048576,\"ARGORIX_ARENA_LIMIT_BYTES\":1048576,\"ARGORIX_ARENA_SLOT_LIMIT\":1024}},\"output\":{\"bytes\":".as_slice());
-    out = bytes.append_decimal(out, output.length());
-    out = bytes.append(out, ",\"sha256\":\"".as_slice());
-    out = sha256.append_hex(out, output);
-    bytes.append(out, "\"}}\n".as_slice())
+    out
 }
 
 // A module's dotted name, as a JSON string.
