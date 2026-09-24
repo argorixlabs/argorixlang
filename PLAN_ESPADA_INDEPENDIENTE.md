@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58). ESP-014 está EN_CURSO; ESP-015 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) y ESP-014 (PR #59). ESP-015 está EN_CURSO; ESP-016 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -109,8 +109,8 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-011 | Parser y AST en Argorix | 010 | HECHA |
 | ESP-012 | Resolución, tipos y módulos en Argorix | 011 | HECHA |
 | ESP-013 | Lowering y emisión en Argorix | 012 | HECHA |
-| ESP-014 | Primer compilador self-hosted completo | 013 | EN_CURSO |
-| ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | PENDIENTE |
+| ESP-014 | Primer compilador self-hosted completo | 013 | HECHA |
+| ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | EN_CURSO |
 | ESP-016 | Backend nativo inicial | 015 | PENDIENTE |
 | ESP-017 | Segundo destino y bootstrap nativo | 016 | PENDIENTE |
 | ESP-018 | Lenguaje de agentes y políticas migrado | 015 | PENDIENTE |
@@ -383,8 +383,8 @@ Las cuatro subtareas están hechas.
 **Entregables:** stage1 y manifiesto de su origen, fuentes, herramientas y hashes.
 **Aceptación:** stage1 puede generar un compilador funcional a partir de sus fuentes completas; no solo compila un «hello world» o un parser. Cada fase del compilador es Argorix; C sigue declarado como backend temporal.
 
-**Estado (2026-09-24):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-014.md)),
-en cuatro subtareas:
+**Estado (2026-09-24):** HECHA en el carril de Claude (PR #59, CI verde en
+`main@9054379`; [ficha](tasks/espada/ESP-014.md)), en cuatro subtareas:
 
 - ESP-014.A: los diagnósticos con los mensajes de stage0, renderizados como
   los imprime `argorixc core-emit-c` (`compiler/report.argx`); coinciden byte
@@ -398,8 +398,7 @@ en cuatro subtareas:
   clang, y `bootstrap/stage1.py` escribe el manifiesto de procedencia.
 - ESP-014.D: los rechazos del backend C, con el mensaje de stage0.
 
-Las cuatro subtareas están hechas; la tarea se cierra al fusionarse con CI
-verde.
+Las cuatro subtareas están hechas.
 
 ### ESP-015 — Bootstrap stage2/stage3 sin Rust
 
@@ -408,6 +407,24 @@ verde.
 **Pasos:** stage1 compila las mismas fuentes a stage2; stage2 a stage3, con herramientas y flags fijados; ejecutar suite con stage2/3; controlar timestamps, rutas y orden; deshabilitar acceso a stage0, Rust, caches y red no requerida. Probar modificaciones reales a un diagnóstico y a una función del compilador para demostrar que no se copia una semilla preconstruida.
 **Entregables:** logs de bootstrap, hashes, comparación y entorno reproducible.
 **Aceptación:** stage2/3 tienen igualdad binaria en el entorno determinista acordado y conformidad; diferencias de metadatos deben resolverse, no normalizarse silenciosamente. Igualdad de bootstrap no prueba ausencia de un compilador malicioso: esa limitación queda explícita.
+
+**Estado (2026-09-24):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-015.md)).
+`bootstrap/selfhost.py` lleva stage1 → stage2 → stage3 solo con un compilador C y
+Python:
+
+- los tres stages escriben el mismo C (el de stage0), manifiesto y
+  diagnósticos, y sus ejecutables son idénticos byte a byte;
+- mover las fuentes de directorio o invertir el orden de los módulos no
+  cambia el C;
+- los 87 casos de las suites C pasan con stage3, y stage2 escribe el mismo
+  C para cada uno;
+- editar un diagnóstico y una función del backend se refleja en los
+  compiladores construidos desde las fuentes editadas, que llegan a su punto
+  fijo.
+
+En CI corre en un contenedor sin Rust y con `--network none`, con gcc y con
+clang. La igualdad entre stages no prueba la ausencia de un compilador
+malicioso; el informe lo deja explícito. Se cierra al fusionarse con CI verde.
 
 ### ESP-016 — Backend nativo inicial
 

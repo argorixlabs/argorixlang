@@ -2,12 +2,26 @@
 
 ## Current claim
 
+- Task: ESP-015 — stage2/stage3 bootstrap without Rust: stage1 builds
+  stage2 and stage2 builds stage3 with fixed tools and flags, the suite runs
+  with them, and edits to the compiler's sources show that no seed is copied.
+- State: done on `claude/trabajo-pendiente-ae9bcz`, rebased on
+  `main@9054379` after ESP-014 merged in #59; up for review.
+- Started: 2026-09-24.
+- Ficha: `tasks/espada/ESP-015.md`.
+- Paths: `bootstrap/selfhost.py` and `bootstrap/container/Dockerfile` (new),
+  the selfhost job of `.github/workflows/core-c.yml`, `spec/core/stage1.md`
+  (stage2 and stage3), the ficha.
+
+---
+
+# Previous claim: ESP-014 (DONE)
+
 - Task: ESP-014 — the first complete self-hosted compiler, as subtasks A
   (diagnostics as stage0 words and renders them), B (the driver and its build
   file), C (stage1 built by stage0 and run without Rust, with its provenance)
   and D (the C backend's refusal reasons).
-- State: every subtask done on `claude/trabajo-pendiente-ae9bcz`, rebased on
-  `main@89d67d0` after ESP-013 merged in #58; up for review.
+- State: DONE. Merged in PR #59; CI green on `main@9054379`.
 - Started: 2026-09-24.
 - Ficha: `tasks/espada/ESP-014.md`.
 - Paths: `compiler/main.argx` and `compiler/report.argx` (new), messages and
@@ -18,6 +32,15 @@
   `spec/core/check.md`, `spec/core/c-backend.md`, the ficha,
   `crates/argorixc/tests/stage1.rs` and `link_differential.rs`, and the
   stage1 jobs and fixtures of `.github/workflows/core-c.yml`.
+
+## Handoff (ESP-014)
+
+- Stage1 (`compiler/main.argx`) compiles its own sources to stage0's C and
+  writes stage0's diagnostics, byte for byte, including every reachable
+  refusal of the C backend. CI builds and runs it on a host with no Rust.
+- A build is described by `argorix.build` (`spec/core/stage1.md`), since
+  the compiler-host profile has no command line.
+- Next: ESP-015, stage2 and stage3 with binary identity and no Rust.
 
 ---
 
