@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) y ESP-014 (PR #59). ESP-015 y ESP-016 están EN_CURSO; ESP-017 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) y ESP-015 (PR #60). ESP-016 está EN_CURSO; ESP-017 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -110,7 +110,7 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-012 | Resolución, tipos y módulos en Argorix | 011 | HECHA |
 | ESP-013 | Lowering y emisión en Argorix | 012 | HECHA |
 | ESP-014 | Primer compilador self-hosted completo | 013 | HECHA |
-| ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | EN_CURSO |
+| ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | HECHA |
 | ESP-016 | Backend nativo inicial | 015 | EN_CURSO |
 | ESP-017 | Segundo destino y bootstrap nativo | 016 | PENDIENTE |
 | ESP-018 | Lenguaje de agentes y políticas migrado | 015 | PENDIENTE |
@@ -408,7 +408,7 @@ Las cuatro subtareas están hechas.
 **Entregables:** logs de bootstrap, hashes, comparación y entorno reproducible.
 **Aceptación:** stage2/3 tienen igualdad binaria en el entorno determinista acordado y conformidad; diferencias de metadatos deben resolverse, no normalizarse silenciosamente. Igualdad de bootstrap no prueba ausencia de un compilador malicioso: esa limitación queda explícita.
 
-**Estado (2026-09-24):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-015.md)).
+**Estado (2026-09-24):** HECHA en el carril de Claude (PR #60; [ficha](tasks/espada/ESP-015.md)).
 `bootstrap/selfhost.py` lleva stage1 → stage2 → stage3 solo con un compilador C y
 Python:
 
@@ -424,7 +424,7 @@ Python:
 
 En CI corre en un contenedor sin Rust y con `--network none`, con gcc y con
 clang. La igualdad entre stages no prueba la ausencia de un compilador
-malicioso; el informe lo deja explícito. Se cierra al fusionarse con CI verde.
+malicioso; el informe lo deja explícito.
 
 ### ESP-016 — Backend nativo inicial
 
@@ -451,7 +451,7 @@ runtime:
 - `bootstrap/native/toolchain.json` inventaría linker, biblioteca C y shim, y
   declara aparte el compilador C que solo reconstruir el shim necesita.
 
-Se cierra al fusionarse con CI verde, después de ESP-015.
+Se cierra al fusionarse con CI verde.
 
 ### ESP-017 — Segundo destino y bootstrap nativo
 
