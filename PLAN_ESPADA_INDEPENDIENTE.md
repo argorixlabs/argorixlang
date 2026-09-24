@@ -368,8 +368,9 @@ en cuatro subtareas:
   stage0 en 170 paquetes.
 - ESP-013.C: el backend C en `compiler/c_emit.argx`, que escribe el mismo C que
   stage0 y alcanza un punto fijo al compilarse a sí mismo.
-- Faltan ESP-013.B (verificador del IR) y ESP-013.D (punto de entrada del
-  pipeline y manifiesto).
+- ESP-013.D: el pipeline en `compiler/pipeline.argx`, con un manifiesto de
+  fuentes, orden de enlace, opciones y salida, con SHA-256 escrito en Argorix.
+- Falta ESP-013.B (verificador del IR leído de JSON).
 
 ### ESP-014 — Primer compilador self-hosted completo
 

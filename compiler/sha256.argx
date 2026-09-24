@@ -1,0 +1,200 @@
+core 0.1;
+module compiler.sha256;
+
+// SHA-256 (FIPS 180-4), in Argorix (ESP-013.D): the digest the build
+// manifest records for every source and for the C it writes, so a build can
+// be checked against its inputs without trusting the compiler that ran it.
+//
+// Core has no casts, so bytes become words bit by bit, and sums are taken
+// with `wrapping_add`, which is modular by definition. A shift of a u32 keeps
+// its low 32 bits, so a rotation is two shifts and an or.
+
+import stdlib.bytes;
+
+// The digest of `data` as 64 lowercase hexadecimal digits, appended to `out`.
+pub fn append_hex(out: Buffer<u8>, data: Slice<u8>) -> Buffer<u8> {
+    let k: Buffer<u32> = round_constants();
+    let mut h: Buffer<u32> = Buffer::new();
+    h.push(1779033703u32);
+    h.push(3144134277u32);
+    h.push(1013904242u32);
+    h.push(2773480762u32);
+    h.push(1359893119u32);
+    h.push(2600822924u32);
+    h.push(528734635u32);
+    h.push(1541459225u32);
+    // The message, a 0x80 byte, zeros, and the length in bits as a 64-bit
+    // big-endian number, filling whole 64-byte blocks.
+    let length: u64 = data.length();
+    let total: u64 = ((length + 9u64 + 63u64) / 64u64) * 64u64;
+    let mut w: Buffer<u32> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < 64u64 {
+        w.push(0u32);
+        index += 1u64;
+    }
+    let mut block: u64 = 0u64;
+    while block < total {
+        let mut t: u64 = 0u64;
+        while t < 16u64 {
+            let at: u64 = block + t * 4u64;
+            let mut word: u32 = 0u32;
+            let mut part: u64 = 0u64;
+            while part < 4u64 {
+                word = (word << 8u32) | widen(padded(data, length, total, at + part));
+                part += 1u64;
+            }
+            w[t] = word;
+            t += 1u64;
+        }
+        while t < 64u64 {
+            let back15: u32 = w[t - 15u64];
+            let back2: u32 = w[t - 2u64];
+            let s0: u32 = rotate(back15, 7u32) ^ rotate(back15, 18u32) ^ (back15 >> 3u32);
+            let s1: u32 = rotate(back2, 17u32) ^ rotate(back2, 19u32) ^ (back2 >> 10u32);
+            w[t] = w[t - 16u64].wrapping_add(s0).wrapping_add(w[t - 7u64]).wrapping_add(s1);
+            t += 1u64;
+        }
+        let mut a: u32 = h[0u64];
+        let mut b: u32 = h[1u64];
+        let mut c: u32 = h[2u64];
+        let mut d: u32 = h[3u64];
+        let mut e: u32 = h[4u64];
+        let mut f: u32 = h[5u64];
+        let mut g: u32 = h[6u64];
+        let mut j: u32 = h[7u64];
+        t = 0u64;
+        while t < 64u64 {
+            let sum1: u32 = rotate(e, 6u32) ^ rotate(e, 11u32) ^ rotate(e, 25u32);
+            let choice: u32 = (e & f) ^ ((e ^ 4294967295u32) & g);
+            let first: u32 = j.wrapping_add(sum1).wrapping_add(choice).wrapping_add(k[t]).wrapping_add(w[t]);
+            let sum0: u32 = rotate(a, 2u32) ^ rotate(a, 13u32) ^ rotate(a, 22u32);
+            let majority: u32 = (a & b) ^ (a & c) ^ (b & c);
+            let second: u32 = sum0.wrapping_add(majority);
+            j = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(first);
+            d = c;
+            c = b;
+            b = a;
+            a = first.wrapping_add(second);
+            t += 1u64;
+        }
+        h[0u64] = h[0u64].wrapping_add(a);
+        h[1u64] = h[1u64].wrapping_add(b);
+        h[2u64] = h[2u64].wrapping_add(c);
+        h[3u64] = h[3u64].wrapping_add(d);
+        h[4u64] = h[4u64].wrapping_add(e);
+        h[5u64] = h[5u64].wrapping_add(f);
+        h[6u64] = h[6u64].wrapping_add(g);
+        h[7u64] = h[7u64].wrapping_add(j);
+        block += 64u64;
+    }
+    let mut text: Buffer<u8> = out;
+    index = 0u64;
+    while index < 8u64 {
+        let value: u32 = h[index];
+        let mut shift: u32 = 28u32;
+        loop {
+            text.push(hex_digit((value >> shift) & 15u32));
+            if shift == 0u32 {
+                break;
+            }
+            shift -= 4u32;
+        }
+        index += 1u64;
+    }
+    text
+}
+
+// Byte `at` of the padded message.
+fn padded(data: Slice<u8>, length: u64, total: u64, at: u64) -> u8 {
+    if at < length {
+        return data[at];
+    }
+    if at == length {
+        return 128u8;
+    }
+    if at < total - 8u64 {
+        return 0u8;
+    }
+    // The length in bits, big-endian, in the last eight bytes. It is taken
+    // modulo 2^64 as the standard asks: a message this long cannot exist here.
+    let bits: u64 = length * 8u64;
+    let shift: u64 = (total - 1u64 - at) * 8u64;
+    narrow((bits >> shift) & 255u64)
+}
+
+fn rotate(value: u32, count: u32) -> u32 {
+    (value >> count) | (value << (32u32 - count))
+}
+
+// A byte as a u32, rebuilt bit by bit.
+fn widen(byte: u8) -> u32 {
+    let mut value: u32 = 0u32;
+    let mut rest: u8 = byte;
+    let mut bit: u8 = 128u8;
+    let mut weight: u32 = 128u32;
+    while bit > 0u8 {
+        if rest >= bit {
+            rest -= bit;
+            value += weight;
+        }
+        bit = bit / 2u8;
+        weight = weight / 2u32;
+    }
+    value
+}
+
+// A value below 256 as a byte, rebuilt bit by bit.
+fn narrow(value: u64) -> u8 {
+    let mut byte: u8 = 0u8;
+    let mut rest: u64 = value;
+    let mut weight: u64 = 128u64;
+    let mut bit: u8 = 128u8;
+    while weight > 0u64 {
+        if rest >= weight {
+            rest -= weight;
+            byte += bit;
+        }
+        weight = weight / 2u64;
+        bit = bit / 2u8;
+    }
+    byte
+}
+
+fn hex_digit(nibble: u32) -> u8 {
+    let mut digit: u8 = 48u8;
+    let mut count: u32 = 0u32;
+    while count < nibble {
+        digit += 1u8;
+        count += 1u32;
+    }
+    if nibble >= 10u32 {
+        digit += 39u8;
+    }
+    digit
+}
+
+// The first 32 bits of the fractional parts of the cube roots of the first
+// 64 primes.
+fn round_constants() -> Buffer<u32> {
+    let values: Array<u32, 64> = [
+        1116352408u32, 1899447441u32, 3049323471u32, 3921009573u32, 961987163u32, 1508970993u32, 2453635748u32, 2870763221u32,
+        3624381080u32, 310598401u32, 607225278u32, 1426881987u32, 1925078388u32, 2162078206u32, 2614888103u32, 3248222580u32,
+        3835390401u32, 4022224774u32, 264347078u32, 604807628u32, 770255983u32, 1249150122u32, 1555081692u32, 1996064986u32,
+        2554220882u32, 2821834349u32, 2952996808u32, 3210313671u32, 3336571891u32, 3584528711u32, 113926993u32, 338241895u32,
+        666307205u32, 773529912u32, 1294757372u32, 1396182291u32, 1695183700u32, 1986661051u32, 2177026350u32, 2456956037u32,
+        2730485921u32, 2820302411u32, 3259730800u32, 3345764771u32, 3516065817u32, 3600352804u32, 4094571909u32, 275423344u32,
+        430227734u32, 506948616u32, 659060556u32, 883997877u32, 958139571u32, 1322822218u32, 1537002063u32, 1747873779u32,
+        1955562222u32, 2024104815u32, 2227730452u32, 2361852424u32, 2428436474u32, 2756734187u32, 3204031479u32, 3329325298u32,
+    ];
+    let mut out: Buffer<u32> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < 64u64 {
+        out.push(values[index]);
+        index += 1u64;
+    }
+    out
+}

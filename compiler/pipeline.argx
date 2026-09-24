@@ -1,0 +1,159 @@
+core 0.1;
+module compiler.pipeline;
+
+// The source-to-C pipeline, in Argorix (ESP-013.D). `compile` runs every
+// phase in `compiler/`:
+//
+// - lexing and parsing each file;
+// - linking the package (`compiler.link`);
+// - checking it;
+// - emitting the transitional C (`compiler.c_emit`).
+//
+// `manifest` records what a build used and what it produced, so the build can
+// be checked without trusting the compiler that ran it: each source with its
+// SHA-256, the modules in link order, the C profile the output expects, and
+// the output's SHA-256.
+
+import stdlib.bytes;
+import compiler.token;
+import compiler.ast;
+import compiler.link;
+import compiler.c_emit;
+import compiler.sha256;
+
+// The C of the package in `sources` (see `compiler.link.dump`), or the line
+// `check failed` or `unsupported`.
+pub fn compile(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
+    c_emit.dump(sources, ends)
+}
+
+// The manifest of a build, as one line of JSON. `paths` holds the files'
+// names one after another, ended at `path_ends`, in the order of `sources`;
+// `output` is what `compile` returned for them.
+pub fn manifest(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, ends: Slice<u64>, output: Slice<u8>) -> Buffer<u8> {
+    let linked: Linked = link.link(sources, ends);
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "{\"manifest_version\":1,\"core_version\":\"0.1\",\"backend\":\"argorix-core-c 0.1\",\"status\":\"".as_slice());
+    if bytes.equal(output, "check failed\n".as_slice()) {
+        out = bytes.append(out, "check failed".as_slice());
+    } else if bytes.equal(output, "unsupported\n".as_slice()) {
+        out = bytes.append(out, "unsupported".as_slice());
+    } else {
+        out = bytes.append(out, "emitted".as_slice());
+    }
+    out = bytes.append(out, "\",\"root\":".as_slice());
+    if linked.unit.programs[0u64] == 0u64 {
+        out = bytes.append(out, "null".as_slice());
+    } else {
+        out = append_module(out, sources, linked.unit.tokens.as_slice(), linked.unit.nodes.as_slice(), linked.unit.programs.as_slice(), 0u64);
+    }
+    // The modules in link order, when the import graph could be ordered.
+    out = bytes.append(out, ",\"modules\":[".as_slice());
+    let mut index: u64 = 0u64;
+    while index < linked.linking.order.length() && linked.linking.failed == 0u64 {
+        if index > 0u64 {
+            out.push(44u8);
+        }
+        out = append_module(out, sources, linked.unit.tokens.as_slice(), linked.unit.nodes.as_slice(), linked.unit.programs.as_slice(), linked.linking.order[index]);
+        index += 1u64;
+    }
+    out = bytes.append(out, "],\"sources\":[".as_slice());
+    index = 0u64;
+    while index < ends.length() {
+        if index > 0u64 {
+            out.push(44u8);
+        }
+        let start: u64 = link.file_start(ends, index);
+        let path_start: u64 = link.file_start(path_ends, index);
+        out = bytes.append(out, "{\"path\":".as_slice());
+        out = append_string(out, paths.slice(path_start, path_ends[index]));
+        out = bytes.append(out, ",\"module\":".as_slice());
+        if linked.unit.programs[index] == 0u64 {
+            out = bytes.append(out, "null".as_slice());
+        } else {
+            out = append_module(out, sources, linked.unit.tokens.as_slice(), linked.unit.nodes.as_slice(), linked.unit.programs.as_slice(), index);
+        }
+        out = bytes.append(out, ",\"bytes\":".as_slice());
+        out = bytes.append_decimal(out, ends[index] - start);
+        out = bytes.append(out, ",\"sha256\":\"".as_slice());
+        out = sha256.append_hex(out, sources.slice(start, ends[index]));
+        out = bytes.append(out, "\"}".as_slice());
+        index += 1u64;
+    }
+    // The profile the C is written for (spec/core/c-backend.md), and the
+    // ceilings it assumes unless the build overrides them.
+    out = bytes.append(out, "],\"options\":{\"c_standard\":\"c11\",\"flags\":[\"-std=c11\",\"-Wall\",\"-Wextra\",\"-Werror\"],\"runtime_abi\":\"C1\",\"host_shim\":".as_slice());
+    // The header, which names the host shim when the program uses it, is
+    // within the first kilobyte.
+    let header: u64 = if output.length() < 1024u64 { output.length() } else { 1024u64 };
+    if contains(output.slice(0u64, header), "#include \"argorix_core_host.h\"".as_slice()) {
+        out = bytes.append(out, "true".as_slice());
+    } else {
+        out = bytes.append(out, "false".as_slice());
+    }
+    out = bytes.append(out, ",\"defaults\":{\"ARGORIX_STEP_LIMIT\":1000000,\"ARGORIX_DEPTH_LIMIT\":50000,\"ARGORIX_BUFFER_LIMIT_BYTES\":1048576,\"ARGORIX_ARENA_LIMIT_BYTES\":1048576,\"ARGORIX_ARENA_SLOT_LIMIT\":1024}},\"output\":{\"bytes\":".as_slice());
+    out = bytes.append_decimal(out, output.length());
+    out = bytes.append(out, ",\"sha256\":\"".as_slice());
+    out = sha256.append_hex(out, output);
+    bytes.append(out, "\"}}\n".as_slice())
+}
+
+// A module's dotted name, as a JSON string.
+fn append_module(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, file: u64) -> Buffer<u8> {
+    let program: Node = nodes[programs[file] - 1u64];
+    let mut text: Buffer<u8> = out;
+    text.push(34u8);
+    let mut at: u64 = program.word - 1u64;
+    let mut started: bool = false;
+    while at <= program.path_last {
+        if tokens[at].kind == token.IDENT {
+            if started {
+                text.push(46u8);
+            }
+            started = true;
+            text = bytes.append(text, sources.slice(tokens[at].start, tokens[at].end));
+        }
+        at += 1u64;
+    }
+    text.push(34u8);
+    text
+}
+
+// A JSON string: a path is written as it is, with `"`, `\` and control
+// bytes escaped.
+fn append_string(out: Buffer<u8>, value: Slice<u8>) -> Buffer<u8> {
+    let mut text: Buffer<u8> = out;
+    text.push(34u8);
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        let byte: u8 = value[index];
+        if byte == 34u8 || byte == 92u8 {
+            text.push(92u8);
+            text.push(byte);
+        } else if byte < 32u8 {
+            text = bytes.append(text, "\\u00".as_slice());
+            text.push(if byte >= 16u8 { 49u8 } else { 48u8 });
+            let low: u8 = byte % 16u8;
+            text.push(if low < 10u8 { 48u8 + low } else { 87u8 + low });
+        } else {
+            text.push(byte);
+        }
+        index += 1u64;
+    }
+    text.push(34u8);
+    text
+}
+
+// Whether `needle` occurs in `haystack`.
+fn contains(haystack: Slice<u8>, needle: Slice<u8>) -> bool {
+    if needle.length() > haystack.length() {
+        return false;
+    }
+    let mut at: u64 = 0u64;
+    while at + needle.length() <= haystack.length() {
+        if bytes.equal(haystack.slice(at, at + needle.length()), needle) {
+            return true;
+        }
+        at += 1u64;
+    }
+    false
+}

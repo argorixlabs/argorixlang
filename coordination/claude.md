@@ -6,11 +6,12 @@
   canonical JSON), B (verifier), C (C backend) and D (pipeline and manifest).
 - State: IN PROGRESS; A (IR) and C (C backend, with a self-emission fixed
   point) done on `claude/trabajo-pendiente-ae9bcz`, rebased on `main@def7a46`
-  after ESP-012.C merged in #57. B (IR verifier) and D (pipeline and manifest)
-  remain.
+  after ESP-012.C merged in #57, and D (pipeline and manifest with SHA-256)
+  after them, in PR #58. B (IR verifier) remains.
 - Started: 2026-09-24.
 - Ficha: `tasks/espada/ESP-013.md`.
-- Paths: `compiler/ir.argx` and `compiler/c_emit.argx` (new),
+- Paths: `compiler/ir.argx`, `compiler/c_emit.argx`, `compiler/pipeline.argx`
+  and `compiler/sha256.argx` (new), `tests/selfhost/pipeline/**`,
   `compiler/link.argx`, `tests/selfhost/ir/**`, `tests/selfhost/c/**`,
   `spec/core/c-backend.md`, `crates/argorix_ir/src/core_c.rs` (package C dump),
   `spec/core/ir.md`, the ficha, `crates/argorix_ir/src/core.rs` (package IR

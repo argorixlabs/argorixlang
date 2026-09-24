@@ -404,6 +404,15 @@ jobs:
           --bundle target/core-c/c-bundle
           --work-dir target/core-c/c
           --report target/core-c/report-c.json
+      - name: Run the pipeline fixtures (ESP-013)
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc ${{ matrix.cc }} ${{ matrix.flags }}
+          --cases tests/selfhost/pipeline/cases.json
+          --bundle target/core-c/pipeline-bundle
+          --work-dir target/core-c/pipeline
+          --report target/core-c/report-pipeline.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:

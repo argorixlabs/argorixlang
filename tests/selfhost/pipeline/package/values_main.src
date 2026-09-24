@@ -1,0 +1,15 @@
+core 0.1;
+module demo.main;
+
+import demo.helper;
+import demo.helper_two as other;
+
+// The root's own `bump` and the helper's private one are different items.
+fn bump(value: u32) -> u32 { value }
+
+const START: u32 = helper.SCALE + other.OFFSET;
+
+pub fn argorix_main() -> u32 {
+    let total: u32 = helper.twice(helper.SCALE) + bump(2u32);
+    total + other.shift(START)
+}

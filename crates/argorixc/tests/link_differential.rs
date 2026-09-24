@@ -75,6 +75,11 @@ fn files(directory: &str, extensions: &[&str]) -> Vec<String> {
 }
 
 /// Each package is its root, then its locked set without the root.
+fn packages_list() -> Vec<(String, Vec<String>)> {
+    packages()
+}
+
+/// Each package is its root, then its locked set without the root.
 fn packages() -> Vec<(String, Vec<String>)> {
     let compiler = files("compiler", &["argx"]);
     let stdlib = files("stdlib", &["argx"]);
@@ -390,6 +395,161 @@ fn the_argorix_c_backend_reproduces_itself_when_cc_is_available() {
             "generation {generation} emitted different C"
         );
         previous = emitted;
+    }
+    if env::var_os("ARGORIX_KEEP_WORK").is_none() {
+        fs::remove_dir_all(work).unwrap();
+    }
+}
+
+/// ESP-013.D: the pipeline (`compiler/pipeline.argx`) builds every package to
+/// the C stage0 writes, and describes each build in a manifest whose every
+/// field is recomputed here without Argorix: SHA-256 with the `sha2` crate,
+/// the link order with stage0. Files of every length from 0 to 130 bytes,
+/// which do not parse, are built too, to cover every padding case of the
+/// digest.
+#[cfg(unix)]
+#[test]
+fn the_argorix_pipeline_builds_and_describes_every_package_when_cc_is_available() {
+    // Parsing the deep-nesting samples in stage0 needs the compiler's stack.
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(pipeline_builds_and_describes_every_package)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[cfg(unix)]
+fn pipeline_builds_and_describes_every_package() {
+    use argorix_semantics::{core_link_order, core_package};
+    use sha2::{Digest, Sha256};
+    let compiler = ["cc", "clang", "gcc"]
+        .into_iter()
+        .find(|name| Command::new(name).arg("--version").output().is_ok());
+    let Some(compiler) = compiler else {
+        eprintln!("C compiler unavailable; the pipeline test runs in C-enabled CI");
+        return;
+    };
+    let work = env::temp_dir().join(format!("argorix-pipeline-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&work);
+    let package_root = work.join("package");
+    let build = work.join("build");
+    fs::create_dir_all(package_root.join("samples")).unwrap();
+    fs::create_dir_all(build.join("out")).unwrap();
+    // Each package as the files' copied names and contents, root first.
+    let mut packages: Vec<Vec<(String, Vec<u8>)>> = Vec::new();
+    let mut copies: BTreeMap<String, String> = BTreeMap::new();
+    for (_, files) in packages_list() {
+        let mut package = Vec::new();
+        for file in files {
+            let next = copies.len();
+            let copy = copies
+                .entry(file.clone())
+                .or_insert_with(|| format!("samples/{next}.src"))
+                .clone();
+            package.push((copy, fs::read(root().join(&file)).unwrap()));
+        }
+        packages.push(package);
+    }
+    for length in 0..=130_usize {
+        let contents: Vec<u8> = (0..length).map(|at| (at * 7 + length) as u8).collect();
+        packages.push(vec![(format!("samples/length_{length}.bin"), contents)]);
+    }
+    let mut list = String::new();
+    let mut total = 0_u64;
+    for package in &packages {
+        for (path, contents) in package {
+            fs::write(package_root.join(path), contents).unwrap();
+            total += contents.len() as u64;
+        }
+        let names: Vec<&str> = package.iter().map(|(path, _)| path.as_str()).collect();
+        list.push_str(&names.join(" "));
+        list.push('\n');
+    }
+    fs::write(package_root.join("packages.txt"), &list).unwrap();
+
+    let c_file = work.join("build_files.c");
+    let emit = Command::new(env!("CARGO_BIN_EXE_argorixc"))
+        .arg("--stdlib")
+        .arg(root().join("stdlib"))
+        .arg("--modules")
+        .arg(root().join("compiler"))
+        .arg("core-emit-c")
+        .arg(root().join("tests/selfhost/pipeline/build_files.argx"))
+        .arg("--output")
+        .arg(&c_file)
+        .output()
+        .unwrap();
+    assert!(
+        emit.status.success(),
+        "emission failed: {}",
+        String::from_utf8_lossy(&emit.stderr)
+    );
+    let executable = work.join("build_files");
+    compile_c(compiler, &c_file, &executable);
+    let run = Command::new(&executable)
+        .arg("--package-root")
+        .arg(&package_root)
+        .arg("--read-budget")
+        .arg((total + list.len() as u64).to_string())
+        .arg("--build-root")
+        .arg(&build)
+        .args(["--write-budget", "200000000"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout).trim(),
+        format!("ARGORIX_RESULT:{}", packages.len()),
+        "stderr: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let hex = |data: &[u8]| format!("{:x}", Sha256::digest(data));
+    for (index, package) in packages.iter().enumerate() {
+        let sources: Vec<Vec<u8>> = package.iter().map(|(_, data)| data.clone()).collect();
+        let c = fs::read(build.join(format!("out/{index}.c"))).unwrap();
+        let expected_c = on_large_stack(core_package_c_dump, sources.clone());
+        assert!(
+            c == expected_c.as_bytes(),
+            "package {index}: the pipeline's C differs from stage0's"
+        );
+        let text = fs::read_to_string(build.join(format!("out/{index}.json"))).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let status = match expected_c.as_str() {
+            "check failed\n" => "check failed",
+            "unsupported\n" => "unsupported",
+            _ => "emitted",
+        };
+        assert_eq!(manifest["status"], status, "package {index}");
+        assert_eq!(manifest["output"]["bytes"], c.len(), "package {index}");
+        assert_eq!(manifest["output"]["sha256"], hex(&c), "package {index}");
+        let recorded = manifest["sources"].as_array().unwrap();
+        assert_eq!(recorded.len(), package.len(), "package {index}");
+        for ((path, data), entry) in package.iter().zip(recorded) {
+            assert_eq!(entry["path"], path.as_str(), "package {index}");
+            assert_eq!(entry["bytes"], data.len(), "package {index}");
+            assert_eq!(entry["sha256"], hex(data), "package {index}: {path}");
+            let module = std::str::from_utf8(data)
+                .ok()
+                .and_then(|text| argorix_parser::core::parse_core_source(text).ok())
+                .map(|program| program.module.value);
+            match module {
+                Some(name) => assert_eq!(entry["module"], name.as_str(), "package {index}"),
+                None => assert!(entry["module"].is_null(), "package {index}"),
+            }
+        }
+        let order: Vec<String> = match core_package(&sources) {
+            Ok(loaded) => core_link_order(&loaded.root, &loaded.modules, &loaded.duplicates)
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        };
+        let modules: Vec<String> = manifest["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| name.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(modules, order, "package {index}");
     }
     if env::var_os("ARGORIX_KEEP_WORK").is_none() {
         fs::remove_dir_all(work).unwrap();
