@@ -40,6 +40,18 @@ pub const IMPORT_NOT_LOCKED: u64 = 3u64;
 pub const DUPLICATE_IMPORTED_NAME: u64 = 4u64;
 pub const UNKNOWN_IMPORTED_SYMBOL: u64 = 5u64;
 pub const PRIVATE_SYMBOL: u64 = 6u64;
+// A public type of an imported module that clashes with a name in scope:
+// `DuplicateImportedName` too, with its own message.
+pub const DUPLICATE_IMPORTED_TYPE: u64 = 7u64;
+
+// An error is recorded as ERROR_WIDTH values: its code, the byte span it
+// points at, and two values its message reads:
+// - an import's module path: its first and last tokens;
+// - a binding that clashes: its token, and 0;
+// - a type that clashes: its name token, and the import node;
+// - an unknown or private item: its name token, and the file it was looked
+//   up in.
+pub const ERROR_WIDTH: u64 = 5u64;
 
 // The files merged into one tree. Token and node positions are shifted so
 // that tokens point into the concatenated sources, a string token's text into
@@ -86,8 +98,8 @@ pub struct Walk {
 
 // A package, linked and checked. `status` is one of the constants below.
 // When it is FAILED, `failing` (+ 1) is the file of the first module in link
-// order that fails: with its link errors in `link_errors`, as (code, byte)
-// pairs, or else with the diagnostics of `checked` inside its file. `program`
+// order that fails: with its link errors in `link_errors` (see
+// `ERROR_WIDTH`), or else with the diagnostics of `checked` inside its file. `program`
 // is the node that chains every item in link order.
 pub struct Linked {
     status: u64,
@@ -132,11 +144,11 @@ pub fn dump(sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
     let start: u64 = file_start(ends, module);
     let mut at: u64 = 0u64;
     while at < linked.checked.diagnostics.length() {
-        let diagnostic: Diagnostic = linked.checked.diagnostics[at];
+        let diagnostic: Finding = linked.checked.diagnostics[at];
         if diagnostic.at >= start && diagnostic.at < ends[module] {
             out = bytes.append_decimal(out, module);
             out.push(58u8);
-            out = check.append_diagnostic(out, sources.slice(start, ends[module]), Diagnostic { code: diagnostic.code, at: diagnostic.at - start });
+            out = check.append_diagnostic(out, sources.slice(start, ends[module]), Finding { code: diagnostic.code, at: diagnostic.at - start, end: diagnostic.end - start, message_start: 0u64, message_end: 0u64 });
         }
         at += 1u64;
     }
@@ -279,7 +291,7 @@ fn append_errors(out: Buffer<u8>, sources: Slice<u8>, ends: Slice<u64>, file: u6
         text = bytes.append(text, ": resolution[".as_slice());
         text = append_code(text, code);
         text = bytes.append(text, "]\n".as_slice());
-        index += 2u64;
+        index += ERROR_WIDTH;
     }
     text
 }
@@ -288,7 +300,7 @@ fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
     if code == DUPLICATE_MODULE { return bytes.append(out, "DuplicateModule".as_slice()); }
     if code == IMPORT_CYCLE { return bytes.append(out, "ImportCycle".as_slice()); }
     if code == IMPORT_NOT_LOCKED { return bytes.append(out, "ImportNotLocked".as_slice()); }
-    if code == DUPLICATE_IMPORTED_NAME { return bytes.append(out, "DuplicateImportedName".as_slice()); }
+    if code == DUPLICATE_IMPORTED_NAME || code == DUPLICATE_IMPORTED_TYPE { return bytes.append(out, "DuplicateImportedName".as_slice()); }
     if code == UNKNOWN_IMPORTED_SYMBOL { return bytes.append(out, "UnknownImportedSymbol".as_slice()); }
     bytes.append(out, "PrivateSymbol".as_slice())
 }
@@ -489,11 +501,14 @@ fn register(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, progra
     l
 }
 
-fn fail(file: u64, code: u64, at: u64, linking: Linking) -> Linking {
+fn fail(file: u64, code: u64, start: u64, end: u64, first: u64, second: u64, linking: Linking) -> Linking {
     let mut l: Linking = linking;
     l.failed = file + 1u64;
     l.errors.push(code);
-    l.errors.push(at);
+    l.errors.push(start);
+    l.errors.push(end);
+    l.errors.push(first);
+    l.errors.push(second);
     l
 }
 
@@ -510,17 +525,18 @@ fn visit(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs:
         }
         let first: u64 = nodes[item].word - 1u64;
         let last: u64 = nodes[item].path_last;
-        let at: u64 = tokens[first].start;
+        let start: u64 = tokens[first].start;
+        let end: u64 = tokens[last].end;
         if is_duplicated(sources, tokens, nodes, programs, l.duplicated.as_slice(), first, last) {
-            return fail(file, DUPLICATE_MODULE, at, l);
+            return fail(file, DUPLICATE_MODULE, start, end, first, last, l);
         }
         let target: u64 = find_module(sources, tokens, nodes, programs, l.registered.as_slice(), first, last);
         if target == 0u64 {
-            return fail(file, IMPORT_NOT_LOCKED, at, l);
+            return fail(file, IMPORT_NOT_LOCKED, start, end, first, last, l);
         }
         let state: u64 = l.state[target - 1u64];
         if state == 1u64 {
-            return fail(file, IMPORT_CYCLE, at, l);
+            return fail(file, IMPORT_CYCLE, start, end, first, last, l);
         }
         if state == 0u64 {
             l = visit(sources, tokens, nodes, programs, target - 1u64, l);
@@ -574,7 +590,7 @@ fn bind(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: 
         }
         let binding: u64 = if nodes[import].value != 0u64 { nodes[import].value - 1u64 } else { nodes[import].path_last };
         if has_item(sources, tokens, nodes, programs, module, binding) || find_named(sources, tokens, l.bindings.as_slice(), 3u64, module, binding) != 0u64 {
-            return fail(module, DUPLICATE_IMPORTED_NAME, nodes[import].start, l);
+            return fail(module, DUPLICATE_IMPORTED_NAME, nodes[import].start, nodes[import].end, binding, 0u64, l);
         }
         let target: u64 = find_module(sources, tokens, nodes, programs, l.registered.as_slice(), nodes[import].word - 1u64, nodes[import].path_last) - 1u64;
         let mut other: u64 = nodes[programs[target] - 1u64].first;
@@ -587,7 +603,7 @@ fn bind(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: 
             }
             let name: u64 = nodes[item].word - 1u64;
             if has_item(sources, tokens, nodes, programs, module, name) || find_named(sources, tokens, l.imported.as_slice(), 2u64, module, name) != 0u64 {
-                return fail(module, DUPLICATE_IMPORTED_NAME, nodes[import].start, l);
+                return fail(module, DUPLICATE_IMPORTED_TYPE, nodes[import].start, nodes[import].end, name, import, l);
             }
             l.imported.push(module);
             l.imported.push(name);
@@ -816,14 +832,10 @@ fn reference(sources: Slice<u8>, tokens: Slice<Token>, programs: Slice<u64>, tar
         }
     }
     if named == 0u64 || (w.nodes[named - 1u64].kind != ast.FN && w.nodes[named - 1u64].kind != ast.CONST) {
-        w.errors.push(UNKNOWN_IMPORTED_SYMBOL);
-        w.errors.push(tokens[name].start);
-        return w;
+        return walk_failed(UNKNOWN_IMPORTED_SYMBOL, tokens, name, target, w);
     }
     if !public {
-        w.errors.push(PRIVATE_SYMBOL);
-        w.errors.push(tokens[name].start);
-        return w;
+        return walk_failed(PRIVATE_SYMBOL, tokens, name, target, w);
     }
     // A path of the binding alone, carrying the item: its span and name
     // token are the binding's, like the path stage0 puts in its place.
@@ -834,4 +846,87 @@ fn reference(sources: Slice<u8>, tokens: Slice<Token>, programs: Slice<u64>, tar
     w.nodes[at].path_last = base.path_last;
     w.nodes[at].value = named;
     w
+}
+
+fn walk_failed(code: u64, tokens: Slice<Token>, name: u64, target: u64, walk: Walk) -> Walk {
+    let mut w: Walk = walk;
+    w.errors.push(code);
+    w.errors.push(tokens[name].start);
+    w.errors.push(tokens[name].end);
+    w.errors.push(name);
+    w.errors.push(target);
+    w
+}
+
+// ------------------------------------------------------------------ messages
+
+// `Code]: message` for the error at `index` of `errors` (see `ERROR_WIDTH`),
+// found in `file`, worded as stage0 words it.
+pub fn append_error_text(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, errors: Slice<u64>, index: u64, file: u64) -> Buffer<u8> {
+    let code: u64 = errors[index];
+    let first: u64 = errors[index + 3u64];
+    let second: u64 = errors[index + 4u64];
+    let mut text: Buffer<u8> = append_code(out, code);
+    text = bytes.append(text, "]: ".as_slice());
+    if code == DUPLICATE_MODULE {
+        text = bytes.append(text, "module `".as_slice());
+        text = append_path(text, sources, tokens, first, second);
+        return bytes.append(text, "` is declared by more than one file".as_slice());
+    }
+    if code == IMPORT_CYCLE {
+        text = bytes.append(text, "importing `".as_slice());
+        text = append_path(text, sources, tokens, first, second);
+        return bytes.append(text, "` closes an import cycle, which stage0 does not accept".as_slice());
+    }
+    if code == IMPORT_NOT_LOCKED {
+        text = bytes.append(text, "module `".as_slice());
+        text = append_path(text, sources, tokens, first, second);
+        return bytes.append(text, "` is not present in the locked compilation set".as_slice());
+    }
+    if code == DUPLICATE_IMPORTED_NAME {
+        text = bytes.append(text, "import binding `".as_slice());
+        text = bytes.append(text, sources.slice(tokens[first].start, tokens[first].end));
+        return bytes.append(text, "` is already a name in this module".as_slice());
+    }
+    if code == DUPLICATE_IMPORTED_TYPE {
+        text = bytes.append(text, "public type `".as_slice());
+        text = bytes.append(text, sources.slice(tokens[first].start, tokens[first].end));
+        text = bytes.append(text, "` of `".as_slice());
+        text = append_path(text, sources, tokens, nodes[second].word - 1u64, nodes[second].path_last);
+        return bytes.append(text, "` clashes with a name already in scope".as_slice());
+    }
+    if code == UNKNOWN_IMPORTED_SYMBOL {
+        text = bytes.append(text, "module `".as_slice());
+        text = append_path(text, sources, tokens, module_first(nodes, programs, second), module_last(nodes, programs, second));
+        text = bytes.append(text, "` has no function or constant `".as_slice());
+        text = bytes.append(text, sources.slice(tokens[first].start, tokens[first].end));
+        text.push(96u8);
+        return text;
+    }
+    text.push(96u8);
+    text = bytes.append(text, sources.slice(tokens[first].start, tokens[first].end));
+    text = bytes.append(text, "` is private to `".as_slice());
+    text = append_path(text, sources, tokens, module_first(nodes, programs, second), module_last(nodes, programs, second));
+    text = bytes.append(text, "`; only `pub` items can be used from `".as_slice());
+    text = append_path(text, sources, tokens, module_first(nodes, programs, file), module_last(nodes, programs, file));
+    text.push(96u8);
+    text
+}
+
+// A module path, its names joined by dots.
+pub fn append_path(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, first: u64, last: u64) -> Buffer<u8> {
+    let mut text: Buffer<u8> = out;
+    let mut at: u64 = first;
+    let mut started: bool = false;
+    while at <= last {
+        if tokens[at].kind == token.IDENT {
+            if started {
+                text.push(46u8);
+            }
+            started = true;
+            text = bytes.append(text, sources.slice(tokens[at].start, tokens[at].end));
+        }
+        at += 1u64;
+    }
+    text
 }

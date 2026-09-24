@@ -20,9 +20,9 @@ import stdlib.bytes;
 // - `flag`: 1 for `pub`, `mut`, a guarded arm, or an integer with a suffix.
 pub struct Node { kind: u64, start: u64, end: u64, label_start: u64, label_end: u64, first: u64, next: u64, word: u64, path_last: u64, value: u64, flag: u64, }
 
-// A syntax error: its position and the ranges of its code and message in
-// `texts`.
-pub struct SyntaxError { line: u64, column: u64, code_start: u64, code_end: u64, message_start: u64, message_end: u64, }
+// A syntax error: its position, the byte span it points at, and the ranges
+// of its code and message in `texts`.
+pub struct SyntaxError { line: u64, column: u64, start: u64, end: u64, code_start: u64, code_end: u64, message_start: u64, message_end: u64, }
 
 // Everything the parser changes, passed along and returned by each step:
 // Core has no mutable references. `last` is the node the step built, and
@@ -95,7 +95,7 @@ pub fn empty() -> Tree {
         halved: 0u64,
         depth: 0u64,
         failed: false,
-        pending: SyntaxError { line: 0u64, column: 0u64, code_start: 0u64, code_end: 0u64, message_start: 0u64, message_end: 0u64 },
+        pending: SyntaxError { line: 0u64, column: 0u64, start: 0u64, end: 0u64, code_start: 0u64, code_end: 0u64, message_start: 0u64, message_end: 0u64 },
         last: 0u64,
         chain_end: 0u64,
     }

@@ -100,6 +100,7 @@ fn packages() -> Vec<(String, Vec<String>)> {
         "tests/selfhost/lexer",
         "tests/selfhost/parser",
         "tests/selfhost/check",
+        "tests/selfhost/stage1",
     ] {
         for root in files(directory, &["argx"]) {
             found.push(with(&root, &everything));
@@ -166,12 +167,26 @@ fn the_argorix_c_backend_matches_the_stage0_backend_when_cc_is_available() {
 
 #[cfg(unix)]
 fn differential(harness: &str, extension: &str, oracle: fn(&[Vec<u8>]) -> String) {
+    named_differential(harness, extension, |_, sources| {
+        Some(on_large_stack(oracle, sources))
+    });
+}
+
+/// `differential`, with an oracle that also gets the paths the harness read
+/// each file by, and may decline a package (`None`), which is then not
+/// compared.
+#[cfg(unix)]
+fn named_differential(
+    harness: &str,
+    extension: &str,
+    oracle: impl Fn(&[String], Vec<Vec<u8>>) -> Option<String>,
+) -> usize {
     let compiler = ["cc", "clang", "gcc"]
         .into_iter()
         .find(|name| Command::new(name).arg("--version").output().is_ok());
     let Some(compiler) = compiler else {
         eprintln!("C compiler unavailable; the differential runs in C-enabled CI");
-        return;
+        return 0;
     };
     let packages = packages();
     assert!(packages
@@ -264,12 +279,17 @@ fn differential(harness: &str, extension: &str, oracle: fn(&[Vec<u8>]) -> String
     );
 
     let mut failed = Vec::new();
+    let mut skipped = 0;
     for (index, (name, package)) in packages.iter().enumerate() {
         let sources: Vec<Vec<u8>> = package
             .iter()
             .map(|file| fs::read(root().join(file)).unwrap())
             .collect();
-        let expected = on_large_stack(oracle, sources);
+        let paths: Vec<String> = package.iter().map(|file| copies[file].clone()).collect();
+        let Some(expected) = oracle(&paths, sources) else {
+            skipped += 1;
+            continue;
+        };
         let actual = fs::read(build.join(format!("dumps/{index}.{extension}"))).unwrap();
         if actual != expected.as_bytes() {
             let first = expected
@@ -289,6 +309,75 @@ fn differential(harness: &str, extension: &str, oracle: fn(&[Vec<u8>]) -> String
     if env::var_os("ARGORIX_KEEP_WORK").is_none() {
         fs::remove_dir_all(work).unwrap();
     }
+    skipped
+}
+
+/// ESP-014: the diagnostics stage1 writes (`compiler/report.argx`) are the
+/// ones `argorixc core-emit-c` prints, rendered by `CoreDiagnostic::render`
+/// against the same file names. A root that is not UTF-8 is not compared:
+/// stage0 refuses to read it before it lexes anything.
+#[cfg(unix)]
+#[test]
+fn stage1_diagnostics_match_stage0_when_cc_is_available() {
+    let skipped = named_differential(
+        "tests/selfhost/stage1/render_files.argx",
+        "txt",
+        |paths, sources| {
+            let paths = paths.to_vec();
+            std::thread::Builder::new()
+                .stack_size(64 << 20)
+                .spawn(move || rendered(&paths, &sources))
+                .unwrap()
+                .join()
+                .unwrap()
+        },
+    );
+    eprintln!("roots not compared (not UTF-8): {skipped}");
+}
+
+/// What stage0's `core-emit-c` prints after `Error: ` for a package that does
+/// not check, or nothing for one that does. It renders the diagnostics of one
+/// file: the root when it does not lex or parse, otherwise the first module in
+/// link order that fails. Stage1 names a root declared twice without the
+/// directory stage0 names, since it reads files, not directories.
+fn rendered(paths: &[String], files: &[Vec<u8>]) -> Option<String> {
+    use argorix_parser::core::{parse_core_source, CoreDiagnostic};
+    use argorix_semantics::{check_core_package, core_package};
+    let render = |file: &str, source: &str, diagnostics: &[CoreDiagnostic]| {
+        let mut text = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.render(file, source))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        text.push('\n');
+        text
+    };
+    let root = std::str::from_utf8(&files[0]).ok()?;
+    let program = match parse_core_source(root) {
+        Ok(program) => program,
+        Err(diagnostics) => return Some(render(&paths[0], root, &diagnostics)),
+    };
+    let Ok(package) = core_package(files) else {
+        return Some(format!(
+            "{}: module `{}` is declared by more than one file\n",
+            paths[0], program.module.value
+        ));
+    };
+    Some(
+        match check_core_package(
+            &package.root,
+            &package.modules,
+            &package.duplicates,
+            &package.options,
+        ) {
+            Ok(_) => String::new(),
+            Err(error) => {
+                let position = package.positions[&error.module];
+                let source = std::str::from_utf8(&files[position]).unwrap();
+                render(&paths[position], source, &error.diagnostics)
+            }
+        },
+    )
 }
 
 /// Compile generated C with the declared profile and the budgets the

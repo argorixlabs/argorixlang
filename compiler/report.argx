@@ -1,0 +1,210 @@
+core 0.1;
+module compiler.report;
+
+// Diagnostics as a person reads them (ESP-014), spelled the way stage0's
+// `argorixc core-emit-c` prints them (`CoreDiagnostic::render`):
+//
+//     compiler/main.argx:3:5: semantic[TypeMismatch]: expected `u64`, found `bool`
+//       |
+//       3 |     let x: u64 = true;
+//       |                  ^^^^
+//
+// Only the first failing file is reported, as stage0 does: the root when it
+// does not lex or parse, otherwise the first module in link order that does
+// not link or check. Its diagnostics are separated by a blank line.
+
+import stdlib.bytes;
+import compiler.lexer;
+import compiler.parser;
+import compiler.ast;
+import compiler.diagnostics;
+import compiler.link;
+import compiler.check;
+
+// The diagnostics of the package in `sources` (see `compiler.link.dump`),
+// whose files are named by `paths` (see `compiler.pipeline.manifest`), or
+// nothing when it links and checks.
+pub fn render(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, ends: Slice<u64>) -> Buffer<u8> {
+    let root_end: u64 = ends[0u64];
+    let lexed: Lexed = lexer.lex(sources.slice(0u64, root_end));
+    if lexed.diagnostics.length() > 0u64 {
+        return lexical(paths.slice(0u64, path_ends[0u64]), sources.slice(0u64, root_end), lexed.diagnostics.as_slice());
+    }
+    let tree: Tree = parser.parse(lexed.tokens.as_slice(), sources.slice(0u64, root_end), lexed.strings.as_slice());
+    if tree.errors.length() > 0u64 {
+        return syntax(paths.slice(0u64, path_ends[0u64]), sources.slice(0u64, root_end), tree.texts.as_slice(), tree.errors.as_slice());
+    }
+    let linked: Linked = link.link(sources, ends);
+    let mut out: Buffer<u8> = Buffer::new();
+    if linked.status == link.ROOT_TWICE {
+        out = bytes.append(out, paths.slice(0u64, path_ends[0u64]));
+        out = bytes.append(out, ": module `".as_slice());
+        let program: Node = linked.unit.nodes[linked.unit.programs[0u64] - 1u64];
+        out = link.append_path(out, sources, linked.unit.tokens.as_slice(), program.word - 1u64, program.path_last);
+        return bytes.append(out, "` is declared by more than one file\n".as_slice());
+    }
+    if linked.status != link.FAILED {
+        return out;
+    }
+    let file: u64 = linked.failing - 1u64;
+    let path: Buffer<u8> = bytes.copy(paths.slice(link.file_start(path_ends, file), path_ends[file]));
+    let start: u64 = link.file_start(ends, file);
+    if linked.link_errors.length() > 0u64 {
+        let mut index: u64 = 0u64;
+        while index < linked.link_errors.length() {
+            if index > 0u64 {
+                out = bytes.append(out, "\n\n".as_slice());
+            }
+            let head: Buffer<u8> = link.append_error_text(bytes.append(Buffer::new(), "resolution[".as_slice()), sources, linked.unit.tokens.as_slice(), linked.unit.nodes.as_slice(), linked.unit.programs.as_slice(), linked.link_errors.as_slice(), index, file);
+            out = append_rendered(out, path.as_slice(), sources.slice(start, ends[file]), linked.link_errors[index + 1u64] - start, linked.link_errors[index + 2u64] - start, head.as_slice());
+            index += link.ERROR_WIDTH;
+        }
+        out.push(10u8);
+        return out;
+    }
+    let mut written: bool = false;
+    let mut index: u64 = 0u64;
+    while index < linked.checked.diagnostics.length() {
+        let found: Finding = linked.checked.diagnostics[index];
+        if found.at >= start && found.at < ends[file] {
+            if written {
+                out = bytes.append(out, "\n\n".as_slice());
+            }
+            written = true;
+            let mut head: Buffer<u8> = Buffer::new();
+            if found.code == check.IMPORT_NOT_LOCKED {
+                head = bytes.append(head, "resolution[".as_slice());
+            } else {
+                head = bytes.append(head, "semantic[".as_slice());
+            }
+            head = check.append_code(head, found.code);
+            head = bytes.append(head, "]: ".as_slice());
+            head = append_range(head, linked.checked.messages.as_slice(), found.message_start, found.message_end);
+            out = append_rendered(out, path.as_slice(), sources.slice(start, ends[file]), found.at - start, found.end - start, head.as_slice());
+        }
+        index += 1u64;
+    }
+    out.push(10u8);
+    out
+}
+
+// What the C backend says when it refuses a package that checks.
+pub fn unsupported(root: Slice<u8>) -> Buffer<u8> {
+    let out: Buffer<u8> = bytes.append(Buffer::new(), root);
+    bytes.append(out, ": CBackendUnsupported: this program uses a construct the transitional C backend does not emit\n".as_slice())
+}
+
+fn lexical(path: Slice<u8>, source: Slice<u8>, found: Slice<Diagnostic>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < found.length() {
+        if index > 0u64 {
+            out = bytes.append(out, "\n\n".as_slice());
+        }
+        let mut head: Buffer<u8> = bytes.append(Buffer::new(), "lexical[".as_slice());
+        head = diagnostics.append_code(head, found[index].code);
+        head = bytes.append(head, "]: ".as_slice());
+        head = diagnostics.append_message(head, source, found[index]);
+        out = append_rendered(out, path, source, found[index].start, found[index].end, head.as_slice());
+        index += 1u64;
+    }
+    out.push(10u8);
+    out
+}
+
+fn syntax(path: Slice<u8>, source: Slice<u8>, texts: Slice<u8>, found: Slice<SyntaxError>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < found.length() {
+        if index > 0u64 {
+            out = bytes.append(out, "\n\n".as_slice());
+        }
+        let error: SyntaxError = found[index];
+        let mut head: Buffer<u8> = bytes.append(Buffer::new(), "syntax[".as_slice());
+        head = bytes.append(head, texts.slice(error.code_start, error.code_end));
+        head = bytes.append(head, "]: ".as_slice());
+        head = bytes.append(head, texts.slice(error.message_start, error.message_end));
+        out = append_rendered(out, path, source, error.start, error.end, head.as_slice());
+        index += 1u64;
+    }
+    out.push(10u8);
+    out
+}
+
+// One diagnostic over the span `start..end` of `source`, where `head` is
+// `phase[Code]: message`. Line and column count as the lexer counts them:
+// lines by LF, columns by character.
+pub fn append_rendered(out: Buffer<u8>, path: Slice<u8>, source: Slice<u8>, start: u64, end: u64, head: Slice<u8>) -> Buffer<u8> {
+    let mut line: u64 = 1u64;
+    let mut column: u64 = 1u64;
+    let mut line_start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at < start && at < source.length() {
+        let byte: u8 = source[at];
+        if byte == 10u8 {
+            line += 1u64;
+            column = 1u64;
+            line_start = at + 1u64;
+        } else if byte < 128u8 || byte >= 192u8 {
+            column += 1u64;
+        }
+        at += 1u64;
+    }
+    // The line's text, without its LF or CR LF.
+    let mut line_end: u64 = line_start;
+    while line_end < source.length() && source[line_end] != 10u8 {
+        line_end += 1u64;
+    }
+    let mut text_end: u64 = line_end;
+    if line_end < source.length() && text_end > line_start && source[text_end - 1u64] == 13u8 {
+        text_end -= 1u64;
+    }
+    let mut text: Buffer<u8> = bytes.append(out, path);
+    text.push(58u8);
+    text = bytes.append_decimal(text, line);
+    text.push(58u8);
+    text = bytes.append_decimal(text, column);
+    text = bytes.append(text, ": ".as_slice());
+    text = bytes.append(text, head);
+    text = bytes.append(text, "\n  |\n".as_slice());
+    // The line number, right-aligned in three columns.
+    if line < 10u64 {
+        text.push(32u8);
+    }
+    if line < 100u64 {
+        text.push(32u8);
+    }
+    text = bytes.append_decimal(text, line);
+    text = bytes.append(text, " | ".as_slice());
+    text = bytes.append(text, source.slice(line_start, text_end));
+    text = bytes.append(text, "\n  | ".as_slice());
+    let mut index: u64 = 1u64;
+    while index < column {
+        text.push(32u8);
+        index += 1u64;
+    }
+    // At least one caret, and no more than the line has left after the
+    // column (counted in bytes, as stage0 counts them).
+    let mut width: u64 = 1u64;
+    if end > start {
+        width = end - start;
+    }
+    let length: u64 = text_end - line_start;
+    let mut room: u64 = 1u64;
+    if length > column - 1u64 {
+        room = length - (column - 1u64);
+    }
+    if width > room {
+        width = room;
+    }
+    index = 0u64;
+    while index < width {
+        text.push(94u8);
+        index += 1u64;
+    }
+    text
+}
+
+fn append_range(out: Buffer<u8>, text: Slice<u8>, start: u64, end: u64) -> Buffer<u8> {
+    bytes.append(out, text.slice(start, end))
+}

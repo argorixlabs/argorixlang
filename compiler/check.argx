@@ -49,7 +49,9 @@ pub struct Member { name: u64, ty: u64, members: u64, count: u64, }
 // apart from a later one that shadows it.
 pub struct Binding { name: u64, ty: u64, mutable: bool, depth: u64, id: u64, }
 
-pub struct Diagnostic { code: u64, at: u64, }
+// A diagnostic: its code, the byte span it points at, and its message, a
+// range of `messages`.
+pub struct Finding { code: u64, at: u64, end: u64, message_start: u64, message_end: u64, }
 
 pub struct Check {
     types: Buffer<TypeRecord>,
@@ -68,13 +70,19 @@ pub struct Check {
     covered: Buffer<u64>,
     covered_live: u64,
     wildcard: bool,
-    diagnostics: Buffer<Diagnostic>,
+    diagnostics: Buffer<Finding>,
+    // The diagnostics' messages, one after another; `said` is where the one
+    // being written starts.
+    messages: Buffer<u8>,
+    said: u64,
     result: u64,
     // Ownership (ESP-012.B): the ids of the bindings moved on some path that
     // reaches the current point, and whether it can be reached at all.
     moved: Buffer<u64>,
     reachable: bool,
     next_binding: u64,
+    // The name token of each binding, by id.
+    binding_names: Buffer<u64>,
     // Set while checking a call argument that is `x.as_slice()` itself.
     view_argument: bool,
     // The moved-sets that leave the loops being checked: records of
@@ -178,7 +186,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 }
 
 // One line of the dump, for a diagnostic at a byte of `source`.
-pub fn append_diagnostic(out: Buffer<u8>, source: Slice<u8>, found: Diagnostic) -> Buffer<u8> {
+pub fn append_diagnostic(out: Buffer<u8>, source: Slice<u8>, found: Finding) -> Buffer<u8> {
     // Line and column of the byte, counted as the lexer counts them.
     let mut line: u64 = 1u64;
     let mut column: u64 = 1u64;
@@ -245,10 +253,13 @@ pub fn empty_check() -> Check {
         covered_live: 0u64,
         wildcard: false,
         diagnostics: Buffer::new(),
+        messages: Buffer::new(),
+        said: 0u64,
         result: 0u64,
         moved: Buffer::new(),
         reachable: true,
         next_binding: 0u64,
+        binding_names: Buffer::new(),
         view_argument: false,
         exits: Buffer::new(),
         exits_live: 0u64,
@@ -313,10 +324,120 @@ fn passes(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: 
 
 // ------------------------------------------------------------------ helpers
 
-fn report(code: u64, at: u64, check: Check) -> Check {
+// A diagnostic over `start..end`, whose message is what was said since the
+// last one (see `say`).
+fn report_span(code: u64, start: u64, end: u64, check: Check) -> Check {
     let mut c: Check = check;
-    c.diagnostics.push(Diagnostic { code: code, at: at });
+    c.diagnostics.push(Finding { code: code, at: start, end: end, message_start: c.said, message_end: c.messages.length() });
+    c.said = c.messages.length();
     c
+}
+
+// Adds `text` to the message of the next diagnostic. Messages are worded
+// as stage0 words them.
+fn say(text: Slice<u8>, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut index: u64 = 0u64;
+    while index < text.length() {
+        c.messages.push(text[index]);
+        index += 1u64;
+    }
+    c
+}
+
+fn say_word(source: Slice<u8>, tokens: Slice<Token>, at: u64, check: Check) -> Check {
+    say(source.slice(tokens[at].start, tokens[at].end), check)
+}
+
+// `text`, then the word at `at`, then a backtick: "... `name`".
+fn say_quoted(text: Slice<u8>, source: Slice<u8>, tokens: Slice<Token>, at: u64, check: Check) -> Check {
+    let mut c: Check = say(text, check);
+    c = say_word(source, tokens, at, c);
+    say("`".as_slice(), c)
+}
+
+fn say_decimal(value: u64, check: Check) -> Check {
+    let digits: Buffer<u8> = bytes.append_decimal(Buffer::new(), value);
+    say(digits.as_slice(), check)
+}
+
+// The names of a path from `first` to `last`, joined by `separator`.
+fn say_path(source: Slice<u8>, tokens: Slice<Token>, first: u64, last: u64, separator: Slice<u8>, check: Check) -> Check {
+    let mut c: Check = check;
+    let mut started: bool = false;
+    let mut at: u64 = first;
+    while at <= last {
+        if tokens[at].kind == token.IDENT {
+            if started {
+                c = say(separator, c);
+            }
+            started = true;
+            c = say_word(source, tokens, at, c);
+        }
+        at += 1u64;
+    }
+    c
+}
+
+// The name stage0's linker gives an item of another module than the one
+// being checked: the module's path with `__` for each dot, `__`, the name.
+fn say_module_prefix(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, module: u64, check: Check) -> Check {
+    let program: u64 = check.bases[module + 1u64] - 1u64;
+    let c: Check = say_path(source, tokens, nodes[program].word - 1u64, nodes[program].path_last, "__".as_slice(), check);
+    say("__".as_slice(), c)
+}
+
+// A type as stage0 displays it.
+fn say_type(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, ty: u64, check: Check) -> Check {
+    let mut c: Check = check;
+    let found: TypeRecord = c.types[ty];
+    let tag: u64 = found.tag;
+    if tag == T_UNKNOWN { return say("<unknown>".as_slice(), c); }
+    if tag == T_NEVER { return say("!".as_slice(), c); }
+    if tag == T_UNIT { return say("unit".as_slice(), c); }
+    if tag == T_BOOL { return say("bool".as_slice(), c); }
+    if tag == T_BYTES { return say("bytes".as_slice(), c); }
+    if tag == T_STRING { return say("string".as_slice(), c); }
+    if tag == T_INT || tag == T_NAMED || tag == T_CAPABILITY {
+        if tag == T_NAMED && found.declaration != 0u64 {
+            let module: u64 = c.declarations[found.declaration - 1u64].module;
+            if module != c.module {
+                c = say_module_prefix(source, tokens, nodes, module, c);
+            }
+        }
+        let mut index: u64 = found.name_start;
+        while index < found.name_end {
+            let byte: u8 = c.names[index];
+            c.messages.push(byte);
+            index += 1u64;
+        }
+        return c;
+    }
+    if tag == T_ARRAY {
+        c = say("Array<".as_slice(), c);
+        c = say_type(source, tokens, nodes, found.element, c);
+        c = say(", ".as_slice(), c);
+        c = say_decimal(found.length, c);
+        return say(">".as_slice(), c);
+    }
+    if tag == T_SLICE {
+        c = say("Slice<".as_slice(), c);
+    } else if tag == T_BUFFER {
+        c = say("Buffer<".as_slice(), c);
+    } else if tag == T_ARENA {
+        c = say("Arena<".as_slice(), c);
+    } else {
+        c = say("Handle<".as_slice(), c);
+    }
+    c = say_type(source, tokens, nodes, found.element, c);
+    say(">".as_slice(), c)
+}
+
+// `text`, a type, and a backtick.
+fn say_quoted_type(text: Slice<u8>, source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, ty: u64, check: Check) -> Check {
+    let mut c: Check = say(text, check);
+    c = say_type(source, tokens, nodes, ty, c);
+    say("`".as_slice(), c)
 }
 
 // The n-th child of `node`, from 0.
@@ -501,14 +622,16 @@ fn merge_types(types: Slice<TypeRecord>, expected: u64, actual: u64) -> u64 {
     actual
 }
 
-fn require_compatible(expected: u64, actual: u64, at: u64, check: Check) -> Check {
+fn require_compatible(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, expected: u64, actual: u64, start: u64, end: u64, check: Check) -> Check {
     if compatible(check.types.as_slice(), expected, actual) {
         return check;
     }
-    report(TYPE_MISMATCH, at, check)
+    let mut c: Check = say_quoted_type("expected `".as_slice(), source, tokens, nodes, expected, check);
+    c = say_quoted_type(", found `".as_slice(), source, tokens, nodes, actual, c);
+    report_span(TYPE_MISMATCH, start, end, c)
 }
 
-fn unify(left: u64, right: u64, at: u64, check: Check) -> Check {
+fn unify(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, left: u64, right: u64, start: u64, end: u64, check: Check) -> Check {
     let mut c: Check = check;
     if left == NEVER {
         c.result = right;
@@ -522,7 +645,9 @@ fn unify(left: u64, right: u64, at: u64, check: Check) -> Check {
         c.result = merge_types(c.types.as_slice(), left, right);
         return c;
     }
-    c = report(TYPE_MISMATCH, at, c);
+    c = say_quoted_type("branch types differ: `".as_slice(), source, tokens, nodes, left, c);
+    c = say_quoted_type(" and `".as_slice(), source, tokens, nodes, right, c);
+    c = report_span(TYPE_MISMATCH, start, end, c);
     c.result = UNKNOWN;
     c
 }
@@ -559,12 +684,12 @@ fn lower_type(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
     c = lower_type(source, tokens, nodes, child(nodes, node, 0u64), c);
     let element: u64 = c.result;
     if contains_capability(c.types.as_slice(), element) {
-        let at: u64 = nodes[node].start;
-        c = report(CAPABILITY_ESCAPES, at, c);
+        c = say_quoted("a capability is held by the call it was passed to and cannot be stored in a `".as_slice(), source, tokens, name_token, c);
+        c = report_span(CAPABILITY_ESCAPES, nodes[node].start, nodes[node].end, c);
     }
     if contains_slice(c.types.as_slice(), element) {
-        let at: u64 = nodes[node].start;
-        c = report(SLICE_ESCAPES, at, c);
+        c = say_quoted("a slice is a view into storage it does not own and cannot be held in a `".as_slice(), source, tokens, name_token, c);
+        c = report_span(SLICE_ESCAPES, nodes[node].start, nodes[node].end, c);
     }
     let empty: Array<u8, 0> = [];
     if bytes.equal(name, "Array".as_slice()) {
@@ -736,7 +861,8 @@ fn collect(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program:
         c.module = module_of(c.bases.as_slice(), item);
         let name: u64 = nodes[item].word - 1u64;
         if next == c.declarations.length() || c.declarations[next].node != item {
-            c = report(DUPLICATE_DECLARATION, tokens[name].start, c);
+            c = say_quoted("duplicate declaration `".as_slice(), source, tokens, name, c);
+            c = report_span(DUPLICATE_DECLARATION, tokens[name].start, tokens[name].end, c);
             continue;
         }
         let declaration: u64 = next;
@@ -837,7 +963,10 @@ fn check_imports(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pr
             locked = same_path(source, tokens, first, last, module_first, module_last);
         }
         if !locked {
-            c = report(IMPORT_NOT_LOCKED, tokens[first].start, c);
+            c = say("module `".as_slice(), c);
+            c = say_path(source, tokens, first, last, ".".as_slice(), c);
+            c = say("` is not present in the locked compilation set".as_slice(), c);
+            c = report_span(IMPORT_NOT_LOCKED, tokens[first].start, tokens[last].end, c);
         }
     }
     c
@@ -877,7 +1006,10 @@ fn check_recursive(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
             field += 1u64;
         }
         if recursive {
-            c = report(INFINITE_TYPE, tokens[found.name].start, c);
+            c = say("`".as_slice(), c);
+            c = say_word(source, tokens, found.name, c);
+            c = say("` contains itself without Handle indirection".as_slice(), c);
+            c = report_span(INFINITE_TYPE, tokens[found.name].start, tokens[found.name].end, c);
         }
     }
     c
@@ -930,7 +1062,7 @@ fn check_constants(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
         let value: u64 = child(nodes, item, 1u64);
         c = infer(source, tokens, nodes, value, expected, c);
         let actual: u64 = c.result;
-        c = require_compatible(expected, actual, nodes[value].start, c);
+        c = require_compatible(source, tokens, nodes, expected, actual, nodes[value].start, nodes[value].end, c);
     }
     c
 }
@@ -969,7 +1101,7 @@ fn check_functions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
         c = check_block(source, tokens, nodes, body, false, c);
         let actual: u64 = c.result;
         let expected: u64 = c.expected_return;
-        c = require_compatible(expected, actual, nodes[body].start, c);
+        c = require_compatible(source, tokens, nodes, expected, actual, nodes[body].start, nodes[body].end, c);
     }
     c
 }
@@ -989,7 +1121,10 @@ fn capability_positions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<No
         let name: u64 = nodes[item].word - 1u64;
         let text: Slice<u8> = source.slice(tokens[name].start, tokens[name].end);
         if bytes.equal(text, "PackageRead".as_slice()) || bytes.equal(text, "BuildWrite".as_slice()) {
-            c = report(DUPLICATE_DECLARATION, tokens[name].start, c);
+            c = say("`".as_slice(), c);
+            c = say_word(source, tokens, name, c);
+            c = say("` is the built-in capability type and cannot be redeclared".as_slice(), c);
+            c = report_span(DUPLICATE_DECLARATION, tokens[name].start, tokens[name].end, c);
         }
         let kind: u64 = nodes[item].kind;
         let mut holds: bool = false;
@@ -1020,7 +1155,10 @@ fn capability_positions(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<No
             }
         }
         if holds {
-            c = report(CAPABILITY_ESCAPES, tokens[name].start, c);
+            c = say("`".as_slice(), c);
+            c = say_word(source, tokens, name, c);
+            c = say("` would keep a capability past the call it was passed to; a capability can only be a parameter or a local".as_slice(), c);
+            c = report_span(CAPABILITY_ESCAPES, tokens[name].start, tokens[name].end, c);
         }
     }
     c
@@ -1055,10 +1193,12 @@ fn define(source: Slice<u8>, tokens: Slice<Token>, name: u64, ty: u64, mutable: 
         }
     }
     if duplicate {
-        c = report(DUPLICATE_DECLARATION, tokens[name].start, c);
+        c = say_quoted("duplicate local `".as_slice(), source, tokens, name, c);
+        c = report_span(DUPLICATE_DECLARATION, tokens[name].start, tokens[name].end, c);
     }
     let binding: Binding = Binding { name: name, ty: ty, mutable: mutable, depth: c.depth, id: c.next_binding };
     c.next_binding += 1u64;
+    c.binding_names.push(name);
     if c.live < c.bindings.length() {
         let live: u64 = c.live;
         c.bindings[live] = binding;
@@ -1156,7 +1296,7 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
         let mut actual: u64 = c.result;
         c = consume(source, tokens, nodes, value, actual, c);
         if annotated {
-            c = require_compatible(expected, actual, nodes[value].start, c);
+            c = require_compatible(source, tokens, nodes, expected, actual, nodes[value].start, nodes[value].end, c);
             actual = merge_types(c.types.as_slice(), expected, actual);
         }
         return define(source, tokens, nodes[node].word - 1u64, actual, nodes[node].flag == 1u64, c);
@@ -1169,7 +1309,7 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
         c = infer(source, tokens, nodes, value, target_ty, c);
         let value_ty: u64 = c.result;
         c = consume(source, tokens, nodes, value, value_ty, c);
-        c = require_compatible(target_ty, value_ty, nodes[value].start, c);
+        c = require_compatible(source, tokens, nodes, target_ty, value_ty, nodes[value].start, nodes[value].end, c);
         // A moved local that is assigned owns a value again.
         if nodes[target].kind == ast.PATH && nodes[target].word - 1u64 == nodes[target].path_last {
             let name: u64 = nodes[target].word - 1u64;
@@ -1180,7 +1320,8 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
             }
         }
         if nodes[node].value != token.ASSIGN && !is_integer(c.types.as_slice(), target_ty) {
-            c = report(TYPE_MISMATCH, nodes[node].start, c);
+            c = say("compound assignment requires integer operands".as_slice(), c);
+            c = report_span(TYPE_MISMATCH, nodes[node].start, nodes[node].end, c);
         }
         return c;
     }
@@ -1188,21 +1329,22 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
         let condition: u64 = child(nodes, node, 0u64);
         c = infer(source, tokens, nodes, condition, BOOL, c);
         let actual: u64 = c.result;
-        c = require_compatible(BOOL, actual, nodes[condition].start, c);
+        c = require_compatible(source, tokens, nodes, BOOL, actual, nodes[condition].start, nodes[condition].end, c);
         let entry: Buffer<u64> = copy_ids(c.moved.as_slice());
         let entry_reachable: bool = c.reachable;
         c.loop_depth += 1u64;
         c = begin_loop(c);
         let body: u64 = child(nodes, node, 1u64);
         c = check_block(source, tokens, nodes, body, true, c);
-        c = end_loop(entry.as_slice(), nodes[body].start, c);
+        c = end_loop(source, tokens, entry.as_slice(), nodes[body].start, nodes[body].end, c);
         c = drop_breaks(c);
         c.loop_depth -= 1u64;
         return close_loop(entry.as_slice(), entry_reachable, c);
     }
     if kind == ast.BREAK {
         if c.loop_depth == 0u64 {
-            return report(CONTROL_OUTSIDE_LOOP, nodes[node].start, c);
+            c = say("`break` is only valid inside a loop".as_slice(), c);
+            return report_span(CONTROL_OUTSIDE_LOOP, nodes[node].start, nodes[node].end, c);
         }
         let mut ty: u64 = UNIT;
         if nodes[node].first != 0u64 {
@@ -1218,7 +1360,8 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
     }
     if kind == ast.CONTINUE {
         if c.loop_depth == 0u64 {
-            return report(CONTROL_OUTSIDE_LOOP, nodes[node].start, c);
+            c = say("`continue` is only valid inside a loop".as_slice(), c);
+            return report_span(CONTROL_OUTSIDE_LOOP, nodes[node].start, nodes[node].end, c);
         }
         c = record_exit(CONTINUE_EXIT, c);
         c.reachable = false;
@@ -1233,7 +1376,7 @@ fn statement(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: 
             actual = c.result;
             c = consume(source, tokens, nodes, value, actual, c);
         }
-        c = require_compatible(expected, actual, nodes[node].start, c);
+        c = require_compatible(source, tokens, nodes, expected, actual, nodes[node].start, nodes[node].end, c);
         c.reachable = false;
         return c;
     }
@@ -1276,13 +1419,17 @@ fn assignment_target(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>
         let name: u64 = nodes[target].word - 1u64;
         let binding: u64 = lookup(source, tokens, c.bindings.as_slice(), c.live, source.slice(tokens[name].start, tokens[name].end));
         if binding == 0u64 {
-            c = report(IMMUTABLE_OR_UNKNOWN, nodes[target].start, c);
+            c = say_quoted("unknown name `".as_slice(), source, tokens, name, c);
+            c = report_span(IMMUTABLE_OR_UNKNOWN, nodes[target].start, nodes[target].end, c);
             c.result = UNKNOWN;
             return c;
         }
         let found: Binding = c.bindings[binding - 1u64];
         if !found.mutable {
-            c = report(IMMUTABLE_OR_UNKNOWN, nodes[target].start, c);
+            c = say("`".as_slice(), c);
+            c = say_word(source, tokens, name, c);
+            c = say("` is immutable".as_slice(), c);
+            c = report_span(IMMUTABLE_OR_UNKNOWN, nodes[target].start, nodes[target].end, c);
         }
         c.result = found.ty;
         return c;
@@ -1290,7 +1437,8 @@ fn assignment_target(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>
     if (kind == ast.FIELD_ACCESS || kind == ast.INDEX) && root_is_mutable_or_handle(source, tokens, nodes, c.types.as_slice(), c.bindings.as_slice(), c.live, target) {
         return infer(source, tokens, nodes, target, UNKNOWN, c);
     }
-    c = report(IMMUTABLE_OR_UNKNOWN, nodes[target].start, c);
+    c = say("assignment target is not mutable".as_slice(), c);
+    c = report_span(IMMUTABLE_OR_UNKNOWN, nodes[target].start, nodes[target].end, c);
     infer(source, tokens, nodes, target, UNKNOWN, c)
 }
 
@@ -1342,7 +1490,11 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         let ty: u64 = c.result;
         let record: TypeRecord = c.types[ty];
         if !fits(nodes[node].value, record.length) {
-            c = report(LITERAL_OUT_OF_RANGE, nodes[node].start, c);
+            c = say("literal `".as_slice(), c);
+            c = say_decimal(nodes[node].value, c);
+            c = say_type(source, tokens, nodes, ty, c);
+            c = say_quoted_type("` is outside `".as_slice(), source, tokens, nodes, ty, c);
+            c = report_span(LITERAL_OUT_OF_RANGE, nodes[node].start, nodes[node].end, c);
         }
         c.result = ty;
         return c;
@@ -1368,7 +1520,7 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
             if element == UNKNOWN {
                 element = actual;
             } else {
-                c = require_compatible(element, actual, nodes[value].start, c);
+                c = require_compatible(source, tokens, nodes, element, actual, nodes[value].start, nodes[value].end, c);
             }
             count += 1u64;
         }
@@ -1380,7 +1532,7 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         let condition: u64 = child(nodes, node, 0u64);
         c = infer(source, tokens, nodes, condition, BOOL, c);
         let condition_ty: u64 = c.result;
-        c = require_compatible(BOOL, condition_ty, nodes[condition].start, c);
+        c = require_compatible(source, tokens, nodes, BOOL, condition_ty, nodes[condition].start, nodes[condition].end, c);
         let entry: Buffer<u64> = copy_ids(c.moved.as_slice());
         let entry_reachable: bool = c.reachable;
         c = check_block(source, tokens, nodes, child(nodes, node, 1u64), true, c);
@@ -1399,7 +1551,7 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         let else_moved: Buffer<u64> = copy_ids(c.moved.as_slice());
         let else_reachable: bool = c.reachable;
         c = join_two(then_moved.as_slice(), then_reachable, else_moved.as_slice(), else_reachable, c);
-        return unify(then_ty, else_ty, nodes[node].start, c);
+        return unify(source, tokens, nodes, then_ty, else_ty, nodes[node].start, nodes[node].end, c);
     }
     if kind == ast.MATCH { return infer_match(source, tokens, nodes, node, expected, c); }
     if kind == ast.LOOP {
@@ -1409,7 +1561,7 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         c = begin_loop(c);
         let body: u64 = child(nodes, node, 0u64);
         c = check_block(source, tokens, nodes, body, true, c);
-        c = end_loop(entry.as_slice(), nodes[body].start, c);
+        c = end_loop(source, tokens, entry.as_slice(), nodes[body].start, nodes[body].end, c);
         // Only a `break` leaves a `loop`.
         c = close_loop(entry.as_slice(), false, c);
         // The types of this loop's `break`s, unified in order.
@@ -1422,7 +1574,7 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
                 result = ty;
                 first = false;
             } else {
-                c = unify(result, ty, nodes[node].start, c);
+                c = unify(source, tokens, nodes, result, ty, nodes[node].start, nodes[node].end, c);
                 result = c.result;
             }
             at += 2u64;
@@ -1444,12 +1596,14 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         c = infer(source, tokens, nodes, index, unsigned, c);
         let index_ty: u64 = c.result;
         if !is_integer(c.types.as_slice(), index_ty) {
-            c = report(TYPE_MISMATCH, nodes[index].start, c);
+            c = say("index must be an integer".as_slice(), c);
+            c = report_span(TYPE_MISMATCH, nodes[index].start, nodes[index].end, c);
         }
         let target: u64 = deref_handle(c.types.as_slice(), base);
         let record: TypeRecord = c.types[target];
         if record.tag == T_STRING {
-            c = report(STRING_NOT_INDEXABLE, nodes[node].start, c);
+            c = say("string indexing is forbidden; decode or use bytes explicitly".as_slice(), c);
+            c = report_span(STRING_NOT_INDEXABLE, nodes[node].start, nodes[node].end, c);
             c.result = UNKNOWN;
             return c;
         }
@@ -1460,7 +1614,9 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
         if record.tag == T_BYTES {
             return integer_type("u8".as_slice(), c);
         }
-        c = report(TYPE_MISMATCH, nodes[value].start, c);
+        c = say_quoted_type("`".as_slice(), source, tokens, nodes, target, c);
+        c = say(" is not indexable".as_slice(), c);
+        c = report_span(TYPE_MISMATCH, nodes[value].start, nodes[value].end, c);
         c.result = UNKNOWN;
         return c;
     }
@@ -1483,7 +1639,8 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
                 }
             }
         }
-        c = report(TYPE_MISMATCH, tokens[name].start, c);
+        c = say_quoted("unknown field `".as_slice(), source, tokens, name, c);
+        c = report_span(TYPE_MISMATCH, tokens[name].start, tokens[name].end, c);
         c.result = UNKNOWN;
         return c;
     }
@@ -1498,7 +1655,8 @@ fn infer(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64,
             c.result = actual;
             return c;
         }
-        c = report(TYPE_MISMATCH, nodes[node].start, c);
+        c = say("invalid unary operand".as_slice(), c);
+        c = report_span(TYPE_MISMATCH, nodes[node].start, nodes[node].end, c);
         c.result = UNKNOWN;
         return c;
     }
@@ -1523,7 +1681,11 @@ fn infer_path(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
         if binding != 0u64 {
             let found: Binding = c.bindings[binding - 1u64];
             if contains_id(c.moved.as_slice(), found.id) && c.reachable {
-                c = report(USE_AFTER_MOVE, nodes[node].start, c);
+                c = say("`".as_slice(), c);
+                c = say_word(source, tokens, first, c);
+                c = say_quoted_type("` was moved on a path that reaches here; a `".as_slice(), source, tokens, nodes, found.ty, c);
+                c = say(" has one owner at a time".as_slice(), c);
+                c = report_span(USE_AFTER_MOVE, nodes[node].start, nodes[node].end, c);
             }
             c.result = found.ty;
             return c;
@@ -1545,7 +1707,17 @@ fn infer_path(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
             }
         }
     }
-    c = report(IMMUTABLE_OR_UNKNOWN, nodes[node].start, c);
+    c = say("unknown name `".as_slice(), c);
+    if nodes[node].value != 0u64 {
+        // An item of another module, which stage0 has renamed.
+        let item: u64 = nodes[node].value - 1u64;
+        c = say_module_prefix(source, tokens, nodes, module_of(c.bases.as_slice(), item), c);
+        c = say_word(source, tokens, nodes[item].word - 1u64, c);
+    } else {
+        c = say_path(source, tokens, first, last, "::".as_slice(), c);
+    }
+    c = say("`".as_slice(), c);
+    c = report_span(IMMUTABLE_OR_UNKNOWN, nodes[node].start, nodes[node].end, c);
     c.result = UNKNOWN;
     c
 }
@@ -1581,7 +1753,10 @@ fn infer_aggregate(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
         }
     }
     if !known {
-        c = report(TYPE_MISMATCH, nodes[node].start, c);
+        c = say("unknown aggregate `".as_slice(), c);
+        c = say_path(source, tokens, first, last, "::".as_slice(), c);
+        c = say("`".as_slice(), c);
+        c = report_span(TYPE_MISMATCH, nodes[node].start, nodes[node].end, c);
         c.result = UNKNOWN;
         return c;
     }
@@ -1597,12 +1772,15 @@ fn infer_aggregate(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
             c = infer(source, tokens, nodes, value, expected, c);
             let actual: u64 = c.result;
             c = consume(source, tokens, nodes, value, actual, c);
-            c = require_compatible(expected, actual, nodes[value].start, c);
+            c = require_compatible(source, tokens, nodes, expected, actual, nodes[value].start, nodes[value].end, c);
         } else {
-            c = report(TYPE_MISMATCH, nodes[field].start, c);
+            c = say_quoted("unknown field `".as_slice(), source, tokens, name, c);
+            c = report_span(TYPE_MISMATCH, tokens[name].start, tokens[name].end, c);
         }
     }
-    // Every required field the aggregate leaves out.
+    // Every required field the aggregate leaves out, by name in byte order,
+    // as stage0 sorts them.
+    let mut missing: Buffer<u64> = Buffer::new();
     let mut index: u64 = members;
     while index < members + count {
         let wanted: u64 = c.members[index].name;
@@ -1616,8 +1794,15 @@ fn infer_aggregate(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, 
             }
         }
         if !given {
-            c = report(TYPE_MISMATCH, nodes[node].start, c);
+            missing.push(wanted);
         }
+        index += 1u64;
+    }
+    missing = sort_words(source, tokens, missing);
+    index = 0u64;
+    while index < missing.length() {
+        c = say_quoted("missing field `".as_slice(), source, tokens, missing[index], c);
+        c = report_span(TYPE_MISMATCH, nodes[node].start, nodes[node].end, c);
         index += 1u64;
     }
     named_type(T_NAMED, source, tokens, first, c)
@@ -1653,7 +1838,8 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
             if function != 0u64 {
                 let found: Declaration = c.declarations[function - 1u64];
                 if found.count != arguments {
-                    c = report(TYPE_MISMATCH, nodes[node].start, c);
+                    c = say("wrong argument count".as_slice(), c);
+                    c = report_span(TYPE_MISMATCH, nodes[node].start, nodes[node].end, c);
                 }
                 // Parameters are passed by value: a resource argument moves into
                 // the callee. `x.as_slice()` is a view only as a direct argument.
@@ -1676,7 +1862,7 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
                     c.view_argument = false;
                     let actual: u64 = c.result;
                     c = consume(source, tokens, nodes, argument, actual, c);
-                    c = require_compatible(expected, actual, nodes[argument].start, c);
+                    c = require_compatible(source, tokens, nodes, expected, actual, nodes[argument].start, nodes[argument].end, c);
                     index += 1u64;
                 }
                 // The storage a view points into cannot also move into the same
@@ -1688,7 +1874,10 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
                     if binding != 0u64 {
                         let id: u64 = c.bindings[binding - 1u64].id;
                         if contains_id(c.moved.as_slice(), id) && !contains_id(before.as_slice(), id) && c.reachable {
-                            c = report(SLICE_ALIASES_MOVE, nodes[node].start, c);
+                            c = say("`".as_slice(), c);
+                            c = say_word(source, tokens, root, c);
+                            c = say("` is both viewed and moved by this call".as_slice(), c);
+                            c = report_span(SLICE_ALIASES_MOVE, nodes[node].start, nodes[node].end, c);
                         }
                     }
                     index += 1u64;
@@ -1715,7 +1904,10 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
                 if binding != 0u64 {
                     let found: Binding = c.bindings[binding - 1u64];
                     if !found.mutable && c.types[found.ty].tag != T_HANDLE {
-                        c = report(IMMUTABLE_OR_UNKNOWN, nodes[receiver_node].start, c);
+                        c = say("`".as_slice(), c);
+                        c = say_word(source, tokens, root - 1u64, c);
+                        c = say("` is immutable; declare it with `let mut` to push into it".as_slice(), c);
+                        c = report_span(IMMUTABLE_OR_UNKNOWN, nodes[receiver_node].start, nodes[receiver_node].end, c);
                     }
                 }
             }
@@ -1723,7 +1915,8 @@ fn infer_call(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node:
         return infer_method(source, tokens, nodes, node, receiver, method, arguments, view_allowed, c);
     }
     c = infer(source, tokens, nodes, callee, UNKNOWN, c);
-    c = report(TYPE_MISMATCH, nodes[node].start, c);
+    c = say("expression is not callable".as_slice(), c);
+    c = report_span(TYPE_MISMATCH, nodes[node].start, nodes[node].end, c);
     c.result = UNKNOWN;
     c
 }
@@ -1738,7 +1931,12 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
     if bytes.equal(name, "as_slice".as_slice()) && arguments == 0u64 && (tag == T_BUFFER || tag == T_ARRAY || tag == T_STRING) {
         // A view of owned storage, only as a direct argument.
         if !view_allowed && c.reachable {
-            c = report(SLICE_ESCAPES, nodes[node].start, c);
+            if tag == T_STRING {
+                c = say("a view of a string can only be passed directly as an argument: `f(s.as_slice())`".as_slice(), c);
+            } else {
+                c = say("a view of owned storage can only be passed directly as an argument: `f(x.as_slice())`".as_slice(), c);
+            }
+            c = report_span(SLICE_ESCAPES, nodes[node].start, nodes[node].end, c);
         }
         if tag == T_BUFFER || tag == T_ARRAY {
             return intern(T_SLICE, empty.as_slice(), record.element, 0u64, c);
@@ -1757,7 +1955,7 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
             let argument: u64 = child(nodes, node, index + 1u64);
             c = infer(source, tokens, nodes, argument, unsigned, c);
             let actual: u64 = c.result;
-            c = require_compatible(unsigned, actual, nodes[argument].start, c);
+            c = require_compatible(source, tokens, nodes, unsigned, actual, nodes[argument].start, nodes[argument].end, c);
             index += 1u64;
         }
         c.result = receiver;
@@ -1774,7 +1972,7 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
         let actual: u64 = c.result;
         c = consume(source, tokens, nodes, argument, actual, c);
         if record.element != UNKNOWN {
-            c = require_compatible(record.element, actual, nodes[argument].start, c);
+            c = require_compatible(source, tokens, nodes, record.element, actual, nodes[argument].start, nodes[argument].end, c);
         }
         c.result = UNIT;
         return c;
@@ -1786,9 +1984,11 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
         // An arena slot is freed without looking inside it.
         c = resource(source, tokens, actual, c);
         if c.result == 1u64 {
-            c = report(RESOURCE_IN_ARENA, nodes[argument].start, c);
+            c = say_quoted_type("a `".as_slice(), source, tokens, nodes, actual, c);
+            c = say(" owns storage and cannot live in an arena slot".as_slice(), c);
+            c = report_span(RESOURCE_IN_ARENA, nodes[argument].start, nodes[argument].end, c);
         }
-        c = require_compatible(record.element, actual, nodes[argument].start, c);
+        c = require_compatible(source, tokens, nodes, record.element, actual, nodes[argument].start, nodes[argument].end, c);
         return intern(T_HANDLE, empty.as_slice(), record.element, 0u64, c);
     }
     if bytes.equal(name, "release".as_slice()) && tag == T_ARENA && arguments == 0u64 {
@@ -1812,7 +2012,7 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
                 c = infer(source, tokens, nodes, argument, view, c);
                 c.view_argument = false;
                 let actual: u64 = c.result;
-                c = require_compatible(view, actual, nodes[argument].start, c);
+                c = require_compatible(source, tokens, nodes, view, actual, nodes[argument].start, nodes[argument].end, c);
                 index += 1u64;
             }
             if read && bytes.equal(name, "read".as_slice()) {
@@ -1836,11 +2036,12 @@ fn infer_method(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
         let argument: u64 = child(nodes, node, 1u64);
         c = infer(source, tokens, nodes, argument, receiver, c);
         let actual: u64 = c.result;
-        c = require_compatible(receiver, actual, nodes[argument].start, c);
+        c = require_compatible(source, tokens, nodes, receiver, actual, nodes[argument].start, nodes[argument].end, c);
         c.result = receiver;
         return c;
     }
-    c = report(TYPE_MISMATCH, nodes[node].start, c);
+    c = say_quoted("unknown method `".as_slice(), source, tokens, method, c);
+    c = report_span(TYPE_MISMATCH, nodes[node].start, nodes[node].end, c);
     c.result = UNKNOWN;
     c
 }
@@ -1851,6 +2052,7 @@ fn infer_binary(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
     let left: u64 = child(nodes, node, 0u64);
     let right: u64 = child(nodes, node, 1u64);
     let at: u64 = nodes[node].start;
+    let end: u64 = nodes[node].end;
     if operator == token.PIPE_PIPE || operator == token.AMP_AMP {
         c = infer(source, tokens, nodes, left, BOOL, c);
         let left_ty: u64 = c.result;
@@ -1862,8 +2064,8 @@ fn infer_binary(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
         let evaluated: Buffer<u64> = copy_ids(c.moved.as_slice());
         let evaluated_reachable: bool = c.reachable;
         c = join_two(skipped.as_slice(), skipped_reachable, evaluated.as_slice(), evaluated_reachable, c);
-        c = require_compatible(BOOL, left_ty, nodes[left].start, c);
-        c = require_compatible(BOOL, right_ty, nodes[right].start, c);
+        c = require_compatible(source, tokens, nodes, BOOL, left_ty, nodes[left].start, nodes[left].end, c);
+        c = require_compatible(source, tokens, nodes, BOOL, right_ty, nodes[right].start, nodes[right].end, c);
         c.result = BOOL;
         return c;
     }
@@ -1872,20 +2074,27 @@ fn infer_binary(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, nod
     c = infer(source, tokens, nodes, right, left_ty, c);
     let right_ty: u64 = c.result;
     if operator == token.EQUAL_EQUAL || operator == token.BANG_EQUAL {
-        c = require_compatible(left_ty, right_ty, at, c);
+        c = require_compatible(source, tokens, nodes, left_ty, right_ty, at, end, c);
         c.result = BOOL;
         return c;
     }
+    let comparison: bool = operator == token.LESS || operator == token.LESS_EQUAL || operator == token.GREATER || operator == token.GREATER_EQUAL;
     if !is_integer(c.types.as_slice(), left_ty) || !is_integer(c.types.as_slice(), right_ty) {
-        c = report(TYPE_MISMATCH, at, c);
+        if comparison {
+            c = say("comparison requires integers".as_slice(), c);
+        } else {
+            c = say("arithmetic requires integers".as_slice(), c);
+        }
+        c = report_span(TYPE_MISMATCH, at, end, c);
     }
-    c = require_compatible(left_ty, right_ty, at, c);
-    if operator == token.LESS || operator == token.LESS_EQUAL || operator == token.GREATER || operator == token.GREATER_EQUAL {
+    c = require_compatible(source, tokens, nodes, left_ty, right_ty, at, end, c);
+    if comparison {
         c.result = BOOL;
         return c;
     }
     if (operator == token.SLASH || operator == token.PERCENT) && nodes[right].kind == ast.INTEGER && nodes[right].value == 0u64 {
-        c = report(LITERAL_OUT_OF_RANGE, nodes[right].start, c);
+        c = say("constant division by zero".as_slice(), c);
+        c = report_span(LITERAL_OUT_OF_RANGE, nodes[right].start, nodes[right].end, c);
     }
     c.result = left_ty;
     c
@@ -1920,7 +2129,7 @@ fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node
             let guard: u64 = value;
             c = infer(source, tokens, nodes, guard, BOOL, c);
             let guard_ty: u64 = c.result;
-            c = require_compatible(BOOL, guard_ty, nodes[guard].start, c);
+            c = require_compatible(source, tokens, nodes, BOOL, guard_ty, nodes[guard].start, nodes[guard].end, c);
             value = child(nodes, arm, 2u64);
         }
         c = infer(source, tokens, nodes, value, expected, c);
@@ -1929,7 +2138,7 @@ fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node
         if result == NEVER {
             result = arm_ty;
         } else {
-            c = unify(result, arm_ty, nodes[arm].start, c);
+            c = unify(source, tokens, nodes, result, arm_ty, nodes[arm].start, nodes[arm].end, c);
             result = c.result;
         }
         c = close_scope(c);
@@ -1970,7 +2179,7 @@ fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node
         let declaration: u64 = declared(c.types.as_slice(), c.declarations.as_slice(), scrutinee, D_ENUM);
         if declaration != 0u64 {
             let found: Declaration = c.declarations[declaration - 1u64];
-            let mut missing: bool = false;
+            let mut missing: Buffer<u64> = Buffer::new();
             let mut variant: u64 = found.members;
             while variant < found.members + found.count {
                 let mut seen: bool = false;
@@ -1982,12 +2191,23 @@ fn infer_match(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node
                     at += 1u64;
                 }
                 if !seen {
-                    missing = true;
+                    missing.push(c.members[variant].name);
                 }
                 variant += 1u64;
             }
-            if missing {
-                c = report(NON_EXHAUSTIVE_MATCH, nodes[node].start, c);
+            if missing.length() > 0u64 {
+                // By name in byte order, as stage0 sorts them.
+                missing = sort_words(source, tokens, missing);
+                c = say("missing variants: ".as_slice(), c);
+                let mut index: u64 = 0u64;
+                while index < missing.length() {
+                    if index > 0u64 {
+                        c = say(", ".as_slice(), c);
+                    }
+                    c = say_word(source, tokens, missing[index], c);
+                    index += 1u64;
+                }
+                c = report_span(NON_EXHAUSTIVE_MATCH, nodes[node].start, nodes[node].end, c);
             }
         }
     }
@@ -2017,20 +2237,22 @@ fn check_pattern(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pa
         return c;
     }
     if kind == ast.PATTERN_BINDING {
-        return define_at(source, tokens, nodes[pattern].word - 1u64, nodes[pattern].start, expected, c);
+        return define_at(source, tokens, nodes[pattern].word - 1u64, nodes[pattern].start, nodes[pattern].end, expected, c);
     }
     if kind == ast.PATTERN_BOOL {
-        return require_compatible(BOOL, expected, nodes[pattern].start, c);
+        return require_compatible(source, tokens, nodes, BOOL, expected, nodes[pattern].start, nodes[pattern].end, c);
     }
     if kind == ast.PATTERN_INTEGER {
         if !is_integer(c.types.as_slice(), expected) {
-            c = report(TYPE_MISMATCH, nodes[pattern].start, c);
+            c = say("integer pattern requires integer value".as_slice(), c);
+            c = report_span(TYPE_MISMATCH, nodes[pattern].start, nodes[pattern].end, c);
         }
         return c;
     }
     let record: TypeRecord = c.types[expected];
     if record.tag != T_NAMED {
-        return report(TYPE_MISMATCH, nodes[pattern].start, c);
+        c = say("variant pattern requires enum value".as_slice(), c);
+        return report_span(TYPE_MISMATCH, nodes[pattern].start, nodes[pattern].end, c);
     }
     // The pattern names the scrutinee's own enum, as the current module
     // reaches it.
@@ -2038,7 +2260,8 @@ fn check_pattern(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pa
     if path_length(tokens, first, nodes[pattern].path_last) != 2u64 || record.declaration == 0u64
         || find_type(source, tokens, c.declarations.as_slice(), c.imports.as_slice(), c.module, source.slice(tokens[first].start, tokens[first].end)) != record.declaration
     {
-        return report(TYPE_MISMATCH, nodes[pattern].start, c);
+        c = say("variant does not belong to matched enum".as_slice(), c);
+        return report_span(TYPE_MISMATCH, nodes[pattern].start, nodes[pattern].end, c);
     }
     let declaration: u64 = declared(c.types.as_slice(), c.declarations.as_slice(), expected, D_ENUM);
     let variant_token: u64 = segment(tokens, first, 1u64);
@@ -2048,7 +2271,8 @@ fn check_pattern(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pa
         variant = find_member(source, tokens, c.members.as_slice(), found.members, found.count, source.slice(tokens[variant_token].start, tokens[variant_token].end));
     }
     if variant == 0u64 {
-        return report(TYPE_MISMATCH, nodes[pattern].start, c);
+        c = say("unknown enum variant".as_slice(), c);
+        return report_span(TYPE_MISMATCH, nodes[pattern].start, nodes[pattern].end, c);
     }
     c = cover(variant_token, c);
     let fields: Member = c.members[variant - 1u64];
@@ -2059,7 +2283,8 @@ fn check_pattern(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pa
         let name: u64 = nodes[field].word - 1u64;
         let member: u64 = find_member(source, tokens, c.members.as_slice(), fields.members, fields.count, source.slice(tokens[name].start, tokens[name].end));
         if member == 0u64 {
-            c = report(TYPE_MISMATCH, nodes[field].start, c);
+            c = say_quoted("unknown variant field `".as_slice(), source, tokens, name, c);
+            c = report_span(TYPE_MISMATCH, tokens[name].start, tokens[name].end, c);
         } else {
             let field_ty: u64 = c.members[member - 1u64].ty;
             if nodes[field].first != 0u64 {
@@ -2072,14 +2297,33 @@ fn check_pattern(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pa
     c
 }
 
-// `define`, but the duplicate is reported at `at` rather than at the name.
-fn define_at(source: Slice<u8>, tokens: Slice<Token>, name: u64, at: u64, ty: u64, check: Check) -> Check {
+// `define`, but the duplicate is reported over `start..end` rather than at
+// the name.
+fn define_at(source: Slice<u8>, tokens: Slice<Token>, name: u64, start: u64, end: u64, ty: u64, check: Check) -> Check {
     let before: u64 = check.diagnostics.length();
     let mut c: Check = define(source, tokens, name, ty, false, check);
     if c.diagnostics.length() > before {
-        c.diagnostics[before].at = at;
+        c.diagnostics[before].at = start;
+        c.diagnostics[before].end = end;
     }
     c
+}
+
+// Word tokens in the byte order of their text.
+fn sort_words(source: Slice<u8>, tokens: Slice<Token>, words: Buffer<u64>) -> Buffer<u64> {
+    let mut sorted: Buffer<u64> = words;
+    let mut index: u64 = 1u64;
+    while index < sorted.length() {
+        let mut at: u64 = index;
+        while at > 0u64 && bytes.compare(source.slice(tokens[sorted[at]].start, tokens[sorted[at]].end), source.slice(tokens[sorted[at - 1u64]].start, tokens[sorted[at - 1u64]].end)) < 0i8 {
+            let swap: u64 = sorted[at];
+            sorted[at] = sorted[at - 1u64];
+            sorted[at - 1u64] = swap;
+            at -= 1u64;
+        }
+        index += 1u64;
+    }
+    sorted
 }
 
 // ------------------------------------------------------------------ ownership (ESP-012.B)
@@ -2237,7 +2481,9 @@ fn consume(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u6
             c = mark_moved(id, c);
         }
     } else if (kind == ast.FIELD_ACCESS || kind == ast.INDEX) && c.reachable {
-        c = report(MOVE_OUT_OF_PLACE, nodes[node].start, c);
+        c = say_quoted_type("a `".as_slice(), source, tokens, nodes, ty, c);
+        c = say(" cannot be moved out of a field or an element; the value that holds it still owns it".as_slice(), c);
+        c = report_span(MOVE_OUT_OF_PLACE, nodes[node].start, nodes[node].end, c);
     }
     c.result = ty;
     c
@@ -2247,7 +2493,9 @@ fn consume(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u6
 fn require_place(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, node: u64, ty: u64, check: Check) -> Check {
     let mut c: Check = resource(source, tokens, ty, check);
     if c.result == 1u64 && !is_place(nodes, node) && c.reachable {
-        c = report(RESOURCE_TEMPORARY, nodes[node].start, c);
+        c = say_quoted_type("bind this `".as_slice(), source, tokens, nodes, ty, c);
+        c = say(" to a local before inspecting it, so something owns it".as_slice(), c);
+        c = report_span(RESOURCE_TEMPORARY, nodes[node].start, nodes[node].end, c);
     }
     c.result = ty;
     c
@@ -2329,42 +2577,65 @@ fn begin_loop(check: Check) -> Check {
 // The paths back to the loop head, its `continue`s and the end of the body
 // if that can be reached: a binding declared before the loop and moved on one
 // of them would be moved again by the next iteration.
-fn end_loop(entry: Slice<u64>, at: u64, check: Check) -> Check {
+fn end_loop(source: Slice<u8>, tokens: Slice<Token>, entry: Slice<u64>, start: u64, end: u64, check: Check) -> Check {
     let mut c: Check = check;
     let outer_limit: u64 = c.loops[c.loops_live - 2u64];
-    let start: u64 = c.loops[c.loops_live - 1u64];
-    let mut reported: Buffer<u64> = Buffer::new();
+    let first_exit: u64 = c.loops[c.loops_live - 1u64];
+    // Each path back as [count, ids...], its ids in ascending order as in
+    // stage0's sets, so the names come out in its order.
     let mut back: Buffer<u64> = Buffer::new();
-    let mut record: u64 = start;
+    let mut record: u64 = first_exit;
     while record < c.exits_live {
         let kind: u64 = c.exits[record];
         let count: u64 = c.exits[record + 1u64];
         if kind == CONTINUE_EXIT {
-            let mut index: u64 = 0u64;
-            while index < count {
-                back.push(c.exits[record + 2u64 + index]);
-                index += 1u64;
-            }
+            back = append_sorted(back, c.exits.as_slice(), record + 2u64, count);
         }
         record += 2u64 + count;
     }
     if c.reachable {
-        let mut index: u64 = 0u64;
-        while index < c.moved.length() {
-            back.push(c.moved[index]);
+        back = append_sorted(back, c.moved.as_slice(), 0u64, c.moved.length());
+    }
+    let mut reported: Buffer<u64> = Buffer::new();
+    record = 0u64;
+    while record < back.length() {
+        let count: u64 = back[record];
+        let mut index: u64 = record + 1u64;
+        while index <= record + count {
+            let id: u64 = back[index];
+            if id < outer_limit && !contains_id(entry, id) && !contains_id(reported.as_slice(), id) {
+                reported.push(id);
+                c = say("`".as_slice(), c);
+                let name: u64 = c.binding_names[id];
+                c = say_word(source, tokens, name, c);
+                c = say("` is declared before this loop and moved inside it, so the next iteration would move it again; move it after the loop, or assign it before the iteration ends".as_slice(), c);
+                c = report_span(MOVE_IN_LOOP, start, end, c);
+            }
             index += 1u64;
         }
+        record += 1u64 + count;
     }
+    c
+}
+
+// `out`, then the count and the `count` ids from `first` of `ids`, sorted.
+fn append_sorted(out: Buffer<u64>, ids: Slice<u64>, first: u64, count: u64) -> Buffer<u64> {
+    let mut values: Buffer<u64> = out;
+    values.push(count);
+    let base: u64 = values.length();
     let mut index: u64 = 0u64;
-    while index < back.length() {
-        let id: u64 = back[index];
-        if id < outer_limit && !contains_id(entry, id) && !contains_id(reported.as_slice(), id) {
-            reported.push(id);
-            c = report(MOVE_IN_LOOP, at, c);
+    while index < count {
+        values.push(ids[first + index]);
+        let mut at: u64 = base + index;
+        while at > base && values[at] < values[at - 1u64] {
+            let swap: u64 = values[at];
+            values[at] = values[at - 1u64];
+            values[at - 1u64] = swap;
+            at -= 1u64;
         }
         index += 1u64;
     }
-    c
+    values
 }
 
 // After a loop the paths that leave it by `break` meet, and for a `while`
