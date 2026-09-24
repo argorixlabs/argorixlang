@@ -1,5 +1,6 @@
-//! ESP-012.C and ESP-013.A: the Argorix linker and checker
-//! (`compiler/link.argx`) and IR lowering (`compiler/ir.argx`) against stage0.
+//! ESP-012.C and ESP-013.A/C: the Argorix linker and checker
+//! (`compiler/link.argx`), IR lowering (`compiler/ir.argx`) and C backend
+//! (`compiler/c_emit.argx`) against stage0.
 //!
 //! A harness is compiled through the transitional C backend and run with a
 //! package root holding every source file. It reads each package through the
@@ -10,7 +11,9 @@
 //!   (`spec/core/check.md`), against the stage0 driver's `check_core_package`
 //!   (`argorixc core-check-package-dump`);
 //! - `tests/selfhost/ir/ir_files.argx` writes the canonical IR JSON
-//!   (`spec/core/ir.md`), against `argorix_ir::core_package_ir_dump`.
+//!   (`spec/core/ir.md`), against `argorix_ir::core_package_ir_dump`;
+//! - `tests/selfhost/c/c_files.argx` writes the transitional C
+//!   (`spec/core/c-backend.md`), against `argorix_ir::core_package_c_dump`.
 //!
 //! The packages are the compiler, which links the Argorix checker and linker
 //! with themselves, each module of the standard library, the programs that
@@ -20,7 +23,7 @@
 // The differential needs a Unix C toolchain; elsewhere this file is empty.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
-use argorix_ir::core_package_ir_dump;
+use argorix_ir::{core_package_c_dump, core_package_ir_dump};
 use argorix_semantics::core_package_check_dump;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -40,6 +43,11 @@ fn on_large_stack(oracle: fn(&[Vec<u8>]) -> String, sources: Vec<Vec<u8>>) -> St
         .unwrap()
         .join()
         .unwrap()
+}
+
+/// The `.argx` files of a directory, sorted, relative to the repository.
+fn files_in(directory: &str) -> Vec<String> {
+    files(directory, &["argx"])
 }
 
 /// The files of a directory with one of `extensions`, sorted, as paths
@@ -143,6 +151,12 @@ fn the_argorix_ir_matches_the_stage0_ir_when_cc_is_available() {
         "ir",
         core_package_ir_dump,
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_argorix_c_backend_matches_the_stage0_backend_when_cc_is_available() {
+    differential("tests/selfhost/c/c_files.argx", "c", core_package_c_dump);
 }
 
 #[cfg(unix)]
@@ -267,6 +281,116 @@ fn differential(harness: &str, extension: &str, oracle: fn(&[Vec<u8>]) -> String
         "the Argorix {extension} dump disagrees:\n{}",
         failed.join("\n")
     );
+    if env::var_os("ARGORIX_KEEP_WORK").is_none() {
+        fs::remove_dir_all(work).unwrap();
+    }
+}
+
+/// Compile generated C with the declared profile and the budgets the
+/// compiler's own trees need.
+#[cfg(unix)]
+fn compile_c(compiler: &str, c_file: &Path, executable: &Path) {
+    let compile = Command::new(compiler)
+        .args(["-std=c11", "-O1", "-Wall", "-Wextra", "-Werror"])
+        .arg("-DARGORIX_STEP_LIMIT=400000000000ULL")
+        .arg("-DARGORIX_BUFFER_LIMIT_BYTES=268435456U")
+        .arg("-I")
+        .arg(root().join("bootstrap/c"))
+        .arg(root().join("bootstrap/c/argorix_core_runtime.c"))
+        .arg(c_file)
+        .arg("-o")
+        .arg(executable)
+        .output()
+        .unwrap();
+    assert!(
+        compile.status.success(),
+        "C compile failed: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+}
+
+/// The C backend written in Argorix compiles itself, and what it compiles
+/// compiles itself again to the same bytes. Stage0 builds
+/// `tests/selfhost/c/c_files.argx` (the lexer, parser, linker, checker, IR
+/// lowering and C backend of `compiler/`); that program emits C for its own
+/// package; the C is compiled, and the new program emits C for the same
+/// package once more. All three C files must be identical.
+#[cfg(unix)]
+#[test]
+fn the_argorix_c_backend_reproduces_itself_when_cc_is_available() {
+    let compiler = ["cc", "clang", "gcc"]
+        .into_iter()
+        .find(|name| Command::new(name).arg("--version").output().is_ok());
+    let Some(compiler) = compiler else {
+        eprintln!("C compiler unavailable; the fixed point runs in C-enabled CI");
+        return;
+    };
+    let work = env::temp_dir().join(format!("argorix-fixed-point-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&work);
+    let package_root = work.join("package");
+    fs::create_dir_all(package_root.join("sources")).unwrap();
+    let mut files = vec!["tests/selfhost/c/c_files.argx".to_string()];
+    files.extend(files_in("compiler"));
+    files.extend(files_in("stdlib"));
+    let mut list = Vec::new();
+    let mut total = 0_u64;
+    for (index, file) in files.iter().enumerate() {
+        let source = fs::read(root().join(file)).unwrap();
+        let copy = format!("sources/{index}.src");
+        fs::write(package_root.join(&copy), &source).unwrap();
+        total += source.len() as u64;
+        list.push(copy);
+    }
+    let list = format!("{}\n", list.join(" "));
+    fs::write(package_root.join("packages.txt"), &list).unwrap();
+    total += list.len() as u64;
+
+    let stage0_c = work.join("stage0.c");
+    let emit = Command::new(env!("CARGO_BIN_EXE_argorixc"))
+        .arg("--stdlib")
+        .arg(root().join("stdlib"))
+        .arg("--modules")
+        .arg(root().join("compiler"))
+        .arg("core-emit-c")
+        .arg(root().join("tests/selfhost/c/c_files.argx"))
+        .arg("--output")
+        .arg(&stage0_c)
+        .output()
+        .unwrap();
+    assert!(
+        emit.status.success(),
+        "emission failed: {}",
+        String::from_utf8_lossy(&emit.stderr)
+    );
+    let mut previous = stage0_c;
+    for generation in 1..=2 {
+        let executable = work.join(format!("c_files_{generation}"));
+        compile_c(compiler, &previous, &executable);
+        let build = work.join(format!("build_{generation}"));
+        fs::create_dir_all(build.join("dumps")).unwrap();
+        let run = Command::new(&executable)
+            .arg("--package-root")
+            .arg(&package_root)
+            .arg("--read-budget")
+            .arg(total.to_string())
+            .arg("--build-root")
+            .arg(&build)
+            .args(["--write-budget", "100000000"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&run.stdout).trim(),
+            "ARGORIX_RESULT:1",
+            "generation {generation}, stderr: {}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let emitted = build.join("dumps/0.c");
+        assert!(
+            fs::read(&emitted).unwrap() == fs::read(&previous).unwrap(),
+            "generation {generation} emitted different C"
+        );
+        previous = emitted;
+    }
     if env::var_os("ARGORIX_KEEP_WORK").is_none() {
         fs::remove_dir_all(work).unwrap();
     }

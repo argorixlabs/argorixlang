@@ -68,6 +68,12 @@ enum Command {
         #[arg(required = true)]
         files: Vec<PathBuf>,
     },
+    /// Print the transitional C of a Core package: the root file first, then
+    /// the files of its locked compilation set.
+    CoreCPackageDump {
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
     /// Lower checked Argorix Core 0.1 source into transitional C11.
     CoreEmitC {
         file: PathBuf,
@@ -158,6 +164,15 @@ fn run() -> Result<()> {
                 })
                 .collect::<Result<Vec<_>>>()?;
             print!("{}", argorix_ir::core_package_ir_dump(&sources));
+        }
+        Command::CoreCPackageDump { files } => {
+            let sources = files
+                .iter()
+                .map(|file| {
+                    fs::read(file).with_context(|| format!("failed to read `{}`", file.display()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            print!("{}", argorix_ir::core_package_c_dump(&sources));
         }
         Command::CoreAst { file } => {
             let source =

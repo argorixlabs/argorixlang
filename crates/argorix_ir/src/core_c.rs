@@ -54,6 +54,37 @@ impl CoreIrBackend for CoreCBackend {
     }
 }
 
+/// The transitional C of a package (see `argorix_semantics::core_package`):
+/// what `argorixc core-emit-c` writes for its root, `check failed` when the
+/// package does not link, check and verify, or `unsupported` when this
+/// backend refuses it. `compiler/c_emit.argx` must reproduce it (ESP-013.C).
+pub fn core_package_c_dump(files: &[Vec<u8>]) -> String {
+    use argorix_semantics::{check_core_package, core_package, verify_core_program};
+    let failed = || "check failed\n".to_string();
+    let Ok(package) = core_package(files) else {
+        return failed();
+    };
+    let Ok((_, linked)) = check_core_package(
+        &package.root,
+        &package.modules,
+        &package.duplicates,
+        &package.options,
+    ) else {
+        return failed();
+    };
+    let Ok(checked) = verify_core_program(&linked, &package.options) else {
+        return failed();
+    };
+    let ir = crate::core::lower_core_program(checked);
+    let Ok(verified) = crate::core::verify_core_ir(&ir) else {
+        return failed();
+    };
+    match CoreCBackend.emit(verified) {
+        Ok(output) => output.source,
+        Err(_) => "unsupported\n".into(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Signature {
     parameters: Vec<ScalarType>,

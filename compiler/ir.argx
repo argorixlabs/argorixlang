@@ -159,7 +159,7 @@ fn append_module(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, firs
 }
 
 // The file whose nodes include `node`.
-fn module_of(bases: Slice<u64>, node: u64) -> u64 {
+pub fn module_of(bases: Slice<u64>, node: u64) -> u64 {
     let mut index: u64 = 0u64;
     while index + 2u64 < bases.length() && bases[index + 1u64] <= node {
         index += 1u64;
@@ -167,26 +167,31 @@ fn module_of(bases: Slice<u64>, node: u64) -> u64 {
     index
 }
 
-// The linked name of an item, as a JSON string: its own name in the root,
-// `a__b__name` in module `a.b`.
+// The linked name of an item as a JSON string (see `append_linked_name`).
 fn append_item_name(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, item: u64) -> Buffer<u8> {
+    let name: Buffer<u8> = append_linked_name(Buffer::new(), sources, tokens, nodes, programs, bases, item);
+    append_string(out, name.as_slice())
+}
+
+// The linked name of an item: its own name in the root, `a__b__name` in
+// module `a.b`.
+pub fn append_linked_name(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, item: u64) -> Buffer<u8> {
     let module: u64 = module_of(bases, item);
-    let mut name: Buffer<u8> = Buffer::new();
+    let mut name: Buffer<u8> = out;
     if module != 0u64 {
         let program: Node = nodes[programs[module] - 1u64];
         name = append_module(name, sources, tokens, program.word - 1u64, program.path_last, 0u8);
         name.push(95u8);
         name.push(95u8);
     }
-    name = bytes.append(name, sources.slice(tokens[nodes[item].word - 1u64].start, tokens[nodes[item].word - 1u64].end));
-    append_string(out, name.as_slice())
+    bytes.append(name, sources.slice(tokens[nodes[item].word - 1u64].start, tokens[nodes[item].word - 1u64].end))
 }
 
 // ------------------------------------------------------------------ names
 
 // The struct or enum a type name reaches from `module` (+ 1), or 0: its own,
 // or a public one of a module it imports directly.
-fn resolve_type(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, name: u64) -> u64 {
+pub fn resolve_type(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, name: u64) -> u64 {
     let own: u64 = own_item(sources, tokens, nodes, programs, bases, module, name);
     if own != 0u64 && is_type(nodes, own - 1u64) {
         return own;
@@ -239,13 +244,61 @@ fn is_public(sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, progr
     false
 }
 
-// A type name, renamed when it reaches a struct or enum.
+// A type name as a JSON string (see `append_type_text`).
 fn append_type_name(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, name: u64) -> Buffer<u8> {
+    let text: Buffer<u8> = append_type_text(Buffer::new(), sources, tokens, nodes, programs, bases, bindings, module, name);
+    append_string(out, text.as_slice())
+}
+
+// A type name as the IR spells it: renamed when it reaches a struct or enum.
+pub fn append_type_text(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, module: u64, name: u64) -> Buffer<u8> {
     let item: u64 = resolve_type(sources, tokens, nodes, programs, bases, bindings, module, name);
     if item != 0u64 {
-        return append_item_name(out, sources, tokens, nodes, programs, bases, item - 1u64);
+        return append_linked_name(out, sources, tokens, nodes, programs, bases, item - 1u64);
     }
-    append_string(out, sources.slice(tokens[name].start, tokens[name].end))
+    bytes.append(out, sources.slice(tokens[name].start, tokens[name].end))
+}
+
+// Segment `index` of a path node as the IR spells it: the item a linked
+// reference names, or the segment, with the first renamed as a type in a path
+// of two.
+pub fn append_segment(out: Buffer<u8>, sources: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, targets: Slice<u64>, programs: Slice<u64>, bases: Slice<u64>, bindings: Slice<u64>, node: u64, index: u64) -> Buffer<u8> {
+    let mut item: u64 = 0u64;
+    if nodes[node].kind == ast.PATH {
+        item = nodes[node].value;
+        if item == 0u64 {
+            item = targets[node];
+        }
+    }
+    if item != 0u64 {
+        return append_linked_name(out, sources, tokens, nodes, programs, bases, item - 1u64);
+    }
+    let first: u64 = nodes[node].word - 1u64;
+    let last: u64 = nodes[node].path_last;
+    let mut at: u64 = first;
+    let mut seen: u64 = 0u64;
+    while at <= last {
+        if tokens[at].kind == token.IDENT {
+            if seen == index {
+                // An aggregate's first segment is always a type.
+                if index == 0u64 && (nodes[node].kind == ast.AGGREGATE || segment_count(tokens, first, last) == 2u64) {
+                    return append_type_text(out, sources, tokens, nodes, programs, bases, bindings, module_of(bases, node), at);
+                }
+                return bytes.append(out, sources.slice(tokens[at].start, tokens[at].end));
+            }
+            seen += 1u64;
+        }
+        at += 1u64;
+    }
+    out
+}
+
+// How many segments a path node has as the IR spells it.
+pub fn segments(tokens: Slice<Token>, nodes: Slice<Node>, targets: Slice<u64>, node: u64) -> u64 {
+    if nodes[node].kind == ast.PATH && (nodes[node].value != 0u64 || targets[node] != 0u64) {
+        return 1u64;
+    }
+    segment_count(tokens, nodes[node].word - 1u64, nodes[node].path_last)
 }
 
 // The segments of the path `first..last`, the first renamed as a type when
