@@ -413,9 +413,71 @@ jobs:
           --bundle target/core-c/pipeline-bundle
           --work-dir target/core-c/pipeline
           --report target/core-c/report-pipeline.json
+      - name: Run the stage1 fixtures (ESP-014)
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc ${{ matrix.cc }} ${{ matrix.flags }}
+          --cases tests/selfhost/stage1/cases.json
+          --bundle target/core-c/stage1-bundle
+          --work-dir target/core-c/stage1
+          --report target/core-c/report-stage1.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: core-c-report-stdlib-${{ matrix.cc }}${{ matrix.flags && '-sanitized' || '' }}
           path: target/core-c/report-stdlib.json
+          if-no-files-found: ignore
+
+  stage1-emit:
+    name: Emit stage1 with stage0 (ESP-014)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build stage0
+        run: cargo build --locked -p argorixc
+      - name: Stage0 writes the C of stage1
+        run: python3 bootstrap/stage1.py emit --argorixc target/debug/argorixc --out target/stage1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stage1-c
+          path: |
+            target/stage1/stage1.c
+            target/stage1/stage0.json
+          if-no-files-found: error
+
+  stage1:
+    name: Stage1 builds itself without Rust (${{ matrix.cc }})
+    needs: stage1-emit
+    runs-on: ubuntu-latest
+    # A clean container: no Rust toolchain, only a C compiler and Python for
+    # the script. Stage1 is compiled and run on its own sources here.
+    container: debian:stable-slim
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Install a C toolchain and Python only
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ${{ matrix.cc }} libc6-dev python3 git ca-certificates
+      - uses: actions/checkout@v7
+      - name: Trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/download-artifact@v8
+        with:
+          name: stage1-c
+          path: target/stage1
+      - name: Build stage1 and let it compile itself (fails if rustc, cargo or rustup exist)
+        run: python3 bootstrap/stage1.py build --cc ${{ matrix.cc }} --out target/stage1 --require-rust-free-host
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: stage1-provenance-${{ matrix.cc }}
+          path: |
+            target/stage1/stage1-provenance.json
+            target/stage1/self/compiler.json
           if-no-files-found: ignore

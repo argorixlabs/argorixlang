@@ -1,0 +1,8 @@
+core 0.1;
+module demo.link_main;
+
+import demo.link_hidden;
+
+pub fn argorix_main() -> u8 {
+    link_hidden.secret() + link_hidden.absent()
+}

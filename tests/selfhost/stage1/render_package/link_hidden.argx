@@ -1,0 +1,6 @@
+core 0.1;
+module demo.link_hidden;
+
+fn secret() -> u8 {
+    1u8
+}
