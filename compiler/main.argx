@@ -2,7 +2,8 @@ core 0.1;
 module compiler.main;
 
 // The stage1 compiler (ESP-014): the entry point that turns a Core package
-// into transitional C, with every phase in Argorix (`compiler.pipeline`).
+// into transitional C, with every phase in Argorix (`compiler.pipeline`), or
+// into a native x86-64 object (`compiler.native`, ESP-016).
 //
 // The compiler-host profile gives a program no command line, environment or
 // directory listing (spec/core/stdlib.md), so a build is described by a
@@ -20,18 +21,24 @@ module compiler.main;
 //   line adds a file to the locked compilation set, in the order given.
 //   Paths are relative to the package root.
 // - `c`, `manifest` and `diagnostics` are the files to write, relative to the
-//   build root.
+//   build root. `object` in place of `c` asks for a native object instead of
+//   C.
+// - `steps`, `depth`, `buffer-bytes`, `arena-bytes` and `arena-slots` set the
+//   limits a native object is built with, in decimal. Each defaults to the
+//   C backend's default. For C they are compiler flags instead, so they
+//   apply only with `object`.
 // - Blank lines and lines starting with `#` are ignored; a line may end in
 //   CR LF.
 //
-// Each of `root`, `c`, `manifest` and `diagnostics` appears exactly once, and
-// no other key exists. Because the build file is the whole input besides the
-// sources, the manifest can name everything a build depended on.
+// Each of `root`, `manifest` and `diagnostics` appears exactly once, and one
+// of `c` and `object`. Only `module` may repeat, and no other key exists.
+// Because the build file is the whole input besides the sources, the
+// manifest can name everything a build depended on.
 //
 // What is written, and the result:
 // - 0: the C, the manifest, and an empty diagnostics file;
-// - 1 (the package does not link and check) or 2 (the C backend refuses it):
-//   the manifest and the diagnostics, and no C;
+// - 1 (the package does not link and check) or 2 (the backend refuses it):
+//   the manifest and the diagnostics, and no C or object;
 // - 3: the build file is not valid. Its first error is written to the
 //   diagnostics file when that line could be read, and nothing else is
 //   written;
@@ -44,6 +51,7 @@ import stdlib.result;
 import stdlib.bytes;
 import compiler.pipeline;
 import compiler.report;
+import compiler.native;
 
 pub const EMITTED: u64 = 0u64;
 pub const CHECK_FAILED: u64 = 1u64;
@@ -60,6 +68,11 @@ const NO_ROOT: u64 = 5u64;
 const NO_C: u64 = 6u64;
 const NO_MANIFEST: u64 = 7u64;
 const NO_DIAGNOSTICS: u64 = 8u64;
+const BOTH_OUTPUTS: u64 = 9u64;
+const NOT_A_NUMBER: u64 = 10u64;
+
+// The limit keys, in the order `compiler.native` takes the limits.
+const LIMIT_KEYS: u64 = 5u64;
 
 // A build file, read. Each path is a (start, end) range of the file's text;
 // an end of 0 means the key was not given.
@@ -70,6 +83,11 @@ struct Build {
     modules: Buffer<u64>,
     c_start: u64,
     c_end: u64,
+    object_start: u64,
+    object_end: u64,
+    // The limits, and whether each was given.
+    limits: Buffer<u64>,
+    given: Buffer<u64>,
     manifest_start: u64,
     manifest_end: u64,
     diagnostics_start: u64,
@@ -130,6 +148,9 @@ fn compile(package: PackageRead, build: BuildWrite, text: Slice<u8>, b: Build, p
         start = path_ends[index];
         index += 1u64;
     }
+    if b.object_end != 0u64 {
+        return compile_native(build, text, b, paths, path_ends, sources.as_slice(), ends.as_slice());
+    }
     let c: Buffer<u8> = pipeline.compile(sources.as_slice(), ends.as_slice());
     let manifest: Buffer<u8> = pipeline.manifest(paths, path_ends, sources.as_slice(), ends.as_slice(), c.as_slice());
     let mut outcome: u64 = EMITTED;
@@ -151,6 +172,40 @@ fn compile(package: PackageRead, build: BuildWrite, text: Slice<u8>, b: Build, p
     }
     if outcome == EMITTED {
         written = result.checked_digest(compiler_host.write(build, text.slice(b.c_start, b.c_end), c.as_slice()));
+        if written != 0u64 {
+            return HOST_FAILED + written;
+        }
+    }
+    outcome
+}
+
+// The native backend's build: the object in place of the C, and the same
+// manifest and diagnostics. A refusal is worded as the C backend's, with the
+// native backend's name.
+fn compile_native(build: BuildWrite, text: Slice<u8>, b: Build, paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, ends: Slice<u64>) -> u64 {
+    let compiled: Native = native.compile(sources, ends, b.limits.as_slice());
+    let manifest: Buffer<u8> = pipeline.native_manifest(paths, path_ends, sources, ends, compiled.status, compiled.object.as_slice(), b.limits.as_slice());
+    let mut outcome: u64 = EMITTED;
+    let mut diagnostics: Buffer<u8> = Buffer::new();
+    if compiled.status == native.CHECK_FAILED {
+        outcome = CHECK_FAILED;
+        diagnostics = report.render(paths, path_ends, sources, ends);
+    } else if compiled.status == native.UNSUPPORTED {
+        outcome = UNSUPPORTED;
+        diagnostics = bytes.append(Buffer::new(), "NativeBackendUnsupported: ".as_slice());
+        diagnostics = bytes.append(diagnostics, compiled.reason.as_slice());
+        diagnostics.push(10u8);
+    }
+    let mut written: u64 = result.checked_digest(compiler_host.write(build, text.slice(b.diagnostics_start, b.diagnostics_end), diagnostics.as_slice()));
+    if written != 0u64 {
+        return HOST_FAILED + written;
+    }
+    written = result.checked_digest(compiler_host.write(build, text.slice(b.manifest_start, b.manifest_end), manifest.as_slice()));
+    if written != 0u64 {
+        return HOST_FAILED + written;
+    }
+    if outcome == EMITTED {
+        written = result.checked_digest(compiler_host.write(build, text.slice(b.object_start, b.object_end), compiled.object.as_slice()));
         if written != 0u64 {
             return HOST_FAILED + written;
         }
@@ -213,6 +268,10 @@ fn read_build(text: Slice<u8>) -> Build {
         modules: Buffer::new(),
         c_start: 0u64,
         c_end: 0u64,
+        object_start: 0u64,
+        object_end: 0u64,
+        limits: native.default_limits(),
+        given: Buffer::new(),
         manifest_start: 0u64,
         manifest_end: 0u64,
         diagnostics_start: 0u64,
@@ -220,6 +279,11 @@ fn read_build(text: Slice<u8>) -> Build {
         error: 0u64,
         error_line: 0u64,
     };
+    let mut key: u64 = 0u64;
+    while key < LIMIT_KEYS {
+        b.given.push(0u64);
+        key += 1u64;
+    }
     let mut line: u64 = 1u64;
     let mut start: u64 = 0u64;
     let mut at: u64 = 0u64;
@@ -245,7 +309,7 @@ fn read_build(text: Slice<u8>) -> Build {
     if b.root_end == 0u64 {
         return build_failed(NO_ROOT, 0u64, b);
     }
-    if b.c_end == 0u64 {
+    if b.c_end == 0u64 && b.object_end == 0u64 {
         return build_failed(NO_C, 0u64, b);
     }
     if b.manifest_end == 0u64 {
@@ -302,8 +366,41 @@ fn build_line(text: Slice<u8>, start: u64, end: u64, line: u64, build: Build) ->
         if b.c_end != 0u64 {
             return build_failed(REPEATED_KEY, line, b);
         }
+        if b.object_end != 0u64 {
+            return build_failed(BOTH_OUTPUTS, line, b);
+        }
         b.c_start = value_start;
         b.c_end = end;
+        return b;
+    }
+    if bytes.equal(key.as_slice(), "object".as_slice()) {
+        if b.object_end != 0u64 {
+            return build_failed(REPEATED_KEY, line, b);
+        }
+        if b.c_end != 0u64 {
+            return build_failed(BOTH_OUTPUTS, line, b);
+        }
+        b.object_start = value_start;
+        b.object_end = end;
+        return b;
+    }
+    let limit: u64 = limit_key(key.as_slice());
+    if limit < LIMIT_KEYS {
+        if b.given[limit] != 0u64 {
+            return build_failed(REPEATED_KEY, line, b);
+        }
+        let mut value: u64 = 0u64;
+        let mut digit: u64 = value_start;
+        while digit < end {
+            let found: u8 = text[digit];
+            if found < 48u8 || found > 57u8 || value > (18446744073709551615u64 - digit_value(found)) / 10u64 {
+                return build_failed(NOT_A_NUMBER, line, b);
+            }
+            value = value * 10u64 + digit_value(found);
+            digit += 1u64;
+        }
+        b.limits[limit] = value;
+        b.given[limit] = 1u64;
         return b;
     }
     if bytes.equal(key.as_slice(), "manifest".as_slice()) {
@@ -323,6 +420,27 @@ fn build_line(text: Slice<u8>, start: u64, end: u64, line: u64, build: Build) ->
         return b;
     }
     build_failed(UNKNOWN_KEY, line, b)
+}
+
+// The index of a limit key, or LIMIT_KEYS.
+fn limit_key(key: Slice<u8>) -> u64 {
+    if bytes.equal(key, "steps".as_slice()) { return 0u64; }
+    if bytes.equal(key, "depth".as_slice()) { return 1u64; }
+    if bytes.equal(key, "buffer-bytes".as_slice()) { return 2u64; }
+    if bytes.equal(key, "arena-bytes".as_slice()) { return 3u64; }
+    if bytes.equal(key, "arena-slots".as_slice()) { return 4u64; }
+    LIMIT_KEYS
+}
+
+// A decimal digit's value: Core has no casts.
+fn digit_value(digit: u8) -> u64 {
+    let mut value: u64 = 0u64;
+    let mut at: u8 = 48u8;
+    while at < digit {
+        value += 1u64;
+        at += 1u8;
+    }
+    value
 }
 
 fn build_failed(error: u64, line: u64, build: Build) -> Build {
@@ -346,13 +464,17 @@ fn build_error(error: u64, line: u64) -> Buffer<u8> {
     } else if error == MALFORMED {
         out = bytes.append(out, "expected `key value`, with one space and no space in the value".as_slice());
     } else if error == UNKNOWN_KEY {
-        out = bytes.append(out, "unknown key; the keys are `root`, `module`, `c`, `manifest` and `diagnostics`".as_slice());
+        out = bytes.append(out, "unknown key; the keys are `root`, `module`, `c`, `object`, `manifest`, `diagnostics`, `steps`, `depth`, `buffer-bytes`, `arena-bytes` and `arena-slots`".as_slice());
     } else if error == REPEATED_KEY {
         out = bytes.append(out, "this key was already given; only `module` may repeat".as_slice());
     } else if error == NO_ROOT {
         out = bytes.append(out, "no `root` line".as_slice());
     } else if error == NO_C {
-        out = bytes.append(out, "no `c` line".as_slice());
+        out = bytes.append(out, "no `c` or `object` line".as_slice());
+    } else if error == BOTH_OUTPUTS {
+        out = bytes.append(out, "`c` and `object` exclude each other".as_slice());
+    } else if error == NOT_A_NUMBER {
+        out = bytes.append(out, "a limit is a decimal number below 2^64".as_slice());
     } else if error == NO_MANIFEST {
         out = bytes.append(out, "no `manifest` line".as_slice());
     } else {

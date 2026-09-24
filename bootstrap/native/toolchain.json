@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "task": "ESP-016",
+  "specification": "spec/core/native-x86-64.md",
+  "target": {
+    "profile": "ubuntu-24.04-x86_64",
+    "architecture": "x86_64",
+    "system": "linux",
+    "abi": "System V AMD64",
+    "object_format": "elf64-x86_64 relocatable",
+    "runtime_abi": "C1"
+  },
+  "backend_sources": [
+    "compiler/x86.argx",
+    "compiler/elf.argx",
+    "compiler/native.argx"
+  ],
+  "versions_and_digests": "Host-specific: bootstrap/native.py records the linker's and the C library's versions and the digests of the start files and libc.so in native-report.json, and the shim's sources, compiler and objects in shim.json.",
+  "dependencies": [
+    {
+      "name": "GNU ld (binutils)",
+      "kind": "system_linker",
+      "license": "GPL-3.0-or-later",
+      "purpose": "combines the native object, the shim objects and the C library into an executable",
+      "owner": "the host's distribution",
+      "stages": [
+        "N1",
+        "N2",
+        "R1"
+      ]
+    },
+    {
+      "name": "GNU C Library: crt1.o, crti.o, crtn.o, libc.so and ld-linux-x86-64.so.2",
+      "kind": "os_abi",
+      "license": "LGPL-2.1-or-later",
+      "purpose": "process start-up, memory, output, files and exit, used by the runtime shim",
+      "owner": "the host's distribution",
+      "stages": [
+        "N1",
+        "N2",
+        "R1"
+      ]
+    },
+    {
+      "name": "Argorix native runtime shim",
+      "kind": "bounded_native_shim",
+      "license": "Apache-2.0",
+      "purpose": "the C1 runtime and the wrappers native code calls: budgets, traps, checked arithmetic, bounds, buffers, arenas, handles, UTF-8, the entry's output, the program stack and the compiler-host operations",
+      "owner": "ArgorixLang (bootstrap/c, bootstrap/native)",
+      "stages": [
+        "N1",
+        "N2"
+      ],
+      "sources": [
+        "bootstrap/c/argorix_core_runtime.c",
+        "bootstrap/c/argorix_core_runtime.h",
+        "bootstrap/c/argorix_core_host.h",
+        "bootstrap/native/argorix_native_shim.c",
+        "bootstrap/native/argorix_native_host.c"
+      ],
+      "symbols": {
+        "runtime": [
+          "argorix_step",
+          "argorix_enter",
+          "argorix_leave",
+          "argorix_trap",
+          "argorix_bounds",
+          "argorix_range",
+          "argorix_buffer_push",
+          "argorix_buffer_drop",
+          "argorix_arena_release"
+        ],
+        "checked_arithmetic": [
+          "argorix_u8_add",
+          "argorix_u8_sub",
+          "argorix_u8_mul",
+          "argorix_u8_div",
+          "argorix_u8_rem",
+          "argorix_u8_shl",
+          "argorix_u8_shr",
+          "argorix_u16_add",
+          "argorix_u16_sub",
+          "argorix_u16_mul",
+          "argorix_u16_div",
+          "argorix_u16_rem",
+          "argorix_u16_shl",
+          "argorix_u16_shr",
+          "argorix_u32_add",
+          "argorix_u32_sub",
+          "argorix_u32_mul",
+          "argorix_u32_div",
+          "argorix_u32_rem",
+          "argorix_u32_shl",
+          "argorix_u32_shr",
+          "argorix_u64_add",
+          "argorix_u64_sub",
+          "argorix_u64_mul",
+          "argorix_u64_div",
+          "argorix_u64_rem",
+          "argorix_u64_shl",
+          "argorix_u64_shr",
+          "argorix_i8_add",
+          "argorix_i8_sub",
+          "argorix_i8_mul",
+          "argorix_i8_div",
+          "argorix_i8_rem",
+          "argorix_i8_shl",
+          "argorix_i8_shr",
+          "argorix_i16_add",
+          "argorix_i16_sub",
+          "argorix_i16_mul",
+          "argorix_i16_div",
+          "argorix_i16_rem",
+          "argorix_i16_shl",
+          "argorix_i16_shr",
+          "argorix_i32_add",
+          "argorix_i32_sub",
+          "argorix_i32_mul",
+          "argorix_i32_div",
+          "argorix_i32_rem",
+          "argorix_i32_shl",
+          "argorix_i32_shr",
+          "argorix_i64_add",
+          "argorix_i64_sub",
+          "argorix_i64_mul",
+          "argorix_i64_div",
+          "argorix_i64_rem",
+          "argorix_i64_shl",
+          "argorix_i64_shr",
+          "argorix_i8_neg",
+          "argorix_i16_neg",
+          "argorix_i32_neg",
+          "argorix_i64_neg"
+        ],
+        "shim": [
+          "argorix_rt_stack",
+          "argorix_rt_print_u64",
+          "argorix_rt_print_i64",
+          "argorix_rt_print_bool",
+          "argorix_rt_buffer_new",
+          "argorix_rt_arena_new",
+          "argorix_rt_arena_alloc",
+          "argorix_rt_handle_get",
+          "argorix_rt_decode_utf8"
+        ],
+        "host": [
+          "argorix_rt_host_start",
+          "argorix_rt_host_capability",
+          "argorix_rt_package_status",
+          "argorix_rt_package_read",
+          "argorix_rt_build_write"
+        ]
+      },
+      "retirement": "Planned after ESP-016: checked arithmetic, bounds and budgets emitted inline, and buffers, arenas and handles written in Argorix over a narrower C library interface."
+    }
+  ],
+  "rebuild_shim": {
+    "kind": "c_compiler",
+    "stage": "N1",
+    "compilers": [
+      "cc",
+      "gcc",
+      "clang"
+    ],
+    "flags": [
+      "-std=c11",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-c"
+    ],
+    "note": "Declared separately: only rebuilding the shim needs a C compiler. Building and rebuilding Argorix programs, the compiler included, does not."
+  },
+  "link": {
+    "command": [
+      "ld",
+      "-o",
+      "<program>",
+      "-dynamic-linker",
+      "/lib64/ld-linux-x86-64.so.2",
+      "<libdir>/crt1.o",
+      "<libdir>/crti.o",
+      "<program>.o",
+      "argorix_core_runtime.o",
+      "argorix_native_shim.o",
+      "argorix_native_host.o",
+      "-L<libdir>",
+      "-lc",
+      "<libdir>/crtn.o"
+    ],
+    "libdir": "/usr/lib/x86_64-linux-gnu"
+  }
+}

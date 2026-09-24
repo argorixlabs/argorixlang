@@ -1,0 +1,185 @@
+core 0.1;
+module selfhost_native.encode_all;
+
+// Every instruction form of `compiler.x86`, over every register and base,
+// written to `encoded.bin` with each instruction's end offset, one per line,
+// in `ends.txt`. crates/argorixc/tests/native.rs writes the same
+// instructions as assembly, in the same order, and compares the bytes GNU
+// `as` gives. Displacements are 0x12345 above and below the base, so the
+// assembler, like the encoder, uses 32-bit displacements.
+
+import stdlib.compiler_host;
+import stdlib.result;
+import stdlib.bytes;
+import compiler.x86;
+
+pub fn argorix_main(build: BuildWrite) -> u64 {
+    let mut code: Buffer<u8> = Buffer::new();
+    let mut ends: Buffer<u8> = Buffer::new();
+    let mut a: u64 = 0u64;
+    while a < 16u64 {
+        let mut b: u64 = 0u64;
+        while b < 16u64 {
+            code = x86.mov(code, a, b);
+            ends = mark(ends, code.length());
+            b += 1u64;
+        }
+        a += 1u64;
+    }
+    a = 0u64;
+    while a < 16u64 {
+        code = x86.mov_imm(code, a, 1234605616436508552u64);
+        ends = mark(ends, code.length());
+        a += 1u64;
+    }
+    // Loads: sizes 1, 2, 4, 8, zero- then sign-extended (8 only once).
+    let mut size: u64 = 1u64;
+    while size <= 8u64 {
+        let mut sign: u64 = 0u64;
+        while sign < 2u64 {
+            if size < 8u64 || sign == 0u64 {
+                a = 0u64;
+                while a < 16u64 {
+                    let mut b: u64 = 0u64;
+                    while b < 16u64 {
+                        code = x86.load(code, size, sign == 1u64, a, b, 74565u64, true);
+                        ends = mark(ends, code.length());
+                        code = x86.load(code, size, sign == 1u64, a, b, 74565u64, false);
+                        ends = mark(ends, code.length());
+                        b += 1u64;
+                    }
+                    a += 1u64;
+                }
+            }
+            sign += 1u64;
+        }
+        size = size * 2u64;
+    }
+    size = 1u64;
+    while size <= 8u64 {
+        a = 0u64;
+        while a < 16u64 {
+            let mut b: u64 = 0u64;
+            while b < 16u64 {
+                code = x86.store(code, size, b, 74565u64, true, a);
+                ends = mark(ends, code.length());
+                code = x86.store(code, size, b, 74565u64, false, a);
+                ends = mark(ends, code.length());
+                b += 1u64;
+            }
+            a += 1u64;
+        }
+        size = size * 2u64;
+    }
+    a = 0u64;
+    while a < 16u64 {
+        let mut b: u64 = 0u64;
+        while b < 16u64 {
+            code = x86.lea(code, a, b, 74565u64, true);
+            ends = mark(ends, code.length());
+            code = x86.lea(code, a, b, 74565u64, false);
+            ends = mark(ends, code.length());
+            b += 1u64;
+        }
+        a += 1u64;
+    }
+    // add, sub, and, or, xor, cmp, test, imul.
+    let mut operation: u64 = 0u64;
+    while operation < 8u64 {
+        a = 0u64;
+        while a < 16u64 {
+            let mut b: u64 = 0u64;
+            while b < 16u64 {
+                code = binary(code, operation, a, b);
+                ends = mark(ends, code.length());
+                b += 1u64;
+            }
+            a += 1u64;
+        }
+        operation += 1u64;
+    }
+    // not, neg, div, idiv, shl, shr, sar.
+    operation = 0u64;
+    while operation < 7u64 {
+        a = 0u64;
+        while a < 16u64 {
+            code = unary(code, operation, a);
+            ends = mark(ends, code.length());
+            a += 1u64;
+        }
+        operation += 1u64;
+    }
+    let conditions: Array<u64, 11> = [0u64, 2u64, 3u64, 4u64, 5u64, 6u64, 7u64, 12u64, 13u64, 14u64, 15u64];
+    let mut index: u64 = 0u64;
+    while index < 11u64 {
+        a = 0u64;
+        while a < 16u64 {
+            code = x86.set(code, conditions[index], a);
+            ends = mark(ends, code.length());
+            a += 1u64;
+        }
+        index += 1u64;
+    }
+    a = 0u64;
+    while a < 16u64 {
+        code = x86.push(code, a);
+        ends = mark(ends, code.length());
+        code = x86.pop(code, a);
+        ends = mark(ends, code.length());
+        code = x86.lea_rip(code, a);
+        ends = mark(ends, code.length());
+        a += 1u64;
+    }
+    code = x86.reserve(code, 74565u64);
+    ends = mark(ends, code.length());
+    code = x86.release(code, 74565u64);
+    ends = mark(ends, code.length());
+    code = x86.ret(code);
+    ends = mark(ends, code.length());
+    code = x86.copy_bytes(code);
+    ends = mark(ends, code.length());
+    code = x86.cqo(code);
+    ends = mark(ends, code.length());
+    code = x86.fill_bytes(code);
+    ends = mark(ends, code.length());
+    code = x86.ud2(code);
+    ends = mark(ends, code.length());
+    a = 0u64;
+    while a < 16u64 {
+        code = x86.mov_imm32(code, a, 2271560481u64);
+        ends = mark(ends, code.length());
+        a += 1u64;
+    }
+    let written: u64 = result.checked_digest(compiler_host.write(build, "encoded.bin".as_slice(), code.as_slice()));
+    if written != 0u64 {
+        return written;
+    }
+    result.checked_digest(compiler_host.write(build, "ends.txt".as_slice(), ends.as_slice()))
+}
+
+fn mark(ends: Buffer<u8>, length: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = bytes.append_decimal(ends, length);
+    out.push(10u8);
+    out
+}
+
+fn binary(code: Buffer<u8>, operation: u64, a: u64, b: u64) -> Buffer<u8> {
+    if operation == 0u64 { return x86.add(code, a, b); }
+    if operation == 1u64 { return x86.sub(code, a, b); }
+    if operation == 2u64 { return x86.and(code, a, b); }
+    if operation == 3u64 { return x86.or(code, a, b); }
+    if operation == 4u64 { return x86.xor(code, a, b); }
+    if operation == 5u64 { return x86.cmp(code, a, b); }
+    if operation == 6u64 { return x86.test(code, a, b); }
+    x86.imul(code, a, b)
+}
+
+fn unary(code: Buffer<u8>, operation: u64, a: u64) -> Buffer<u8> {
+    if operation == 0u64 { return x86.not(code, a); }
+    if operation == 1u64 { return x86.neg(code, a); }
+    if operation == 2u64 { return x86.div(code, a); }
+    if operation == 3u64 { return x86.idiv(code, a); }
+    if operation == 4u64 { return x86.shl_cl(code, a); }
+    if operation == 5u64 { return x86.shr_cl(code, a); }
+    x86.sar_cl(code, a)
+}

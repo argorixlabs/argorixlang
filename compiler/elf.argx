@@ -1,0 +1,180 @@
+core 0.1;
+module compiler.elf;
+
+// ELF64 relocatable objects for x86-64 Linux, in Argorix (ESP-016). The
+// native backend writes one object per program. The system linker combines
+// it with the runtime shim and the C library (spec/core/native-x86-64.md).
+//
+// The object has one code section, `.text`. The program's read-only data
+// follows its code there, so every reference inside the object is
+// RIP-relative and resolved before the object is written. What is left for
+// the linker is a call to each function of the shim: an `R_X86_64_PLT32`
+// relocation against an undefined global symbol, with addend -4.
+//
+// Sections, in this order: the null section, `.text`, `.rela.text`,
+// `.symtab`, `.strtab`, `.shstrtab` and an empty `.note.GNU-stack`, which
+// asks for a stack that is not executable. Symbols: the null symbol,
+// `.text`'s section symbol, then the globals in the order given. Nothing
+// depends on the host or the time: the same input gives the same bytes.
+
+import stdlib.bytes;
+import compiler.x86;
+
+const HEADER_SIZE: u64 = 64u64;
+const SECTION_SIZE: u64 = 64u64;
+const SYMBOL_SIZE: u64 = 24u64;
+const RELOCATION_SIZE: u64 = 24u64;
+const SECTIONS: u64 = 7u64;
+
+// The object for `text`. The symbols' names are in `names`, ended at
+// `name_ends`. `defined[i]` is the offset in `text` of symbol i + 1, or 0 for
+// a symbol the object only calls. `calls` holds (offset, symbol) pairs: the
+// four bytes at the offset are a call's displacement to that symbol.
+pub fn relocatable(text: Slice<u8>, names: Slice<u8>, name_ends: Slice<u64>, defined: Slice<u64>, calls: Slice<u64>) -> Buffer<u8> {
+    // .strtab: a zero byte, then each name and a zero byte.
+    let mut strtab: Buffer<u8> = Buffer::new();
+    strtab.push(0u8);
+    let mut name_offsets: Buffer<u64> = Buffer::new();
+    let mut start: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < name_ends.length() {
+        name_offsets.push(strtab.length());
+        strtab = bytes.append(strtab, names.slice(start, name_ends[index]));
+        strtab.push(0u8);
+        start = name_ends[index];
+        index += 1u64;
+    }
+    let shstrtab: Buffer<u8> = section_names();
+    // The file: header, .text, .rela.text, .symtab, .strtab, .shstrtab, then
+    // the section headers.
+    let text_offset: u64 = HEADER_SIZE;
+    let rela_offset: u64 = align(text_offset + text.length(), 8u64);
+    let rela_size: u64 = calls.length() / 2u64 * RELOCATION_SIZE;
+    let symtab_offset: u64 = rela_offset + rela_size;
+    let symbols: u64 = 2u64 + name_ends.length();
+    let symtab_size: u64 = symbols * SYMBOL_SIZE;
+    let strtab_offset: u64 = symtab_offset + symtab_size;
+    let shstrtab_offset: u64 = strtab_offset + strtab.length();
+    let sections_offset: u64 = align(shstrtab_offset + shstrtab.length(), 8u64);
+
+    let mut out: Buffer<u8> = header(Buffer::new(), sections_offset);
+    out = bytes.append(out, text);
+    out = pad(out, rela_offset);
+    index = 0u64;
+    while index < calls.length() {
+        out = x86.little(out, calls[index], 8u64);
+        // r_info: the symbol's index (after the null and section symbols) in
+        // the high half, R_X86_64_PLT32 (4) in the low half.
+        out = x86.little(out, (calls[index + 1u64] + 2u64) * 4294967296u64 + 4u64, 8u64);
+        // r_addend: -4, as a 64-bit two's complement.
+        out = x86.little(out, 18446744073709551612u64, 8u64);
+        index += 2u64;
+    }
+    // The null symbol and .text's section symbol (STT_SECTION, local).
+    out = symbol(out, 0u64, 0u64, 0u64, 0u64);
+    out = symbol(out, 0u64, 3u64, 1u64, 0u64);
+    index = 0u64;
+    while index < name_ends.length() {
+        if defined[index] != 0u64 {
+            // STB_GLOBAL, STT_FUNC, in .text.
+            out = symbol(out, name_offsets[index], 18u64, 1u64, defined[index] - 1u64);
+        } else {
+            // STB_GLOBAL, STT_NOTYPE, undefined.
+            out = symbol(out, name_offsets[index], 16u64, 0u64, 0u64);
+        }
+        index += 1u64;
+    }
+    out = bytes.append(out, strtab.as_slice());
+    out = bytes.append(out, shstrtab.as_slice());
+    out = pad(out, sections_offset);
+    // Section headers: name, type, flags, offset, size, link, info, align,
+    // entry size.
+    out = section(out, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    out = section(out, 1u64, 1u64, 6u64, text_offset, text.length(), 0u64, 0u64, 16u64, 0u64);
+    out = section(out, 7u64, 4u64, 64u64, rela_offset, rela_size, 3u64, 1u64, 8u64, RELOCATION_SIZE);
+    out = section(out, 18u64, 2u64, 0u64, symtab_offset, symtab_size, 4u64, 2u64, 8u64, SYMBOL_SIZE);
+    out = section(out, 26u64, 3u64, 0u64, strtab_offset, strtab.length(), 0u64, 0u64, 1u64, 0u64);
+    out = section(out, 34u64, 3u64, 0u64, shstrtab_offset, shstrtab.length(), 0u64, 0u64, 1u64, 0u64);
+    section(out, 44u64, 1u64, 0u64, sections_offset, 0u64, 0u64, 0u64, 1u64, 0u64)
+}
+
+// "\0.text\0.rela.text\0.symtab\0.strtab\0.shstrtab\0.note.GNU-stack\0",
+// whose names start at 1, 7, 18, 26, 34 and 44.
+fn section_names() -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    out.push(0u8);
+    out = bytes.append(out, ".text".as_slice());
+    out.push(0u8);
+    out = bytes.append(out, ".rela.text".as_slice());
+    out.push(0u8);
+    out = bytes.append(out, ".symtab".as_slice());
+    out.push(0u8);
+    out = bytes.append(out, ".strtab".as_slice());
+    out.push(0u8);
+    out = bytes.append(out, ".shstrtab".as_slice());
+    out.push(0u8);
+    out = bytes.append(out, ".note.GNU-stack".as_slice());
+    out.push(0u8);
+    out
+}
+
+fn header(code: Buffer<u8>, sections_offset: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    // e_ident: magic, 64-bit, little-endian, version 1, System V, padding.
+    out.push(127u8);
+    out.push(69u8);
+    out.push(76u8);
+    out.push(70u8);
+    out.push(2u8);
+    out.push(1u8);
+    out.push(1u8);
+    out = x86.little(out, 0u64, 9u64);
+    out = x86.little(out, 1u64, 2u64);
+    out = x86.little(out, 62u64, 2u64);
+    out = x86.little(out, 1u64, 4u64);
+    out = x86.little(out, 0u64, 8u64);
+    out = x86.little(out, 0u64, 8u64);
+    out = x86.little(out, sections_offset, 8u64);
+    out = x86.little(out, 0u64, 4u64);
+    out = x86.little(out, HEADER_SIZE, 2u64);
+    out = x86.little(out, 0u64, 2u64);
+    out = x86.little(out, 0u64, 2u64);
+    out = x86.little(out, SECTION_SIZE, 2u64);
+    out = x86.little(out, SECTIONS, 2u64);
+    x86.little(out, 5u64, 2u64)
+}
+
+fn symbol(code: Buffer<u8>, name: u64, info: u64, section_index: u64, value: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = x86.little(code, name, 4u64);
+    out.push(x86.byte(info));
+    out.push(0u8);
+    out = x86.little(out, section_index, 2u64);
+    out = x86.little(out, value, 8u64);
+    x86.little(out, 0u64, 8u64)
+}
+
+fn section(code: Buffer<u8>, name: u64, kind: u64, flags: u64, offset: u64, size: u64, link: u64, info: u64, alignment: u64, entry: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = x86.little(code, name, 4u64);
+    out = x86.little(out, kind, 4u64);
+    out = x86.little(out, flags, 8u64);
+    out = x86.little(out, 0u64, 8u64);
+    out = x86.little(out, offset, 8u64);
+    out = x86.little(out, size, 8u64);
+    out = x86.little(out, link, 4u64);
+    out = x86.little(out, info, 4u64);
+    out = x86.little(out, alignment, 8u64);
+    x86.little(out, entry, 8u64)
+}
+
+fn align(value: u64, alignment: u64) -> u64 {
+    (value + alignment - 1u64) / alignment * alignment
+}
+
+// Zeros up to `length` bytes.
+fn pad(code: Buffer<u8>, length: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    while out.length() < length {
+        out.push(0u8);
+    }
+    out
+}

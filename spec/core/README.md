@@ -13,6 +13,9 @@ Documentos normativos:
 - [core-spec.json](core-spec.json): inventario legible por máquina.
 - [ir.md](ir.md): contrato del IR Core verificado y frontera del backend;
 - [core-ir.schema.json](core-ir.schema.json): envoltura y discriminadores legibles por máquina.
+- [c-backend.md](c-backend.md): el backend C transitorio y su runtime C1;
+- [stage1.md](stage1.md): el compilador self-hosted, su archivo de build y el bootstrap stage1 → stage3;
+- [native-x86-64.md](native-x86-64.md): el backend nativo x86-64 Linux, su objeto ELF64, su convención de llamada y el shim de runtime (ESP-016).
 
 ESP-005 añade [memoria ejecutable M1/ABI-1](memory.md), el [contrato ABI JSON](memory-abi.json) y la [frontera host H1](../host-abi.md). Son oráculos para stage0/backend, no capacidades ya disponibles en programas Core.
 

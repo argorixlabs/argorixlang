@@ -521,3 +521,104 @@ jobs:
             target/selfhost/selfhost-report.json
             target/selfhost/base-image.json
           if-no-files-found: ignore
+
+  native-seed:
+    name: Native seed and runtime shim (ESP-016)
+    needs: stage1-emit
+    runs-on: ubuntu-latest
+    # The last step that uses a C compiler: it builds the runtime shim once,
+    # builds stage1 from stage0's C, and lets stage1 write the seed object.
+    container: debian:stable-slim
+    steps:
+      - name: Install a C toolchain and Python only
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gcc binutils libc6-dev python3 git ca-certificates
+      - uses: actions/checkout@v7
+      - name: Trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/download-artifact@v8
+        with:
+          name: stage1-c
+          path: target/stage1
+      - name: Build the shim and stage1, and write the seed object
+        run: python3 bootstrap/native.py seed --from target/stage1 --cc gcc --out target/native
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-seed
+          path: |
+            target/native/seed.json
+            target/native/stage1.c
+            target/native/stage0.json
+            target/native/shim/*.o
+            target/native/shim/shim.json
+            target/native/seed/build/compiler.o
+            target/native/seed/build/compiler.json
+            target/native/seed/build/diagnostics.txt
+          if-no-files-found: error
+
+  native:
+    name: Native bootstrap without a C compiler, Rust or network (ESP-016)
+    needs: native-seed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-seed
+          path: target/native
+      - name: Build the bootstrap environment (the linker, the C library and Python only)
+        run: |
+          docker pull debian:stable-slim
+          base="$(docker image inspect debian:stable-slim --format '{{index .RepoDigests 0}}')"
+          docker image inspect debian:stable-slim --format '{{json .RepoDigests}}' > target/native/base-image.json
+          cat target/native/base-image.json
+          docker build --build-arg BASE_IMAGE="$base" -t argorix-native bootstrap/container/native
+      - name: The native compiler builds itself, compiles the suites and propagates edits, with no network
+        run: >-
+          docker run --rm --network none --user "$(id -u):$(id -g)"
+          -v "$PWD:/w" -w /w argorix-native
+          python3 bootstrap/native.py bootstrap --out target/native
+          --require-no-c-compiler --require-rust-free-host --require-no-network
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-report
+          path: |
+            target/native/native-report.json
+            target/native/base-image.json
+            target/native/seed.json
+            target/native/native3/argorixc
+            target/native/native3/build/compiler.o
+            target/native/native3/build/compiler.json
+          if-no-files-found: ignore
+
+  native-oracle:
+    name: Native backend against the spec oracle (ESP-016)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build argorixc and the harness
+        run: cargo build --locked -p argorixc -p argorix-core-c
+      - name: Stage0 writes stage1; stage1 and the shim are built
+        run: |
+          python3 bootstrap/stage1.py emit --argorixc target/debug/argorixc --out target/stage1
+          python3 bootstrap/native.py seed --from target/stage1 --cc gcc --out target/native
+      - name: Generated programs, compiled natively, against the oracle
+        # The generator writes each program with the result or trap the
+        # spec oracle gives it; stage1 compiles it to a native object.
+        run: |
+          set -eu
+          for seed in 1 2 3 4 5 6; do
+            ./target/debug/core-c-harness generate --seed "$seed" --count 80 \
+              --out "target/core-c/native-fuzz-$seed"
+          done
+          python3 bootstrap/native.py cases --out target/native target/core-c/native-fuzz-*/cases.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-oracle
+          path: target/core-c/native-fuzz-*/
+          if-no-files-found: ignore

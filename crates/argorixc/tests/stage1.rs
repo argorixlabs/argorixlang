@@ -375,12 +375,12 @@ fn stage1_reports_each_outcome_when_cc_is_available() {
 
     // Build files that are not valid: nothing but the reason is written, and
     // only when the `diagnostics` line was read.
-    let cases: [(&str, &str, Option<&str>); 6] = [
+    let cases: [(&str, &str, Option<&str>); 9] = [
         ("wrong-header", "argorix-build 2\ndiagnostics out.txt\n", None),
         (
             "unknown-key",
             "argorix-build 1\ndiagnostics out.txt\noutput out.c\n",
-            Some("argorix.build:3: unknown key; the keys are `root`, `module`, `c`, `manifest` and `diagnostics`\n"),
+            Some("argorix.build:3: unknown key; the keys are `root`, `module`, `c`, `object`, `manifest`, `diagnostics`, `steps`, `depth`, `buffer-bytes`, `arena-bytes` and `arena-slots`\n"),
         ),
         (
             "repeated-key",
@@ -395,7 +395,22 @@ fn stage1_reports_each_outcome_when_cc_is_available() {
         (
             "missing-c",
             "argorix-build 1\n# a comment\n\nroot a.argx\nmanifest out.json\ndiagnostics out.txt\n",
-            Some("argorix.build: no `c` line\n"),
+            Some("argorix.build: no `c` or `object` line\n"),
+        ),
+        (
+            "both-outputs",
+            "argorix-build 1\ndiagnostics out.txt\nc out.c\nobject out.o\n",
+            Some("argorix.build:4: `c` and `object` exclude each other\n"),
+        ),
+        (
+            "not-a-number",
+            "argorix-build 1\ndiagnostics out.txt\nsteps 18446744073709551616\n",
+            Some("argorix.build:3: a limit is a decimal number below 2^64\n"),
+        ),
+        (
+            "repeated-limit",
+            "argorix-build 1\ndiagnostics out.txt\ndepth 10\ndepth 20\n",
+            Some("argorix.build:4: this key was already given; only `module` may repeat\n"),
         ),
         ("empty", "", None),
     ];

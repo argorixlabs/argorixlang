@@ -1,0 +1,362 @@
+core 0.1;
+module compiler.x86;
+
+// An x86-64 encoder, in Argorix (ESP-016): the instructions the native
+// backend uses, appended to a code buffer. Encodings follow the Intel SDM,
+// volume 2, for 64-bit mode.
+//
+// - Registers are numbered as the hardware numbers them: RAX is 0, R15 15.
+// - A memory operand is a base register and a displacement, always encoded
+//   as a 32-bit displacement (ModRM mod 10), with a SIB byte when the base is
+//   RSP or R12. So each instruction's length does not depend on its
+//   operands' values.
+// - Core has no signed-to-unsigned casts, so a displacement is an unsigned
+//   offset with a direction: `below` subtracts it from the base (a frame
+//   slot under RBP), otherwise it is added. 32-bit fields are written modulo
+//   2^32.
+
+import stdlib.bytes;
+
+pub const RAX: u64 = 0u64;
+pub const RCX: u64 = 1u64;
+pub const RDX: u64 = 2u64;
+pub const RBX: u64 = 3u64;
+pub const RSP: u64 = 4u64;
+pub const RBP: u64 = 5u64;
+pub const RSI: u64 = 6u64;
+pub const RDI: u64 = 7u64;
+pub const R8: u64 = 8u64;
+pub const R9: u64 = 9u64;
+pub const R10: u64 = 10u64;
+pub const R11: u64 = 11u64;
+
+// Condition codes, the low nibble of Jcc and SETcc.
+pub const OVERFLOW: u64 = 0u64;
+pub const BELOW: u64 = 2u64;
+pub const ABOVE_EQUAL: u64 = 3u64;
+pub const EQUAL: u64 = 4u64;
+pub const NOT_EQUAL: u64 = 5u64;
+pub const BELOW_EQUAL: u64 = 6u64;
+pub const ABOVE: u64 = 7u64;
+pub const LESS: u64 = 12u64;
+pub const GREATER_EQUAL: u64 = 13u64;
+pub const LESS_EQUAL: u64 = 14u64;
+pub const GREATER: u64 = 15u64;
+
+// ------------------------------------------------------------------ bytes
+
+// A value below 256 as a byte.
+pub fn byte(value: u64) -> u8 {
+    let mut result: u8 = 0u8;
+    let mut rest: u64 = value % 256u64;
+    let mut weight: u64 = 128u64;
+    let mut bit: u8 = 128u8;
+    while weight > 0u64 {
+        if rest >= weight {
+            rest -= weight;
+            result += bit;
+        }
+        weight = weight / 2u64;
+        bit = bit / 2u8;
+    }
+    result
+}
+
+// `value` in `count` bytes, little-endian, modulo 256^count.
+pub fn little(code: Buffer<u8>, value: u64, count: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    let mut rest: u64 = value;
+    let mut index: u64 = 0u64;
+    while index < count {
+        out.push(byte(rest % 256u64));
+        rest = rest / 256u64;
+        index += 1u64;
+    }
+    out
+}
+
+// A 32-bit displacement: `offset` below or above the base.
+fn displacement(code: Buffer<u8>, offset: u64, below: bool) -> Buffer<u8> {
+    if below {
+        return little(code, 4294967296u64 - offset % 4294967296u64, 4u64);
+    }
+    little(code, offset, 4u64)
+}
+
+// A REX prefix: W for 64-bit operands, R extends ModRM.reg, B ModRM.rm.
+fn rex(code: Buffer<u8>, wide: bool, reg: u64, rm: u64) -> Buffer<u8> {
+    let mut value: u64 = 64u64;
+    if wide {
+        value += 8u64;
+    }
+    if reg >= 8u64 {
+        value += 4u64;
+    }
+    if rm >= 8u64 {
+        value += 1u64;
+    }
+    let mut out: Buffer<u8> = code;
+    out.push(byte(value));
+    out
+}
+
+// A REX prefix only when one is needed: W, or an extended register.
+fn rex_if(code: Buffer<u8>, wide: bool, reg: u64, rm: u64) -> Buffer<u8> {
+    if wide || reg >= 8u64 || rm >= 8u64 {
+        return rex(code, wide, reg, rm);
+    }
+    code
+}
+
+// ModRM (and SIB) for `[base ± offset]` with `reg` in the reg field.
+fn memory(code: Buffer<u8>, reg: u64, base: u64, offset: u64, below: bool) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    out.push(byte(128u64 + (reg % 8u64) * 8u64 + base % 8u64));
+    if base % 8u64 == RSP {
+        out.push(36u8);
+    }
+    displacement(out, offset, below)
+}
+
+// ModRM for a register operand.
+fn direct(code: Buffer<u8>, reg: u64, rm: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    out.push(byte(192u64 + (reg % 8u64) * 8u64 + rm % 8u64));
+    out
+}
+
+fn op(code: Buffer<u8>, value: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    out.push(byte(value));
+    out
+}
+
+// ------------------------------------------------------------------ moves
+
+// `mov reg, value`, as a 64-bit immediate.
+pub fn mov_imm(code: Buffer<u8>, reg: u64, value: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = rex(code, true, 0u64, reg);
+    out = op(out, 184u64 + reg % 8u64);
+    little(out, value, 8u64)
+}
+
+// `mov reg32, value` for a value below 2^32, which zero-extends to 64 bits.
+pub fn mov_imm32(code: Buffer<u8>, reg: u64, value: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = rex_if(code, false, 0u64, reg);
+    out = op(out, 184u64 + reg % 8u64);
+    little(out, value, 4u64)
+}
+
+// `mov dst, src`, 64-bit.
+pub fn mov(code: Buffer<u8>, dst: u64, src: u64) -> Buffer<u8> {
+    let out: Buffer<u8> = op(rex(code, true, src, dst), 137u64);
+    direct(out, src, dst)
+}
+
+// A load of `size` bytes (1, 2, 4 or 8) from `[base ± offset]` into `reg`,
+// zero- or sign-extended to 64 bits.
+pub fn load(code: Buffer<u8>, size: u64, signed: bool, reg: u64, base: u64, offset: u64, below: bool) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    if size == 8u64 {
+        out = op(rex(out, true, reg, base), 139u64);
+    } else if size == 4u64 {
+        if signed {
+            out = op(rex(out, true, reg, base), 99u64);
+        } else {
+            out = op(rex_if(out, false, reg, base), 139u64);
+        }
+    } else {
+        // MOVZX (0F B6 / 0F B7) or MOVSX (0F BE / 0F BF).
+        out = rex_if(out, signed, reg, base);
+        out = op(out, 15u64);
+        let mut opcode: u64 = if signed { 190u64 } else { 182u64 };
+        if size == 2u64 {
+            opcode += 1u64;
+        }
+        out = op(out, opcode);
+    }
+    memory(out, reg, base, offset, below)
+}
+
+// A store of the low `size` bytes of `reg` to `[base ± offset]`.
+pub fn store(code: Buffer<u8>, size: u64, base: u64, offset: u64, below: bool, reg: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    if size == 8u64 {
+        out = op(rex(out, true, reg, base), 137u64);
+    } else if size == 4u64 {
+        out = op(rex_if(out, false, reg, base), 137u64);
+    } else if size == 2u64 {
+        out = op(out, 102u64);
+        out = op(rex_if(out, false, reg, base), 137u64);
+    } else {
+        // With a REX prefix for registers 4 to 7, so they are SPL to DIL.
+        out = op(byte_rex(out, reg, base, reg), 136u64);
+    }
+    memory(out, reg, base, offset, below)
+}
+
+// The REX prefix an instruction on the byte register `low` needs (it is
+// `reg` or `rm`): for SPL to DIL (4 to 7) and the extended registers, and
+// only then.
+fn byte_rex(code: Buffer<u8>, reg: u64, rm: u64, low: u64) -> Buffer<u8> {
+    if (low >= 4u64 && low < 8u64) || reg >= 8u64 || rm >= 8u64 {
+        return rex(code, false, reg, rm);
+    }
+    code
+}
+
+// `lea reg, [base ± offset]`.
+pub fn lea(code: Buffer<u8>, reg: u64, base: u64, offset: u64, below: bool) -> Buffer<u8> {
+    let out: Buffer<u8> = op(rex(code, true, reg, base), 141u64);
+    memory(out, reg, base, offset, below)
+}
+
+// `lea reg, [rip + disp32]`, with a zero displacement to patch (see
+// `patch`): the displacement is the last four bytes appended, and counts from
+// the end of the instruction.
+pub fn lea_rip(code: Buffer<u8>, reg: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = op(rex(code, true, reg, 0u64), 141u64);
+    out.push(byte((reg % 8u64) * 8u64 + 5u64));
+    little(out, 0u64, 4u64)
+}
+
+// ------------------------------------------------------------------ arithmetic
+
+pub fn add(code: Buffer<u8>, dst: u64, src: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, src, dst), 1u64), src, dst)
+}
+
+pub fn sub(code: Buffer<u8>, dst: u64, src: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, src, dst), 41u64), src, dst)
+}
+
+pub fn and(code: Buffer<u8>, dst: u64, src: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, src, dst), 33u64), src, dst)
+}
+
+pub fn or(code: Buffer<u8>, dst: u64, src: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, src, dst), 9u64), src, dst)
+}
+
+pub fn xor(code: Buffer<u8>, dst: u64, src: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, src, dst), 49u64), src, dst)
+}
+
+pub fn cmp(code: Buffer<u8>, left: u64, right: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, right, left), 57u64), right, left)
+}
+
+pub fn test(code: Buffer<u8>, left: u64, right: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, right, left), 133u64), right, left)
+}
+
+// `imul dst, src`, 64-bit.
+pub fn imul(code: Buffer<u8>, dst: u64, src: u64) -> Buffer<u8> {
+    let out: Buffer<u8> = op(op(rex(code, true, dst, src), 15u64), 175u64);
+    direct(out, dst, src)
+}
+
+// The F7 group on a 64-bit register: 2 NOT, 3 NEG, 6 DIV, 7 IDIV.
+fn group3(code: Buffer<u8>, extension: u64, reg: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, 0u64, reg), 247u64), extension, reg)
+}
+
+pub fn not(code: Buffer<u8>, reg: u64) -> Buffer<u8> { group3(code, 2u64, reg) }
+pub fn neg(code: Buffer<u8>, reg: u64) -> Buffer<u8> { group3(code, 3u64, reg) }
+// RDX:RAX divided by `reg`, unsigned: quotient in RAX, remainder in RDX.
+pub fn div(code: Buffer<u8>, reg: u64) -> Buffer<u8> { group3(code, 6u64, reg) }
+pub fn idiv(code: Buffer<u8>, reg: u64) -> Buffer<u8> { group3(code, 7u64, reg) }
+
+// `cqo`: RDX takes RAX's sign.
+pub fn cqo(code: Buffer<u8>) -> Buffer<u8> {
+    op(op(code, 72u64), 153u64)
+}
+
+// Shifts by CL, 64-bit: 4 SHL, 5 SHR, 7 SAR.
+fn shift(code: Buffer<u8>, extension: u64, reg: u64) -> Buffer<u8> {
+    direct(op(rex(code, true, 0u64, reg), 211u64), extension, reg)
+}
+
+pub fn shl_cl(code: Buffer<u8>, reg: u64) -> Buffer<u8> { shift(code, 4u64, reg) }
+pub fn shr_cl(code: Buffer<u8>, reg: u64) -> Buffer<u8> { shift(code, 5u64, reg) }
+pub fn sar_cl(code: Buffer<u8>, reg: u64) -> Buffer<u8> { shift(code, 7u64, reg) }
+
+// `setcc` into the low byte of `reg`, then zero-extended to 64 bits.
+pub fn set(code: Buffer<u8>, condition: u64, reg: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = byte_rex(code, 0u64, reg, reg);
+    out = op(op(out, 15u64), 144u64 + condition);
+    out = direct(out, 0u64, reg);
+    // MOVZX r32, r8 on the same register's low byte.
+    out = byte_rex(out, reg, reg, reg);
+    out = op(op(out, 15u64), 182u64);
+    direct(out, reg, reg)
+}
+
+// ------------------------------------------------------------------ stack and control
+
+pub fn push(code: Buffer<u8>, reg: u64) -> Buffer<u8> {
+    op(rex_if(code, false, 0u64, reg), 80u64 + reg % 8u64)
+}
+
+pub fn pop(code: Buffer<u8>, reg: u64) -> Buffer<u8> {
+    op(rex_if(code, false, 0u64, reg), 88u64 + reg % 8u64)
+}
+
+// `sub rsp, amount` and `add rsp, amount`, with a 32-bit immediate.
+pub fn reserve(code: Buffer<u8>, amount: u64) -> Buffer<u8> {
+    let out: Buffer<u8> = direct(op(rex(code, true, 0u64, RSP), 129u64), 5u64, RSP);
+    little(out, amount, 4u64)
+}
+
+pub fn release(code: Buffer<u8>, amount: u64) -> Buffer<u8> {
+    let out: Buffer<u8> = direct(op(rex(code, true, 0u64, RSP), 129u64), 0u64, RSP);
+    little(out, amount, 4u64)
+}
+
+pub fn ret(code: Buffer<u8>) -> Buffer<u8> {
+    op(code, 195u64)
+}
+
+// `rep movsb`: copies RCX bytes from [RSI] to [RDI].
+pub fn copy_bytes(code: Buffer<u8>) -> Buffer<u8> {
+    op(op(code, 243u64), 164u64)
+}
+
+// `rep stosb`: stores AL in RCX bytes from [RDI].
+pub fn fill_bytes(code: Buffer<u8>) -> Buffer<u8> {
+    op(op(code, 243u64), 170u64)
+}
+
+// `ud2`: an invalid instruction, for code that cannot be reached.
+pub fn ud2(code: Buffer<u8>) -> Buffer<u8> {
+    op(op(code, 15u64), 11u64)
+}
+
+// A jump, conditional jump or call with a zero 32-bit displacement to patch
+// (see `patch`); the displacement is the last four bytes appended.
+pub fn jmp(code: Buffer<u8>) -> Buffer<u8> {
+    little(op(code, 233u64), 0u64, 4u64)
+}
+
+pub fn jcc(code: Buffer<u8>, condition: u64) -> Buffer<u8> {
+    little(op(op(code, 15u64), 128u64 + condition), 0u64, 4u64)
+}
+
+pub fn call(code: Buffer<u8>) -> Buffer<u8> {
+    little(op(code, 232u64), 0u64, 4u64)
+}
+
+// Sets the 32-bit displacement at `at` so the instruction it ends reaches
+// `target`: target - (at + 4), modulo 2^32.
+pub fn patch(code: Buffer<u8>, at: u64, target: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    let value: u64 = (target + 4294967296u64 - (at + 4u64)) % 4294967296u64;
+    let mut rest: u64 = value;
+    let mut index: u64 = 0u64;
+    while index < 4u64 {
+        out[at + index] = byte(rest % 256u64);
+        rest = rest / 256u64;
+        index += 1u64;
+    }
+    out
+}

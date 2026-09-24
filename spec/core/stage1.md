@@ -40,8 +40,14 @@ diagnostics diagnostics.txt
   are relative to the package root.
 - `c`, `manifest` and `diagnostics` name the files to write, relative to the
   build root. Their directories must already exist there.
-- `root`, `c`, `manifest` and `diagnostics` appear exactly once. `module`
-  may repeat, and there is no other key.
+- `object`, in place of `c`, asks for a native x86-64 object instead of C
+  (`spec/core/native-x86-64.md`, ESP-016).
+- `steps`, `depth`, `buffer-bytes`, `arena-bytes` and `arena-slots` set, in
+  decimal below 2^64, the limits a native object is built with. Each
+  defaults to the C backend's default. A C build takes its limits as C
+  compiler flags instead, so these apply only with `object`.
+- `root`, `manifest` and `diagnostics` appear exactly once, and exactly one
+  of `c` and `object`. Only `module` may repeat, and there is no other key.
 
 Paths are read through `stdlib.compiler_host`, so they must be normalized
 relative paths (`stdlib.path`). The host checks them again against its roots.
@@ -59,9 +65,9 @@ module declared by two files cannot be imported, as in stage0.
 
 | Result | Meaning | Written |
 | --- | --- | --- |
-| 0 | The package was compiled | C, manifest, empty diagnostics |
+| 0 | The package was compiled | C or object, manifest, empty diagnostics |
 | 1 | The package does not link or check | manifest, diagnostics |
-| 2 | The C backend refuses the package | manifest, diagnostics |
+| 2 | The backend refuses the package | manifest, diagnostics |
 | 3 | The build file is not valid | its first error, in the diagnostics file, when that line was read before the error; otherwise nothing |
 | 1000000 + digest | A file could not be read or written | for a source, `path: reason` in the diagnostics file |
 
@@ -72,7 +78,10 @@ The digest is `stdlib.result`'s `failure_digest`:
 - 4000000 plus the byte position for a path that is not normalized.
 
 The manifest is `compiler.pipeline`'s (`spec/core/c-backend.md`,
-ESP-013.D). Its status is `emitted`, `check failed` or `unsupported`.
+ESP-013.D). Its status is `emitted`, `check failed` or `unsupported`. A
+native build's manifest names the backend `argorix-core-native 0.1`, and
+records the target, the object format, the runtime ABI and the limits in
+place of the C profile; its output is null when there is no object.
 
 ## Diagnostics
 
@@ -100,7 +109,9 @@ The diagnostics file holds what stage0's `argorixc core-emit-c` prints after
   directory there, and stage1 reads files, not directories.
 - **A package the backend refuses.** The file holds
   `CBackendUnsupported: <reason>`, with stage0's reason
-  (`compiler.c_emit.refusal`).
+  (`compiler.c_emit.refusal`). The native backend refuses the same
+  packages for the same reasons, and its file holds
+  `NativeBackendUnsupported: <reason>`.
 
 The messages are those of stage0's checker, linker and backend, including:
 
@@ -172,3 +183,29 @@ against `/proc/net/dev`, and uploads `selfhost-report.json`.
 Equal stages show that the compiler reproduces itself; they do not show that
 stage0 is free of a defect that reproduces itself too. The report states
 this limit. Diverse double compilation is ESP-023 and MAT-023.
+
+## Native stages (ESP-016)
+
+The compiler also builds itself natively. `bootstrap/native.py seed`, the
+last step that needs a C compiler, does three things:
+
+- it builds the runtime shim;
+- it builds stage1 from `stage1.c`;
+- it has stage1 write the seed object. That is the compiler's sources, with
+  `argorix.build`'s `c` line turned into `object compiler.o`, and with
+  `steps 400000000000` and `buffer-bytes 268435456`.
+
+`bootstrap/native.py bootstrap` needs only the linker, the C library and
+Python:
+
+- It links the seed into native1. native1 builds native2, and native2
+  builds native3. All three must write the seed's object byte for byte, and
+  they are one executable.
+- native3 writes stage1.c when asked for C.
+- Relocating the sources or reordering the modules changes nothing.
+- The fixture suites pass with objects native3 writes.
+- A reworded diagnostic and an edited native backend both propagate to a
+  fixed point.
+
+`spec/core/native-x86-64.md` specifies the backend, and
+`tasks/espada/ESP-016.md` records the evidence.

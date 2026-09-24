@@ -351,6 +351,12 @@ def run_case(cc: str, suite: pathlib.Path, case: dict[str, Any], c_source: bytes
     compiled = run(command, "case compile")
     if compiled.returncode != 0:
         return [f"C compilation failed: {compiled.stderr.decode(errors='replace')[:500]}"]
+    return execute_case(suite, case, executable, work)
+
+
+def execute_case(suite: pathlib.Path, case: dict[str, Any], executable: pathlib.Path, work: pathlib.Path) -> list[str]:
+    """Runs a case's executable with its host roots and budgets, and checks
+    its exit status, output and build files against the case."""
     arguments: list[str] = []
     host = case.get("host")
     build = work / "build"

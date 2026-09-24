@@ -1,0 +1,3291 @@
+core 0.1;
+module compiler.native;
+
+// The native backend (ESP-016): x86-64 machine code for Linux, in an ELF64
+// relocatable object, for a linked and checked package
+// (spec/core/native-x86-64.md). The system linker combines the object with
+// the C1 runtime and the native shim (`bootstrap/native/`), which a C
+// compiler builds once, as a declared dependency. No program is compiled
+// through C, and no C is written.
+//
+// The program it produces is the one the C backend (`compiler.c_emit`)
+// writes as C, run step for step: the same tables and refusals, which it
+// shares with that backend, and the same temporaries, checked-arithmetic
+// helpers, ownership bookkeeping, budgets and entry point. What the C
+// backend writes as a C statement, this backend writes as machine code at
+// the same point.
+//
+// Values. The C backend binds almost every value it computes to a
+// temporary. What it leaves unevaluated is a literal, a local or temporary
+// read by name, and a place (its `emit_place`): a field, an element behind
+// its bounds check, or an arena slot behind its handle. This backend keeps
+// each of those as a node of `tree`, and evaluates it where the C statement
+// that uses it runs, so every read, check and trap happens where it happens
+// in the C.
+//
+// Frames. Every value lives in memory: locals and temporaries in slots
+// below the frame pointer, allocated as the C declares them and reused once
+// the C block that declares them closes. A call passes its arguments in a
+// block at the bottom of the caller's frame, which the callee reads above
+// its own frame pointer; the budget's address goes in RDI and the address
+// of the result in RDX. Runtime functions are called as the System V ABI
+// says.
+
+import stdlib.bytes;
+import compiler.token;
+import compiler.ast;
+import compiler.link;
+import compiler.ir;
+import compiler.c_emit;
+import compiler.x86;
+import compiler.elf;
+
+pub const EMITTED: u64 = 0u64;
+pub const CHECK_FAILED: u64 = 1u64;
+pub const UNSUPPORTED: u64 = 2u64;
+
+// A package compiled: its status, the object, or why it was refused.
+pub struct Native { status: u64, object: Buffer<u8>, reason: Buffer<u8>, }
+
+// Nodes: kind, type, then four operands.
+const N_IMM: u64 = 1u64;
+// a: the value's 64 bits, extended as its type is.
+const N_SLOT: u64 = 2u64;
+// a: an offset; b: where from (BELOW or ABOVE the frame pointer, or above
+// the stack pointer in the OUTGOING block).
+const N_FIELD: u64 = 3u64;
+// a: the base node; b: the byte offset.
+const N_ELEMENT: u64 = 4u64;
+// a: the base node, an array; b: the index node; c: the length; d: the
+// element's size.
+const N_VIEW: u64 = 5u64;
+// a: the base node, whose first word is a data pointer and second a length;
+// b: the index node; d: the element's size.
+const N_HANDLE: u64 = 6u64;
+// a: the base node, a handle; b: the element's type id; c: its size; d: 1
+// for a write.
+const STRIDE: u64 = 6u64;
+
+const BELOW: u64 = 0u64;
+const ABOVE: u64 = 1u64;
+const OUTGOING: u64 = 2u64;
+
+// Fixups: a call to a function or a drop, a reference to read-only data, and
+// a call to the runtime, which the linker resolves.
+const F_FUNCTION: u64 = 1u64;
+const F_DROP: u64 = 2u64;
+const F_DATA: u64 = 3u64;
+const F_EXTERN: u64 = 4u64;
+
+// A function's first slots: the budget's address, and the result's.
+const BUDGET_SLOT: u64 = 8u64;
+const RESULT_SLOT: u64 = 16u64;
+
+// The limits, in the order `compile` takes them.
+const STEPS: u64 = 0u64;
+const DEPTH: u64 = 1u64;
+const BUFFER_BYTES: u64 = 2u64;
+const ARENA_BYTES: u64 = 3u64;
+const ARENA_SLOTS: u64 = 4u64;
+
+const RAX: u64 = 0u64;
+const RCX: u64 = 1u64;
+const RDX: u64 = 2u64;
+const RBX: u64 = 3u64;
+const RSP: u64 = 4u64;
+const RBP: u64 = 5u64;
+const RSI: u64 = 6u64;
+const RDI: u64 = 7u64;
+const R8: u64 = 8u64;
+
+// ------------------------------------------------------------------ entry
+
+// The C backend's default limits: steps, call depth, bytes per buffer,
+// bytes per arena and slots per arena.
+pub fn default_limits() -> Buffer<u64> {
+    let mut out: Buffer<u64> = Buffer::new();
+    out.push(1000000u64);
+    out.push(50000u64);
+    out.push(1048576u64);
+    out.push(1048576u64);
+    out.push(1024u64);
+    out
+}
+
+// The object for the package in `sources` (see `compiler.link.dump`), with
+// the given limits.
+pub fn compile(sources: Slice<u8>, ends: Slice<u64>, limits: Slice<u64>) -> Native {
+    let linked: Linked = link.link(sources, ends);
+    if linked.status != link.LINKED {
+        return Native { status: CHECK_FAILED, object: Buffer::new(), reason: Buffer::new() };
+    }
+    let mut e: CEmit = c_emit.empty();
+    let mut index: u64 = 0u64;
+    while index < limits.length() {
+        e.limits.push(limits[index]);
+        index += 1u64;
+    }
+    let x: CEmit = program(sources, linked.unit.tokens.as_slice(), linked.unit.strings.as_slice(), linked.walk.nodes.as_slice(), linked.walk.targets.as_slice(), linked.unit.programs.as_slice(), linked.unit.bases.as_slice(), linked.linking.bindings.as_slice(), linked.program, e);
+    if x.failed {
+        return Native { status: UNSUPPORTED, object: Buffer::new(), reason: bytes.copy(x.reason.as_slice()) };
+    }
+    Native { status: EMITTED, object: object(x), reason: Buffer::new() }
+}
+
+fn program(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, root: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = c_emit.prepare(s, t, n, p, b, bi, root, e);
+    if x.failed {
+        return x;
+    }
+    let entry: u64 = x.result;
+    // The C backend's refusals, in its order: the types `let` annotations
+    // name, then a type that holds itself by value.
+    let mut index: u64 = 0u64;
+    while index < x.functions.length() {
+        let item: u64 = x.functions[index].item;
+        x = c_emit.arrays_in_block(s, t, n, p, b, bi, c_emit.child(n, item, c_emit.child_count(n, item) - 1u64), x);
+        if x.failed {
+            return x;
+        }
+        index += 1u64;
+    }
+    x = named_types(x);
+    if x.failed {
+        return x;
+    }
+    x = argument_blocks(x);
+    index = 0u64;
+    while index < x.functions.length() {
+        x = emit_function(s, t, st, n, g, p, b, bi, index, x);
+        if x.failed {
+            return x;
+        }
+        index += 1u64;
+    }
+    x = drop_functions(x);
+    emit_main(x, entry)
+}
+
+// ------------------------------------------------------------------ text
+
+fn text(names: Slice<u8>, start: u64, end: u64) -> Buffer<u8> {
+    bytes.copy(names.slice(start, end))
+}
+
+fn same(names: Slice<u8>, start: u64, end: u64, other: Slice<u8>) -> bool {
+    bytes.equal(names.slice(start, end), other)
+}
+
+fn align(value: u64, alignment: u64) -> u64 {
+    (value + alignment - 1u64) / alignment * alignment
+}
+
+// ------------------------------------------------------------------ types
+
+// A struct or enum that holds itself by value is refused, as the C backend
+// finds it while it writes the definitions: structs, then enums, in name
+// order, each after what it holds.
+fn named_types(e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let count: u64 = x.structs.length() + x.enums.length();
+    x.named_state = Buffer::new();
+    x.type_state = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < count {
+        x.named_state.push(0u64);
+        index += 1u64;
+    }
+    index = 0u64;
+    while index < x.types.length() {
+        x.type_state.push(0u64);
+        index += 1u64;
+    }
+    index = 0u64;
+    while index < count {
+        x = visit_named(x, index);
+        if x.failed {
+            return x;
+        }
+        index += 1u64;
+    }
+    x
+}
+
+fn visit_named(e: CEmit, which: u64) -> CEmit {
+    let mut x: CEmit = e;
+    let state: u64 = x.named_state[which];
+    if state == 2u64 {
+        return x;
+    }
+    let is_struct: bool = which < x.structs.length();
+    let record: CRecord = if is_struct { x.structs[which] } else { x.enums[which - x.structs.length()] };
+    if state == 1u64 {
+        let name: Buffer<u8> = text(x.names.as_slice(), record.name_start, record.name_end);
+        let reason: Buffer<u8> = c_emit.quoted("type `".as_slice(), name.as_slice(), "` contains itself by value".as_slice());
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    x.named_state[which] = 1u64;
+    if is_struct {
+        let mut field: u64 = record.first;
+        while field < record.first + record.count {
+            let ty: u64 = x.fields[field].ty;
+            x = visit_dependencies(x, ty);
+            if x.failed {
+                return x;
+            }
+            field += 1u64;
+        }
+    } else {
+        let mut variant: u64 = record.first;
+        while variant < record.first + record.count {
+            let layout_record: CRecord = x.variants[variant];
+            let mut field: u64 = layout_record.first;
+            while field < layout_record.first + layout_record.count {
+                let ty: u64 = x.fields[field].ty;
+                x = visit_dependencies(x, ty);
+                if x.failed {
+                    return x;
+                }
+                field += 1u64;
+            }
+            variant += 1u64;
+        }
+    }
+    x.named_state[which] = 2u64;
+    x
+}
+
+fn visit_aggregate(e: CEmit, ty: u64) -> CEmit {
+    let mut x: CEmit = e;
+    if x.type_state[ty] != 0u64 {
+        return x;
+    }
+    x.type_state[ty] = 1u64;
+    let found: CType = x.types[ty];
+    if found.tag != c_emit.T_ARRAY && found.tag != c_emit.T_SLICE {
+        return x;
+    }
+    x = visit_dependencies(x, found.element);
+    if x.failed {
+        return x;
+    }
+    x.type_state[ty] = 2u64;
+    x
+}
+
+fn visit_dependencies(e: CEmit, ty: u64) -> CEmit {
+    let x: CEmit = e;
+    let found: CType = x.types[ty];
+    if found.tag == c_emit.T_USER {
+        let name: Buffer<u8> = text(x.names.as_slice(), found.name_start, found.name_end);
+        let structure: u64 = c_emit.find_record(x.structs.as_slice(), x.names.as_slice(), name.as_slice());
+        if structure != 0u64 {
+            return visit_named(x, structure - 1u64);
+        }
+        let enumeration: u64 = c_emit.find_record(x.enums.as_slice(), x.names.as_slice(), name.as_slice());
+        if enumeration != 0u64 {
+            let which: u64 = x.structs.length() + enumeration - 1u64;
+            return visit_named(x, which);
+        }
+        return x;
+    }
+    if found.tag == c_emit.T_ARRAY || found.tag == c_emit.T_SLICE {
+        return visit_aggregate(x, ty);
+    }
+    if found.tag == c_emit.T_BUFFER || found.tag == c_emit.T_ARENA || found.tag == c_emit.T_HANDLE {
+        if x.types[found.element].tag == c_emit.T_USER {
+            return x;
+        }
+        return visit_dependencies(x, found.element);
+    }
+    x
+}
+
+// The size of a type, as a C compiler lays out the C backend's definition
+// of it on x86-64 (the System V ABI): `result` is the size, and `sizes`
+// keeps it with the alignment and, for an enum, the offset of its data.
+// Fields keep their offsets in `offsets`.
+fn layout(e: CEmit, ty: u64) -> CEmit {
+    let mut x: CEmit = e;
+    while x.sizes.length() < (ty + 1u64) * 3u64 {
+        x.sizes.push(0u64);
+    }
+    if x.sizes[ty * 3u64] != 0u64 {
+        x.result = x.sizes[ty * 3u64] - 1u64;
+        return x;
+    }
+    while x.offsets.length() < x.fields.length() {
+        x.offsets.push(0u64);
+    }
+    let found: CType = x.types[ty];
+    let tag: u64 = found.tag;
+    let mut size: u64 = 8u64;
+    let mut alignment: u64 = 8u64;
+    let mut data: u64 = 0u64;
+    if tag == c_emit.T_UNIT || tag == 0u64 {
+        size = 0u64;
+        alignment = 1u64;
+    } else if tag == c_emit.T_BOOL {
+        size = 1u64;
+        alignment = 1u64;
+    } else if tag == c_emit.T_INTEGER {
+        size = integer_size(x.names.as_slice(), found.name_start, found.name_end);
+        alignment = size;
+    } else if tag == c_emit.T_CAPABILITY {
+        size = 4u64;
+        alignment = 4u64;
+    } else if tag == c_emit.T_BYTES || tag == c_emit.T_STRING || tag == c_emit.T_SLICE {
+        size = 16u64;
+    } else if tag == c_emit.T_BUFFER {
+        size = 40u64;
+    } else if tag == c_emit.T_HANDLE {
+        size = 48u64;
+    } else if tag == c_emit.T_ARRAY {
+        // C11 has no zero-length array: an empty one keeps one slot.
+        x = layout(x, found.element);
+        let element: u64 = x.result;
+        alignment = x.sizes[found.element * 3u64 + 1u64];
+        size = element * (if found.length == 0u64 { 1u64 } else { found.length });
+    } else if tag == c_emit.T_USER {
+        let name: Buffer<u8> = text(x.names.as_slice(), found.name_start, found.name_end);
+        let structure: u64 = c_emit.find_record(x.structs.as_slice(), x.names.as_slice(), name.as_slice());
+        let enumeration: u64 = c_emit.find_record(x.enums.as_slice(), x.names.as_slice(), name.as_slice());
+        if structure != 0u64 {
+            let record: CRecord = x.structs[structure - 1u64];
+            x = fields_layout(x, record.first, record.count);
+            let end: u64 = x.result;
+            alignment = fields_alignment(x.sizes.as_slice(), x.fields.as_slice(), record.first, record.count);
+            size = align(end, alignment);
+        } else if enumeration != 0u64 {
+            // The tag, a C enum, then a union of one struct per variant,
+            // with a byte in the struct of a variant without fields.
+            let record: CRecord = x.enums[enumeration - 1u64];
+            let mut union_size: u64 = 0u64;
+            let mut union_alignment: u64 = 1u64;
+            let mut variant: u64 = record.first;
+            while variant < record.first + record.count {
+                let shape: CRecord = x.variants[variant];
+                x = fields_layout(x, shape.first, shape.count);
+                let end: u64 = x.result;
+                let variant_alignment: u64 = fields_alignment(x.sizes.as_slice(), x.fields.as_slice(), shape.first, shape.count);
+                let variant_size: u64 = if shape.count == 0u64 { 1u64 } else { align(end, variant_alignment) };
+                if variant_size > union_size {
+                    union_size = variant_size;
+                }
+                if variant_alignment > union_alignment {
+                    union_alignment = variant_alignment;
+                }
+                variant += 1u64;
+            }
+            alignment = if union_alignment > 4u64 { union_alignment } else { 4u64 };
+            data = align(4u64, union_alignment);
+            size = align(data + union_size, alignment);
+        }
+    }
+    x.sizes[ty * 3u64] = size + 1u64;
+    x.sizes[ty * 3u64 + 1u64] = alignment;
+    x.sizes[ty * 3u64 + 2u64] = data;
+    x.result = size;
+    x
+}
+
+// Lays out `count` fields from `first` one after another, each at its
+// alignment: `result` is where the last ends.
+fn fields_layout(e: CEmit, first: u64, count: u64) -> CEmit {
+    let mut x: CEmit = e;
+    let mut end: u64 = 0u64;
+    let mut field: u64 = first;
+    while field < first + count {
+        let ty: u64 = x.fields[field].ty;
+        x = layout(x, ty);
+        let size: u64 = x.result;
+        let alignment: u64 = x.sizes[ty * 3u64 + 1u64];
+        end = align(end, alignment);
+        x.offsets[field] = end;
+        end += size;
+        field += 1u64;
+    }
+    x.result = end;
+    x
+}
+
+fn fields_alignment(sizes: Slice<u64>, fields: Slice<CField>, first: u64, count: u64) -> u64 {
+    let mut alignment: u64 = 1u64;
+    let mut field: u64 = first;
+    while field < first + count {
+        let found: u64 = sizes[fields[field].ty * 3u64 + 1u64];
+        if found > alignment {
+            alignment = found;
+        }
+        field += 1u64;
+    }
+    alignment
+}
+
+// 1, 2, 4 or 8 for `u8` and `i8`, `u16`, and so on.
+fn integer_size(names: Slice<u8>, start: u64, end: u64) -> u64 {
+    if end - start == 2u64 {
+        return 1u64;
+    }
+    if names[start + 1u64] == 49u8 {
+        return 2u64;
+    }
+    if names[start + 1u64] == 51u8 {
+        return 4u64;
+    }
+    8u64
+}
+
+// A scalar's size: what a load or a store of it moves.
+fn scalar_size(types: Slice<CType>, names: Slice<u8>, ty: u64) -> u64 {
+    let tag: u64 = types[ty].tag;
+    if tag == c_emit.T_UNIT || tag == 0u64 {
+        return 0u64;
+    }
+    if tag == c_emit.T_BOOL {
+        return 1u64;
+    }
+    if tag == c_emit.T_CAPABILITY {
+        return 4u64;
+    }
+    if tag == c_emit.T_INTEGER {
+        return integer_size(names, types[ty].name_start, types[ty].name_end);
+    }
+    8u64
+}
+
+fn is_signed(types: Slice<CType>, names: Slice<u8>, ty: u64) -> bool {
+    types[ty].tag == c_emit.T_INTEGER && names[types[ty].name_start] == 105u8
+}
+
+// Whether a type is moved through a register rather than copied as bytes.
+fn is_scalar(types: Slice<CType>, ty: u64) -> bool {
+    let tag: u64 = types[ty].tag;
+    tag == c_emit.T_UNIT || tag == c_emit.T_BOOL || tag == c_emit.T_INTEGER || tag == c_emit.T_CAPABILITY || tag == 0u64
+}
+
+// Each function's argument block: the parameters one after another, each at
+// its alignment, rounded up to 8 bytes.
+fn argument_blocks(e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    x.entries = Buffer::new();
+    x.param_offsets = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < x.functions.length() {
+        let function: CFunction = x.functions[index];
+        let mut offset: u64 = 0u64;
+        let mut at: u64 = 0u64;
+        while at < function.count {
+            let ty: u64 = x.params[function.first + at];
+            x = layout(x, ty);
+            let size: u64 = x.result;
+            offset = align(offset, x.sizes[ty * 3u64 + 1u64]);
+            x.param_offsets.push(offset);
+            offset += size;
+            at += 1u64;
+        }
+        x.entries.push(0u64);
+        x.entries.push(align(offset, 8u64));
+        x.entries.push(0u64);
+        index += 1u64;
+    }
+    x
+}
+
+// ------------------------------------------------------------------ code
+
+// Appends machine code.
+fn asm(e: CEmit, piece: Buffer<u8>) -> CEmit {
+    let mut x: CEmit = e;
+    let mut index: u64 = 0u64;
+    while index < piece.length() {
+        x.code.push(piece[index]);
+        index += 1u64;
+    }
+    x
+}
+
+// The four bytes at `at` hold `value`, modulo 2^32.
+fn set32(e: CEmit, at: u64, value: u64) -> CEmit {
+    let mut x: CEmit = e;
+    let mut rest: u64 = value % 4294967296u64;
+    let mut index: u64 = 0u64;
+    while index < 4u64 {
+        x.code[at + index] = x86.byte(rest % 256u64);
+        rest = rest / 256u64;
+        index += 1u64;
+    }
+    x
+}
+
+// The jump whose displacement is at `at` reaches `target`.
+fn patch(e: CEmit, at: u64, target: u64) -> CEmit {
+    set32(e, at, target + 4294967296u64 - (at + 4u64))
+}
+
+// The jump whose displacement is at `at` reaches the code that follows.
+fn land(e: CEmit, at: u64) -> CEmit {
+    let target: u64 = e.code.length();
+    patch(e, at, target)
+}
+
+fn fixup(e: CEmit, kind: u64, at: u64, target: u64) -> CEmit {
+    let mut x: CEmit = e;
+    x.fixups.push(kind);
+    x.fixups.push(at);
+    x.fixups.push(target);
+    x
+}
+
+// `jmp`, `jcc`: `result` is the displacement to patch.
+fn jump(e: CEmit) -> CEmit {
+    let mut x: CEmit = asm(e, x86.jmp(Buffer::new()));
+    x.result = x.code.length() - 4u64;
+    x
+}
+
+fn branch(e: CEmit, condition: u64) -> CEmit {
+    let mut x: CEmit = asm(e, x86.jcc(Buffer::new(), condition));
+    x.result = x.code.length() - 4u64;
+    x
+}
+
+fn jump_to(e: CEmit, target: u64) -> CEmit {
+    let x: CEmit = jump(e);
+    let at: u64 = x.result;
+    patch(x, at, target)
+}
+
+fn call_function(e: CEmit, index: u64) -> CEmit {
+    let x: CEmit = asm(e, x86.call(Buffer::new()));
+    let at: u64 = x.code.length() - 4u64;
+    fixup(x, F_FUNCTION, at, index)
+}
+
+// A call to the drop function of `ty`, with the value's address in RDI.
+fn call_drop(e: CEmit, ty: u64) -> CEmit {
+    let mut x: CEmit = c_emit.register_drop(e, ty);
+    x = asm(x, x86.call(Buffer::new()));
+    let at: u64 = x.code.length() - 4u64;
+    fixup(x, F_DROP, at, ty)
+}
+
+// A call to a runtime function, which the linker resolves.
+fn call_extern(e: CEmit, name: Slice<u8>) -> CEmit {
+    let mut x: CEmit = asm(e, x86.call(Buffer::new()));
+    let mut found: u64 = x.extern_ends.length();
+    let mut index: u64 = 0u64;
+    let mut start: u64 = 0u64;
+    while index < x.extern_ends.length() {
+        if same(x.externs.as_slice(), start, x.extern_ends[index], name) {
+            found = index;
+            break;
+        }
+        start = x.extern_ends[index];
+        index += 1u64;
+    }
+    if found == x.extern_ends.length() {
+        let mut at: u64 = 0u64;
+        while at < name.length() {
+            x.externs.push(name[at]);
+            at += 1u64;
+        }
+        let end: u64 = x.externs.length();
+        x.extern_ends.push(end);
+    }
+    let site: u64 = x.code.length() - 4u64;
+    fixup(x, F_EXTERN, site, found)
+}
+
+// `argorix_<type>_<operation>`: a checked-arithmetic helper of the runtime.
+fn helper_name(names: Slice<u8>, types: Slice<CType>, ty: u64, operation: Slice<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "argorix_".as_slice());
+    out = bytes.append(out, names.slice(types[ty].name_start, types[ty].name_end));
+    out.push(95u8);
+    bytes.append(out, operation)
+}
+
+fn operation_name(operator: u64) -> Buffer<u8> {
+    let code: u64 = c_emit.operation(operator);
+    if code == 0u64 { return bytes.copy("add".as_slice()); }
+    if code == 1u64 { return bytes.copy("sub".as_slice()); }
+    if code == 2u64 { return bytes.copy("mul".as_slice()); }
+    if code == 3u64 { return bytes.copy("div".as_slice()); }
+    bytes.copy("rem".as_slice())
+}
+
+// `text` and a zero byte in the read-only data: `result` is its offset.
+fn add_data(e: CEmit, value: Slice<u8>) -> CEmit {
+    let mut x: CEmit = e;
+    x.result = x.data.length();
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        x.data.push(value[index]);
+        index += 1u64;
+    }
+    x.data.push(0u8);
+    x
+}
+
+// `lea reg, [rip + data]` for the read-only data at `offset`.
+fn data_address(e: CEmit, reg: u64, offset: u64) -> CEmit {
+    let x: CEmit = asm(e, x86.lea_rip(Buffer::new(), reg));
+    let at: u64 = x.code.length() - 4u64;
+    fixup(x, F_DATA, at, offset)
+}
+
+fn mem_load(e: CEmit, size: u64, signed: bool, reg: u64, base: u64, offset: u64, below: bool) -> CEmit {
+    if size == 0u64 {
+        return put_imm(e, reg, 0u64);
+    }
+    asm(e, x86.load(Buffer::new(), size, signed, reg, base, offset, below))
+}
+
+fn mem_store(e: CEmit, size: u64, base: u64, offset: u64, below: bool, reg: u64) -> CEmit {
+    if size == 0u64 {
+        return e;
+    }
+    asm(e, x86.store(Buffer::new(), size, base, offset, below, reg))
+}
+
+fn mem_lea(e: CEmit, reg: u64, base: u64, offset: u64, below: bool) -> CEmit {
+    asm(e, x86.lea(Buffer::new(), reg, base, offset, below))
+}
+
+fn mov(e: CEmit, dst: u64, src: u64) -> CEmit {
+    if dst == src {
+        return e;
+    }
+    asm(e, x86.mov(Buffer::new(), dst, src))
+}
+
+fn put_imm(e: CEmit, reg: u64, value: u64) -> CEmit {
+    if value < 4294967296u64 {
+        return asm(e, x86.mov_imm32(Buffer::new(), reg, value));
+    }
+    asm(e, x86.mov_imm(Buffer::new(), reg, value))
+}
+
+fn test_rax(e: CEmit) -> CEmit {
+    asm(e, x86.test(Buffer::new(), RAX, RAX))
+}
+
+// `argorix_step(budget)`, `argorix_enter(budget)` and `argorix_leave(budget)`.
+fn budget_call(e: CEmit, name: Slice<u8>) -> CEmit {
+    let x: CEmit = mem_load(e, 8u64, false, RDI, RBP, BUDGET_SLOT, true);
+    call_extern(x, name)
+}
+
+// `argorix_trap("<code>")`.
+fn trap(e: CEmit, code: Slice<u8>) -> CEmit {
+    let mut x: CEmit = add_data(e, code);
+    let offset: u64 = x.result;
+    x = data_address(x, RDI, offset);
+    call_extern(x, "argorix_trap".as_slice())
+}
+
+fn epilogue(e: CEmit) -> CEmit {
+    let x: CEmit = mov(e, RSP, RBP);
+    asm(asm(x, x86.pop(Buffer::new(), RBP)), x86.ret(Buffer::new()))
+}
+
+// `size` bytes of the frame, at `alignment`: `result` is the slot's offset
+// below the frame pointer.
+fn frame_bytes(e: CEmit, size: u64, alignment: u64) -> CEmit {
+    let mut x: CEmit = e;
+    x.frame = align(x.frame + size, if alignment == 0u64 { 1u64 } else { alignment });
+    if x.frame > x.frame_max {
+        x.frame_max = x.frame;
+    }
+    x.result = x.frame;
+    x
+}
+
+// ------------------------------------------------------------------ values
+
+fn make(e: CEmit, kind: u64, ty: u64, a: u64, b: u64, c: u64, d: u64) -> CEmit {
+    let mut x: CEmit = e;
+    x.result = x.tree.length() / STRIDE;
+    x.tree.push(kind);
+    x.tree.push(ty);
+    x.tree.push(a);
+    x.tree.push(b);
+    x.tree.push(c);
+    x.tree.push(d);
+    x
+}
+
+// The value just emitted.
+fn set_node(e: CEmit, value: u64, ty: u64) -> CEmit {
+    let mut x: CEmit = e;
+    x.node = value;
+    x.vty = ty;
+    x
+}
+
+// A literal of `ty`: its bits, as a load of that type would extend them.
+fn literal(e: CEmit, value: u64, ty: u64) -> CEmit {
+    let size: u64 = scalar_size(e.types.as_slice(), e.names.as_slice(), ty);
+    let signed: bool = is_signed(e.types.as_slice(), e.names.as_slice(), ty);
+    let mut bits: u64 = value;
+    if size < 8u64 {
+        let modulus: u64 = if size == 4u64 { 4294967296u64 } else if size == 2u64 { 65536u64 } else if size == 1u64 { 256u64 } else { 1u64 };
+        bits = value % modulus;
+        if signed && bits >= modulus / 2u64 {
+            bits += 18446744073709551615u64 - modulus + 1u64;
+        }
+    }
+    let mut x: CEmit = make(e, N_IMM, ty, bits, 0u64, 0u64, 0u64);
+    let made: u64 = x.result;
+    x = set_node(x, made, ty);
+    x.result = made;
+    x
+}
+
+// A fresh temporary of `ty`: `result` is its node.
+fn new_temp(e: CEmit, ty: u64) -> CEmit {
+    let mut x: CEmit = layout(e, ty);
+    let size: u64 = x.result;
+    let alignment: u64 = x.sizes[ty * 3u64 + 1u64];
+    x = frame_bytes(x, size, alignment);
+    let offset: u64 = x.result;
+    make(x, N_SLOT, ty, offset, BELOW, 0u64, 0u64)
+}
+
+// The field `offset` bytes into `base`, as a node of `ty`: a slot when
+// `base` is one.
+fn field_node(e: CEmit, base: u64, offset: u64, ty: u64) -> CEmit {
+    if e.tree[base * STRIDE] == N_SLOT {
+        let at: u64 = e.tree[base * STRIDE + 2u64];
+        let from: u64 = e.tree[base * STRIDE + 3u64];
+        if from == BELOW {
+            return make(e, N_SLOT, ty, at - offset, BELOW, 0u64, 0u64);
+        }
+        return make(e, N_SLOT, ty, at + offset, from, 0u64, 0u64);
+    }
+    make(e, N_FIELD, ty, base, offset, 0u64, 0u64)
+}
+
+fn base_register(from: u64) -> u64 {
+    if from == OUTGOING { RSP } else { RBP }
+}
+
+// The address of a place in `reg`. A place behind a check calls the
+// runtime, which may change any register the System V ABI lets a callee
+// change.
+fn address(e: CEmit, place: u64, reg: u64) -> CEmit {
+    let mut x: CEmit = e;
+    let at: u64 = place * STRIDE;
+    let kind: u64 = x.tree[at];
+    let a: u64 = x.tree[at + 2u64];
+    let b: u64 = x.tree[at + 3u64];
+    let c: u64 = x.tree[at + 4u64];
+    let d: u64 = x.tree[at + 5u64];
+    if kind == N_SLOT {
+        return mem_lea(x, reg, base_register(b), a, b == BELOW);
+    }
+    if kind == N_FIELD {
+        x = address(x, a, reg);
+        if b == 0u64 {
+            return x;
+        }
+        return mem_lea(x, reg, reg, b, false);
+    }
+    if kind == N_HANDLE {
+        // argorix_handle_get(handle, type id, size, write)
+        x = address(x, a, RDI);
+        x = put_imm(x, RSI, b);
+        x = put_imm(x, RDX, c);
+        x = put_imm(x, RCX, d);
+        x = call_extern(x, "argorix_rt_handle_get".as_slice());
+        return mov(x, reg, RAX);
+    }
+    // An element: the base's address, then argorix_bounds(index, length).
+    let saved: u64 = x.frame;
+    x = frame_bytes(x, 8u64, 8u64);
+    let slot: u64 = x.result;
+    x = address(x, a, RAX);
+    x = mem_store(x, 8u64, RBP, slot, true, RAX);
+    x = load(x, b, RDI);
+    if kind == N_ELEMENT {
+        x = put_imm(x, RSI, c);
+    } else {
+        x = mem_load(x, 8u64, false, RAX, RBP, slot, true);
+        x = mem_load(x, 8u64, false, RSI, RAX, 8u64, false);
+    }
+    x = call_extern(x, "argorix_bounds".as_slice());
+    x = put_imm(x, RCX, d);
+    x = asm(x, x86.imul(Buffer::new(), RAX, RCX));
+    x = mem_load(x, 8u64, false, RCX, RBP, slot, true);
+    if kind == N_VIEW {
+        x = mem_load(x, 8u64, false, RCX, RCX, 0u64, false);
+    }
+    x = asm(x, x86.add(Buffer::new(), RAX, RCX));
+    x.frame = saved;
+    mov(x, reg, RAX)
+}
+
+// The scalar value of a node in `reg`, extended to 64 bits as its type is.
+fn load(e: CEmit, value: u64, reg: u64) -> CEmit {
+    let at: u64 = value * STRIDE;
+    let kind: u64 = e.tree[at];
+    let ty: u64 = e.tree[at + 1u64];
+    let a: u64 = e.tree[at + 2u64];
+    let b: u64 = e.tree[at + 3u64];
+    if kind == N_IMM {
+        return put_imm(e, reg, a);
+    }
+    let size: u64 = scalar_size(e.types.as_slice(), e.names.as_slice(), ty);
+    let signed: bool = is_signed(e.types.as_slice(), e.names.as_slice(), ty);
+    if size == 0u64 {
+        return put_imm(e, reg, 0u64);
+    }
+    if kind == N_SLOT {
+        return mem_load(e, size, signed, reg, base_register(b), a, b == BELOW);
+    }
+    let x: CEmit = address(e, value, RAX);
+    mem_load(x, size, signed, reg, RAX, 0u64, false)
+}
+
+// Stores the low bytes of `reg` in a slot.
+fn store_slot(e: CEmit, place: u64, reg: u64) -> CEmit {
+    let at: u64 = place * STRIDE;
+    let ty: u64 = e.tree[at + 1u64];
+    let a: u64 = e.tree[at + 2u64];
+    let b: u64 = e.tree[at + 3u64];
+    let size: u64 = scalar_size(e.types.as_slice(), e.names.as_slice(), ty);
+    mem_store(e, size, base_register(b), a, b == BELOW, reg)
+}
+
+fn is_slot(tree: Slice<u64>, value: u64) -> bool {
+    tree[value * STRIDE] == N_SLOT
+}
+
+// `dst = src;` for a value of `ty`.
+fn copy(e: CEmit, dst: u64, src: u64, ty: u64) -> CEmit {
+    let mut x: CEmit = layout(e, ty);
+    let size: u64 = x.result;
+    if size == 0u64 {
+        return x;
+    }
+    let dst_slot: bool = is_slot(x.tree.as_slice(), dst);
+    let src_slot: bool = is_slot(x.tree.as_slice(), src);
+    if is_scalar(x.types.as_slice(), ty) {
+        if dst_slot {
+            x = load(x, src, RAX);
+            return store_slot(x, dst, RAX);
+        }
+        let saved: u64 = x.frame;
+        x = frame_bytes(x, 8u64, 8u64);
+        let slot: u64 = x.result;
+        x = address(x, dst, RAX);
+        x = mem_store(x, 8u64, RBP, slot, true, RAX);
+        x = load(x, src, RCX);
+        x = mem_load(x, 8u64, false, RDX, RBP, slot, true);
+        x = mem_store(x, size, RDX, 0u64, false, RCX);
+        x.frame = saved;
+        return x;
+    }
+    if dst_slot && src_slot {
+        x = address(x, dst, RDI);
+        x = address(x, src, RSI);
+    } else {
+        let saved: u64 = x.frame;
+        x = frame_bytes(x, 8u64, 8u64);
+        let slot: u64 = x.result;
+        x = address(x, dst, RAX);
+        x = mem_store(x, 8u64, RBP, slot, true, RAX);
+        x = address(x, src, RSI);
+        x = mem_load(x, 8u64, false, RDI, RBP, slot, true);
+        x.frame = saved;
+    }
+    x = put_imm(x, RCX, size);
+    asm(x, x86.copy_bytes(Buffer::new()))
+}
+
+// `T t = {0};`: a fresh slot, zeroed.
+fn zero(e: CEmit, place: u64, ty: u64) -> CEmit {
+    let mut x: CEmit = layout(e, ty);
+    let size: u64 = x.result;
+    if size == 0u64 {
+        return x;
+    }
+    x = address(x, place, RDI);
+    x = put_imm(x, RCX, size);
+    x = put_imm(x, RAX, 0u64);
+    asm(x, x86.fill_bytes(Buffer::new()))
+}
+
+// A value bound to a fresh temporary, as the C backend's `bind_temp`; a
+// unit value is only run.
+fn bind(e: CEmit, value: u64, ty: u64) -> CEmit {
+    if ty == c_emit.UNIT {
+        return literal(e, 0u64, c_emit.UNIT);
+    }
+    let mut x: CEmit = new_temp(e, ty);
+    let place: u64 = x.result;
+    x = copy(x, place, value, ty);
+    set_node(x, place, ty)
+}
+
+// RAX's low bytes in a fresh temporary of `ty`, which becomes the value.
+fn bind_rax(e: CEmit, ty: u64) -> CEmit {
+    if ty == c_emit.UNIT {
+        return literal(e, 0u64, c_emit.UNIT);
+    }
+    let mut x: CEmit = new_temp(e, ty);
+    let place: u64 = x.result;
+    x = store_slot(x, place, RAX);
+    set_node(x, place, ty)
+}
+
+// Two scalars in two registers, `first` evaluated first.
+fn load_pair(e: CEmit, first: u64, second: u64, first_reg: u64, second_reg: u64) -> CEmit {
+    let simple: bool = e.tree[second * STRIDE] == N_IMM || e.tree[second * STRIDE] == N_SLOT;
+    let mut x: CEmit = e;
+    if simple {
+        x = load(x, first, first_reg);
+        return load(x, second, second_reg);
+    }
+    let saved: u64 = x.frame;
+    x = frame_bytes(x, 8u64, 8u64);
+    let slot: u64 = x.result;
+    x = load(x, first, RAX);
+    x = mem_store(x, 8u64, RBP, slot, true, RAX);
+    x = load(x, second, second_reg);
+    x = mem_load(x, 8u64, false, first_reg, RBP, slot, true);
+    x.frame = saved;
+    x
+}
+
+// ------------------------------------------------------------------ function state
+
+// The C backend's `add_local`, with the local's node.
+fn add_local(e: CEmit, start: u64, end: u64, ty: u64, place: u64) -> CEmit {
+    let mut x: CEmit = c_emit.add_local(e, start, end, ty);
+    let at: u64 = x.locals_live - 1u64;
+    if at < x.local_nodes.length() {
+        x.local_nodes[at] = place;
+    } else {
+        x.local_nodes.push(place);
+    }
+    x
+}
+
+// The innermost local named `name` (+ 1), or 0.
+fn find_local(s: Slice<u8>, locals: Slice<u64>, live: u64, name: Slice<u8>) -> u64 {
+    let mut index: u64 = live;
+    while index > 0u64 {
+        index -= 1u64;
+        if bytes.equal(s.slice(locals[index * 3u64], locals[index * 3u64 + 1u64]), name) {
+            return index + 1u64;
+        }
+    }
+    0u64
+}
+
+// The live flag of the innermost owner named `name`, as C scoping resolves
+// `argorix_live_<name>`, or 0.
+fn owner_flag(s: Slice<u8>, owned: Slice<u64>, nodes: Slice<u64>, live: u64, name: Slice<u8>) -> u64 {
+    let mut index: u64 = live;
+    while index > 0u64 {
+        index -= 1u64;
+        if bytes.equal(s.slice(owned[index * 3u64], owned[index * 3u64 + 1u64]), name) {
+            return nodes[index * 2u64 + 1u64];
+        }
+    }
+    0u64
+}
+
+fn set_flag(e: CEmit, flag: u64, value: u64) -> CEmit {
+    let x: CEmit = put_imm(e, RAX, value);
+    mem_store(x, 1u64, RBP, flag, true, RAX)
+}
+
+// `name`, at `place`, owns a value of `ty` to the end of the current scope,
+// if `ty` owns storage: its live flag is set.
+fn own(start: u64, end: u64, ty: u64, place: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = c_emit.owns(e, ty);
+    if x.result == 0u64 {
+        return x;
+    }
+    x = frame_bytes(x, 1u64, 1u64);
+    let flag: u64 = x.result;
+    x = set_flag(x, flag, 1u64);
+    x = c_emit.register_drop(x, ty);
+    if x.scopes_live > 0u64 {
+        let at: u64 = x.owned_live * 3u64;
+        if at < x.owned.length() {
+            x.owned[at] = start;
+            x.owned[at + 1u64] = end;
+            x.owned[at + 2u64] = ty;
+        } else {
+            x.owned.push(start);
+            x.owned.push(end);
+            x.owned.push(ty);
+        }
+        let slot: u64 = x.owned_live * 2u64;
+        if slot < x.owned_nodes.length() {
+            x.owned_nodes[slot] = place;
+            x.owned_nodes[slot + 1u64] = flag;
+        } else {
+            x.owned_nodes.push(place);
+            x.owned_nodes.push(flag);
+        }
+        x.owned_live += 1u64;
+    }
+    x
+}
+
+// Drops every still-live owner of the scopes from `depth` inward, the
+// innermost first: `if (live) { live = false; drop(&value); }`.
+fn drops_from(depth: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let mut scope: u64 = x.scopes_live;
+    let first: u64 = if depth < x.scopes_live { depth } else { x.scopes_live };
+    while scope > first {
+        scope -= 1u64;
+        let start: u64 = x.scopes[scope];
+        let end: u64 = if scope + 1u64 < x.scopes_live { x.scopes[scope + 1u64] } else { x.owned_live };
+        let mut index: u64 = end;
+        while index > start {
+            index -= 1u64;
+            let ty: u64 = x.owned[index * 3u64 + 2u64];
+            let place: u64 = x.owned_nodes[index * 2u64];
+            let flag: u64 = x.owned_nodes[index * 2u64 + 1u64];
+            x = mem_load(x, 1u64, false, RAX, RBP, flag, true);
+            x = test_rax(x);
+            x = branch(x, x86.EQUAL);
+            let skip: u64 = x.result;
+            x = set_flag(x, flag, 0u64);
+            x = address(x, place, RDI);
+            x = call_drop(x, ty);
+            x = land(x, skip);
+        }
+    }
+    x
+}
+
+// Everything a function does on its way out.
+fn emit_exit(e: CEmit) -> CEmit {
+    let x: CEmit = drops_from(0u64, e);
+    budget_call(x, "argorix_leave".as_slice())
+}
+
+// Before `break` or `continue`: drop what the innermost loop body owns.
+fn loop_exit_drops(e: CEmit) -> CEmit {
+    if e.loop_scopes_live == 0u64 {
+        return e;
+    }
+    let depth: u64 = e.loop_scopes[e.loop_scopes_live - 1u64];
+    drops_from(depth, e)
+}
+
+// `return value;`: the value through the result's address, then the frame
+// is left.
+fn emit_return(e: CEmit, value: u64, ty: u64) -> CEmit {
+    let mut x: CEmit = layout(e, ty);
+    let size: u64 = x.result;
+    if size > 0u64 {
+        if is_scalar(x.types.as_slice(), ty) {
+            x = load(x, value, RAX);
+            x = mem_load(x, 8u64, false, RCX, RBP, RESULT_SLOT, true);
+            x = mem_store(x, size, RCX, 0u64, false, RAX);
+        } else {
+            x = address(x, value, RSI);
+            x = mem_load(x, 8u64, false, RDI, RBP, RESULT_SLOT, true);
+            x = put_imm(x, RCX, size);
+            x = asm(x, x86.copy_bytes(Buffer::new()));
+        }
+    }
+    epilogue(x)
+}
+
+// The innermost loop: its start, for `continue`.
+fn loop_start(e: CEmit, start: u64) -> CEmit {
+    let mut x: CEmit = e;
+    let at: u64 = x.loops_live - 1u64;
+    if at < x.loop_code.length() {
+        x.loop_code[at] = start;
+    } else {
+        x.loop_code.push(start);
+    }
+    x
+}
+
+// A jump out of the innermost loop, patched where it ends.
+fn push_break(e: CEmit, at: u64) -> CEmit {
+    let mut x: CEmit = e;
+    if x.breaks_live < x.breaks.length() {
+        x.breaks[x.breaks_live] = at;
+    } else {
+        x.breaks.push(at);
+    }
+    x.breaks_live += 1u64;
+    x
+}
+
+// The jumps out of a loop, from `mark`, reach the code that follows it.
+fn land_breaks(e: CEmit, mark: u64) -> CEmit {
+    let mut x: CEmit = e;
+    let mut index: u64 = mark;
+    while index < x.breaks_live {
+        let at: u64 = x.breaks[index];
+        x = land(x, at);
+        index += 1u64;
+    }
+    x.breaks_live = mark;
+    x
+}
+
+fn break_jump(e: CEmit) -> CEmit {
+    if e.loops_live == 0u64 {
+        return e;
+    }
+    let x: CEmit = jump(e);
+    let at: u64 = x.result;
+    push_break(x, at)
+}
+
+fn continue_jump(e: CEmit) -> CEmit {
+    if e.loops_live == 0u64 {
+        return e;
+    }
+    let start: u64 = e.loop_code[e.loops_live - 1u64];
+    jump_to(e, start)
+}
+
+// ------------------------------------------------------------------ functions
+
+fn emit_function(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, index: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let function: CFunction = x.functions[index];
+    x.function = index;
+    x.temporary = 0u64;
+    x.locals_live = 0u64;
+    x.owned_live = 0u64;
+    x.scopes_live = 0u64;
+    x.loops_live = 0u64;
+    x.loop_scopes_live = 0u64;
+    x.breaks_live = 0u64;
+    x.tree = Buffer::new();
+    x.frame = RESULT_SLOT;
+    x.frame_max = RESULT_SLOT;
+    x.outgoing = 0u64;
+    x.entries[index * 3u64] = x.code.length() + 1u64;
+    // push rbp; mov rbp, rsp; sub rsp, <frame>; then the budget's address
+    // and the result's.
+    x = asm(x, x86.push(Buffer::new(), RBP));
+    x = mov(x, RBP, RSP);
+    x = asm(x, x86.reserve(Buffer::new(), 0u64));
+    let reserve: u64 = x.code.length() - 4u64;
+    x = mem_store(x, 8u64, RBP, BUDGET_SLOT, true, RDI);
+    x = mem_store(x, 8u64, RBP, RESULT_SLOT, true, RDX);
+    x = budget_call(x, "argorix_step".as_slice());
+    x = budget_call(x, "argorix_enter".as_slice());
+    // The parameters are in the caller's argument block, above the saved
+    // frame pointer and the return address.
+    let mut at: u64 = 0u64;
+    while at < function.count {
+        let parameter: u64 = c_emit.child(n, function.item, at);
+        let name: u64 = n[parameter].word - 1u64;
+        let ty: u64 = x.params[function.first + at];
+        let offset: u64 = 16u64 + x.param_offsets[function.first + at];
+        x = make(x, N_SLOT, ty, offset, ABOVE, 0u64, 0u64);
+        let place: u64 = x.result;
+        x = add_local(x, t[name].start, t[name].end, ty, place);
+        at += 1u64;
+    }
+    // Parameters are passed by value: a resource argument is owned here.
+    x = c_emit.open_scope(x);
+    at = 0u64;
+    while at < function.count {
+        let name: u64 = n[c_emit.child(n, function.item, at)].word - 1u64;
+        let ty: u64 = x.params[function.first + at];
+        let place: u64 = x.local_nodes[at];
+        x = own(t[name].start, t[name].end, ty, place, x);
+        at += 1u64;
+    }
+    let body: u64 = c_emit.child(n, function.item, function.count + 1u64);
+    let mut link: u64 = n[body].first;
+    while link != 0u64 && !x.failed {
+        let statement: u64 = link - 1u64;
+        link = n[statement].next;
+        if c_emit.is_statement(n[statement].kind) {
+            x = emit_statement(s, t, st, n, g, p, b, bi, statement, x);
+        }
+    }
+    if x.failed {
+        return x;
+    }
+    let tail: u64 = c_emit.tail_of(n, body);
+    if tail != 0u64 {
+        x = emit_consumed(s, t, st, n, g, p, b, bi, tail - 1u64, function.result, x);
+        if x.failed {
+            return x;
+        }
+        let value: u64 = x.node;
+        x = emit_exit(x);
+        x = emit_return(x, value, function.result);
+    }
+    if function.result == c_emit.UNIT {
+        x = emit_exit(x);
+        x = emit_return(x, 0u64, c_emit.UNIT);
+    } else if tail == 0u64 {
+        // Every path returned already.
+        x = asm(x, x86.ud2(Buffer::new()));
+    }
+    x = c_emit.close_scope(x);
+    // The frame: the slots, then the largest argument block, 16-byte
+    // aligned, so the stack stays aligned at every call.
+    let size: u64 = align(x.frame_max + x.outgoing, 16u64);
+    x.entries[index * 3u64 + 2u64] = size;
+    set32(x, reserve, size)
+}
+
+// A value handed to a new owner: a resource local read this way is moved.
+fn emit_consumed(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, expected: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = emit_expr(s, t, st, n, g, p, b, bi, node, expected, e);
+    if x.failed || n[node].kind != ast.PATH || ir.segments(t, n, g, node) != 1u64 {
+        return x;
+    }
+    let ty: u64 = x.vty;
+    let name: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, node, 0u64);
+    if c_emit.find_local(s, x.locals.as_slice(), x.locals_live, name.as_slice()) == c_emit.NONE {
+        return x;
+    }
+    x = c_emit.owns(x, ty);
+    if x.result == 1u64 {
+        let flag: u64 = owner_flag(s, x.owned.as_slice(), x.owned_nodes.as_slice(), x.owned_live, name.as_slice());
+        if flag != 0u64 {
+            x = set_flag(x, flag, 0u64);
+        }
+    }
+    x
+}
+
+// A place, without moving anything out of it. `write` says it will be
+// assigned: through a handle, that is the arena slot itself.
+fn emit_place(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, write: bool, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let kind: u64 = n[node].kind;
+    if kind == ast.PATH && ir.segments(t, n, g, node) == 1u64 {
+        let name: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, node, 0u64);
+        let found: u64 = find_local(s, x.locals.as_slice(), x.locals_live, name.as_slice());
+        if found != 0u64 {
+            let ty: u64 = x.locals[(found - 1u64) * 3u64 + 2u64];
+            let place: u64 = x.local_nodes[found - 1u64];
+            return set_node(x, place, ty);
+        }
+        return emit_expr(s, t, st, n, g, p, b, bi, node, c_emit.NONE, x);
+    }
+    if kind == ast.FIELD_ACCESS {
+        x = emit_place(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), write, x);
+        if x.failed {
+            return x;
+        }
+        let base: u64 = x.node;
+        let base_ty: u64 = x.vty;
+        let name: Buffer<u8> = c_emit.word(s, t, n, node);
+        if write && x.types[base_ty].tag == c_emit.T_HANDLE {
+            let element: u64 = x.types[base_ty].element;
+            if x.types[element].tag != c_emit.T_USER {
+                return c_emit.refuse(x, "handle field access requires a struct element".as_slice());
+            }
+            let owner: Buffer<u8> = text(x.names.as_slice(), x.types[element].name_start, x.types[element].name_end);
+            x = c_emit.struct_of(x, element);
+            if x.result == 0u64 {
+                let reason: Buffer<u8> = c_emit.unknown_field(name.as_slice(), owner.as_slice());
+                return c_emit.refuse(x, reason.as_slice());
+            }
+            let record: CRecord = x.structs[x.result - 1u64];
+            let field: u64 = c_emit.find_field(x.fields.as_slice(), x.names.as_slice(), record.first, record.count, name.as_slice());
+            if field == 0u64 {
+                let reason: Buffer<u8> = c_emit.unknown_field(name.as_slice(), owner.as_slice());
+                return c_emit.refuse(x, reason.as_slice());
+            }
+            let field_ty: u64 = x.fields[field - 1u64].ty;
+            x = layout(x, element);
+            let size: u64 = x.result;
+            let id: u64 = c_emit.core_type_id(x.types.as_slice(), x.names.as_slice(), element);
+            x = make(x, N_HANDLE, element, base, id, size, 1u64);
+            let slot: u64 = x.result;
+            let offset: u64 = x.offsets[field - 1u64];
+            x = field_node(x, slot, offset, field_ty);
+            let place: u64 = x.result;
+            return set_node(x, place, field_ty);
+        }
+        if x.types[base_ty].tag != c_emit.T_USER {
+            // Read it as a value.
+            return emit_expr(s, t, st, n, g, p, b, bi, node, c_emit.NONE, x);
+        }
+        let owner: Buffer<u8> = text(x.names.as_slice(), x.types[base_ty].name_start, x.types[base_ty].name_end);
+        x = c_emit.struct_of(x, base_ty);
+        if x.result == 0u64 {
+            let reason: Buffer<u8> = c_emit.unknown_field(name.as_slice(), owner.as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let record: CRecord = x.structs[x.result - 1u64];
+        let field: u64 = c_emit.find_field(x.fields.as_slice(), x.names.as_slice(), record.first, record.count, name.as_slice());
+        if field == 0u64 {
+            let reason: Buffer<u8> = c_emit.unknown_field(name.as_slice(), owner.as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let field_ty: u64 = x.fields[field - 1u64].ty;
+        x = layout(x, base_ty);
+        let offset: u64 = x.offsets[field - 1u64];
+        x = field_node(x, base, offset, field_ty);
+        let place: u64 = x.result;
+        return set_node(x, place, field_ty);
+    }
+    if kind == ast.INDEX {
+        x = emit_place(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), write, x);
+        if x.failed {
+            return x;
+        }
+        let base: u64 = x.node;
+        let base_ty: u64 = x.vty;
+        x = c_emit.integer("u64".as_slice(), x);
+        let unsigned: u64 = x.result;
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), unsigned, x);
+        if x.failed {
+            return x;
+        }
+        let index: u64 = x.node;
+        let found: CType = x.types[base_ty];
+        if found.tag == c_emit.T_ARRAY {
+            x = layout(x, found.element);
+            let size: u64 = x.result;
+            x = make(x, N_ELEMENT, found.element, base, index, found.length, size);
+        } else if found.tag == c_emit.T_BUFFER || (found.tag == c_emit.T_SLICE && !write) {
+            x = layout(x, found.element);
+            let size: u64 = x.result;
+            x = make(x, N_VIEW, found.element, base, index, 0u64, size);
+        } else {
+            return c_emit.refuse(x, "only a Buffer or an Array element is a writable place".as_slice());
+        }
+        let place: u64 = x.result;
+        return set_node(x, place, found.element);
+    }
+    emit_expr(s, t, st, n, g, p, b, bi, node, c_emit.NONE, x)
+}
+
+// ------------------------------------------------------------------ statements
+
+fn emit_statement(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    if x.failed {
+        return x;
+    }
+    let kind: u64 = n[node].kind;
+    if kind == ast.LET {
+        let first: u64 = c_emit.child(n, node, 0u64);
+        let mut declared: u64 = c_emit.NONE;
+        if n[first].kind == ast.TYPE_NAMED || n[first].kind == ast.TYPE_CONTAINER {
+            x = c_emit.from_type(s, t, n, p, b, bi, first, x);
+            if x.failed {
+                return x;
+            }
+            declared = x.result;
+        }
+        x = emit_consumed(s, t, st, n, g, p, b, bi, c_emit.child(n, node, c_emit.child_count(n, node) - 1u64), declared, x);
+        if x.failed {
+            return x;
+        }
+        let ty: u64 = if declared != c_emit.NONE { declared } else { x.vty };
+        let value: u64 = x.node;
+        let name: u64 = n[node].word - 1u64;
+        x = new_temp(x, ty);
+        let place: u64 = x.result;
+        x = copy(x, place, value, ty);
+        x = own(t[name].start, t[name].end, ty, place, x);
+        return add_local(x, t[name].start, t[name].end, ty, place);
+    }
+    if kind == ast.ASSIGN {
+        return emit_assign(s, t, st, n, g, p, b, bi, node, x);
+    }
+    if kind == ast.WHILE {
+        // while (true) { step; if (!condition) { break; } body }
+        let saved: u64 = x.frame;
+        let start: u64 = x.code.length();
+        let mark: u64 = x.breaks_live;
+        x = budget_call(x, "argorix_step".as_slice());
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), c_emit.BOOL, x);
+        if x.failed {
+            return x;
+        }
+        let condition: u64 = x.node;
+        x = load(x, condition, RAX);
+        x = test_rax(x);
+        x = branch(x, x86.EQUAL);
+        let out: u64 = x.result;
+        x = push_break(x, out);
+        x = c_emit.push_loop(x, 0u64, 0u64, c_emit.NONE);
+        x = loop_start(x, start);
+        x = scoped_block(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), x);
+        x = c_emit.pop_loop(x);
+        if x.failed {
+            return x;
+        }
+        x = jump_to(x, start);
+        x = land_breaks(x, mark);
+        x.frame = saved;
+        return x;
+    }
+    if kind == ast.RETURN {
+        if n[node].first != 0u64 {
+            let result: u64 = x.functions[x.function].result;
+            x = emit_consumed(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), result, x);
+            if x.failed {
+                return x;
+            }
+            let value: u64 = x.node;
+            x = emit_exit(x);
+            return emit_return(x, value, result);
+        }
+        x = emit_exit(x);
+        return emit_return(x, 0u64, c_emit.UNIT);
+    }
+    if kind == ast.EXPR {
+        return statement_value(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), x);
+    }
+    if kind == ast.CONTINUE {
+        x = loop_exit_drops(x);
+        return continue_jump(x);
+    }
+    // `break`, with or without a value.
+    if n[node].first == 0u64 {
+        x = loop_exit_drops(x);
+        return break_jump(x);
+    }
+    if x.loops_live == 0u64 || x.loops[(x.loops_live - 1u64) * 3u64] == 0u64 {
+        return c_emit.refuse(x, "a value `break` needs an enclosing `loop` used as a value".as_slice());
+    }
+    let temp: u64 = x.loops[(x.loops_live - 1u64) * 3u64 + 1u64];
+    let ty: u64 = x.loops[(x.loops_live - 1u64) * 3u64 + 2u64];
+    x = emit_consumed(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), ty, x);
+    if x.failed {
+        return x;
+    }
+    let value: u64 = x.node;
+    x = copy(x, temp, value, ty);
+    x = loop_exit_drops(x);
+    break_jump(x)
+}
+
+fn emit_assign(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let target: u64 = c_emit.child(n, node, 0u64);
+    let value: u64 = c_emit.child(n, node, 1u64);
+    let operator: u64 = n[node].value;
+    if n[target].kind != ast.PATH {
+        // A field or an element, written in place.
+        if operator != token.ASSIGN {
+            x = emit_place(s, t, st, n, g, p, b, bi, target, true, x);
+            if x.failed {
+                return x;
+            }
+            let place: u64 = x.node;
+            let ty: u64 = x.vty;
+            x = emit_expr(s, t, st, n, g, p, b, bi, value, ty, x);
+            if x.failed {
+                return x;
+            }
+            if x.types[ty].tag != c_emit.T_INTEGER {
+                return c_emit.refuse(x, "checked arithmetic requires an integer".as_slice());
+            }
+            let right: u64 = x.node;
+            // place = helper(place, value), with the place's address taken
+            // once.
+            let operation: Buffer<u8> = operation_name(operator);
+            let name: Buffer<u8> = helper_name(x.names.as_slice(), x.types.as_slice(), ty, operation.as_slice());
+            let size: u64 = scalar_size(x.types.as_slice(), x.names.as_slice(), ty);
+            let signed: bool = is_signed(x.types.as_slice(), x.names.as_slice(), ty);
+            let saved: u64 = x.frame;
+            x = frame_bytes(x, 8u64, 8u64);
+            let slot: u64 = x.result;
+            x = address(x, place, RAX);
+            x = mem_store(x, 8u64, RBP, slot, true, RAX);
+            x = mem_load(x, size, signed, RDI, RAX, 0u64, false);
+            x = load(x, right, RSI);
+            x = call_extern(x, name.as_slice());
+            x = mem_load(x, 8u64, false, RCX, RBP, slot, true);
+            x = mem_store(x, size, RCX, 0u64, false, RAX);
+            x.frame = saved;
+            return x;
+        }
+        // The value is computed before the place, and the place's type comes
+        // first as the hint.
+        x = c_emit.infer_type(s, t, n, g, p, b, bi, target, x);
+        let mut hint: u64 = x.result;
+        if hint == c_emit.NONE {
+            x = c_emit.infer_type(s, t, n, g, p, b, bi, value, x);
+            hint = x.result;
+        }
+        x = emit_consumed(s, t, st, n, g, p, b, bi, value, hint, x);
+        if x.failed {
+            return x;
+        }
+        let right: u64 = x.node;
+        x = emit_place(s, t, st, n, g, p, b, bi, target, true, x);
+        if x.failed {
+            return x;
+        }
+        let place: u64 = x.node;
+        let ty: u64 = x.vty;
+        x = c_emit.owns(x, ty);
+        if x.result == 1u64 {
+            x = address(x, place, RDI);
+            x = call_drop(x, ty);
+        }
+        return copy(x, place, right, ty);
+    }
+    if ir.segments(t, n, g, target) != 1u64 {
+        let reason: Buffer<u8> = c_emit.qualified(s, t, n, g, p, b, bi, target);
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    let name: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, target, 0u64);
+    let found: u64 = find_local(s, x.locals.as_slice(), x.locals_live, name.as_slice());
+    if found == 0u64 {
+        let reason: Buffer<u8> = c_emit.quoted("unknown local `".as_slice(), name.as_slice(), "`".as_slice());
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    let ty: u64 = x.locals[(found - 1u64) * 3u64 + 2u64];
+    let local: u64 = x.local_nodes[found - 1u64];
+    x = emit_consumed(s, t, st, n, g, p, b, bi, value, ty, x);
+    if x.failed {
+        return x;
+    }
+    let right: u64 = x.node;
+    x = c_emit.owns(x, ty);
+    if x.result == 1u64 {
+        let flag: u64 = owner_flag(s, x.owned.as_slice(), x.owned_nodes.as_slice(), x.owned_live, name.as_slice());
+        if right != local {
+            // The old value is released before the new one takes its place.
+            if flag != 0u64 {
+                x = mem_load(x, 1u64, false, RAX, RBP, flag, true);
+                x = test_rax(x);
+                x = branch(x, x86.EQUAL);
+                let skip: u64 = x.result;
+                x = address(x, local, RDI);
+                x = call_drop(x, ty);
+                x = land(x, skip);
+            }
+            x = copy(x, local, right, ty);
+            if flag != 0u64 {
+                x = set_flag(x, flag, 1u64);
+            }
+            return x;
+        }
+        // `b = b;` moved `b` out and back: it still owns.
+        if flag != 0u64 {
+            x = set_flag(x, flag, 1u64);
+        }
+    }
+    if operator == token.ASSIGN {
+        if right == local {
+            // `x = x;` has no effect.
+            return x;
+        }
+        return copy(x, local, right, ty);
+    }
+    if x.types[ty].tag != c_emit.T_INTEGER {
+        return c_emit.refuse(x, "checked arithmetic requires an integer".as_slice());
+    }
+    let operation: Buffer<u8> = operation_name(operator);
+    let helper: Buffer<u8> = helper_name(x.names.as_slice(), x.types.as_slice(), ty, operation.as_slice());
+    x = load_pair(x, local, right, RDI, RSI);
+    x = call_extern(x, helper.as_slice());
+    store_slot(x, local, RAX)
+}
+
+// An expression in statement position: an `if` or a block is control flow;
+// any other value is computed, and a resource it produces is released.
+fn statement_value(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let kind: u64 = n[node].kind;
+    if kind == ast.IF {
+        return if_statement(s, t, st, n, g, p, b, bi, node, x);
+    }
+    if kind == ast.BLOCK {
+        let saved: u64 = x.frame;
+        x = scoped_block(s, t, st, n, g, p, b, bi, node, x);
+        if x.failed {
+            return x;
+        }
+        x.frame = saved;
+        return x;
+    }
+    x = emit_consumed(s, t, st, n, g, p, b, bi, node, c_emit.NONE, x);
+    if x.failed {
+        return x;
+    }
+    let ty: u64 = x.vty;
+    x = c_emit.owns(x, ty);
+    if x.result == 1u64 {
+        let value: u64 = x.node;
+        x = bind(x, value, ty);
+        let place: u64 = x.node;
+        x = address(x, place, RDI);
+        x = call_drop(x, ty);
+    }
+    x
+}
+
+// A block's statements in their own scope; the locals it declares go out of
+// scope with it.
+fn scoped_block(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, block: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let saved: u64 = x.locals_live;
+    x = c_emit.open_scope(x);
+    let mut link: u64 = n[block].first;
+    while link != 0u64 && !x.failed {
+        let at: u64 = link - 1u64;
+        link = n[at].next;
+        if c_emit.is_statement(n[at].kind) {
+            x = emit_statement(s, t, st, n, g, p, b, bi, at, x);
+        } else {
+            // A tail in statement position is evaluated for its effects.
+            x = statement_value(s, t, st, n, g, p, b, bi, at, x);
+        }
+    }
+    if x.failed {
+        return x;
+    }
+    let depth: u64 = x.scopes_live - 1u64;
+    x = drops_from(depth, x);
+    x = c_emit.close_scope(x);
+    x.locals_live = saved;
+    x
+}
+
+// A block used as a value: its tail is assigned to `target`.
+fn block_assignment(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, block: u64, target: u64, ty: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let saved: u64 = x.locals_live;
+    let frame: u64 = x.frame;
+    x = c_emit.open_scope(x);
+    let mut last: u64 = 0u64;
+    let mut link: u64 = n[block].first;
+    while link != 0u64 && !x.failed {
+        let at: u64 = link - 1u64;
+        link = n[at].next;
+        if c_emit.is_statement(n[at].kind) {
+            x = emit_statement(s, t, st, n, g, p, b, bi, at, x);
+            last = at + 1u64;
+        }
+    }
+    if x.failed {
+        return x;
+    }
+    let tail: u64 = c_emit.tail_of(n, block);
+    if tail == 0u64 {
+        // A value block without a tail must leave by return, break or
+        // continue.
+        if last == 0u64 {
+            return c_emit.refuse(x, "value block has no tail expression".as_slice());
+        }
+        let kind: u64 = n[last - 1u64].kind;
+        if kind != ast.RETURN && kind != ast.BREAK && kind != ast.CONTINUE {
+            return c_emit.refuse(x, "value block has no tail expression".as_slice());
+        }
+        x = c_emit.close_scope(x);
+        x.frame = frame;
+        x.locals_live = saved;
+        return x;
+    }
+    x = emit_consumed(s, t, st, n, g, p, b, bi, tail - 1u64, ty, x);
+    if x.failed {
+        return x;
+    }
+    let value: u64 = x.node;
+    x = copy(x, target, value, ty);
+    let depth: u64 = x.scopes_live - 1u64;
+    x = drops_from(depth, x);
+    x = c_emit.close_scope(x);
+    x.frame = frame;
+    x.locals_live = saved;
+    x
+}
+
+// An `if` used as a statement: no result, no `else` required.
+fn if_statement(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), c_emit.BOOL, e);
+    if x.failed {
+        return x;
+    }
+    let condition: u64 = x.node;
+    x = load(x, condition, RAX);
+    x = test_rax(x);
+    x = branch(x, x86.EQUAL);
+    let other_branch: u64 = x.result;
+    let saved: u64 = x.frame;
+    x = scoped_block(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), x);
+    if x.failed {
+        return x;
+    }
+    x.frame = saved;
+    if c_emit.child_count(n, node) < 3u64 {
+        return land(x, other_branch);
+    }
+    let other: u64 = c_emit.child(n, node, 2u64);
+    x = jump(x);
+    let end: u64 = x.result;
+    x = land(x, other_branch);
+    if n[other].kind == ast.IF {
+        x = if_statement(s, t, st, n, g, p, b, bi, other, x);
+    } else if n[other].kind == ast.BLOCK {
+        x = scoped_block(s, t, st, n, g, p, b, bi, other, x);
+    } else {
+        x = emit_expr(s, t, st, n, g, p, b, bi, other, c_emit.NONE, x);
+    }
+    if x.failed {
+        return x;
+    }
+    x.frame = saved;
+    land(x, end)
+}
+
+// ------------------------------------------------------------------ expressions
+
+fn emit_expr(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, expected: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    if x.failed {
+        return x;
+    }
+    let kind: u64 = n[node].kind;
+    if kind == ast.STRING {
+        // Static UTF-8, and its length.
+        let found: Token = t[n[node].word - 1u64];
+        x = add_data(x, st.slice(found.text_start, found.text_end));
+        let offset: u64 = x.result;
+        x = new_temp(x, c_emit.STRING);
+        let place: u64 = x.result;
+        let at: u64 = x.tree[place * STRIDE + 2u64];
+        x = data_address(x, RAX, offset);
+        x = mem_store(x, 8u64, RBP, at, true, RAX);
+        x = put_imm(x, RAX, found.text_end - found.text_start);
+        x = mem_store(x, 8u64, RBP, at - 8u64, true, RAX);
+        return set_node(x, place, c_emit.STRING);
+    }
+    if kind == ast.INTEGER {
+        let mut ty: u64 = expected;
+        if n[node].flag == 1u64 {
+            let found: Token = t[n[node].word - 1u64];
+            x = c_emit.integer(s.slice(found.text_start, found.text_end), x);
+            ty = x.result;
+        }
+        if ty == c_emit.NONE {
+            return c_emit.refuse(x, "integer literal needs a type".as_slice());
+        }
+        if x.types[ty].tag != c_emit.T_INTEGER {
+            return c_emit.refuse(x, "integer literal has non-integer type".as_slice());
+        }
+        return literal(x, n[node].value, ty);
+    }
+    if kind == ast.BOOL {
+        return literal(x, if n[node].value == 1u64 { 1u64 } else { 0u64 }, c_emit.BOOL);
+    }
+    if kind == ast.UNIT {
+        return literal(x, 0u64, c_emit.UNIT);
+    }
+    if kind == ast.PATH {
+        return emit_path(s, t, st, n, g, p, b, bi, node, x);
+    }
+    if kind == ast.AGGREGATE {
+        return emit_aggregate_value(s, t, st, n, g, p, b, bi, node, expected, x);
+    }
+    if kind == ast.ARRAY {
+        if expected == c_emit.NONE {
+            return c_emit.refuse(x, "array literal needs an expected array type".as_slice());
+        }
+        if x.types[expected].tag != c_emit.T_ARRAY {
+            return c_emit.refuse(x, "array literal has a non-array expected type".as_slice());
+        }
+        let element: u64 = x.types[expected].element;
+        let length: u64 = x.types[expected].length;
+        let count: u64 = c_emit.child_count(n, node);
+        if count != length {
+            return c_emit.refuse(x, "array literal length mismatch".as_slice());
+        }
+        x = new_temp(x, expected);
+        let place: u64 = x.result;
+        if count == 0u64 {
+            // Nothing to fill: a copy of a zero-initialized static.
+            x = zero(x, place, expected);
+            return set_node(x, place, expected);
+        }
+        x = layout(x, element);
+        let size: u64 = x.result;
+        let mut index: u64 = 0u64;
+        let mut link: u64 = n[node].first;
+        while link != 0u64 {
+            let item: u64 = link - 1u64;
+            link = n[item].next;
+            x = emit_consumed(s, t, st, n, g, p, b, bi, item, element, x);
+            if x.failed {
+                return x;
+            }
+            let value: u64 = x.node;
+            x = field_node(x, place, index * size, element);
+            let slot: u64 = x.result;
+            x = copy(x, slot, value, element);
+            index += 1u64;
+        }
+        return set_node(x, place, expected);
+    }
+    if kind == ast.INDEX {
+        x = emit_place(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), false, x);
+        if x.failed {
+            return x;
+        }
+        let base: u64 = x.node;
+        let found: CType = x.types[x.vty];
+        let mut element: u64 = found.element;
+        if found.tag == c_emit.T_BYTES {
+            x = c_emit.integer("u8".as_slice(), x);
+            element = x.result;
+        } else if found.tag != c_emit.T_ARRAY && found.tag != c_emit.T_SLICE && found.tag != c_emit.T_BUFFER {
+            return c_emit.refuse(x, "indexing requires Array, Slice, Buffer, or bytes".as_slice());
+        }
+        x = c_emit.integer("u64".as_slice(), x);
+        let unsigned: u64 = x.result;
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), unsigned, x);
+        if x.failed {
+            return x;
+        }
+        let index: u64 = x.node;
+        x = layout(x, element);
+        let size: u64 = x.result;
+        if found.tag == c_emit.T_ARRAY {
+            x = make(x, N_ELEMENT, element, base, index, found.length, size);
+        } else {
+            x = make(x, N_VIEW, element, base, index, 0u64, size);
+        }
+        let source: u64 = x.result;
+        return bind(x, source, element);
+    }
+    if kind == ast.FIELD_ACCESS {
+        x = emit_place(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), false, x);
+        if x.failed {
+            return x;
+        }
+        let base: u64 = x.node;
+        let value_ty: u64 = x.vty;
+        let name: Buffer<u8> = c_emit.word(s, t, n, node);
+        let mut owner: u64 = value_ty;
+        let mut through: bool = false;
+        if x.types[value_ty].tag == c_emit.T_HANDLE {
+            owner = x.types[value_ty].element;
+            if x.types[owner].tag != c_emit.T_USER {
+                return c_emit.refuse(x, "handle field access requires a struct element".as_slice());
+            }
+            through = true;
+        } else if x.types[value_ty].tag != c_emit.T_USER {
+            return c_emit.refuse(x, "field access currently requires a struct or struct handle".as_slice());
+        }
+        let owner_name: Buffer<u8> = text(x.names.as_slice(), x.types[owner].name_start, x.types[owner].name_end);
+        x = c_emit.struct_of(x, owner);
+        if x.result == 0u64 {
+            let reason: Buffer<u8> = c_emit.unknown_field(name.as_slice(), owner_name.as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let record: CRecord = x.structs[x.result - 1u64];
+        let field: u64 = c_emit.find_field(x.fields.as_slice(), x.names.as_slice(), record.first, record.count, name.as_slice());
+        if field == 0u64 {
+            let reason: Buffer<u8> = c_emit.unknown_field(name.as_slice(), owner_name.as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let field_ty: u64 = x.fields[field - 1u64].ty;
+        x = layout(x, owner);
+        let size: u64 = x.result;
+        let mut source: u64 = base;
+        if through {
+            let id: u64 = c_emit.core_type_id(x.types.as_slice(), x.names.as_slice(), owner);
+            x = make(x, N_HANDLE, owner, base, id, size, 0u64);
+            source = x.result;
+        }
+        let offset: u64 = x.offsets[field - 1u64];
+        x = field_node(x, source, offset, field_ty);
+        let from: u64 = x.result;
+        return bind(x, from, field_ty);
+    }
+    if kind == ast.UNARY {
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), expected, x);
+        if x.failed {
+            return x;
+        }
+        let ty: u64 = x.vty;
+        let value: u64 = x.node;
+        if n[node].value == token.BANG {
+            x = load(x, value, RAX);
+            x = test_rax(x);
+            x = asm(x, x86.set(Buffer::new(), x86.EQUAL, RAX));
+        } else {
+            if x.types[ty].tag != c_emit.T_INTEGER {
+                return c_emit.refuse(x, "negation requires an integer".as_slice());
+            }
+            if x.names[x.types[ty].name_start] != 105u8 {
+                return c_emit.refuse(x, "negating an unsigned value has no representable result".as_slice());
+            }
+            let helper: Buffer<u8> = helper_name(x.names.as_slice(), x.types.as_slice(), ty, "neg".as_slice());
+            x = load(x, value, RDI);
+            x = call_extern(x, helper.as_slice());
+        }
+        return bind_rax(x, ty);
+    }
+    if kind == ast.BINARY {
+        return emit_binary(s, t, st, n, g, p, b, bi, node, expected, x);
+    }
+    if kind == ast.CALL {
+        return emit_call(s, t, st, n, g, p, b, bi, node, expected, x);
+    }
+    if kind == ast.MATCH {
+        return emit_match(s, t, st, n, g, p, b, bi, node, expected, x);
+    }
+    if kind == ast.IF {
+        if expected == c_emit.NONE {
+            return c_emit.refuse(x, "if expression needs an expected scalar type".as_slice());
+        }
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), c_emit.BOOL, x);
+        if x.failed {
+            return x;
+        }
+        let condition: u64 = x.node;
+        x = new_temp(x, expected);
+        let place: u64 = x.result;
+        x = zero(x, place, expected);
+        x = load(x, condition, RAX);
+        x = test_rax(x);
+        x = branch(x, x86.EQUAL);
+        let other_branch: u64 = x.result;
+        let saved: u64 = x.frame;
+        x = block_assignment(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), place, expected, x);
+        if x.failed {
+            return x;
+        }
+        if c_emit.child_count(n, node) < 3u64 {
+            return c_emit.refuse(x, "value if expression requires else".as_slice());
+        }
+        x.frame = saved;
+        x = jump(x);
+        let end: u64 = x.result;
+        x = land(x, other_branch);
+        x = emit_consumed(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 2u64), expected, x);
+        if x.failed {
+            return x;
+        }
+        let value: u64 = x.node;
+        x = copy(x, place, value, expected);
+        x.frame = saved;
+        x = land(x, end);
+        return set_node(x, place, expected);
+    }
+    if kind == ast.BLOCK {
+        if expected == c_emit.NONE {
+            return c_emit.refuse(x, "value block needs an expected scalar type".as_slice());
+        }
+        x = new_temp(x, expected);
+        let place: u64 = x.result;
+        x = zero(x, place, expected);
+        x = block_assignment(s, t, st, n, g, p, b, bi, node, place, expected, x);
+        if x.failed {
+            return x;
+        }
+        return set_node(x, place, expected);
+    }
+    // A `loop`: used as a value it leaves through `break value`, which
+    // assigns its temporary.
+    let slot: bool = expected != c_emit.NONE && expected != c_emit.UNIT;
+    let mut place: u64 = 0u64;
+    if slot {
+        x = new_temp(x, expected);
+        place = x.result;
+        x = zero(x, place, expected);
+    }
+    let saved: u64 = x.frame;
+    let start: u64 = x.code.length();
+    let mark: u64 = x.breaks_live;
+    x = budget_call(x, "argorix_step".as_slice());
+    x = c_emit.push_loop(x, if slot { 1u64 } else { 0u64 }, place, expected);
+    x = loop_start(x, start);
+    x = scoped_block(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 0u64), x);
+    x = c_emit.pop_loop(x);
+    if x.failed {
+        return x;
+    }
+    x = jump_to(x, start);
+    x = land_breaks(x, mark);
+    x.frame = saved;
+    if slot {
+        return set_node(x, place, expected);
+    }
+    literal(x, 0u64, if expected == c_emit.NONE { c_emit.UNIT } else { expected })
+}
+
+// A path: a unit variant, a local, or a constant, whose initializer every
+// read evaluates.
+fn emit_path(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let count: u64 = ir.segments(t, n, g, node);
+    if count == 2u64 {
+        let name: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, node, 0u64);
+        let variant: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, node, 1u64);
+        let joined: Buffer<u8> = c_emit.path_text(s, t, n, g, p, b, bi, node);
+        let enumeration: u64 = c_emit.find_record(x.enums.as_slice(), x.names.as_slice(), name.as_slice());
+        if enumeration == 0u64 {
+            let reason: Buffer<u8> = c_emit.quoted("unknown enum variant `".as_slice(), joined.as_slice(), "`".as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let record: CRecord = x.enums[enumeration - 1u64];
+        let found: u64 = c_emit.find_variant(x.variants.as_slice(), x.names.as_slice(), record.first, record.count, variant.as_slice());
+        if found == 0u64 {
+            let reason: Buffer<u8> = c_emit.quoted("unknown enum variant `".as_slice(), joined.as_slice(), "`".as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        if x.variants[found - 1u64].count != 0u64 {
+            let reason: Buffer<u8> = c_emit.quoted("variant `".as_slice(), joined.as_slice(), "` requires fields".as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        x = c_emit.intern_named(c_emit.T_USER, name.as_slice(), x);
+        let ty: u64 = x.result;
+        return unit_variant(x, found - 1u64 - record.first, ty);
+    }
+    if count != 1u64 {
+        let reason: Buffer<u8> = c_emit.qualified(s, t, n, g, p, b, bi, node);
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    let name: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, node, 0u64);
+    let found: u64 = find_local(s, x.locals.as_slice(), x.locals_live, name.as_slice());
+    if found != 0u64 {
+        let ty: u64 = x.locals[(found - 1u64) * 3u64 + 2u64];
+        let place: u64 = x.local_nodes[found - 1u64];
+        return set_node(x, place, ty);
+    }
+    // A local shadows a constant of the same name.
+    let constant: u64 = c_emit.find_constant(x.constants.as_slice(), x.names.as_slice(), name.as_slice());
+    if constant == 0u64 {
+        let reason: Buffer<u8> = c_emit.quoted("path `".as_slice(), name.as_slice(), "` is not a scalar local".as_slice());
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    let declared: CConst = x.constants[constant - 1u64];
+    emit_expr(s, t, st, n, g, p, b, bi, declared.value, declared.ty, x)
+}
+
+// The tag of an enum's value.
+fn store_tag(e: CEmit, place: u64, tag: u64) -> CEmit {
+    let at: u64 = e.tree[place * STRIDE + 2u64];
+    let x: CEmit = put_imm(e, RAX, tag);
+    mem_store(x, 4u64, RBP, at, true, RAX)
+}
+
+// The byte of a variant without fields, which the C backend zeroes.
+fn store_unit(e: CEmit, place: u64, ty: u64) -> CEmit {
+    let mut x: CEmit = layout(e, ty);
+    let data: u64 = x.sizes[ty * 3u64 + 2u64];
+    let at: u64 = x.tree[place * STRIDE + 2u64];
+    x = put_imm(x, RAX, 0u64);
+    mem_store(x, 1u64, RBP, at - data, true, RAX)
+}
+
+// A variant without fields, in a fresh temporary.
+fn unit_variant(e: CEmit, tag: u64, ty: u64) -> CEmit {
+    let mut x: CEmit = new_temp(e, ty);
+    let place: u64 = x.result;
+    x = store_tag(x, place, tag);
+    x = store_unit(x, place, ty);
+    set_node(x, place, ty)
+}
+
+// `S { .. }` or `E::V { .. }`, field by field in source order.
+fn emit_aggregate_value(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, expected: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let count: u64 = ir.segments(t, n, g, node);
+    if count != 1u64 && count != 2u64 {
+        let joined: Buffer<u8> = c_emit.path_text(s, t, n, g, p, b, bi, node);
+        let reason: Buffer<u8> = c_emit.quoted("aggregate path `".as_slice(), joined.as_slice(), "` is not supported".as_slice());
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    let name: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, node, 0u64);
+    x = c_emit.intern_named(c_emit.T_USER, name.as_slice(), x);
+    let own_type: u64 = x.result;
+    let ty: u64 = if expected != c_emit.NONE { expected } else { own_type };
+    if ty != own_type {
+        return c_emit.refuse(x, "aggregate path does not match its expected type".as_slice());
+    }
+    x = new_temp(x, ty);
+    let place: u64 = x.result;
+    let mut first: u64 = 0u64;
+    let mut fields: u64 = 0u64;
+    let mut data: u64 = 0u64;
+    if count == 2u64 {
+        let variant: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, node, 1u64);
+        let joined: Buffer<u8> = c_emit.path_text(s, t, n, g, p, b, bi, node);
+        let enumeration: u64 = c_emit.find_record(x.enums.as_slice(), x.names.as_slice(), name.as_slice());
+        if enumeration == 0u64 {
+            let reason: Buffer<u8> = c_emit.quoted("unknown enum variant `".as_slice(), joined.as_slice(), "`".as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let record: CRecord = x.enums[enumeration - 1u64];
+        let found: u64 = c_emit.find_variant(x.variants.as_slice(), x.names.as_slice(), record.first, record.count, variant.as_slice());
+        if found == 0u64 {
+            let reason: Buffer<u8> = c_emit.quoted("unknown enum variant `".as_slice(), joined.as_slice(), "`".as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        first = x.variants[found - 1u64].first;
+        fields = x.variants[found - 1u64].count;
+        x = store_tag(x, place, found - 1u64 - record.first);
+        if fields == 0u64 {
+            x = store_unit(x, place, ty);
+        }
+        x = layout(x, ty);
+        data = x.sizes[ty * 3u64 + 2u64];
+    } else {
+        let structure: u64 = c_emit.find_record(x.structs.as_slice(), x.names.as_slice(), name.as_slice());
+        if structure == 0u64 {
+            let reason: Buffer<u8> = c_emit.quoted("`".as_slice(), name.as_slice(), "` is not a lowered struct".as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        first = x.structs[structure - 1u64].first;
+        fields = x.structs[structure - 1u64].count;
+        x = layout(x, ty);
+    }
+    let mut link: u64 = n[node].first;
+    while link != 0u64 {
+        let field: u64 = link - 1u64;
+        link = n[field].next;
+        let field_name: Buffer<u8> = c_emit.word(s, t, n, field);
+        let found: u64 = c_emit.find_field(x.fields.as_slice(), x.names.as_slice(), first, fields, field_name.as_slice());
+        if found == 0u64 {
+            let reason: Buffer<u8> = c_emit.unknown_field(field_name.as_slice(), name.as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let field_ty: u64 = x.fields[found - 1u64].ty;
+        x = emit_consumed(s, t, st, n, g, p, b, bi, n[field].first - 1u64, field_ty, x);
+        if x.failed {
+            return x;
+        }
+        let value: u64 = x.node;
+        let offset: u64 = data + x.offsets[found - 1u64];
+        x = field_node(x, place, offset, field_ty);
+        let slot: u64 = x.result;
+        x = copy(x, slot, value, field_ty);
+    }
+    set_node(x, place, ty)
+}
+
+fn emit_binary(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, expected: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let left: u64 = c_emit.child(n, node, 0u64);
+    let right: u64 = c_emit.child(n, node, 1u64);
+    let operator: u64 = n[node].value;
+    // Operands run left to right: a variable read before a right operand that
+    // runs statements is copied first.
+    let snapshot: bool = n[left].kind == ast.PATH && c_emit.runs_statements(n, right);
+    // A comparison answers bool, but its operands take their own type.
+    let mut operand: u64 = expected;
+    if c_emit.is_comparison(operator) {
+        x = c_emit.infer_type(s, t, n, g, p, b, bi, left, x);
+        operand = x.result;
+        if operand == c_emit.NONE {
+            x = c_emit.infer_type(s, t, n, g, p, b, bi, right, x);
+            operand = x.result;
+        }
+    }
+    x = emit_expr(s, t, st, n, g, p, b, bi, left, operand, x);
+    if x.failed {
+        return x;
+    }
+    if snapshot {
+        let value: u64 = x.node;
+        let ty: u64 = x.vty;
+        x = bind(x, value, ty);
+    }
+    let left_value: u64 = x.node;
+    let left_ty: u64 = x.vty;
+    if operator == token.AMP_AMP || operator == token.PIPE_PIPE {
+        // bool t = left; if (t) { t = right; } (or `if (!t)` for `||`)
+        x = new_temp(x, c_emit.BOOL);
+        let temp: u64 = x.result;
+        x = copy(x, temp, left_value, c_emit.BOOL);
+        x = load(x, temp, RAX);
+        x = test_rax(x);
+        x = branch(x, if operator == token.PIPE_PIPE { x86.NOT_EQUAL } else { x86.EQUAL });
+        let skip: u64 = x.result;
+        let saved: u64 = x.frame;
+        x = emit_expr(s, t, st, n, g, p, b, bi, right, c_emit.BOOL, x);
+        if x.failed {
+            return x;
+        }
+        let value: u64 = x.node;
+        x = copy(x, temp, value, c_emit.BOOL);
+        x.frame = saved;
+        x = land(x, skip);
+        return set_node(x, temp, c_emit.BOOL);
+    }
+    x = emit_expr(s, t, st, n, g, p, b, bi, right, left_ty, x);
+    if x.failed {
+        return x;
+    }
+    let right_value: u64 = x.node;
+    if operator == token.PLUS || operator == token.MINUS || operator == token.STAR || operator == token.SLASH || operator == token.PERCENT
+        || operator == token.SHIFT_LEFT || operator == token.SHIFT_RIGHT
+    {
+        if x.types[left_ty].tag != c_emit.T_INTEGER {
+            return c_emit.refuse(x, "checked arithmetic requires an integer".as_slice());
+        }
+        let mut operation: Buffer<u8> = Buffer::new();
+        if operator == token.SHIFT_LEFT {
+            operation = bytes.copy("shl".as_slice());
+        } else if operator == token.SHIFT_RIGHT {
+            operation = bytes.copy("shr".as_slice());
+        } else {
+            operation = operation_name(operator);
+        }
+        let helper: Buffer<u8> = helper_name(x.names.as_slice(), x.types.as_slice(), left_ty, operation.as_slice());
+        x = load_pair(x, left_value, right_value, RDI, RSI);
+        x = call_extern(x, helper.as_slice());
+        return bind_rax(x, left_ty);
+    }
+    x = load_pair(x, left_value, right_value, RAX, RCX);
+    if c_emit.is_comparison(operator) {
+        let signed: bool = is_signed(x.types.as_slice(), x.names.as_slice(), left_ty);
+        let mut condition: u64 = x86.EQUAL;
+        if operator == token.BANG_EQUAL {
+            condition = x86.NOT_EQUAL;
+        } else if operator == token.LESS {
+            condition = if signed { x86.LESS } else { x86.BELOW };
+        } else if operator == token.LESS_EQUAL {
+            condition = if signed { x86.LESS_EQUAL } else { x86.BELOW_EQUAL };
+        } else if operator == token.GREATER {
+            condition = if signed { x86.GREATER } else { x86.ABOVE };
+        } else if operator == token.GREATER_EQUAL {
+            condition = if signed { x86.GREATER_EQUAL } else { x86.ABOVE_EQUAL };
+        }
+        x = asm(x, x86.cmp(Buffer::new(), RAX, RCX));
+        x = asm(x, x86.set(Buffer::new(), condition, RAX));
+        return bind_rax(x, c_emit.BOOL);
+    }
+    if operator == token.PIPE {
+        x = asm(x, x86.or(Buffer::new(), RAX, RCX));
+    } else if operator == token.CARET {
+        x = asm(x, x86.xor(Buffer::new(), RAX, RCX));
+    } else {
+        x = asm(x, x86.and(Buffer::new(), RAX, RCX));
+    }
+    bind_rax(x, left_ty)
+}
+
+fn emit_call(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, expected: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let callee: u64 = c_emit.child(n, node, 0u64);
+    let arguments: u64 = c_emit.child_count(n, node) - 1u64;
+    if arguments == 0u64 && c_emit.is_path(s, t, n, g, p, b, bi, callee, "Buffer".as_slice(), "new".as_slice()) {
+        if expected == c_emit.NONE {
+            return c_emit.refuse(x, "Buffer::new requires an expected Buffer type".as_slice());
+        }
+        if x.types[expected].tag != c_emit.T_BUFFER {
+            return c_emit.refuse(x, "Buffer::new has a non-Buffer expected type".as_slice());
+        }
+        let element: u64 = x.types[expected].element;
+        x = layout(x, element);
+        let size: u64 = x.result;
+        let limit: u64 = x.limits[BUFFER_BYTES];
+        x = new_temp(x, expected);
+        let place: u64 = x.result;
+        x = address(x, place, RDI);
+        x = put_imm(x, RSI, size);
+        x = put_imm(x, RDX, limit);
+        x = call_extern(x, "argorix_rt_buffer_new".as_slice());
+        return set_node(x, place, expected);
+    }
+    if arguments == 0u64 && c_emit.is_path(s, t, n, g, p, b, bi, callee, "Arena".as_slice(), "new".as_slice()) {
+        if expected == c_emit.NONE {
+            return c_emit.refuse(x, "Arena::new requires an expected Arena type".as_slice());
+        }
+        if x.types[expected].tag != c_emit.T_ARENA {
+            return c_emit.refuse(x, "Arena::new has a non-Arena expected type".as_slice());
+        }
+        let element: u64 = x.types[expected].element;
+        x = layout(x, element);
+        let size: u64 = x.result;
+        let id: u64 = c_emit.core_type_id(x.types.as_slice(), x.names.as_slice(), element);
+        let bytes_limit: u64 = x.limits[ARENA_BYTES];
+        let slots: u64 = x.limits[ARENA_SLOTS];
+        x = new_temp(x, expected);
+        let place: u64 = x.result;
+        x = address(x, place, RDI);
+        x = put_imm(x, RSI, size);
+        x = put_imm(x, RDX, id);
+        x = put_imm(x, RCX, bytes_limit);
+        x = put_imm(x, R8, slots);
+        x = call_extern(x, "argorix_rt_arena_new".as_slice());
+        return set_node(x, place, expected);
+    }
+    if n[callee].kind == ast.FIELD_ACCESS {
+        return emit_method(s, t, st, n, g, p, b, bi, node, callee, arguments, x);
+    }
+    if n[callee].kind != ast.PATH {
+        return c_emit.refuse(x, "scalar C profile supports direct function calls only".as_slice());
+    }
+    if ir.segments(t, n, g, callee) != 1u64 {
+        let reason: Buffer<u8> = c_emit.qualified(s, t, n, g, p, b, bi, callee);
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    let name: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, callee, 0u64);
+    let found: u64 = c_emit.find_function(x.functions.as_slice(), x.names.as_slice(), name.as_slice());
+    if found == 0u64 {
+        let reason: Buffer<u8> = c_emit.quoted("unknown function `".as_slice(), name.as_slice(), "`".as_slice());
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    let function: CFunction = x.functions[found - 1u64];
+    let mut values: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < arguments && index < function.count {
+        let ty: u64 = x.params[function.first + index];
+        x = emit_consumed(s, t, st, n, g, p, b, bi, c_emit.child(n, node, index + 1u64), ty, x);
+        if x.failed {
+            return x;
+        }
+        values.push(x.node);
+        index += 1u64;
+    }
+    // argorix_fn_<name>(budget, arguments..): the arguments in the block at
+    // the bottom of this frame, then the call.
+    let block: u64 = x.entries[(found - 1u64) * 3u64 + 1u64];
+    if block > x.outgoing {
+        x.outgoing = block;
+    }
+    index = 0u64;
+    while index < values.length() {
+        let ty: u64 = x.params[function.first + index];
+        let offset: u64 = x.param_offsets[function.first + index];
+        x = make(x, N_SLOT, ty, offset, OUTGOING, 0u64, 0u64);
+        let slot: u64 = x.result;
+        x = copy(x, slot, values[index], ty);
+        index += 1u64;
+    }
+    let mut place: u64 = 0u64;
+    if function.result != c_emit.UNIT {
+        x = new_temp(x, function.result);
+        place = x.result;
+        x = address(x, place, RDX);
+    }
+    x = mem_load(x, 8u64, false, RDI, RBP, BUDGET_SLOT, true);
+    x = call_function(x, found - 1u64);
+    if function.result == c_emit.UNIT {
+        return literal(x, 0u64, c_emit.UNIT);
+    }
+    set_node(x, place, function.result)
+}
+
+// `receiver.method(..)`: a host operation on a capability, or a built-in
+// method of a buffer, an arena, a view, an array, bytes or an integer.
+fn emit_method(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, callee: u64, arguments: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let value: u64 = c_emit.child(n, callee, 0u64);
+    let name: Buffer<u8> = c_emit.word(s, t, n, callee);
+    if n[value].kind == ast.PATH && ir.segments(t, n, g, value) == 1u64 {
+        let local: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, value, 0u64);
+        let found: u64 = find_local(s, x.locals.as_slice(), x.locals_live, local.as_slice());
+        if found != 0u64 && x.types[x.locals[(found - 1u64) * 3u64 + 2u64]].tag == c_emit.T_CAPABILITY {
+            let ty: u64 = x.locals[(found - 1u64) * 3u64 + 2u64];
+            let receiver: u64 = x.local_nodes[found - 1u64];
+            return host_call(s, t, st, n, g, p, b, bi, node, receiver, ty, name.as_slice(), arguments, x);
+        }
+    }
+    if bytes.equal(name.as_slice(), "push".as_slice()) {
+        // The buffer is only touched by the push itself, after the value.
+        if arguments != 1u64 {
+            return c_emit.refuse(x, "Buffer::push requires one argument".as_slice());
+        }
+        x = emit_place(s, t, st, n, g, p, b, bi, value, true, x);
+        if x.failed {
+            return x;
+        }
+        if x.types[x.vty].tag != c_emit.T_BUFFER {
+            return c_emit.refuse(x, "push is only implemented for Buffer values".as_slice());
+        }
+        let receiver: u64 = x.node;
+        let element: u64 = x.types[x.vty].element;
+        x = emit_consumed(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), element, x);
+        if x.failed {
+            return x;
+        }
+        let pushed: u64 = x.node;
+        x = bind(x, pushed, element);
+        let temp: u64 = x.node;
+        // argorix_buffer_push(&receiver, &temp)
+        x = address(x, receiver, RDI);
+        x = address(x, temp, RSI);
+        x = call_extern(x, "argorix_buffer_push".as_slice());
+        return literal(x, 0u64, c_emit.UNIT);
+    }
+    if bytes.equal(name.as_slice(), "alloc".as_slice()) || bytes.equal(name.as_slice(), "release".as_slice()) {
+        if n[value].kind != ast.PATH {
+            return c_emit.refuse(x, "Arena method receiver must be a local".as_slice());
+        }
+        if ir.segments(t, n, g, value) != 1u64 {
+            let reason: Buffer<u8> = c_emit.qualified(s, t, n, g, p, b, bi, value);
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let local: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, value, 0u64);
+        let found: u64 = find_local(s, x.locals.as_slice(), x.locals_live, local.as_slice());
+        if found == 0u64 {
+            let reason: Buffer<u8> = c_emit.quoted("unknown local `".as_slice(), local.as_slice(), "`".as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+        let ty: u64 = x.locals[(found - 1u64) * 3u64 + 2u64];
+        let arena: u64 = x.local_nodes[found - 1u64];
+        if x.types[ty].tag != c_emit.T_ARENA {
+            return c_emit.refuse(x, "arena method requires an Arena value".as_slice());
+        }
+        let element: u64 = x.types[ty].element;
+        if bytes.equal(name.as_slice(), "release".as_slice()) {
+            if arguments != 0u64 {
+                return c_emit.refuse(x, "Arena::release accepts no arguments".as_slice());
+            }
+            x = address(x, arena, RDI);
+            x = call_extern(x, "argorix_arena_release".as_slice());
+            return literal(x, 0u64, c_emit.UNIT);
+        }
+        if arguments != 1u64 {
+            return c_emit.refuse(x, "Arena::alloc requires one argument".as_slice());
+        }
+        x = emit_consumed(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), element, x);
+        if x.failed {
+            return x;
+        }
+        let allocated: u64 = x.node;
+        x = bind(x, allocated, element);
+        let temp: u64 = x.node;
+        x = c_emit.container(c_emit.T_HANDLE, element, x);
+        let handle: u64 = x.result;
+        // argorix_arena_alloc(&arena, &temp), through the shim.
+        x = new_temp(x, handle);
+        let place: u64 = x.result;
+        x = address(x, place, RDI);
+        x = address(x, arena, RSI);
+        x = address(x, temp, RDX);
+        x = call_extern(x, "argorix_rt_arena_alloc".as_slice());
+        return set_node(x, place, handle);
+    }
+    if bytes.equal(name.as_slice(), "slice".as_slice()) {
+        // A narrower view, checked against the one it narrows.
+        if arguments != 2u64 {
+            return c_emit.refuse(x, "slice requires two arguments".as_slice());
+        }
+        x = emit_place(s, t, st, n, g, p, b, bi, value, false, x);
+        if x.failed {
+            return x;
+        }
+        if x.types[x.vty].tag != c_emit.T_SLICE {
+            return c_emit.refuse(x, "slice narrows a Slice".as_slice());
+        }
+        let view: u64 = x.node;
+        let view_ty: u64 = x.vty;
+        x = c_emit.integer("u64".as_slice(), x);
+        let unsigned: u64 = x.result;
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), unsigned, x);
+        if x.failed {
+            return x;
+        }
+        let start: u64 = x.node;
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 2u64), unsigned, x);
+        if x.failed {
+            return x;
+        }
+        let end: u64 = x.node;
+        let element: u64 = x.types[view_ty].element;
+        x = layout(x, element);
+        let size: u64 = x.result;
+        // {view.data + argorix_range(start, end, view.length), end - start}
+        x = new_temp(x, view_ty);
+        let place: u64 = x.result;
+        let at: u64 = x.tree[place * STRIDE + 2u64];
+        let saved: u64 = x.frame;
+        x = frame_bytes(x, 8u64, 8u64);
+        let slot: u64 = x.result;
+        x = address(x, view, RAX);
+        x = mem_store(x, 8u64, RBP, slot, true, RAX);
+        x = load(x, start, RDI);
+        x = load(x, end, RSI);
+        x = mem_load(x, 8u64, false, RAX, RBP, slot, true);
+        x = mem_load(x, 8u64, false, RDX, RAX, 8u64, false);
+        x = call_extern(x, "argorix_range".as_slice());
+        x = put_imm(x, RCX, size);
+        x = asm(x, x86.imul(Buffer::new(), RAX, RCX));
+        x = mem_load(x, 8u64, false, RCX, RBP, slot, true);
+        x = mem_load(x, 8u64, false, RCX, RCX, 0u64, false);
+        x = asm(x, x86.add(Buffer::new(), RAX, RCX));
+        x = mem_store(x, 8u64, RBP, at, true, RAX);
+        x = load_pair(x, end, start, RAX, RCX);
+        x = asm(x, x86.sub(Buffer::new(), RAX, RCX));
+        x = mem_store(x, 8u64, RBP, at - 8u64, true, RAX);
+        x.frame = saved;
+        return set_node(x, place, view_ty);
+    }
+    if bytes.equal(name.as_slice(), "wrapping_add".as_slice()) {
+        // Modular: the sum is taken in 64 bits and stored back narrowed.
+        if arguments != 1u64 {
+            return c_emit.refuse(x, "wrapping_add requires one argument".as_slice());
+        }
+        x = emit_expr(s, t, st, n, g, p, b, bi, value, c_emit.NONE, x);
+        if x.failed {
+            return x;
+        }
+        if x.types[x.vty].tag != c_emit.T_INTEGER {
+            return c_emit.refuse(x, "wrapping_add requires an integer".as_slice());
+        }
+        let left: u64 = x.node;
+        let ty: u64 = x.vty;
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, 1u64), ty, x);
+        if x.failed {
+            return x;
+        }
+        let right: u64 = x.node;
+        x = load_pair(x, left, right, RAX, RCX);
+        x = asm(x, x86.add(Buffer::new(), RAX, RCX));
+        return bind_rax(x, ty);
+    }
+    if arguments != 0u64 {
+        let reason: Buffer<u8> = c_emit.quoted("intrinsic `".as_slice(), name.as_slice(), "` does not accept arguments".as_slice());
+        return c_emit.refuse(x, reason.as_slice());
+    }
+    x = emit_place(s, t, st, n, g, p, b, bi, value, false, x);
+    if x.failed {
+        return x;
+    }
+    let receiver: u64 = x.node;
+    let receiver_ty: u64 = x.vty;
+    let found: CType = x.types[x.vty];
+    let tag: u64 = found.tag;
+    x = c_emit.integer("u64".as_slice(), x);
+    let unsigned: u64 = x.result;
+    x = c_emit.integer("u8".as_slice(), x);
+    let byte: u64 = x.result;
+    if bytes.equal(name.as_slice(), "length".as_slice()) {
+        if tag == c_emit.T_ARRAY {
+            x = put_imm(x, RAX, found.length);
+            return bind_rax(x, unsigned);
+        }
+        if tag == c_emit.T_SLICE || tag == c_emit.T_BUFFER || tag == c_emit.T_BYTES || tag == c_emit.T_STRING {
+            x = address(x, receiver, RAX);
+            x = mem_load(x, 8u64, false, RAX, RAX, 8u64, false);
+            return bind_rax(x, unsigned);
+        }
+        return c_emit.not_defined(name.as_slice(), receiver_ty, x);
+    }
+    if bytes.equal(name.as_slice(), "as_slice".as_slice()) && (tag == c_emit.T_BUFFER || tag == c_emit.T_ARRAY || tag == c_emit.T_STRING) {
+        let element: u64 = if tag == c_emit.T_STRING { byte } else { found.element };
+        x = c_emit.container(c_emit.T_SLICE, element, x);
+        let slice: u64 = x.result;
+        x = new_temp(x, slice);
+        let place: u64 = x.result;
+        let at: u64 = x.tree[place * STRIDE + 2u64];
+        x = address(x, receiver, RAX);
+        if tag == c_emit.T_ARRAY {
+            x = mem_store(x, 8u64, RBP, at, true, RAX);
+            x = put_imm(x, RAX, found.length);
+        } else {
+            x = mem_load(x, 8u64, false, RCX, RAX, 0u64, false);
+            x = mem_store(x, 8u64, RBP, at, true, RCX);
+            x = mem_load(x, 8u64, false, RAX, RAX, 8u64, false);
+        }
+        x = mem_store(x, 8u64, RBP, at - 8u64, true, RAX);
+        return set_node(x, place, slice);
+    }
+    if bytes.equal(name.as_slice(), "as_bytes".as_slice()) && tag == c_emit.T_ARRAY && found.element == byte {
+        x = new_temp(x, c_emit.BYTES);
+        let place: u64 = x.result;
+        let at: u64 = x.tree[place * STRIDE + 2u64];
+        x = address(x, receiver, RAX);
+        x = mem_store(x, 8u64, RBP, at, true, RAX);
+        x = put_imm(x, RAX, found.length);
+        x = mem_store(x, 8u64, RBP, at - 8u64, true, RAX);
+        return set_node(x, place, c_emit.BYTES);
+    }
+    if bytes.equal(name.as_slice(), "decode_utf8_or_trap".as_slice()) && tag == c_emit.T_BYTES {
+        x = new_temp(x, c_emit.STRING);
+        let place: u64 = x.result;
+        x = address(x, receiver, RAX);
+        x = mem_load(x, 8u64, false, RSI, RAX, 0u64, false);
+        x = mem_load(x, 8u64, false, RDX, RAX, 8u64, false);
+        x = address(x, place, RDI);
+        x = call_extern(x, "argorix_rt_decode_utf8".as_slice());
+        return set_node(x, place, c_emit.STRING);
+    }
+    c_emit.not_defined(name.as_slice(), receiver_ty, x)
+}
+
+// A compiler-host operation on a capability. The views are bound first, so
+// the host sees each argument evaluated once, in order.
+fn host_call(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, receiver: u64, capability: u64, method: Slice<u8>, arguments: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = c_emit.integer("u8".as_slice(), e);
+    let byte: u64 = x.result;
+    x = c_emit.container(c_emit.T_SLICE, byte, x);
+    let view: u64 = x.result;
+    let mut first: u64 = 0u64;
+    let mut second: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < arguments {
+        x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, node, index + 1u64), view, x);
+        if x.failed {
+            return x;
+        }
+        let value: u64 = x.node;
+        x = bind(x, value, view);
+        if index == 0u64 {
+            first = x.node;
+        } else if index == 1u64 {
+            second = x.node;
+        }
+        index += 1u64;
+    }
+    x = c_emit.integer("u64".as_slice(), x);
+    let code: u64 = x.result;
+    let kind: CType = x.types[capability];
+    let read: bool = same(x.names.as_slice(), kind.name_start, kind.name_end, "PackageRead".as_slice());
+    if read && arguments == 1u64 && (bytes.equal(method, "status".as_slice()) || bytes.equal(method, "read".as_slice())) {
+        let path: u64 = x.tree[first * STRIDE + 2u64];
+        if bytes.equal(method, "status".as_slice()) {
+            // argorix_host_package_status(capability, path, length)
+            x = load(x, receiver, RDI);
+            x = mem_load(x, 8u64, false, RSI, RBP, path, true);
+            x = mem_load(x, 8u64, false, RDX, RBP, path - 8u64, true);
+            x = call_extern(x, "argorix_rt_package_status".as_slice());
+            return bind_rax(x, code);
+        }
+        // argorix_host_package_read(capability, path, length, limit)
+        x = c_emit.container(c_emit.T_BUFFER, byte, x);
+        let ty: u64 = x.result;
+        let limit: u64 = x.limits[BUFFER_BYTES];
+        x = new_temp(x, ty);
+        let place: u64 = x.result;
+        x = load(x, receiver, RSI);
+        x = mem_load(x, 8u64, false, RDX, RBP, path, true);
+        x = mem_load(x, 8u64, false, RCX, RBP, path - 8u64, true);
+        x = put_imm(x, R8, limit);
+        x = address(x, place, RDI);
+        x = call_extern(x, "argorix_rt_package_read".as_slice());
+        return set_node(x, place, ty);
+    }
+    if !read && arguments == 2u64 && bytes.equal(method, "write".as_slice()) {
+        // argorix_host_build_write(capability, path, length, data, length)
+        let path: u64 = x.tree[first * STRIDE + 2u64];
+        let data: u64 = x.tree[second * STRIDE + 2u64];
+        x = load(x, receiver, RDI);
+        x = mem_load(x, 8u64, false, RSI, RBP, path, true);
+        x = mem_load(x, 8u64, false, RDX, RBP, path - 8u64, true);
+        x = mem_load(x, 8u64, false, RCX, RBP, data, true);
+        x = mem_load(x, 8u64, false, R8, RBP, data - 8u64, true);
+        x = call_extern(x, "argorix_rt_build_write".as_slice());
+        return bind_rax(x, code);
+    }
+    let owner: Buffer<u8> = text(x.names.as_slice(), x.types[capability].name_start, x.types[capability].name_end);
+    let mut reason: Buffer<u8> = c_emit.quoted("`".as_slice(), owner.as_slice(), "` has no operation `".as_slice());
+    reason = bytes.append(reason, method);
+    reason = bytes.append(reason, "` with ".as_slice());
+    reason = bytes.append_decimal(reason, arguments);
+    reason = bytes.append(reason, " arguments".as_slice());
+    c_emit.refuse(x, reason.as_slice())
+}
+
+// ------------------------------------------------------------------ match
+
+// A match: each arm tests its pattern after the arms before it failed, binds
+// what the pattern names, and assigns the result temporary if the match is a
+// value. A match consumes a resource scrutinee: the arm it takes owns what
+// its pattern binds and releases the rest.
+fn emit_match(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g: Slice<u64>, p: Slice<u64>, b: Slice<u64>, bi: Slice<u64>, node: u64, expected: u64, e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let result_ty: u64 = if expected == c_emit.UNIT { c_emit.NONE } else { expected };
+    let value: u64 = c_emit.child(n, node, 0u64);
+    x = c_emit.infer_type(s, t, n, g, p, b, bi, value, x);
+    let hint: u64 = x.result;
+    x = emit_consumed(s, t, st, n, g, p, b, bi, value, hint, x);
+    if x.failed {
+        return x;
+    }
+    let scrutinee: u64 = x.node;
+    let scrutinee_ty: u64 = x.vty;
+    let scrutinee_tag: u64 = x.types[scrutinee_ty].tag;
+    let mut layout_index: u64 = 0u64;
+    let enum_name: Buffer<u8> = text(x.names.as_slice(), x.types[scrutinee_ty].name_start, x.types[scrutinee_ty].name_end);
+    if scrutinee_tag == c_emit.T_USER {
+        layout_index = c_emit.find_record(x.enums.as_slice(), x.names.as_slice(), enum_name.as_slice());
+        if layout_index == 0u64 {
+            let reason: Buffer<u8> = c_emit.quoted("`".as_slice(), enum_name.as_slice(), "` is not a lowered enum".as_slice());
+            return c_emit.refuse(x, reason.as_slice());
+        }
+    } else if scrutinee_tag != c_emit.T_BOOL && scrutinee_tag != c_emit.T_INTEGER {
+        return c_emit.refuse(x, "match scrutinee must be a bool, an integer or an enum".as_slice());
+    }
+    let mut result: u64 = 0u64;
+    if result_ty != c_emit.NONE {
+        x = new_temp(x, result_ty);
+        result = x.result;
+        x = zero(x, result, result_ty);
+    }
+    x = new_temp(x, c_emit.BOOL);
+    let matched: u64 = x.result;
+    let matched_slot: u64 = x.tree[matched * STRIDE + 2u64];
+    x = set_flag(x, matched_slot, 0u64);
+    x = c_emit.owns(x, scrutinee_ty);
+    let consumed: bool = x.result == 1u64;
+    let mut data: u64 = 0u64;
+    if scrutinee_tag == c_emit.T_USER {
+        x = layout(x, scrutinee_ty);
+        data = x.sizes[scrutinee_ty * 3u64 + 2u64];
+    }
+    let mut link: u64 = n[value].next;
+    while link != 0u64 {
+        let arm: u64 = link - 1u64;
+        link = n[arm].next;
+        let pattern: u64 = c_emit.child(n, arm, 0u64);
+        let kind: u64 = n[pattern].kind;
+        // Bindings as (name start, name end, type, source node) quadruples,
+        // and the places the arm releases, as (node, type) pairs.
+        let mut bindings: Buffer<u64> = Buffer::new();
+        let mut releases: Buffer<u64> = Buffer::new();
+        // The test: 0 none, 1 a tag, 2 a bool, 3 an integer.
+        let mut test: u64 = 0u64;
+        let mut expect: u64 = 0u64;
+        if kind == ast.PATTERN_VARIANT {
+            if layout_index == 0u64 {
+                return c_emit.refuse(x, "variant pattern on a scrutinee that is not an enum".as_slice());
+            }
+            if ir.segments(t, n, g, pattern) != 2u64 {
+                return c_emit.refuse(x, "variant match path must contain enum and variant".as_slice());
+            }
+            let pattern_enum: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, pattern, 0u64);
+            let variant: Buffer<u8> = c_emit.segment(s, t, n, g, p, b, bi, pattern, 1u64);
+            if !bytes.equal(pattern_enum.as_slice(), enum_name.as_slice()) {
+                return c_emit.refuse(x, "variant pattern enum does not match scrutinee".as_slice());
+            }
+            let record: CRecord = x.enums[layout_index - 1u64];
+            let found: u64 = c_emit.find_variant(x.variants.as_slice(), x.names.as_slice(), record.first, record.count, variant.as_slice());
+            if found == 0u64 {
+                let mut reason: Buffer<u8> = c_emit.quoted("unknown variant `".as_slice(), enum_name.as_slice(), "::".as_slice());
+                reason = bytes.append(reason, variant.as_slice());
+                reason = bytes.append(reason, "`".as_slice());
+                return c_emit.refuse(x, reason.as_slice());
+            }
+            let variant_layout: CRecord = x.variants[found - 1u64];
+            let mut field_link: u64 = n[pattern].first;
+            while field_link != 0u64 {
+                let field: u64 = field_link - 1u64;
+                field_link = n[field].next;
+                let field_name: Buffer<u8> = c_emit.word(s, t, n, field);
+                let member: u64 = c_emit.find_field(x.fields.as_slice(), x.names.as_slice(), variant_layout.first, variant_layout.count, field_name.as_slice());
+                if member == 0u64 {
+                    let reason: Buffer<u8> = c_emit.quoted("unknown pattern field `".as_slice(), field_name.as_slice(), "`".as_slice());
+                    return c_emit.refuse(x, reason.as_slice());
+                }
+                let field_ty: u64 = x.fields[member - 1u64].ty;
+                let mut binding: u64 = n[field].word;
+                if n[field].first != 0u64 {
+                    let nested: u64 = n[field].first - 1u64;
+                    if n[nested].kind == ast.PATTERN_BINDING {
+                        binding = n[nested].word;
+                    } else if n[nested].kind == ast.PATTERN_WILDCARD {
+                        binding = 0u64;
+                    } else {
+                        return c_emit.refuse(x, "nested non-binding patterns are not implemented yet".as_slice());
+                    }
+                }
+                if binding != 0u64 {
+                    let offset: u64 = data + x.offsets[member - 1u64];
+                    x = field_node(x, scrutinee, offset, field_ty);
+                    let source: u64 = x.result;
+                    bindings.push(t[binding - 1u64].start);
+                    bindings.push(t[binding - 1u64].end);
+                    bindings.push(field_ty);
+                    bindings.push(source);
+                }
+            }
+            test = 1u64;
+            expect = found - 1u64 - record.first;
+            if consumed {
+                // The resource fields the pattern leaves unbound.
+                let mut member: u64 = variant_layout.first;
+                while member < variant_layout.first + variant_layout.count {
+                    let found_field: CField = x.fields[member];
+                    let mut bound: bool = false;
+                    let mut field_link: u64 = n[pattern].first;
+                    while field_link != 0u64 {
+                        let field: u64 = field_link - 1u64;
+                        field_link = n[field].next;
+                        let field_name: Buffer<u8> = c_emit.word(s, t, n, field);
+                        let wildcard: bool = n[field].first != 0u64 && n[n[field].first - 1u64].kind == ast.PATTERN_WILDCARD;
+                        if same(x.names.as_slice(), found_field.name_start, found_field.name_end, field_name.as_slice()) && !wildcard {
+                            bound = true;
+                        }
+                    }
+                    x = c_emit.owns(x, found_field.ty);
+                    if !bound && x.result == 1u64 {
+                        let offset: u64 = data + x.offsets[member];
+                        x = field_node(x, scrutinee, offset, found_field.ty);
+                        releases.push(x.result);
+                        releases.push(found_field.ty);
+                    }
+                    member += 1u64;
+                }
+            }
+        } else if kind == ast.PATTERN_WILDCARD {
+            if consumed {
+                releases.push(scrutinee);
+                releases.push(scrutinee_ty);
+            }
+        } else if kind == ast.PATTERN_BINDING {
+            let name: u64 = n[pattern].word - 1u64;
+            bindings.push(t[name].start);
+            bindings.push(t[name].end);
+            bindings.push(scrutinee_ty);
+            bindings.push(scrutinee);
+        } else if kind == ast.PATTERN_BOOL {
+            if scrutinee_ty != c_emit.BOOL {
+                return c_emit.refuse(x, "bool pattern on a scrutinee that is not a bool".as_slice());
+            }
+            test = 2u64;
+            expect = n[pattern].value;
+        } else {
+            if scrutinee_tag != c_emit.T_INTEGER {
+                return c_emit.refuse(x, "integer pattern on a scrutinee that is not an integer".as_slice());
+            }
+            test = 3u64;
+            x = literal(x, n[pattern].value, scrutinee_ty);
+            expect = x.tree[x.result * STRIDE + 2u64];
+        }
+        // if (!matched && (condition)) {
+        x = mem_load(x, 1u64, false, RAX, RBP, matched_slot, true);
+        x = test_rax(x);
+        x = branch(x, x86.NOT_EQUAL);
+        let skip: u64 = x.result;
+        let mut miss: u64 = 0u64;
+        if test == 1u64 {
+            let at: u64 = x.tree[scrutinee * STRIDE + 2u64];
+            let from: u64 = x.tree[scrutinee * STRIDE + 3u64];
+            x = mem_load(x, 4u64, false, RAX, base_register(from), at, from == BELOW);
+            x = put_imm(x, RCX, expect);
+            x = asm(x, x86.cmp(Buffer::new(), RAX, RCX));
+            x = branch(x, x86.NOT_EQUAL);
+            miss = x.result + 1u64;
+        } else if test == 2u64 {
+            x = load(x, scrutinee, RAX);
+            x = test_rax(x);
+            x = branch(x, if expect == 1u64 { x86.EQUAL } else { x86.NOT_EQUAL });
+            miss = x.result + 1u64;
+        } else if test == 3u64 {
+            x = load(x, scrutinee, RAX);
+            x = put_imm(x, RCX, expect);
+            x = asm(x, x86.cmp(Buffer::new(), RAX, RCX));
+            x = branch(x, x86.NOT_EQUAL);
+            miss = x.result + 1u64;
+        }
+        let saved_frame: u64 = x.frame;
+        x = c_emit.open_scope(x);
+        let saved: u64 = x.locals_live;
+        let mut index: u64 = 0u64;
+        while index * 4u64 < bindings.length() {
+            let start: u64 = bindings[index * 4u64];
+            let end: u64 = bindings[index * 4u64 + 1u64];
+            let ty: u64 = bindings[index * 4u64 + 2u64];
+            let source: u64 = bindings[index * 4u64 + 3u64];
+            x = new_temp(x, ty);
+            let place: u64 = x.result;
+            x = copy(x, place, source, ty);
+            x = own(start, end, ty, place, x);
+            x = add_local(x, start, end, ty, place);
+            index += 1u64;
+        }
+        // A guard runs after the bindings it may read.
+        let guarded: bool = n[arm].flag == 1u64;
+        let mut unguarded: u64 = 0u64;
+        let guard_frame: u64 = x.frame;
+        if guarded {
+            x = emit_expr(s, t, st, n, g, p, b, bi, c_emit.child(n, arm, 1u64), c_emit.BOOL, x);
+            if x.failed {
+                return x;
+            }
+            let guard: u64 = x.node;
+            x = load(x, guard, RAX);
+            x = test_rax(x);
+            x = branch(x, x86.EQUAL);
+            unguarded = x.result + 1u64;
+        }
+        index = 0u64;
+        while index * 2u64 < releases.length() {
+            let place: u64 = releases[index * 2u64];
+            let ty: u64 = releases[index * 2u64 + 1u64];
+            x = address(x, place, RDI);
+            x = call_drop(x, ty);
+            index += 1u64;
+        }
+        let arm_value: u64 = c_emit.child(n, arm, c_emit.child_count(n, arm) - 1u64);
+        if result_ty != c_emit.NONE {
+            x = emit_consumed(s, t, st, n, g, p, b, bi, arm_value, result_ty, x);
+            if x.failed {
+                return x;
+            }
+            let arm_result: u64 = x.node;
+            x = copy(x, result, arm_result, result_ty);
+        } else {
+            x = statement_value(s, t, st, n, g, p, b, bi, arm_value, x);
+            if x.failed {
+                return x;
+            }
+        }
+        let depth: u64 = x.scopes_live - 1u64;
+        x = drops_from(depth, x);
+        x = c_emit.close_scope(x);
+        x = set_flag(x, matched_slot, 1u64);
+        if unguarded != 0u64 {
+            x.frame = guard_frame;
+            x = land(x, unguarded - 1u64);
+        }
+        x.frame = saved_frame;
+        x = land(x, skip);
+        if miss != 0u64 {
+            x = land(x, miss - 1u64);
+        }
+        x.locals_live = saved;
+    }
+    // if (!matched) { argorix_trap("NON_EXHAUSTIVE_MATCH"); }
+    x = mem_load(x, 1u64, false, RAX, RBP, matched_slot, true);
+    x = test_rax(x);
+    x = branch(x, x86.NOT_EQUAL);
+    let done: u64 = x.result;
+    x = trap(x, "NON_EXHAUSTIVE_MATCH".as_slice());
+    x = land(x, done);
+    if result_ty != c_emit.NONE {
+        return set_node(x, result, result_ty);
+    }
+    literal(x, 0u64, c_emit.UNIT)
+}
+
+// ------------------------------------------------------------------ drops
+
+// One drop function per resource type the bodies release, and per resource
+// type those hold, as the C backend writes them. Each takes the value's
+// address in RDI.
+fn drop_functions(e: CEmit) -> CEmit {
+    let mut x: CEmit = e;
+    let mut pending: Buffer<u64> = c_emit.copy_ids(x.drops.as_slice());
+    let mut live: u64 = pending.length();
+    let mut all: Buffer<u64> = Buffer::new();
+    while live > 0u64 {
+        live -= 1u64;
+        let ty: u64 = pending[live];
+        x = c_emit.owns(x, ty);
+        if x.result == 0u64 || c_emit.contains(all.as_slice(), ty) {
+            continue;
+        }
+        let found: CType = x.types[ty];
+        let mut more: Buffer<u64> = Buffer::new();
+        if found.tag == c_emit.T_BUFFER || found.tag == c_emit.T_ARRAY {
+            more.push(found.element);
+        } else if found.tag == c_emit.T_USER {
+            let name: Buffer<u8> = text(x.names.as_slice(), found.name_start, found.name_end);
+            let structure: u64 = c_emit.find_record(x.structs.as_slice(), x.names.as_slice(), name.as_slice());
+            let enumeration: u64 = c_emit.find_record(x.enums.as_slice(), x.names.as_slice(), name.as_slice());
+            if structure != 0u64 {
+                let record: CRecord = x.structs[structure - 1u64];
+                let mut field: u64 = record.first;
+                while field < record.first + record.count {
+                    more.push(x.fields[field].ty);
+                    field += 1u64;
+                }
+            } else if enumeration != 0u64 {
+                let record: CRecord = x.enums[enumeration - 1u64];
+                let mut variant: u64 = record.first;
+                while variant < record.first + record.count {
+                    let shape: CRecord = x.variants[variant];
+                    let mut field: u64 = shape.first;
+                    while field < shape.first + shape.count {
+                        more.push(x.fields[field].ty);
+                        field += 1u64;
+                    }
+                    variant += 1u64;
+                }
+            }
+        }
+        let mut index: u64 = 0u64;
+        while index < more.length() {
+            if live < pending.length() {
+                pending[live] = more[index];
+            } else {
+                pending.push(more[index]);
+            }
+            live += 1u64;
+            index += 1u64;
+        }
+        all.push(ty);
+    }
+    let mut index: u64 = 0u64;
+    while index < all.length() {
+        x = emit_drop(x, all[index]);
+        index += 1u64;
+    }
+    x
+}
+
+// `argorix_drop_<type>(value)`: a buffer drops its elements, then its
+// storage; an array its elements; a struct each resource field; an enum the
+// resource fields of its live variant.
+fn emit_drop(e: CEmit, ty: u64) -> CEmit {
+    let mut x: CEmit = layout(e, ty);
+    let start: u64 = x.code.length();
+    x.drop_code.push(ty);
+    x.drop_code.push(start);
+    x = asm(x, x86.push(Buffer::new(), RBP));
+    x = mov(x, RBP, RSP);
+    x = asm(x, x86.reserve(Buffer::new(), 32u64));
+    x = mem_store(x, 8u64, RBP, 8u64, true, RDI);
+    let found: CType = x.types[ty];
+    if found.tag == c_emit.T_BUFFER || found.tag == c_emit.T_ARRAY {
+        x = c_emit.owns(x, found.element);
+        if x.result == 1u64 {
+            x = layout(x, found.element);
+            let size: u64 = x.result;
+            // for (index = 0; index < length; index += 1) drop(&data[index]);
+            x = put_imm(x, RAX, 0u64);
+            x = mem_store(x, 8u64, RBP, 16u64, true, RAX);
+            let top: u64 = x.code.length();
+            x = mem_load(x, 8u64, false, RAX, RBP, 16u64, true);
+            if found.tag == c_emit.T_BUFFER {
+                x = mem_load(x, 8u64, false, RCX, RBP, 8u64, true);
+                x = mem_load(x, 8u64, false, RCX, RCX, 8u64, false);
+            } else {
+                x = put_imm(x, RCX, found.length);
+            }
+            x = asm(x, x86.cmp(Buffer::new(), RAX, RCX));
+            x = branch(x, x86.ABOVE_EQUAL);
+            let done: u64 = x.result;
+            x = put_imm(x, RCX, size);
+            x = asm(x, x86.imul(Buffer::new(), RAX, RCX));
+            x = mem_load(x, 8u64, false, RDI, RBP, 8u64, true);
+            if found.tag == c_emit.T_BUFFER {
+                x = mem_load(x, 8u64, false, RDI, RDI, 0u64, false);
+            }
+            x = asm(x, x86.add(Buffer::new(), RDI, RAX));
+            x = call_drop(x, found.element);
+            x = mem_load(x, 8u64, false, RAX, RBP, 16u64, true);
+            x = put_imm(x, RCX, 1u64);
+            x = asm(x, x86.add(Buffer::new(), RAX, RCX));
+            x = mem_store(x, 8u64, RBP, 16u64, true, RAX);
+            x = jump_to(x, top);
+            x = land(x, done);
+        }
+        if found.tag == c_emit.T_BUFFER {
+            x = mem_load(x, 8u64, false, RDI, RBP, 8u64, true);
+            x = call_extern(x, "argorix_buffer_drop".as_slice());
+        }
+    } else if found.tag == c_emit.T_USER {
+        let name: Buffer<u8> = text(x.names.as_slice(), found.name_start, found.name_end);
+        let structure: u64 = c_emit.find_record(x.structs.as_slice(), x.names.as_slice(), name.as_slice());
+        let enumeration: u64 = c_emit.find_record(x.enums.as_slice(), x.names.as_slice(), name.as_slice());
+        if structure != 0u64 {
+            let record: CRecord = x.structs[structure - 1u64];
+            let mut field: u64 = record.first;
+            while field < record.first + record.count {
+                let member: CField = x.fields[field];
+                x = c_emit.owns(x, member.ty);
+                if x.result == 1u64 {
+                    let offset: u64 = x.offsets[field];
+                    x = mem_load(x, 8u64, false, RDI, RBP, 8u64, true);
+                    x = mem_lea(x, RDI, RDI, offset, false);
+                    x = call_drop(x, member.ty);
+                }
+                field += 1u64;
+            }
+        } else if enumeration != 0u64 {
+            let record: CRecord = x.enums[enumeration - 1u64];
+            let data: u64 = x.sizes[ty * 3u64 + 2u64];
+            let mut variant: u64 = record.first;
+            while variant < record.first + record.count {
+                let shape: CRecord = x.variants[variant];
+                let mut owning: Buffer<u64> = Buffer::new();
+                let mut field: u64 = shape.first;
+                while field < shape.first + shape.count {
+                    let member: CField = x.fields[field];
+                    x = c_emit.owns(x, member.ty);
+                    if x.result == 1u64 {
+                        owning.push(field);
+                    }
+                    field += 1u64;
+                }
+                if owning.length() > 0u64 {
+                    x = mem_load(x, 8u64, false, RAX, RBP, 8u64, true);
+                    x = mem_load(x, 4u64, false, RAX, RAX, 0u64, false);
+                    x = put_imm(x, RCX, variant - record.first);
+                    x = asm(x, x86.cmp(Buffer::new(), RAX, RCX));
+                    x = branch(x, x86.NOT_EQUAL);
+                    let next: u64 = x.result;
+                    let mut index: u64 = 0u64;
+                    while index < owning.length() {
+                        let member: CField = x.fields[owning[index]];
+                        let offset: u64 = data + x.offsets[owning[index]];
+                        x = mem_load(x, 8u64, false, RDI, RBP, 8u64, true);
+                        x = mem_lea(x, RDI, RDI, offset, false);
+                        x = call_drop(x, member.ty);
+                        index += 1u64;
+                    }
+                    x = land(x, next);
+                }
+                variant += 1u64;
+            }
+        }
+    }
+    epilogue(x)
+}
+
+// ------------------------------------------------------------------ entry point
+
+// `main(argc, argv)`: on a stack sized for the call depth the budget
+// allows, the budget, the host's roots and capabilities when the entry
+// takes them, the entry, and its result printed as the C backend's main
+// prints it.
+fn emit_main(e: CEmit, entry: u64) -> CEmit {
+    let mut x: CEmit = e;
+    let main: CFunction = x.functions[entry];
+    // The stack: every frame at the deepest call the budget allows, and a
+    // mebibyte for the runtime.
+    let mut deepest: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < x.functions.length() {
+        let size: u64 = x.entries[index * 3u64 + 2u64];
+        if size > deepest {
+            deepest = size;
+        }
+        index += 1u64;
+    }
+    let stack: u64 = x.limits[DEPTH] * (deepest + 16u64) + 1048576u64;
+    x.main_at = x.code.length();
+    // push rbp; mov rbp, rsp; push rbx; sub rsp, 24; argc and argv.
+    x = asm(x, x86.push(Buffer::new(), RBP));
+    x = mov(x, RBP, RSP);
+    x = asm(x, x86.push(Buffer::new(), RBX));
+    x = asm(x, x86.reserve(Buffer::new(), 24u64));
+    x = mem_store(x, 8u64, RBP, 16u64, true, RDI);
+    x = mem_store(x, 8u64, RBP, 24u64, true, RSI);
+    x = put_imm(x, RDI, stack);
+    x = call_extern(x, "argorix_rt_stack".as_slice());
+    x = mov(x, RBX, RSP);
+    x = mov(x, RSP, RAX);
+    // [rsp] the entry's arguments, [rsp + 32] its result, [rsp + 48] the
+    // budget.
+    x = asm(x, x86.reserve(Buffer::new(), 64u64));
+    let steps: u64 = x.limits[STEPS];
+    let depth: u64 = x.limits[DEPTH];
+    x = put_imm(x, RAX, steps);
+    x = mem_store(x, 8u64, RSP, 48u64, false, RAX);
+    x = put_imm(x, RAX, depth);
+    x = mem_store(x, 8u64, RSP, 56u64, false, RAX);
+    if main.count > 0u64 {
+        let mut read: bool = false;
+        let mut write: bool = false;
+        index = main.first;
+        while index < main.first + main.count {
+            let ty: CType = x.types[x.params[index]];
+            if same(x.names.as_slice(), ty.name_start, ty.name_end, "PackageRead".as_slice()) {
+                read = true;
+            } else {
+                write = true;
+            }
+            index += 1u64;
+        }
+        x = mem_load(x, 8u64, false, RDI, RBP, 16u64, true);
+        x = mem_load(x, 8u64, false, RSI, RBP, 24u64, true);
+        x = put_imm(x, RDX, if read { 1u64 } else { 0u64 });
+        x = put_imm(x, RCX, if write { 1u64 } else { 0u64 });
+        x = call_extern(x, "argorix_rt_host_start".as_slice());
+        index = main.first;
+        while index < main.first + main.count {
+            let ty: CType = x.types[x.params[index]];
+            let kind: u64 = if same(x.names.as_slice(), ty.name_start, ty.name_end, "PackageRead".as_slice()) { 1u64 } else { 2u64 };
+            let offset: u64 = x.param_offsets[index];
+            x = put_imm(x, RDI, kind);
+            x = call_extern(x, "argorix_rt_host_capability".as_slice());
+            x = mem_store(x, 4u64, RSP, offset, false, RAX);
+            index += 1u64;
+        }
+    }
+    x = put_imm(x, RAX, 0u64);
+    x = mem_store(x, 8u64, RSP, 32u64, false, RAX);
+    x = mem_lea(x, RDI, RSP, 48u64, false);
+    x = mem_lea(x, RDX, RSP, 32u64, false);
+    x = call_function(x, entry);
+    let size: u64 = scalar_size(x.types.as_slice(), x.names.as_slice(), main.result);
+    let signed: bool = is_signed(x.types.as_slice(), x.names.as_slice(), main.result);
+    x = mem_load(x, size, signed, RDI, RSP, 32u64, false);
+    if x.types[main.result].tag == c_emit.T_BOOL {
+        x = call_extern(x, "argorix_rt_print_bool".as_slice());
+    } else if signed {
+        x = call_extern(x, "argorix_rt_print_i64".as_slice());
+    } else {
+        x = call_extern(x, "argorix_rt_print_u64".as_slice());
+    }
+    x = mov(x, RSP, RBX);
+    x = mem_load(x, 8u64, false, RBX, RBP, 8u64, true);
+    x = put_imm(x, RAX, 0u64);
+    epilogue(x)
+}
+
+// ------------------------------------------------------------------ object
+
+// The object: the code, then the read-only data at a 16-byte boundary, with
+// every call and data reference inside it resolved, and a relocation for
+// each call to the runtime. `main` is its one defined symbol.
+fn object(e: CEmit) -> Buffer<u8> {
+    let x: CEmit = e;
+    let mut code: Buffer<u8> = bytes.copy(x.code.as_slice());
+    while code.length() % 16u64 != 0u64 {
+        code.push(204u8);
+    }
+    let base: u64 = code.length();
+    code = bytes.append(code, x.data.as_slice());
+    let mut calls: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < x.fixups.length() {
+        let kind: u64 = x.fixups[index];
+        let at: u64 = x.fixups[index + 1u64];
+        let target: u64 = x.fixups[index + 2u64];
+        if kind == F_FUNCTION {
+            code = x86.patch(code, at, x.entries[target * 3u64] - 1u64);
+        } else if kind == F_DROP {
+            code = x86.patch(code, at, drop_at(x.drop_code.as_slice(), target));
+        } else if kind == F_DATA {
+            code = x86.patch(code, at, base + target);
+        } else {
+            calls.push(at);
+            calls.push(target + 1u64);
+        }
+        index += 3u64;
+    }
+    let mut names: Buffer<u8> = bytes.copy("main".as_slice());
+    let mut name_ends: Buffer<u64> = Buffer::new();
+    name_ends.push(names.length());
+    let mut defined: Buffer<u64> = Buffer::new();
+    defined.push(x.main_at + 1u64);
+    names = bytes.append(names, x.externs.as_slice());
+    index = 0u64;
+    while index < x.extern_ends.length() {
+        name_ends.push(4u64 + x.extern_ends[index]);
+        defined.push(0u64);
+        index += 1u64;
+    }
+    elf.relocatable(code.as_slice(), names.as_slice(), name_ends.as_slice(), defined.as_slice(), calls.as_slice())
+}
+
+// Where the drop function of `ty` starts.
+fn drop_at(drops: Slice<u64>, ty: u64) -> u64 {
+    let mut index: u64 = 0u64;
+    while index < drops.length() {
+        if drops[index] == ty {
+            return drops[index + 1u64];
+        }
+        index += 2u64;
+    }
+    0u64
+}
