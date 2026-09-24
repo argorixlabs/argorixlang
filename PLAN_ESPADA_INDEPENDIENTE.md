@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) y ESP-015 (PR #60). ESP-016 está EN_CURSO; ESP-017 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) ESP-015 (PR #60) y ESP-016 (PR #61). ESP-017 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -111,7 +111,7 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-013 | Lowering y emisión en Argorix | 012 | HECHA |
 | ESP-014 | Primer compilador self-hosted completo | 013 | HECHA |
 | ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | HECHA |
-| ESP-016 | Backend nativo inicial | 015 | EN_CURSO |
+| ESP-016 | Backend nativo inicial | 015 | HECHA |
 | ESP-017 | Segundo destino y bootstrap nativo | 016 | PENDIENTE |
 | ESP-018 | Lenguaje de agentes y políticas migrado | 015 | PENDIENTE |
 | ESP-019 | VM y scheduler en Argorix | 018 | PENDIENTE |
@@ -434,7 +434,7 @@ malicioso; el informe lo deja explícito.
 **Entregables:** backend nativo `.argx`, fixtures de objeto/ABI y binarios.
 **Aceptación:** compila Core y el compilador completo sin generar C ni invocar compilador C. Llamadas, enteros, ramas, arenas y errores coinciden con el backend temporal. Bibliotecas de sistema y linker quedan inventariados; dependencias para reconstruir shims se declaran por separado.
 
-**Estado (2026-09-24):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-016.md),
+**Estado (2026-09-24):** HECHA en el carril de Claude (PR #61, CI verde en `main@5e881ac`; [ficha](tasks/espada/ESP-016.md),
 [especificación](spec/core/native-x86-64.md)). `compiler/native.argx`, con el
 codificador `compiler/x86.argx` y el escritor de objetos `compiler/elf.argx`,
 compila Core a código x86-64 en un objeto ELF64 que `ld` enlaza con el shim de
@@ -451,7 +451,6 @@ runtime:
 - `bootstrap/native/toolchain.json` inventaría linker, biblioteca C y shim, y
   declara aparte el compilador C que solo reconstruir el shim necesita.
 
-Se cierra al fusionarse con CI verde.
 
 ### ESP-017 — Segundo destino y bootstrap nativo
 

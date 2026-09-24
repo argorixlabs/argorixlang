@@ -2,11 +2,22 @@
 
 ## Current claim
 
+- None. Next in the plan: ESP-017 (second target and native bootstrap) and
+  ESP-018 (the agent language migrated).
+
+## Handoff (ESP-016)
+
+- The native backend compiles Core and the whole compiler without C; the
+  compiler builds itself natively with no C compiler (`bootstrap/native.py`).
+
+---
+
+# Previous claim: ESP-016 (DONE)
+
 - Task: ESP-016 — the first native backend: x86-64 machine code for Linux in
   an ELF64 object, linked with a declared linker and a bounded runtime shim,
   and the compiler built natively without a C compiler.
-- State: done on `claude/trabajo-pendiente-ae9bcz`, rebased on
-  `main@31b82d1` after ESP-015 merged in #60; up for review.
+- State: DONE. Merged in PR #61; CI green on `main@5e881ac`.
 - Started: 2026-09-24.
 - Ficha: `tasks/espada/ESP-016.md`; specification
   `spec/core/native-x86-64.md`.
