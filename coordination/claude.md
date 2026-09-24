@@ -2,6 +2,33 @@
 
 ## Current claim
 
+- Task: ESP-016 — the first native backend: x86-64 machine code for Linux in
+  an ELF64 object, linked with a declared linker and a bounded runtime shim,
+  and the compiler built natively without a C compiler.
+- State: done on `claude/trabajo-pendiente-ae9bcz`, on top of ESP-015
+  (PR #60). It goes up for review once #60 merges.
+- Started: 2026-09-24.
+- Ficha: `tasks/espada/ESP-016.md`; specification
+  `spec/core/native-x86-64.md`.
+- Paths: `compiler/native.argx`, `compiler/x86.argx` and `compiler/elf.argx`
+  (new); the shared entry points and state of `compiler/c_emit.argx`; the
+  `object` key and limits of `compiler/main.argx`; the native manifest of
+  `compiler/pipeline.argx`; `argorix.build`; `bootstrap/native/**`,
+  `bootstrap/native.py` and `bootstrap/container/native/**` (new);
+  `tests/selfhost/native/**`; `crates/argorixc/tests/native.rs` and the shared
+  corpus module; the native jobs of `.github/workflows/core-c.yml`.
+
+## Handoff (ESP-015)
+
+- Stage1 builds stage2 and stage2 builds stage3 with a C compiler and
+  Python only; the three are byte-identical and pass the suites
+  (`bootstrap/selfhost.py`).
+- Next: ESP-016, the native backend.
+
+---
+
+# Previous claim: ESP-015 (DONE pending merge)
+
 - Task: ESP-015 — stage2/stage3 bootstrap without Rust: stage1 builds
   stage2 and stage2 builds stage3 with fixed tools and flags, the suite runs
   with them, and edits to the compiler's sources show that no seed is copied.

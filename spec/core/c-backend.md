@@ -10,6 +10,10 @@ programs for the same reasons: `compiler.c_emit.refusal` gives stage0's
 `CBackendUnsupported` message for each refusal (ESP-014.D), and stage1
 writes it to its diagnostics file (`spec/core/stage1.md`).
 
+The native backend (`spec/core/native-x86-64.md`, ESP-016) starts from this
+backend's tables and whole-program checks (`compiler.c_emit.prepare`) and
+runs the program this backend writes as C, with the same refusals.
+
 ## Trusted boundary
 
 The emitter implements `CoreIrBackend` and accepts only `VerifiedCoreIr`.
