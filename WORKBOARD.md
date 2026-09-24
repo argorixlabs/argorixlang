@@ -1,6 +1,6 @@
 # ArgorixLang collaboration board
 
-Last coordination update: 2026-09-22.
+Last coordination update: 2026-09-24.
 
 This file prevents Codex, Claude, and human contributors from modifying the
 same work at the same time. It coordinates ownership; the plans and task files
@@ -10,7 +10,8 @@ remain the source of truth for scope and acceptance.
 
 | Owner | Task | Branch | State | Exclusive paths | Agent log |
 | --- | --- | --- | --- | --- | --- |
-| Claude | ESP-012 — resolution, types and modules in Argorix (subtasks A, B, C) | `claude/check-esp012*`, `claude/trabajo-pendiente-ae9bcz` | DONE pending review (A #55, B #56, C on branch) | `compiler/check.argx`, `compiler/link.argx`, `tests/selfhost/check/**`, `spec/core/check.md`, `tasks/espada/ESP-012.md`, the stage0 checker where the port finds a defect, the `argorixc` check dump | [coordination/claude.md](coordination/claude.md) |
+| Claude | ESP-013 — lowering and emission in Argorix (subtasks A–D) | `claude/trabajo-pendiente-ae9bcz` | DONE pending review (A–D in PR #58) | `compiler/ir.argx`, `compiler/ir_verify.argx`, `compiler/c_emit.argx`, `compiler/pipeline.argx`, `compiler/sha256.argx`, `tests/selfhost/pipeline/**`, `tests/selfhost/ir/**`, `tests/selfhost/c/**`, `spec/core/ir.md`, `tasks/espada/ESP-013.md`, the stage0 IR where the port needs it | [coordination/claude.md](coordination/claude.md) |
+| Claude | ESP-012 — resolution, types and modules in Argorix (subtasks A, B, C) | `claude/check-esp012*`, `claude/trabajo-pendiente-ae9bcz` | DONE (PRs #55, #56, #57; CI green on `main@def7a46`) | `compiler/check.argx`, `compiler/link.argx`, `tests/selfhost/check/**`, `spec/core/check.md`, `tasks/espada/ESP-012.md`, the stage0 checker where the port finds a defect, the `argorixc` check dump | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-011 — parser and AST in Argorix | `claude/parser-esp011` | DONE (PR #54; CI green on `main@21b80ca`) | `compiler/**`, `tests/selfhost/parser/**`, `spec/core/ast.md`, `tasks/espada/ESP-011.md`, the Core parser in `crates/argorix_parser/src/core.rs` where the spec and the port disagree, the `argorixc` AST dump | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-010 — lexer and diagnostics in Argorix | `claude/lexer-esp010` | DONE (PR #53; CI green on `main@6f981db`) | `compiler/**`, `tests/selfhost/lexer/**`, `spec/core/tokens.md`, `tasks/espada/ESP-010.md`, the Core lexer in `crates/argorix_parser/src/core.rs` where the spec and the port disagree, the `argorixc` token dump | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-009 — minimal standard library (stdlib in `.argx`) | `claude/stdlib-*` | DONE (PRs #47, #48, #51; CI green on `main@1183b90`) | `stdlib/**`, `spec/core/stdlib.md`, `tests/selfhost/stdlib/**`, `tasks/espada/ESP-009.md` | [coordination/claude.md](coordination/claude.md) |

@@ -50,6 +50,9 @@ enum Command {
     CoreEmitIr { file: PathBuf },
     /// Verify serialized Argorix Core IR JSON.
     CoreVerifyIr { file: PathBuf },
+    /// Print what the IR verifier says of a serialized IR document: `ok`,
+    /// `decode failed`, or one diagnostic code per line.
+    CoreVerifyIrDump { file: PathBuf },
     /// Print the canonical token dump of a Core source file (spec/core/tokens.md).
     CoreTokens { file: PathBuf },
     /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
@@ -59,6 +62,18 @@ enum Command {
     /// Print the diagnostics of a Core package: the root file first, then the
     /// files that make up its locked compilation set, in that order.
     CoreCheckPackageDump {
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
+    /// Print the canonical IR of a Core package, as compact JSON: the root
+    /// file first, then the files of its locked compilation set.
+    CoreIrPackageDump {
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
+    /// Print the transitional C of a Core package: the root file first, then
+    /// the files of its locked compilation set.
+    CoreCPackageDump {
         #[arg(required = true)]
         files: Vec<PathBuf>,
     },
@@ -130,6 +145,11 @@ fn run() -> Result<()> {
             println!("Protocols: {}", compiled.program.protocols.len());
             println!("Semantic checks: passed");
         }
+        Command::CoreVerifyIrDump { file } => {
+            let document =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_ir::core_ir_verify_dump(&document));
+        }
         Command::CoreCheckDump { file } => {
             let source =
                 fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
@@ -143,6 +163,24 @@ fn run() -> Result<()> {
                 })
                 .collect::<Result<Vec<_>>>()?;
             print!("{}", argorix_semantics::core_package_check_dump(&sources));
+        }
+        Command::CoreIrPackageDump { files } => {
+            let sources = files
+                .iter()
+                .map(|file| {
+                    fs::read(file).with_context(|| format!("failed to read `{}`", file.display()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            print!("{}", argorix_ir::core_package_ir_dump(&sources));
+        }
+        Command::CoreCPackageDump { files } => {
+            let sources = files
+                .iter()
+                .map(|file| {
+                    fs::read(file).with_context(|| format!("failed to read `{}`", file.display()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            print!("{}", argorix_ir::core_package_c_dump(&sources));
         }
         Command::CoreAst { file } => {
             let source =

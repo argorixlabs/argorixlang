@@ -13,7 +13,9 @@ use argorix_parser::{
     },
     span::{Span, Spanned},
 };
-use argorix_semantics::{verify_core_program, CoreCheckOptions, VerifiedCoreProgram};
+use argorix_semantics::{
+    check_core_package, core_package, verify_core_program, CoreCheckOptions, VerifiedCoreProgram,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -375,6 +377,52 @@ pub fn lower_core_program(verified: VerifiedCoreProgram<'_>) -> CoreIrProgram {
     };
     program.effect_policy = collect_effects(&program).into_iter().collect();
     program
+}
+
+/// The canonical IR of a package (see `argorix_semantics::core_package`):
+/// the compact JSON of what `argorixc core-emit-ir` emits for its root, and a
+/// newline, or `check failed` when the package does not link, check and
+/// verify. `compiler/ir.argx` must reproduce it byte for byte (ESP-013.A).
+pub fn core_package_ir_dump(files: &[Vec<u8>]) -> String {
+    let failed = || "check failed\n".to_string();
+    let Ok(package) = core_package(files) else {
+        return failed();
+    };
+    let Ok((_, linked)) = check_core_package(
+        &package.root,
+        &package.modules,
+        &package.duplicates,
+        &package.options,
+    ) else {
+        return failed();
+    };
+    let Ok(verified) = verify_core_program(&linked, &package.options) else {
+        return failed();
+    };
+    let ir = lower_core_program(verified);
+    if verify_core_ir(&ir).is_err() {
+        return failed();
+    }
+    let mut json = serde_json::to_string(&ir).expect("Core IR serialization is infallible");
+    json.push('\n');
+    json
+}
+
+/// What the verifier says of a serialized IR document (ESP-013.B): `decode
+/// failed` when it is not an IR document, `ok` when it verifies, or one
+/// diagnostic code per line, in the order `verify_core_ir` reports them.
+/// `compiler/ir_verify.argx` must reproduce it.
+pub fn core_ir_verify_dump(document: &[u8]) -> String {
+    let Ok(program) = serde_json::from_slice::<CoreIrProgram>(document) else {
+        return "decode failed\n".into();
+    };
+    match verify_core_ir(&program) {
+        Ok(_) => "ok\n".into(),
+        Err(diagnostics) => diagnostics
+            .iter()
+            .map(|diagnostic| format!("{}\n", diagnostic.code))
+            .collect(),
+    }
 }
 
 pub fn verify_core_ir(

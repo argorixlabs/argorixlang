@@ -1,0 +1,72 @@
+core 0.1;
+module selfhost_ir.ir_files;
+
+// The Argorix IR lowering over real packages, through the
+// compiler-host boundary. `packages.txt` in the package root lists one
+// package per line: its files' relative paths separated by spaces, the root
+// first. Each package is read, linked, checked and lowered, and its canonical
+// IR (spec/core/ir.md) written to `dumps/<n>.ir` in the build root, where n
+// counts from 0. The result is the number of dumps written, or 1000000 plus
+// the failure digest of the first read or write that failed.
+
+import stdlib.compiler_host;
+import stdlib.result;
+import stdlib.bytes;
+import compiler.ir;
+
+pub fn argorix_main(package: PackageRead, build: BuildWrite) -> u64 {
+    match compiler_host.read(package, "packages.txt".as_slice()) {
+        BytesResult::Ok { value } => lower_each(package, build, value.as_slice()),
+        BytesResult::Err { failure } => 1000000u64 + result.failure_digest(failure),
+    }
+}
+
+fn lower_each(package: PackageRead, build: BuildWrite, list: Slice<u8>) -> u64 {
+    let mut written: u64 = 0u64;
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= list.length() {
+        if at == list.length() || list[at] == 10u8 {
+            if at > start {
+                let outcome: u64 = lower_one(package, build, list.slice(start, at), written);
+                if outcome != 0u64 {
+                    return outcome;
+                }
+                written += 1u64;
+            }
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    written
+}
+
+// 0 when the dump was written.
+fn lower_one(package: PackageRead, build: BuildWrite, line: Slice<u8>, number: u64) -> u64 {
+    let mut sources: Buffer<u8> = Buffer::new();
+    let mut ends: Buffer<u64> = Buffer::new();
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= line.length() {
+        if at == line.length() || line[at] == 32u8 {
+            if at > start {
+                match compiler_host.read(package, line.slice(start, at)) {
+                    BytesResult::Ok { value } => {
+                        sources = bytes.append(sources, value.as_slice());
+                        ends.push(sources.length());
+                    },
+                    BytesResult::Err { failure } => {
+                        return 1000000u64 + result.failure_digest(failure);
+                    },
+                }
+            }
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    let mut name: Buffer<u8> = bytes.append(Buffer::new(), "dumps/".as_slice());
+    name = bytes.append_decimal(name, number);
+    name = bytes.append(name, ".ir".as_slice());
+    let printed: Buffer<u8> = ir.dump(sources.as_slice(), ends.as_slice());
+    result.checked_digest(compiler_host.write(build, name.as_slice(), printed.as_slice()))
+}

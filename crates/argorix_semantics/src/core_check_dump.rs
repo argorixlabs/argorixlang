@@ -29,17 +29,27 @@ pub fn core_check_dump(source: &[u8]) -> String {
     }
 }
 
-/// A package, checked as `argorixc core-check` checks it: `files[0]` is the
-/// root and the rest its locked compilation set, in the order given. A file
-/// that does not parse is left out of the set, a module declared twice cannot
-/// be imported, and the root's module may not be declared twice. Each line is
-/// prefixed with the position in `files` of the file it points into.
-pub fn core_package_check_dump(files: &[Vec<u8>]) -> String {
+/// A package as `argorixc core-check` sees it: `files[0]` is the root and the
+/// rest its locked compilation set, in the order given. A file that does not
+/// parse is left out of the set, a module declared twice cannot be imported,
+/// and the root's module may not be declared twice.
+pub struct CorePackage {
+    pub root: CoreProgram,
+    pub modules: BTreeMap<String, CoreProgram>,
+    pub duplicates: BTreeSet<String>,
+    pub options: CoreCheckOptions,
+    /// The position in `files` of the file that declares each module.
+    pub positions: BTreeMap<String, usize>,
+}
+
+/// The package in `files`, or the line its dump is when it cannot be read:
+/// `parse failed` or `root module declared twice`.
+pub fn core_package(files: &[Vec<u8>]) -> Result<CorePackage, &'static str> {
     let parse = |source: &[u8]| -> Option<CoreProgram> {
         parse_core_source(std::str::from_utf8(source).ok()?).ok()
     };
     let Some(root) = files.first().and_then(|source| parse(source)) else {
-        return "parse failed\n".into();
+        return Err("parse failed");
     };
     let root_name = root.module.value.clone();
     let mut positions = BTreeMap::from([(root_name.clone(), 0_usize)]);
@@ -58,14 +68,35 @@ pub fn core_package_check_dump(files: &[Vec<u8>]) -> String {
         modules.insert(name, program);
     }
     if duplicates.contains(&root_name) {
-        return "root module declared twice\n".into();
+        return Err("root module declared twice");
     }
     let mut available_modules: BTreeSet<String> = modules.keys().cloned().collect();
     available_modules.insert(root_name);
-    let options = CoreCheckOptions { available_modules };
-    match check_core_package(&root, &modules, &duplicates, &options) {
+    Ok(CorePackage {
+        root,
+        modules,
+        duplicates,
+        options: CoreCheckOptions { available_modules },
+        positions,
+    })
+}
+
+/// A package (see `core_package`), checked as `argorixc core-check` checks
+/// it. Each line is prefixed with the position in `files` of the file it
+/// points into.
+pub fn core_package_check_dump(files: &[Vec<u8>]) -> String {
+    let package = match core_package(files) {
+        Ok(package) => package,
+        Err(line) => return format!("{line}\n"),
+    };
+    match check_core_package(
+        &package.root,
+        &package.modules,
+        &package.duplicates,
+        &package.options,
+    ) {
         Ok(_) => "ok\n".into(),
-        Err(error) => lines(&error.diagnostics, Some(positions[&error.module])),
+        Err(error) => lines(&error.diagnostics, Some(package.positions[&error.module])),
     }
 }
 

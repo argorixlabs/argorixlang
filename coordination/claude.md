@@ -2,10 +2,31 @@
 
 ## Current claim
 
+- Task: ESP-013 — lowering and emission in Argorix, as subtasks A (IR and
+  canonical JSON), B (verifier), C (C backend) and D (pipeline and manifest).
+- State: IN PROGRESS; A (IR) and C (C backend, with a self-emission fixed
+  point) done on `claude/trabajo-pendiente-ae9bcz`, rebased on `main@def7a46`
+  after ESP-012.C merged in #57, then D (pipeline and manifest with SHA-256)
+  and B (IR verifier), all in PR #58. Every subtask is done; the task closes
+  when #58 merges with CI green.
+- Started: 2026-09-24.
+- Ficha: `tasks/espada/ESP-013.md`.
+- Paths: `compiler/ir.argx`, `compiler/ir_verify.argx`, `compiler/c_emit.argx`,
+  `compiler/pipeline.argx` and `compiler/sha256.argx` (new), `tests/selfhost/pipeline/**`,
+  `compiler/link.argx`, `tests/selfhost/ir/**`, `tests/selfhost/c/**`,
+  `spec/core/c-backend.md`, `crates/argorix_ir/src/core_c.rs` (package C dump),
+  `spec/core/ir.md`, the ficha, `crates/argorix_ir/src/core.rs` (package IR
+  dump), `crates/argorix_semantics/src/core_check_dump.rs` (package loading),
+  the `argorixc` package dumps, `.github/workflows/core-c.yml` (IR fixtures).
+
+---
+
+# Previous claim: ESP-012 (DONE)
+
 - Task: ESP-012 — resolution, types and modules in Argorix, as subtasks A
   (types and names), B (ownership and views) and C (module linker).
-- State: DONE pending review; A merged (PR #55), B merged (PR #56), C done on
-  `claude/trabajo-pendiente-ae9bcz`.
+- State: DONE on 2026-09-24; A, B and C merged in PRs #55, #56 and #57. CI is
+  green on `main@def7a46`.
 - Started: 2026-09-23.
 - Ficha: `tasks/espada/ESP-012.md`.
 - Paths: `compiler/check.argx`, `compiler/link.argx` (new),

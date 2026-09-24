@@ -1,0 +1,22 @@
+core 0.1;
+module demo.main;
+
+import demo.shapes as s;
+
+// `Shape` and `Pair` are public types of `demo.shapes`, named by bare name.
+fn area(shape: Shape) -> u32 {
+    match shape {
+        Shape::Square { side } => side * side,
+        Shape::Rectangle { width, height } => width * height,
+        Shape::Empty => 0u32,
+    }
+}
+
+pub fn argorix_main() -> u32 {
+    let pair: Pair = s.pair(40u32);
+    let boxed: Boxed = Boxed { inner: pair };
+    let square: Shape = Shape::Square { side: 2u32 };
+    area(square) + boxed.inner.left + s.inner_value(boxed.inner)
+}
+
+struct Boxed { inner: Pair, }

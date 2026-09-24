@@ -1,7 +1,11 @@
 # Transitional C backend contract
 
 Status: ESP-008 work in progress. This backend is a bootstrap bridge and is
-not the native backend required for the final Argorix toolchain.
+not the native backend required for the final Argorix toolchain. Two
+implementations follow this contract: the stage0 emitter in
+`crates/argorix_ir/src/core_c.rs`, and `compiler/c_emit.argx` (ESP-013.C). The
+Argorix one writes the same C byte for byte, and reproduces itself
+(`crates/argorixc/tests/link_differential.rs`).
 
 ## Trusted boundary
 

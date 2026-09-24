@@ -1,0 +1,17 @@
+core 0.1;
+module demo.shapes;
+
+pub struct Pair { left: u32, right: Hidden, }
+
+pub enum Shape {
+    Square { side: u32, },
+    Rectangle { width: u32, height: u32, },
+    Empty,
+}
+
+// A private type, reached only through `Pair`.
+struct Hidden { value: u32, }
+
+pub fn pair(left: u32) -> Pair { Pair { left: left, right: Hidden { value: 2u32 } } }
+
+pub fn inner_value(pair: Pair) -> u32 { pair.right.value }

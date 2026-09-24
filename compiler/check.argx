@@ -92,6 +92,10 @@ pub struct Check {
     bases: Buffer<u64>,
     imports: Buffer<u64>,
     linked: bool,
+    // A locked module set other than the program itself (ESP-013.B): the
+    // (first, last) token pairs of its paths.
+    locked: Buffer<u64>,
+    locked_set: bool,
 }
 
 // Type tags.
@@ -202,7 +206,8 @@ pub fn append_diagnostic(out: Buffer<u8>, source: Slice<u8>, found: Diagnostic) 
     text
 }
 
-fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
+// The name of a diagnostic code.
+pub fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
     if code == DUPLICATE_DECLARATION { return bytes.append(out, "DuplicateDeclaration".as_slice()); }
     if code == IMPORT_NOT_LOCKED { return bytes.append(out, "ImportNotLocked".as_slice()); }
     if code == INFINITE_TYPE { return bytes.append(out, "InfiniteType".as_slice()); }
@@ -222,7 +227,8 @@ fn append_code(out: Buffer<u8>, code: u64) -> Buffer<u8> {
     bytes.append(out, "SliceAliasesMove".as_slice())
 }
 
-fn empty_check() -> Check {
+// A check of nothing, with the types every check starts with.
+pub fn empty_check() -> Check {
     let mut c: Check = Check {
         types: Buffer::new(),
         names: Buffer::new(),
@@ -252,6 +258,8 @@ fn empty_check() -> Check {
         bases: Buffer::new(),
         imports: Buffer::new(),
         linked: false,
+        locked: Buffer::new(),
+        locked_set: false,
     };
     // Unknown, never, unit, bool, bytes, string: positions 0 to 5.
     let mut tag: u64 = 0u64;
@@ -278,6 +286,17 @@ pub fn check_unit(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, p
     c.bases = copy_ids(bases);
     c.imports = copy_ids(imports);
     c.linked = true;
+    passes(source, tokens, nodes, program, c)
+}
+
+// One program whose locked set is given, as (first, last) token pairs of the
+// modules' paths: the IR verifier's view of a program raised from its IR.
+pub fn check_locked(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, locked: Slice<u64>) -> Check {
+    let mut c: Check = empty_check();
+    c.bases.push(0u64);
+    c.bases.push(nodes.length());
+    c.locked = copy_ids(locked);
+    c.locked_set = true;
     passes(source, tokens, nodes, program, c)
 }
 
@@ -790,7 +809,8 @@ fn collect_fields(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, o
     c
 }
 
-// Checked alone, a program's locked set holds only itself.
+// Checked alone, a program's locked set holds only itself; raised from IR, it
+// is the IR's.
 fn check_imports(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, program: u64, check: Check) -> Check {
     let mut c: Check = check;
     let module_first: u64 = nodes[program].word - 1u64;
@@ -804,7 +824,19 @@ fn check_imports(source: Slice<u8>, tokens: Slice<Token>, nodes: Slice<Node>, pr
         }
         let first: u64 = nodes[item].word - 1u64;
         let last: u64 = nodes[item].path_last;
-        if !same_path(source, tokens, first, last, module_first, module_last) {
+        let mut locked: bool = false;
+        if c.locked_set {
+            let mut pair: u64 = 0u64;
+            while pair < c.locked.length() {
+                if same_path(source, tokens, first, last, c.locked[pair], c.locked[pair + 1u64]) {
+                    locked = true;
+                }
+                pair += 2u64;
+            }
+        } else {
+            locked = same_path(source, tokens, first, last, module_first, module_last);
+        }
+        if !locked {
             c = report(IMPORT_NOT_LOCKED, tokens[first].start, c);
         }
     }

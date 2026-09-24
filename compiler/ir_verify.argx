@@ -1,0 +1,1728 @@
+core 0.1;
+module compiler.ir_verify;
+
+// The Core IR verifier, in Argorix (ESP-013.B). It reads an IR document as
+// stage0 does (`serde_json` into `CoreIrProgram`) and verifies it as
+// `verify_core_ir` does (`crates/argorix_ir/src/core.rs`), reporting the same
+// codes in the same order:
+//
+// - the IR and Core versions;
+// - duplicate, unauthorized and undeclared effects, against the effects the
+//   items use;
+// - duplicate locked modules, and imports outside the locked set;
+// - the program raised back into a syntax tree, checked by `compiler.check`
+//   with the locked set as its available modules.
+//
+// The reader is JSON as serde reads it: whitespace between tokens, unknown
+// fields ignored, a missing optional field or `null` read as none, and at
+// most 127 nested objects and arrays, serde_json's recursion limit. A
+// document that is not IR is `decode failed`, whatever is wrong with it.
+//
+// Raising builds the tree the parser would: each name becomes a token of its
+// own in a synthetic source, so a name is any string, as in stage0, and a
+// dotted module path becomes one token per segment.
+
+import stdlib.bytes;
+import compiler.token;
+import compiler.ast;
+import compiler.check;
+
+// ------------------------------------------------------------------ JSON
+
+// A JSON value. `first` and `next` link an object's or array's members (+ 1);
+// `key` is a member's name and `text` a string's value, both ranges of the
+// decoded `texts`; `number` an unsigned integer's value.
+pub struct JNode { kind: u64, first: u64, next: u64, key_start: u64, key_end: u64, text_start: u64, text_end: u64, number: u64, }
+
+pub struct JTree { nodes: Buffer<JNode>, texts: Buffer<u8>, at: u64, depth: u64, failed: bool, result: u64, }
+
+const J_OBJECT: u64 = 1u64;
+const J_ARRAY: u64 = 2u64;
+const J_STRING: u64 = 3u64;
+// An unsigned integer that fits a u64; any other number is J_OTHER_NUMBER.
+const J_NUMBER: u64 = 4u64;
+const J_OTHER_NUMBER: u64 = 5u64;
+const J_TRUE: u64 = 6u64;
+const J_FALSE: u64 = 7u64;
+const J_NULL: u64 = 8u64;
+
+// serde_json refuses to enter a 128th nested object or array.
+const DEPTH_LIMIT: u64 = 127u64;
+
+fn read_json(input: Slice<u8>) -> JTree {
+    let mut j: JTree = JTree { nodes: Buffer::new(), texts: Buffer::new(), at: 0u64, depth: 0u64, failed: false, result: 0u64 };
+    j = value(input, j);
+    if j.failed {
+        return j;
+    }
+    j.at = skip(input, j.at);
+    if j.at != input.length() {
+        j.failed = true;
+    }
+    j
+}
+
+fn skip(input: Slice<u8>, at: u64) -> u64 {
+    let mut position: u64 = at;
+    while position < input.length() && (input[position] == 32u8 || input[position] == 9u8 || input[position] == 10u8 || input[position] == 13u8) {
+        position += 1u64;
+    }
+    position
+}
+
+fn jfail(tree: JTree) -> JTree {
+    let mut j: JTree = tree;
+    j.failed = true;
+    j
+}
+
+fn push_node(tree: JTree, kind: u64) -> JTree {
+    let mut j: JTree = tree;
+    j.nodes.push(JNode { kind: kind, first: 0u64, next: 0u64, key_start: 0u64, key_end: 0u64, text_start: 0u64, text_end: 0u64, number: 0u64 });
+    j.result = j.nodes.length() - 1u64;
+    j
+}
+
+fn literal(input: Slice<u8>, at: u64, text: Slice<u8>) -> bool {
+    at + text.length() <= input.length() && bytes.equal(input.slice(at, at + text.length()), text)
+}
+
+// One value from `at`; `result` is its node.
+fn value(input: Slice<u8>, tree: JTree) -> JTree {
+    let mut j: JTree = tree;
+    j.at = skip(input, j.at);
+    if j.at >= input.length() {
+        return jfail(j);
+    }
+    let byte: u8 = input[j.at];
+    if byte == 123u8 || byte == 91u8 {
+        return container(input, j);
+    }
+    if byte == 34u8 {
+        j = push_node(j, J_STRING);
+        let node: u64 = j.result;
+        j = string(input, j);
+        if j.failed {
+            return j;
+        }
+        j.nodes[node].text_start = j.result;
+        j.nodes[node].text_end = j.texts.length();
+        j.result = node;
+        return j;
+    }
+    if literal(input, j.at, "true".as_slice()) {
+        j.at += 4u64;
+        return push_node(j, J_TRUE);
+    }
+    if literal(input, j.at, "false".as_slice()) {
+        j.at += 5u64;
+        return push_node(j, J_FALSE);
+    }
+    if literal(input, j.at, "null".as_slice()) {
+        j.at += 4u64;
+        return push_node(j, J_NULL);
+    }
+    number(input, j)
+}
+
+// A number: `-`? int frac? exp?, where int has no leading zero.
+fn number(input: Slice<u8>, tree: JTree) -> JTree {
+    let mut j: JTree = tree;
+    let mut at: u64 = j.at;
+    let mut plain: bool = true;
+    if at < input.length() && input[at] == 45u8 {
+        plain = false;
+        at += 1u64;
+    }
+    if at >= input.length() || input[at] < 48u8 || input[at] > 57u8 {
+        return jfail(j);
+    }
+    let mut value: u64 = 0u64;
+    let mut fits: bool = true;
+    if input[at] == 48u8 {
+        at += 1u64;
+    } else {
+        while at < input.length() && input[at] >= 48u8 && input[at] <= 57u8 {
+            let digit: u64 = digit_value(input[at]);
+            if value > (18446744073709551615u64 - digit) / 10u64 {
+                fits = false;
+            } else {
+                value = value * 10u64 + digit;
+            }
+            at += 1u64;
+        }
+    }
+    if at < input.length() && input[at] == 46u8 {
+        plain = false;
+        at += 1u64;
+        if at >= input.length() || input[at] < 48u8 || input[at] > 57u8 {
+            return jfail(j);
+        }
+        while at < input.length() && input[at] >= 48u8 && input[at] <= 57u8 {
+            at += 1u64;
+        }
+    }
+    if at < input.length() && (input[at] == 101u8 || input[at] == 69u8) {
+        plain = false;
+        at += 1u64;
+        if at < input.length() && (input[at] == 43u8 || input[at] == 45u8) {
+            at += 1u64;
+        }
+        if at >= input.length() || input[at] < 48u8 || input[at] > 57u8 {
+            return jfail(j);
+        }
+        while at < input.length() && input[at] >= 48u8 && input[at] <= 57u8 {
+            at += 1u64;
+        }
+    }
+    j.at = at;
+    if plain && fits {
+        j = push_node(j, J_NUMBER);
+        let node: u64 = j.result;
+        j.nodes[node].number = value;
+        return j;
+    }
+    push_node(j, J_OTHER_NUMBER)
+}
+
+fn digit_value(byte: u8) -> u64 {
+    let mut value: u64 = 0u64;
+    let mut at: u8 = 48u8;
+    while at < byte {
+        value += 1u64;
+        at += 1u8;
+    }
+    value
+}
+
+// An object or an array, its members linked in order.
+fn container(input: Slice<u8>, tree: JTree) -> JTree {
+    let mut j: JTree = tree;
+    if j.depth == DEPTH_LIMIT {
+        return jfail(j);
+    }
+    j.depth += 1u64;
+    let object: bool = input[j.at] == 123u8;
+    j = push_node(j, if object { J_OBJECT } else { J_ARRAY });
+    let node: u64 = j.result;
+    j.at = skip(input, j.at + 1u64);
+    let close: u8 = if object { 125u8 } else { 93u8 };
+    if j.at < input.length() && input[j.at] == close {
+        j.at += 1u64;
+        j.depth -= 1u64;
+        j.result = node;
+        return j;
+    }
+    let mut previous: u64 = 0u64;
+    loop {
+        let mut key_start: u64 = 0u64;
+        let mut key_end: u64 = 0u64;
+        if object {
+            j.at = skip(input, j.at);
+            if j.at >= input.length() || input[j.at] != 34u8 {
+                return jfail(j);
+            }
+            j = string(input, j);
+            if j.failed {
+                return j;
+            }
+            key_start = j.result;
+            key_end = j.texts.length();
+            j.at = skip(input, j.at);
+            if j.at >= input.length() || input[j.at] != 58u8 {
+                return jfail(j);
+            }
+            j.at += 1u64;
+        }
+        j = value(input, j);
+        if j.failed {
+            return j;
+        }
+        let member: u64 = j.result;
+        j.nodes[member].key_start = key_start;
+        j.nodes[member].key_end = key_end;
+        if previous == 0u64 {
+            j.nodes[node].first = member + 1u64;
+        } else {
+            j.nodes[previous - 1u64].next = member + 1u64;
+        }
+        previous = member + 1u64;
+        j.at = skip(input, j.at);
+        if j.at >= input.length() {
+            return jfail(j);
+        }
+        if input[j.at] == 44u8 {
+            j.at += 1u64;
+            continue;
+        }
+        if input[j.at] == close {
+            j.at += 1u64;
+            break;
+        }
+        return jfail(j);
+    }
+    j.depth -= 1u64;
+    j.result = node;
+    j
+}
+
+fn hex_value(byte: u8) -> u64 {
+    if byte >= 48u8 && byte <= 57u8 { return digit_value(byte); }
+    if byte >= 97u8 && byte <= 102u8 { return digit_value(byte - 49u8) + 10u64; }
+    if byte >= 65u8 && byte <= 70u8 { return digit_value(byte - 17u8) + 10u64; }
+    16u64
+}
+
+// Four hex digits at `at`, or 65536 if they are not.
+fn hex4(input: Slice<u8>, at: u64) -> u64 {
+    if at + 4u64 > input.length() {
+        return 65536u64;
+    }
+    let mut value: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < 4u64 {
+        let digit: u64 = hex_value(input[at + index]);
+        if digit == 16u64 {
+            return 65536u64;
+        }
+        value = value * 16u64 + digit;
+        index += 1u64;
+    }
+    value
+}
+
+fn narrow(value: u64) -> u8 {
+    let mut byte: u8 = 0u8;
+    let mut rest: u64 = value;
+    let mut weight: u64 = 128u64;
+    let mut bit: u8 = 128u8;
+    while weight > 0u64 {
+        if rest >= weight {
+            rest -= weight;
+            byte += bit;
+        }
+        weight = weight / 2u64;
+        bit = bit / 2u8;
+    }
+    byte
+}
+
+// A code point as UTF-8, appended to the texts.
+fn push_utf8(tree: JTree, point: u64) -> JTree {
+    let mut j: JTree = tree;
+    if point < 128u64 {
+        j.texts.push(narrow(point));
+    } else if point < 2048u64 {
+        j.texts.push(narrow(192u64 + point / 64u64));
+        j.texts.push(narrow(128u64 + point % 64u64));
+    } else if point < 65536u64 {
+        j.texts.push(narrow(224u64 + point / 4096u64));
+        j.texts.push(narrow(128u64 + (point / 64u64) % 64u64));
+        j.texts.push(narrow(128u64 + point % 64u64));
+    } else {
+        j.texts.push(narrow(240u64 + point / 262144u64));
+        j.texts.push(narrow(128u64 + (point / 4096u64) % 64u64));
+        j.texts.push(narrow(128u64 + (point / 64u64) % 64u64));
+        j.texts.push(narrow(128u64 + point % 64u64));
+    }
+    j
+}
+
+// A string from its opening quote at `at`, decoded into the texts; `result`
+// is where it starts there.
+fn string(input: Slice<u8>, tree: JTree) -> JTree {
+    let mut j: JTree = tree;
+    let start: u64 = j.texts.length();
+    let mut at: u64 = j.at + 1u64;
+    loop {
+        if at >= input.length() {
+            return jfail(j);
+        }
+        let byte: u8 = input[at];
+        if byte == 34u8 {
+            at += 1u64;
+            break;
+        }
+        if byte < 32u8 {
+            return jfail(j);
+        }
+        if byte != 92u8 {
+            j.texts.push(byte);
+            at += 1u64;
+            continue;
+        }
+        if at + 1u64 >= input.length() {
+            return jfail(j);
+        }
+        let escape: u8 = input[at + 1u64];
+        at += 2u64;
+        if escape == 34u8 || escape == 92u8 || escape == 47u8 {
+            j.texts.push(escape);
+        } else if escape == 98u8 {
+            j.texts.push(8u8);
+        } else if escape == 102u8 {
+            j.texts.push(12u8);
+        } else if escape == 110u8 {
+            j.texts.push(10u8);
+        } else if escape == 114u8 {
+            j.texts.push(13u8);
+        } else if escape == 116u8 {
+            j.texts.push(9u8);
+        } else if escape == 117u8 {
+            let mut point: u64 = hex4(input, at);
+            if point == 65536u64 {
+                return jfail(j);
+            }
+            at += 4u64;
+            if point >= 55296u64 && point < 56320u64 {
+                // A high surrogate needs its low half.
+                if at + 2u64 > input.length() || input[at] != 92u8 || input[at + 1u64] != 117u8 {
+                    return jfail(j);
+                }
+                let low: u64 = hex4(input, at + 2u64);
+                if low < 56320u64 || low >= 57344u64 {
+                    return jfail(j);
+                }
+                at += 6u64;
+                point = 65536u64 + (point - 55296u64) * 1024u64 + (low - 56320u64);
+            } else if point >= 56320u64 && point < 57344u64 {
+                return jfail(j);
+            }
+            j = push_utf8(j, point);
+        } else {
+            return jfail(j);
+        }
+    }
+    j.at = at;
+    j.result = start;
+    j
+}
+
+// The member of an object named `key` (+ 1), or 0.
+fn field(nodes: Slice<JNode>, texts: Slice<u8>, object: u64, key: Slice<u8>) -> u64 {
+    let mut link: u64 = nodes[object].first;
+    while link != 0u64 {
+        let member: u64 = link - 1u64;
+        if bytes.equal(texts.slice(nodes[member].key_start, nodes[member].key_end), key) {
+            return link;
+        }
+        link = nodes[member].next;
+    }
+    0u64
+}
+
+// A member that is present and not `null` (+ 1), or 0.
+fn present(nodes: Slice<JNode>, texts: Slice<u8>, object: u64, key: Slice<u8>) -> u64 {
+    let found: u64 = field(nodes, texts, object, key);
+    if found == 0u64 || nodes[found - 1u64].kind == J_NULL {
+        return 0u64;
+    }
+    found
+}
+
+fn is_text(nodes: Slice<JNode>, texts: Slice<u8>, node: u64, text: Slice<u8>) -> bool {
+    nodes[node].kind == J_STRING && bytes.equal(texts.slice(nodes[node].text_start, nodes[node].text_end), text)
+}
+
+// Whether member `key` of `object` is the string `text`.
+fn tag_is(nodes: Slice<JNode>, texts: Slice<u8>, object: u64, key: Slice<u8>, text: Slice<u8>) -> bool {
+    let found: u64 = field(nodes, texts, object, key);
+    found != 0u64 && is_text(nodes, texts, found - 1u64, text)
+}
+
+fn count(nodes: Slice<JNode>, array: u64) -> u64 {
+    let mut link: u64 = nodes[array].first;
+    let mut total: u64 = 0u64;
+    while link != 0u64 {
+        total += 1u64;
+        link = nodes[link - 1u64].next;
+    }
+    total
+}
+
+fn element(nodes: Slice<JNode>, array: u64, index: u64) -> u64 {
+    let mut link: u64 = nodes[array].first;
+    let mut at: u64 = 0u64;
+    while at < index {
+        link = nodes[link - 1u64].next;
+        at += 1u64;
+    }
+    link - 1u64
+}
+
+// ------------------------------------------------------------------ raising
+
+// The syntax tree being raised: a synthetic source that holds every name,
+// its tokens, and the nodes.
+pub struct Raise { source: Buffer<u8>, tokens: Buffer<Token>, nodes: Buffer<Node>, failed: bool, result: u64, }
+
+fn rfail(r: Raise) -> Raise {
+    let mut x: Raise = r;
+    x.failed = true;
+    x
+}
+
+// A token of `kind` spelling `text`; `result` is its position.
+fn add_token(r: Raise, kind: u64, text: Slice<u8>, value: u64) -> Raise {
+    let mut x: Raise = r;
+    let start: u64 = x.source.length();
+    let mut index: u64 = 0u64;
+    while index < text.length() {
+        x.source.push(text[index]);
+        index += 1u64;
+    }
+    // A space keeps the next name from running into this one.
+    x.source.push(32u8);
+    let end: u64 = start + text.length();
+    x.tokens.push(Token { kind: kind, start: start, end: end, line: 1u64, column: 1u64, value: value, text_start: start, text_end: end });
+    x.result = x.tokens.length() - 1u64;
+    x
+}
+
+// The string member `key` of `object` as a name token, or a failure.
+fn name_token(jn: Slice<JNode>, jt: Slice<u8>, object: u64, key: Slice<u8>, r: Raise) -> Raise {
+    let found: u64 = field(jn, jt, object, key);
+    if found == 0u64 || jn[found - 1u64].kind != J_STRING {
+        return rfail(r);
+    }
+    let node: JNode = jn[found - 1u64];
+    add_token(r, token.IDENT, jt.slice(node.text_start, node.text_end), 0u64)
+}
+
+// A node over `children`, which it links in order; `result` is its position.
+fn add_node(r: Raise, kind: u64, word: u64, path_last: u64, value: u64, flag: u64, children: Slice<u64>) -> Raise {
+    let mut x: Raise = r;
+    let start: u64 = if word != 0u64 { x.tokens[word - 1u64].start } else { x.source.length() };
+    let mut index: u64 = 0u64;
+    while index + 1u64 < children.length() {
+        x.nodes[children[index]].next = children[index + 1u64] + 1u64;
+        index += 1u64;
+    }
+    let first: u64 = if children.length() > 0u64 { children[0u64] + 1u64 } else { 0u64 };
+    x.nodes.push(Node { kind: kind, start: start, end: start, label_start: 0u64, label_end: 0u64, first: first, next: 0u64, word: word, path_last: path_last, value: value, flag: flag });
+    x.result = x.nodes.length() - 1u64;
+    x
+}
+
+// A string's segments as consecutive name tokens: `a.b` split at dots, or
+// the elements of an array of strings. `result` is the first token, and the
+// last is the one before `tokens.length()`.
+fn dotted(text: Slice<u8>, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    let first: u64 = x.tokens.length();
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= text.length() {
+        if at == text.length() || text[at] == 46u8 {
+            x = add_token(x, token.IDENT, text.slice(start, at), 0u64);
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    x.result = first;
+    x
+}
+
+fn segments(jn: Slice<JNode>, jt: Slice<u8>, array: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    if jn[array].kind != J_ARRAY || jn[array].first == 0u64 {
+        // A path of no segment has no name to point at.
+        return rfail(x);
+    }
+    let first: u64 = x.tokens.length();
+    let mut link: u64 = jn[array].first;
+    while link != 0u64 {
+        let segment: JNode = jn[link - 1u64];
+        if segment.kind != J_STRING {
+            return rfail(x);
+        }
+        x = add_token(x, token.IDENT, jt.slice(segment.text_start, segment.text_end), 0u64);
+        link = segment.next;
+    }
+    x.result = first;
+    x
+}
+
+fn member_node(jn: Slice<JNode>, jt: Slice<u8>, object: u64, key: Slice<u8>, kind: u64) -> u64 {
+    let found: u64 = field(jn, jt, object, key);
+    if found == 0u64 || jn[found - 1u64].kind != kind {
+        return 0u64;
+    }
+    found
+}
+
+fn raise_program(jn: Slice<JNode>, jt: Slice<u8>, root: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    if jn[root].kind != J_OBJECT {
+        return rfail(x);
+    }
+    let items: u64 = member_node(jn, jt, root, "items".as_slice(), J_ARRAY);
+    let module: u64 = member_node(jn, jt, root, "module".as_slice(), J_STRING);
+    if items == 0u64 || module == 0u64 {
+        return rfail(x);
+    }
+    let mut children: Buffer<u64> = Buffer::new();
+    let imports: u64 = present(jn, jt, root, "imports".as_slice());
+    if imports != 0u64 {
+        if jn[imports - 1u64].kind != J_ARRAY {
+            return rfail(x);
+        }
+        let mut link: u64 = jn[imports - 1u64].first;
+        while link != 0u64 {
+            let import: u64 = link - 1u64;
+            link = jn[import].next;
+            let path: u64 = member_node(jn, jt, import, "path".as_slice(), J_STRING);
+            if jn[import].kind != J_OBJECT || path == 0u64 {
+                return rfail(x);
+            }
+            let path_node: JNode = jn[path - 1u64];
+            x = dotted(jt.slice(path_node.text_start, path_node.text_end), x);
+            let first: u64 = x.result;
+            let last: u64 = x.tokens.length() - 1u64;
+            let mut alias: u64 = 0u64;
+            let alias_member: u64 = present(jn, jt, import, "alias".as_slice());
+            if alias_member != 0u64 {
+                if jn[alias_member - 1u64].kind != J_STRING {
+                    return rfail(x);
+                }
+                x = name_token(jn, jt, import, "alias".as_slice(), x);
+                alias = x.result + 1u64;
+            }
+            let none: Array<u64, 0> = [];
+            x = add_node(x, ast.IMPORT, first + 1u64, last, alias, 0u64, none.as_slice());
+            children.push(x.result);
+        }
+    }
+    let mut link: u64 = jn[items - 1u64].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = jn[item].next;
+        x = raise_item(jn, jt, item, x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+    }
+    let name: JNode = jn[module - 1u64];
+    x = dotted(jt.slice(name.text_start, name.text_end), x);
+    let first: u64 = x.result;
+    let last: u64 = x.tokens.length() - 1u64;
+    add_node(x, ast.PROGRAM, first + 1u64, last, 0u64, 0u64, children.as_slice())
+}
+
+fn raise_item(jn: Slice<JNode>, jt: Slice<u8>, item: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    let public: u64 = field(jn, jt, item, "public".as_slice());
+    if jn[item].kind != J_OBJECT || public == 0u64 || (jn[public - 1u64].kind != J_TRUE && jn[public - 1u64].kind != J_FALSE) {
+        return rfail(x);
+    }
+    let flag: u64 = if jn[public - 1u64].kind == J_TRUE { 1u64 } else { 0u64 };
+    x = name_token(jn, jt, item, "name".as_slice(), x);
+    if x.failed {
+        return x;
+    }
+    let name: u64 = x.result + 1u64;
+    let mut children: Buffer<u64> = Buffer::new();
+    if tag_is(jn, jt, item, "item".as_slice(), "function".as_slice()) {
+        let parameters: u64 = member_node(jn, jt, item, "parameters".as_slice(), J_ARRAY);
+        let result: u64 = field(jn, jt, item, "return_type".as_slice());
+        let body: u64 = field(jn, jt, item, "body".as_slice());
+        if parameters == 0u64 || result == 0u64 || body == 0u64 {
+            return rfail(x);
+        }
+        let mut link: u64 = jn[parameters - 1u64].first;
+        while link != 0u64 {
+            let parameter: u64 = link - 1u64;
+            link = jn[parameter].next;
+            if jn[parameter].kind != J_OBJECT {
+                return rfail(x);
+            }
+            x = name_token(jn, jt, parameter, "name".as_slice(), x);
+            if x.failed {
+                return x;
+            }
+            let parameter_name: u64 = x.result + 1u64;
+            x = raise_member_type(jn, jt, parameter, "ty".as_slice(), x);
+            if x.failed {
+                return x;
+            }
+            let ty: Array<u64, 1> = [x.result];
+            x = add_node(x, ast.PARAM, parameter_name, 0u64, 0u64, 0u64, ty.as_slice());
+            children.push(x.result);
+        }
+        x = raise_type(jn, jt, result - 1u64, x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = raise_block(jn, jt, body - 1u64, x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.FN, name, 0u64, 0u64, flag, children.as_slice());
+    }
+    if tag_is(jn, jt, item, "item".as_slice(), "struct".as_slice()) {
+        x = raise_fields(jn, jt, item, x);
+        if x.failed {
+            return x;
+        }
+        let fields: Buffer<u64> = copy_ids(x.nodes.as_slice(), x.result);
+        return add_node(x, ast.STRUCT, name, 0u64, 0u64, flag, fields.as_slice());
+    }
+    if tag_is(jn, jt, item, "item".as_slice(), "enum".as_slice()) {
+        let variants: u64 = member_node(jn, jt, item, "variants".as_slice(), J_ARRAY);
+        if variants == 0u64 {
+            return rfail(x);
+        }
+        let mut link: u64 = jn[variants - 1u64].first;
+        while link != 0u64 {
+            let variant: u64 = link - 1u64;
+            link = jn[variant].next;
+            if jn[variant].kind != J_OBJECT {
+                return rfail(x);
+            }
+            x = name_token(jn, jt, variant, "name".as_slice(), x);
+            if x.failed {
+                return x;
+            }
+            let variant_name: u64 = x.result + 1u64;
+            x = raise_fields(jn, jt, variant, x);
+            if x.failed {
+                return x;
+            }
+            let fields: Buffer<u64> = copy_ids(x.nodes.as_slice(), x.result);
+            x = add_node(x, ast.VARIANT, variant_name, 0u64, 0u64, 0u64, fields.as_slice());
+            children.push(x.result);
+        }
+        return add_node(x, ast.ENUM, name, 0u64, 0u64, flag, children.as_slice());
+    }
+    if tag_is(jn, jt, item, "item".as_slice(), "const".as_slice()) {
+        x = raise_member_type(jn, jt, item, "ty".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = raise_member_expr(jn, jt, item, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.CONST, name, 0u64, 0u64, flag, children.as_slice());
+    }
+    rfail(x)
+}
+
+// The raised fields of `owner`'s "fields" array, as a chain whose first node
+// is `result` (+ 1), or 0 for none; `copy_ids` lists them.
+fn raise_fields(jn: Slice<JNode>, jt: Slice<u8>, owner: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    let fields: u64 = member_node(jn, jt, owner, "fields".as_slice(), J_ARRAY);
+    if fields == 0u64 {
+        return rfail(x);
+    }
+    let mut first: u64 = 0u64;
+    let mut previous: u64 = 0u64;
+    let mut link: u64 = jn[fields - 1u64].first;
+    while link != 0u64 {
+        let field_node: u64 = link - 1u64;
+        link = jn[field_node].next;
+        if jn[field_node].kind != J_OBJECT {
+            return rfail(x);
+        }
+        x = name_token(jn, jt, field_node, "name".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        let field_name: u64 = x.result + 1u64;
+        x = raise_member_type(jn, jt, field_node, "ty".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        let ty: Array<u64, 1> = [x.result];
+        x = add_node(x, ast.FIELD, field_name, 0u64, 0u64, 0u64, ty.as_slice());
+        if previous == 0u64 {
+            first = x.result + 1u64;
+        } else {
+            x.nodes[previous - 1u64].next = x.result + 1u64;
+        }
+        previous = x.result + 1u64;
+    }
+    x.result = first;
+    x
+}
+
+// The nodes of a chain starting at `first` (+ 1), in order.
+fn copy_ids(nodes: Slice<Node>, first: u64) -> Buffer<u64> {
+    let mut out: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first;
+    while link != 0u64 {
+        out.push(link - 1u64);
+        link = nodes[link - 1u64].next;
+    }
+    out
+}
+
+fn raise_member_type(jn: Slice<JNode>, jt: Slice<u8>, object: u64, key: Slice<u8>, r: Raise) -> Raise {
+    let found: u64 = field(jn, jt, object, key);
+    if found == 0u64 {
+        return rfail(r);
+    }
+    raise_type(jn, jt, found - 1u64, r)
+}
+
+fn raise_type(jn: Slice<JNode>, jt: Slice<u8>, ty: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    if jn[ty].kind != J_OBJECT {
+        return rfail(x);
+    }
+    x = name_token(jn, jt, ty, "name".as_slice(), x);
+    if x.failed {
+        return x;
+    }
+    let name: u64 = x.result + 1u64;
+    if tag_is(jn, jt, ty, "type".as_slice(), "named".as_slice()) {
+        let none: Array<u64, 0> = [];
+        return add_node(x, ast.TYPE_NAMED, name, 0u64, 0u64, 0u64, none.as_slice());
+    }
+    if !tag_is(jn, jt, ty, "type".as_slice(), "container".as_slice()) {
+        return rfail(x);
+    }
+    let mut length: u64 = 0u64;
+    let array_length: u64 = present(jn, jt, ty, "array_length".as_slice());
+    if array_length != 0u64 {
+        if jn[array_length - 1u64].kind != J_NUMBER {
+            return rfail(x);
+        }
+        length = jn[array_length - 1u64].number;
+    }
+    x = raise_member_type(jn, jt, ty, "element".as_slice(), x);
+    if x.failed {
+        return x;
+    }
+    let element: Array<u64, 1> = [x.result];
+    add_node(x, ast.TYPE_CONTAINER, name, 0u64, length, 0u64, element.as_slice())
+}
+
+fn raise_block(jn: Slice<JNode>, jt: Slice<u8>, block: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    let statements: u64 = member_node(jn, jt, block, "statements".as_slice(), J_ARRAY);
+    if jn[block].kind != J_OBJECT || statements == 0u64 {
+        return rfail(x);
+    }
+    let mut children: Buffer<u64> = Buffer::new();
+    let mut link: u64 = jn[statements - 1u64].first;
+    while link != 0u64 {
+        let statement: u64 = link - 1u64;
+        link = jn[statement].next;
+        x = raise_statement(jn, jt, statement, x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+    }
+    let tail: u64 = present(jn, jt, block, "tail".as_slice());
+    if tail != 0u64 {
+        x = raise_expr(jn, jt, tail - 1u64, x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+    }
+    add_node(x, ast.BLOCK, 0u64, 0u64, 0u64, 0u64, children.as_slice())
+}
+
+fn raise_member_expr(jn: Slice<JNode>, jt: Slice<u8>, object: u64, key: Slice<u8>, r: Raise) -> Raise {
+    let found: u64 = field(jn, jt, object, key);
+    if found == 0u64 {
+        return rfail(r);
+    }
+    raise_expr(jn, jt, found - 1u64, r)
+}
+
+fn raise_member_block(jn: Slice<JNode>, jt: Slice<u8>, object: u64, key: Slice<u8>, r: Raise) -> Raise {
+    let found: u64 = field(jn, jt, object, key);
+    if found == 0u64 {
+        return rfail(r);
+    }
+    raise_block(jn, jt, found - 1u64, r)
+}
+
+// An optional expression member: `result` is its node + 1, or 0.
+fn raise_optional(jn: Slice<JNode>, jt: Slice<u8>, object: u64, key: Slice<u8>, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    let found: u64 = present(jn, jt, object, key);
+    if found == 0u64 {
+        x.result = 0u64;
+        return x;
+    }
+    x = raise_expr(jn, jt, found - 1u64, x);
+    x.result += 1u64;
+    x
+}
+
+fn raise_statement(jn: Slice<JNode>, jt: Slice<u8>, statement: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    if jn[statement].kind != J_OBJECT {
+        return rfail(x);
+    }
+    let mut children: Buffer<u64> = Buffer::new();
+    if tag_is(jn, jt, statement, "statement".as_slice(), "let".as_slice()) {
+        let mutable: u64 = field(jn, jt, statement, "mutable".as_slice());
+        if mutable == 0u64 || (jn[mutable - 1u64].kind != J_TRUE && jn[mutable - 1u64].kind != J_FALSE) {
+            return rfail(x);
+        }
+        x = name_token(jn, jt, statement, "name".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        let name: u64 = x.result + 1u64;
+        let annotation: u64 = present(jn, jt, statement, "annotation".as_slice());
+        if annotation != 0u64 {
+            x = raise_type(jn, jt, annotation - 1u64, x);
+            if x.failed {
+                return x;
+            }
+            children.push(x.result);
+        }
+        x = raise_member_expr(jn, jt, statement, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.LET, name, 0u64, 0u64, if jn[mutable - 1u64].kind == J_TRUE { 1u64 } else { 0u64 }, children.as_slice());
+    }
+    if tag_is(jn, jt, statement, "statement".as_slice(), "assign".as_slice()) {
+        let operator: u64 = field(jn, jt, statement, "operator".as_slice());
+        if operator == 0u64 {
+            return rfail(x);
+        }
+        let op: u64 = operator - 1u64;
+        let mut kind: u64 = 0u64;
+        if is_text(jn, jt, op, "assign".as_slice()) { kind = token.ASSIGN; }
+        if is_text(jn, jt, op, "add".as_slice()) { kind = token.PLUS_ASSIGN; }
+        if is_text(jn, jt, op, "subtract".as_slice()) { kind = token.MINUS_ASSIGN; }
+        if is_text(jn, jt, op, "multiply".as_slice()) { kind = token.STAR_ASSIGN; }
+        if is_text(jn, jt, op, "divide".as_slice()) { kind = token.SLASH_ASSIGN; }
+        if is_text(jn, jt, op, "remainder".as_slice()) { kind = token.PERCENT_ASSIGN; }
+        if kind == 0u64 {
+            return rfail(x);
+        }
+        x = raise_member_expr(jn, jt, statement, "target".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = raise_member_expr(jn, jt, statement, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.ASSIGN, 0u64, 0u64, kind, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, statement, "statement".as_slice(), "while".as_slice()) {
+        x = raise_member_expr(jn, jt, statement, "condition".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = raise_member_block(jn, jt, statement, "body".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.WHILE, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    let mut kind: u64 = 0u64;
+    if tag_is(jn, jt, statement, "statement".as_slice(), "break".as_slice()) { kind = ast.BREAK; }
+    if tag_is(jn, jt, statement, "statement".as_slice(), "return".as_slice()) { kind = ast.RETURN; }
+    if tag_is(jn, jt, statement, "statement".as_slice(), "continue".as_slice()) {
+        let none: Array<u64, 0> = [];
+        return add_node(x, ast.CONTINUE, 0u64, 0u64, 0u64, 0u64, none.as_slice());
+    }
+    if kind != 0u64 {
+        x = raise_optional(jn, jt, statement, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        if x.result != 0u64 {
+            children.push(x.result - 1u64);
+        }
+        return add_node(x, kind, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, statement, "statement".as_slice(), "expr".as_slice()) {
+        x = raise_member_expr(jn, jt, statement, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.EXPR, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    rfail(x)
+}
+
+fn binary_kind(jn: Slice<JNode>, jt: Slice<u8>, op: u64) -> u64 {
+    if is_text(jn, jt, op, "or".as_slice()) { return token.PIPE_PIPE; }
+    if is_text(jn, jt, op, "and".as_slice()) { return token.AMP_AMP; }
+    if is_text(jn, jt, op, "equal".as_slice()) { return token.EQUAL_EQUAL; }
+    if is_text(jn, jt, op, "not_equal".as_slice()) { return token.BANG_EQUAL; }
+    if is_text(jn, jt, op, "less".as_slice()) { return token.LESS; }
+    if is_text(jn, jt, op, "less_equal".as_slice()) { return token.LESS_EQUAL; }
+    if is_text(jn, jt, op, "greater".as_slice()) { return token.GREATER; }
+    if is_text(jn, jt, op, "greater_equal".as_slice()) { return token.GREATER_EQUAL; }
+    if is_text(jn, jt, op, "bit_or".as_slice()) { return token.PIPE; }
+    if is_text(jn, jt, op, "bit_xor".as_slice()) { return token.CARET; }
+    if is_text(jn, jt, op, "bit_and".as_slice()) { return token.AMP; }
+    if is_text(jn, jt, op, "shift_left".as_slice()) { return token.SHIFT_LEFT; }
+    if is_text(jn, jt, op, "shift_right".as_slice()) { return token.SHIFT_RIGHT; }
+    if is_text(jn, jt, op, "add".as_slice()) { return token.PLUS; }
+    if is_text(jn, jt, op, "subtract".as_slice()) { return token.MINUS; }
+    if is_text(jn, jt, op, "multiply".as_slice()) { return token.STAR; }
+    if is_text(jn, jt, op, "divide".as_slice()) { return token.SLASH; }
+    if is_text(jn, jt, op, "remainder".as_slice()) { return token.PERCENT; }
+    0u64
+}
+
+fn raise_expr(jn: Slice<JNode>, jt: Slice<u8>, expr: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    if jn[expr].kind != J_OBJECT {
+        return rfail(x);
+    }
+    let mut children: Buffer<u64> = Buffer::new();
+    let none: Array<u64, 0> = [];
+    if tag_is(jn, jt, expr, "expression".as_slice(), "integer".as_slice()) {
+        let value: u64 = member_node(jn, jt, expr, "value".as_slice(), J_NUMBER);
+        if value == 0u64 {
+            return rfail(x);
+        }
+        let number: u64 = jn[value - 1u64].number;
+        let suffix: u64 = present(jn, jt, expr, "suffix".as_slice());
+        if suffix != 0u64 && jn[suffix - 1u64].kind != J_STRING {
+            return rfail(x);
+        }
+        let mut text: Buffer<u8> = Buffer::new();
+        if suffix != 0u64 {
+            text = bytes.append(text, jt.slice(jn[suffix - 1u64].text_start, jn[suffix - 1u64].text_end));
+        }
+        x = add_token(x, token.INTEGER, text.as_slice(), number);
+        let word: u64 = x.result + 1u64;
+        return add_node(x, ast.INTEGER, word, 0u64, number, if suffix != 0u64 { 1u64 } else { 0u64 }, none.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "string".as_slice()) {
+        let value: u64 = member_node(jn, jt, expr, "value".as_slice(), J_STRING);
+        if value == 0u64 {
+            return rfail(x);
+        }
+        x = add_token(x, token.STRING, jt.slice(jn[value - 1u64].text_start, jn[value - 1u64].text_end), 0u64);
+        let word: u64 = x.result + 1u64;
+        return add_node(x, ast.STRING, word, 0u64, 0u64, 0u64, none.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "bool".as_slice()) {
+        let value: u64 = field(jn, jt, expr, "value".as_slice());
+        if value == 0u64 || (jn[value - 1u64].kind != J_TRUE && jn[value - 1u64].kind != J_FALSE) {
+            return rfail(x);
+        }
+        return add_node(x, ast.BOOL, 0u64, 0u64, if jn[value - 1u64].kind == J_TRUE { 1u64 } else { 0u64 }, 0u64, none.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "unit".as_slice()) {
+        return add_node(x, ast.UNIT, 0u64, 0u64, 0u64, 0u64, none.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "path".as_slice()) {
+        let path: u64 = field(jn, jt, expr, "segments".as_slice());
+        if path == 0u64 {
+            return rfail(x);
+        }
+        x = segments(jn, jt, path - 1u64, x);
+        if x.failed {
+            return x;
+        }
+        let first: u64 = x.result;
+        let last: u64 = x.tokens.length() - 1u64;
+        return add_node(x, ast.PATH, first + 1u64, last, 0u64, 0u64, none.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "aggregate".as_slice()) {
+        let path: u64 = field(jn, jt, expr, "path".as_slice());
+        let fields: u64 = member_node(jn, jt, expr, "fields".as_slice(), J_ARRAY);
+        if path == 0u64 || fields == 0u64 {
+            return rfail(x);
+        }
+        x = segments(jn, jt, path - 1u64, x);
+        if x.failed {
+            return x;
+        }
+        let first: u64 = x.result;
+        let last: u64 = x.tokens.length() - 1u64;
+        let mut link: u64 = jn[fields - 1u64].first;
+        while link != 0u64 {
+            let named: u64 = link - 1u64;
+            link = jn[named].next;
+            if jn[named].kind != J_OBJECT {
+                return rfail(x);
+            }
+            x = name_token(jn, jt, named, "name".as_slice(), x);
+            if x.failed {
+                return x;
+            }
+            let name: u64 = x.result + 1u64;
+            x = raise_member_expr(jn, jt, named, "value".as_slice(), x);
+            if x.failed {
+                return x;
+            }
+            let value: Array<u64, 1> = [x.result];
+            x = add_node(x, ast.FIELD_VALUE, name, 0u64, 0u64, 0u64, value.as_slice());
+            children.push(x.result);
+        }
+        return add_node(x, ast.AGGREGATE, first + 1u64, last, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "array".as_slice()) {
+        let values: u64 = member_node(jn, jt, expr, "values".as_slice(), J_ARRAY);
+        if values == 0u64 {
+            return rfail(x);
+        }
+        let mut link: u64 = jn[values - 1u64].first;
+        while link != 0u64 {
+            let value: u64 = link - 1u64;
+            link = jn[value].next;
+            x = raise_expr(jn, jt, value, x);
+            if x.failed {
+                return x;
+            }
+            children.push(x.result);
+        }
+        return add_node(x, ast.ARRAY, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "block".as_slice()) {
+        return raise_member_block(jn, jt, expr, "body".as_slice(), x);
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "loop".as_slice()) {
+        x = raise_member_block(jn, jt, expr, "body".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.LOOP, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "if".as_slice()) {
+        x = raise_member_expr(jn, jt, expr, "condition".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = raise_member_block(jn, jt, expr, "then_block".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = raise_optional(jn, jt, expr, "else_expr".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        if x.result != 0u64 {
+            children.push(x.result - 1u64);
+        }
+        return add_node(x, ast.IF, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "match".as_slice()) {
+        let arms: u64 = member_node(jn, jt, expr, "arms".as_slice(), J_ARRAY);
+        if arms == 0u64 {
+            return rfail(x);
+        }
+        x = raise_member_expr(jn, jt, expr, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        let mut link: u64 = jn[arms - 1u64].first;
+        while link != 0u64 {
+            let arm: u64 = link - 1u64;
+            link = jn[arm].next;
+            if jn[arm].kind != J_OBJECT {
+                return rfail(x);
+            }
+            let mut parts: Buffer<u64> = Buffer::new();
+            let pattern: u64 = field(jn, jt, arm, "pattern".as_slice());
+            if pattern == 0u64 {
+                return rfail(x);
+            }
+            x = raise_pattern(jn, jt, pattern - 1u64, x);
+            if x.failed {
+                return x;
+            }
+            parts.push(x.result);
+            x = raise_optional(jn, jt, arm, "guard".as_slice(), x);
+            if x.failed {
+                return x;
+            }
+            let guarded: bool = x.result != 0u64;
+            if guarded {
+                parts.push(x.result - 1u64);
+            }
+            x = raise_member_expr(jn, jt, arm, "value".as_slice(), x);
+            if x.failed {
+                return x;
+            }
+            parts.push(x.result);
+            x = add_node(x, ast.ARM, 0u64, 0u64, 0u64, if guarded { 1u64 } else { 0u64 }, parts.as_slice());
+            children.push(x.result);
+        }
+        return add_node(x, ast.MATCH, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "call".as_slice()) {
+        let arguments: u64 = member_node(jn, jt, expr, "arguments".as_slice(), J_ARRAY);
+        if arguments == 0u64 {
+            return rfail(x);
+        }
+        x = raise_member_expr(jn, jt, expr, "callee".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        let mut link: u64 = jn[arguments - 1u64].first;
+        while link != 0u64 {
+            let argument: u64 = link - 1u64;
+            link = jn[argument].next;
+            x = raise_expr(jn, jt, argument, x);
+            if x.failed {
+                return x;
+            }
+            children.push(x.result);
+        }
+        return add_node(x, ast.CALL, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "index".as_slice()) {
+        x = raise_member_expr(jn, jt, expr, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = raise_member_expr(jn, jt, expr, "index".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.INDEX, 0u64, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "field".as_slice()) {
+        x = raise_member_expr(jn, jt, expr, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = name_token(jn, jt, expr, "name".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        let name: u64 = x.result + 1u64;
+        return add_node(x, ast.FIELD_ACCESS, name, 0u64, 0u64, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "unary".as_slice()) {
+        let operator: u64 = field(jn, jt, expr, "operator".as_slice());
+        if operator == 0u64 {
+            return rfail(x);
+        }
+        let mut kind: u64 = 0u64;
+        if is_text(jn, jt, operator - 1u64, "not".as_slice()) { kind = token.BANG; }
+        if is_text(jn, jt, operator - 1u64, "negate".as_slice()) { kind = token.MINUS; }
+        if kind == 0u64 {
+            return rfail(x);
+        }
+        x = raise_member_expr(jn, jt, expr, "value".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.UNARY, 0u64, 0u64, kind, 0u64, children.as_slice());
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "binary".as_slice()) {
+        let operator: u64 = field(jn, jt, expr, "operator".as_slice());
+        if operator == 0u64 {
+            return rfail(x);
+        }
+        let kind: u64 = binary_kind(jn, jt, operator - 1u64);
+        if kind == 0u64 {
+            return rfail(x);
+        }
+        x = raise_member_expr(jn, jt, expr, "left".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        x = raise_member_expr(jn, jt, expr, "right".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        children.push(x.result);
+        return add_node(x, ast.BINARY, 0u64, 0u64, kind, 0u64, children.as_slice());
+    }
+    rfail(x)
+}
+
+fn raise_pattern(jn: Slice<JNode>, jt: Slice<u8>, pattern: u64, r: Raise) -> Raise {
+    let mut x: Raise = r;
+    if jn[pattern].kind != J_OBJECT {
+        return rfail(x);
+    }
+    let none: Array<u64, 0> = [];
+    if tag_is(jn, jt, pattern, "pattern".as_slice(), "wildcard".as_slice()) {
+        return add_node(x, ast.PATTERN_WILDCARD, 0u64, 0u64, 0u64, 0u64, none.as_slice());
+    }
+    if tag_is(jn, jt, pattern, "pattern".as_slice(), "bool".as_slice()) {
+        let value: u64 = field(jn, jt, pattern, "value".as_slice());
+        if value == 0u64 || (jn[value - 1u64].kind != J_TRUE && jn[value - 1u64].kind != J_FALSE) {
+            return rfail(x);
+        }
+        return add_node(x, ast.PATTERN_BOOL, 0u64, 0u64, if jn[value - 1u64].kind == J_TRUE { 1u64 } else { 0u64 }, 0u64, none.as_slice());
+    }
+    if tag_is(jn, jt, pattern, "pattern".as_slice(), "integer".as_slice()) {
+        let value: u64 = member_node(jn, jt, pattern, "value".as_slice(), J_NUMBER);
+        if value == 0u64 {
+            return rfail(x);
+        }
+        return add_node(x, ast.PATTERN_INTEGER, 0u64, 0u64, jn[value - 1u64].number, 0u64, none.as_slice());
+    }
+    if tag_is(jn, jt, pattern, "pattern".as_slice(), "binding".as_slice()) {
+        x = name_token(jn, jt, pattern, "name".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        let name: u64 = x.result + 1u64;
+        return add_node(x, ast.PATTERN_BINDING, name, 0u64, 0u64, 0u64, none.as_slice());
+    }
+    if !tag_is(jn, jt, pattern, "pattern".as_slice(), "variant".as_slice()) {
+        return rfail(x);
+    }
+    let path: u64 = field(jn, jt, pattern, "path".as_slice());
+    let fields: u64 = member_node(jn, jt, pattern, "fields".as_slice(), J_ARRAY);
+    if path == 0u64 || fields == 0u64 {
+        return rfail(x);
+    }
+    x = segments(jn, jt, path - 1u64, x);
+    if x.failed {
+        return x;
+    }
+    let first: u64 = x.result;
+    let last: u64 = x.tokens.length() - 1u64;
+    let mut children: Buffer<u64> = Buffer::new();
+    let mut link: u64 = jn[fields - 1u64].first;
+    while link != 0u64 {
+        let pattern_field: u64 = link - 1u64;
+        link = jn[pattern_field].next;
+        if jn[pattern_field].kind != J_OBJECT {
+            return rfail(x);
+        }
+        x = name_token(jn, jt, pattern_field, "name".as_slice(), x);
+        if x.failed {
+            return x;
+        }
+        let name: u64 = x.result + 1u64;
+        let mut nested: Buffer<u64> = Buffer::new();
+        let inner: u64 = present(jn, jt, pattern_field, "nested".as_slice());
+        if inner != 0u64 {
+            x = raise_pattern(jn, jt, inner - 1u64, x);
+            if x.failed {
+                return x;
+            }
+            nested.push(x.result);
+        }
+        x = add_node(x, ast.PATTERN_FIELD, name, 0u64, 0u64, 0u64, nested.as_slice());
+        children.push(x.result);
+    }
+    add_node(x, ast.PATTERN_VARIANT, first + 1u64, last, 0u64, 0u64, children.as_slice())
+}
+
+// ------------------------------------------------------------------ effects
+
+// Effects as bits, in the order `CoreIrEffect` sorts them; host effects are
+// kept apart, by name.
+const MEMORY_READ: u64 = 1u64;
+const MEMORY_WRITE: u64 = 2u64;
+const ALLOCATE: u64 = 4u64;
+const TRAP: u64 = 8u64;
+const HOST_BUILD_WRITE: u64 = 16u64;
+const HOST_PACKAGE_READ: u64 = 32u64;
+
+fn tag(jn: Slice<JNode>, jt: Slice<u8>, node: u64, key: Slice<u8>, text: Slice<u8>) -> bool {
+    jn[node].kind == J_OBJECT && tag_is(jn, jt, node, key, text)
+}
+
+// The effects a document's items use (`collect_effects` in stage0).
+fn program_effects(jn: Slice<JNode>, jt: Slice<u8>, items: u64) -> u64 {
+    let mut effects: u64 = 0u64;
+    let mut link: u64 = jn[items].first;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = jn[item].next;
+        if tag_is(jn, jt, item, "item".as_slice(), "function".as_slice()) {
+            let parameters: u64 = field(jn, jt, item, "parameters".as_slice()) - 1u64;
+            let mut parameter: u64 = jn[parameters].first;
+            while parameter != 0u64 {
+                let ty: u64 = field(jn, jt, parameter - 1u64, "ty".as_slice()) - 1u64;
+                if tag(jn, jt, ty, "type".as_slice(), "named".as_slice()) {
+                    if tag_is(jn, jt, ty, "name".as_slice(), "PackageRead".as_slice()) {
+                        effects = effects | HOST_PACKAGE_READ;
+                    }
+                    if tag_is(jn, jt, ty, "name".as_slice(), "BuildWrite".as_slice()) {
+                        effects = effects | HOST_BUILD_WRITE;
+                    }
+                }
+                parameter = jn[parameter - 1u64].next;
+            }
+            effects = effects | block_effects(jn, jt, field(jn, jt, item, "body".as_slice()) - 1u64);
+        } else if tag_is(jn, jt, item, "item".as_slice(), "const".as_slice()) {
+            effects = effects | expr_effects(jn, jt, field(jn, jt, item, "value".as_slice()) - 1u64);
+        }
+    }
+    effects
+}
+
+fn block_effects(jn: Slice<JNode>, jt: Slice<u8>, block: u64) -> u64 {
+    let mut effects: u64 = 0u64;
+    let mut link: u64 = jn[field(jn, jt, block, "statements".as_slice()) - 1u64].first;
+    while link != 0u64 {
+        let statement: u64 = link - 1u64;
+        link = jn[statement].next;
+        if tag_is(jn, jt, statement, "statement".as_slice(), "assign".as_slice()) {
+            let target: u64 = field(jn, jt, statement, "target".as_slice()) - 1u64;
+            effects = effects | expr_effects(jn, jt, target) | expr_effects(jn, jt, field(jn, jt, statement, "value".as_slice()) - 1u64);
+            if tag(jn, jt, target, "expression".as_slice(), "field".as_slice()) || tag(jn, jt, target, "expression".as_slice(), "index".as_slice()) {
+                effects = effects | MEMORY_WRITE;
+            }
+        } else if tag_is(jn, jt, statement, "statement".as_slice(), "while".as_slice()) {
+            effects = effects | expr_effects(jn, jt, field(jn, jt, statement, "condition".as_slice()) - 1u64);
+            effects = effects | block_effects(jn, jt, field(jn, jt, statement, "body".as_slice()) - 1u64);
+        } else if !tag_is(jn, jt, statement, "statement".as_slice(), "continue".as_slice()) {
+            let value: u64 = present(jn, jt, statement, "value".as_slice());
+            if value != 0u64 {
+                effects = effects | expr_effects(jn, jt, value - 1u64);
+            }
+        }
+    }
+    let tail: u64 = present(jn, jt, block, "tail".as_slice());
+    if tail != 0u64 {
+        effects = effects | expr_effects(jn, jt, tail - 1u64);
+    }
+    effects
+}
+
+// Whether a path's segments are exactly `owner`, `method`.
+fn path_is(jn: Slice<JNode>, jt: Slice<u8>, expr: u64, owner: Slice<u8>, method: Slice<u8>) -> bool {
+    if !tag(jn, jt, expr, "expression".as_slice(), "path".as_slice()) {
+        return false;
+    }
+    let path: u64 = field(jn, jt, expr, "segments".as_slice()) - 1u64;
+    count(jn, path) == 2u64 && is_text(jn, jt, element(jn, path, 0u64), owner) && is_text(jn, jt, element(jn, path, 1u64), method)
+}
+
+// The effects of an expression and of the expressions it holds.
+fn expr_effects(jn: Slice<JNode>, jt: Slice<u8>, expr: u64) -> u64 {
+    let mut effects: u64 = 0u64;
+    let mut members: Buffer<u64> = Buffer::new();
+    if tag_is(jn, jt, expr, "expression".as_slice(), "block".as_slice()) || tag_is(jn, jt, expr, "expression".as_slice(), "loop".as_slice()) {
+        return block_effects(jn, jt, field(jn, jt, expr, "body".as_slice()) - 1u64);
+    }
+    if tag_is(jn, jt, expr, "expression".as_slice(), "aggregate".as_slice()) {
+        let mut link: u64 = jn[field(jn, jt, expr, "fields".as_slice()) - 1u64].first;
+        while link != 0u64 {
+            members.push(field(jn, jt, link - 1u64, "value".as_slice()) - 1u64);
+            link = jn[link - 1u64].next;
+        }
+    } else if tag_is(jn, jt, expr, "expression".as_slice(), "array".as_slice()) {
+        let mut link: u64 = jn[field(jn, jt, expr, "values".as_slice()) - 1u64].first;
+        while link != 0u64 {
+            members.push(link - 1u64);
+            link = jn[link - 1u64].next;
+        }
+    } else if tag_is(jn, jt, expr, "expression".as_slice(), "if".as_slice()) {
+        effects = expr_effects(jn, jt, field(jn, jt, expr, "condition".as_slice()) - 1u64);
+        effects = effects | block_effects(jn, jt, field(jn, jt, expr, "then_block".as_slice()) - 1u64);
+        let other: u64 = present(jn, jt, expr, "else_expr".as_slice());
+        if other != 0u64 {
+            effects = effects | expr_effects(jn, jt, other - 1u64);
+        }
+        return effects;
+    } else if tag_is(jn, jt, expr, "expression".as_slice(), "match".as_slice()) {
+        members.push(field(jn, jt, expr, "value".as_slice()) - 1u64);
+        let mut link: u64 = jn[field(jn, jt, expr, "arms".as_slice()) - 1u64].first;
+        while link != 0u64 {
+            let guard: u64 = present(jn, jt, link - 1u64, "guard".as_slice());
+            if guard != 0u64 {
+                members.push(guard - 1u64);
+            }
+            members.push(field(jn, jt, link - 1u64, "value".as_slice()) - 1u64);
+            link = jn[link - 1u64].next;
+        }
+    } else if tag_is(jn, jt, expr, "expression".as_slice(), "call".as_slice()) {
+        let callee: u64 = field(jn, jt, expr, "callee".as_slice()) - 1u64;
+        if path_is(jn, jt, callee, "Buffer".as_slice(), "new".as_slice()) || path_is(jn, jt, callee, "Arena".as_slice(), "new".as_slice()) {
+            effects = ALLOCATE;
+        }
+        if tag(jn, jt, callee, "expression".as_slice(), "field".as_slice()) {
+            let name: u64 = field(jn, jt, callee, "name".as_slice()) - 1u64;
+            if is_text(jn, jt, name, "push".as_slice()) || is_text(jn, jt, name, "release".as_slice()) {
+                effects = effects | MEMORY_WRITE;
+            }
+            if is_text(jn, jt, name, "alloc".as_slice()) {
+                effects = effects | ALLOCATE | MEMORY_WRITE;
+            }
+            if is_text(jn, jt, name, "decode_utf8_or_trap".as_slice()) {
+                effects = effects | TRAP;
+            }
+            if is_text(jn, jt, name, "length".as_slice()) || is_text(jn, jt, name, "as_bytes".as_slice()) {
+                effects = effects | MEMORY_READ;
+            }
+        }
+        members.push(callee);
+        let mut link: u64 = jn[field(jn, jt, expr, "arguments".as_slice()) - 1u64].first;
+        while link != 0u64 {
+            members.push(link - 1u64);
+            link = jn[link - 1u64].next;
+        }
+    } else if tag_is(jn, jt, expr, "expression".as_slice(), "index".as_slice()) {
+        effects = MEMORY_READ | TRAP;
+        members.push(field(jn, jt, expr, "value".as_slice()) - 1u64);
+        members.push(field(jn, jt, expr, "index".as_slice()) - 1u64);
+    } else if tag_is(jn, jt, expr, "expression".as_slice(), "field".as_slice()) {
+        effects = MEMORY_READ;
+        members.push(field(jn, jt, expr, "value".as_slice()) - 1u64);
+    } else if tag_is(jn, jt, expr, "expression".as_slice(), "unary".as_slice()) {
+        members.push(field(jn, jt, expr, "value".as_slice()) - 1u64);
+    } else if tag_is(jn, jt, expr, "expression".as_slice(), "binary".as_slice()) {
+        let operator: u64 = field(jn, jt, expr, "operator".as_slice()) - 1u64;
+        if is_text(jn, jt, operator, "divide".as_slice()) || is_text(jn, jt, operator, "remainder".as_slice()) {
+            effects = TRAP;
+        }
+        members.push(field(jn, jt, expr, "left".as_slice()) - 1u64);
+        members.push(field(jn, jt, expr, "right".as_slice()) - 1u64);
+    }
+    let mut index: u64 = 0u64;
+    while index < members.length() {
+        effects = effects | expr_effects(jn, jt, members[index]);
+        index += 1u64;
+    }
+    effects
+}
+
+// ------------------------------------------------------------------ verification
+
+// What the verifier says of a serialized IR document (see
+// `core_ir_verify_dump` in stage0): `decode failed`, `ok`, or one diagnostic
+// code per line.
+pub fn dump(input: Slice<u8>) -> Buffer<u8> {
+    let j: JTree = read_json(input);
+    let failed: Buffer<u8> = bytes.append(Buffer::new(), "decode failed\n".as_slice());
+    if j.failed || j.nodes[j.result].kind != J_OBJECT {
+        return failed;
+    }
+    verify(j.nodes.as_slice(), j.texts.as_slice(), j.result)
+}
+
+fn verify(jn: Slice<JNode>, jt: Slice<u8>, root: u64) -> Buffer<u8> {
+    let failed: Buffer<u8> = bytes.append(Buffer::new(), "decode failed\n".as_slice());
+    let ir_version: u64 = member_node(jn, jt, root, "ir_version".as_slice(), J_STRING);
+    let core_version: u64 = member_node(jn, jt, root, "core_version".as_slice(), J_STRING);
+    let module: u64 = member_node(jn, jt, root, "module".as_slice(), J_STRING);
+    if ir_version == 0u64 || core_version == 0u64 || module == 0u64 {
+        return failed;
+    }
+    // Lists with a default: absent is empty, but `null` is not a list.
+    let imports: u64 = list(jn, jt, root, "imports".as_slice());
+    let locked: u64 = list(jn, jt, root, "locked_modules".as_slice());
+    let policy: u64 = list(jn, jt, root, "effect_policy".as_slice());
+    if imports == 1u64 || locked == 1u64 || policy == 1u64 {
+        return failed;
+    }
+    // The allowed effects: bits, and host names as a sorted list of ranges.
+    let mut allowed: u64 = 0u64;
+    let mut duplicate: bool = false;
+    let mut hosts: Buffer<u64> = Buffer::new();
+    if policy != 0u64 {
+        let mut link: u64 = jn[policy - 2u64].first;
+        while link != 0u64 {
+            let entry: u64 = link - 1u64;
+            link = jn[entry].next;
+            if jn[entry].kind != J_OBJECT {
+                return failed;
+            }
+            let effect: u64 = field(jn, jt, entry, "effect".as_slice());
+            if effect == 0u64 {
+                return failed;
+            }
+            let detail: u64 = present(jn, jt, entry, "detail".as_slice());
+            let mut bit: u64 = 0u64;
+            if is_text(jn, jt, effect - 1u64, "memory_read".as_slice()) { bit = MEMORY_READ; }
+            if is_text(jn, jt, effect - 1u64, "memory_write".as_slice()) { bit = MEMORY_WRITE; }
+            if is_text(jn, jt, effect - 1u64, "allocate".as_slice()) { bit = ALLOCATE; }
+            if is_text(jn, jt, effect - 1u64, "trap".as_slice()) { bit = TRAP; }
+            if bit != 0u64 {
+                if detail != 0u64 {
+                    return failed;
+                }
+                if allowed & bit != 0u64 {
+                    duplicate = true;
+                }
+                allowed = allowed | bit;
+            } else if is_text(jn, jt, effect - 1u64, "host".as_slice()) {
+                if detail == 0u64 || jn[detail - 1u64].kind != J_STRING {
+                    return failed;
+                }
+                let name: JNode = jn[detail - 1u64];
+                let mut at: u64 = 0u64;
+                while at < hosts.length() {
+                    if bytes.equal(jt.slice(hosts[at], hosts[at + 1u64]), jt.slice(name.text_start, name.text_end)) {
+                        duplicate = true;
+                    }
+                    at += 2u64;
+                }
+                hosts.push(name.text_start);
+                hosts.push(name.text_end);
+                if bytes.equal(jt.slice(name.text_start, name.text_end), "package.read".as_slice()) {
+                    allowed = allowed | HOST_PACKAGE_READ;
+                }
+                if bytes.equal(jt.slice(name.text_start, name.text_end), "build.write".as_slice()) {
+                    allowed = allowed | HOST_BUILD_WRITE;
+                }
+            } else {
+                return failed;
+            }
+        }
+    }
+    if locked != 0u64 {
+        let mut link: u64 = jn[locked - 2u64].first;
+        while link != 0u64 {
+            if jn[link - 1u64].kind != J_STRING {
+                return failed;
+            }
+            link = jn[link - 1u64].next;
+        }
+    }
+    // The whole document must decode before anything is verified.
+    let mut r: Raise = Raise { source: Buffer::new(), tokens: Buffer::new(), nodes: Buffer::new(), failed: false, result: 0u64 };
+    r = raise_program(jn, jt, root, r);
+    if r.failed {
+        return failed;
+    }
+    let program: u64 = r.result;
+    let mut out: Buffer<u8> = Buffer::new();
+    if !is_text(jn, jt, ir_version - 1u64, "0.1".as_slice()) {
+        out = bytes.append(out, "IrVersionUnsupported\n".as_slice());
+    }
+    if !is_text(jn, jt, core_version - 1u64, "0.1".as_slice()) {
+        out = bytes.append(out, "CoreVersionUnsupported\n".as_slice());
+    }
+    if duplicate {
+        out = bytes.append(out, "DuplicateEffect\n".as_slice());
+    }
+    // One per distinct host effect outside the compiler-host boundary.
+    let mut index: u64 = 0u64;
+    while index < hosts.length() {
+        let name: Slice<u8> = jt.slice(hosts[index], hosts[index + 1u64]);
+        let mut earlier: bool = false;
+        let mut at: u64 = 0u64;
+        while at < index {
+            if bytes.equal(jt.slice(hosts[at], hosts[at + 1u64]), name) {
+                earlier = true;
+            }
+            at += 2u64;
+        }
+        if !earlier && !bytes.equal(name, "package.read".as_slice()) && !bytes.equal(name, "build.write".as_slice()) {
+            out = bytes.append(out, "UnauthorizedEffect\n".as_slice());
+        }
+        index += 2u64;
+    }
+    let used: u64 = program_effects(jn, jt, member_node(jn, jt, root, "items".as_slice(), J_ARRAY) - 1u64);
+    let mut bit: u64 = 1u64;
+    while bit <= HOST_PACKAGE_READ {
+        if used & bit != 0u64 && allowed & bit == 0u64 {
+            out = bytes.append(out, "UndeclaredEffect\n".as_slice());
+        }
+        bit = bit * 2u64;
+    }
+    // Locked modules: duplicates, and the tokens of each path for the checker.
+    let mut pairs: Buffer<u64> = Buffer::new();
+    let mut duplicate_lock: bool = false;
+    if locked != 0u64 {
+        let mut link: u64 = jn[locked - 2u64].first;
+        while link != 0u64 {
+            let name: JNode = jn[link - 1u64];
+            let mut other: u64 = jn[locked - 2u64].first;
+            while other != link {
+                let earlier: JNode = jn[other - 1u64];
+                if bytes.equal(jt.slice(earlier.text_start, earlier.text_end), jt.slice(name.text_start, name.text_end)) {
+                    duplicate_lock = true;
+                }
+                other = earlier.next;
+            }
+            r = dotted(jt.slice(name.text_start, name.text_end), r);
+            pairs.push(r.result);
+            pairs.push(r.tokens.length() - 1u64);
+            link = name.next;
+        }
+    }
+    if duplicate_lock {
+        out = bytes.append(out, "DuplicateLockedModule\n".as_slice());
+    }
+    if imports != 0u64 {
+        let mut link: u64 = jn[imports - 2u64].first;
+        while link != 0u64 {
+            let path: JNode = jn[field(jn, jt, link - 1u64, "path".as_slice()) - 1u64];
+            let mut found: bool = false;
+            if locked != 0u64 {
+                let mut other: u64 = jn[locked - 2u64].first;
+                while other != 0u64 {
+                    let name: JNode = jn[other - 1u64];
+                    if bytes.equal(jt.slice(name.text_start, name.text_end), jt.slice(path.text_start, path.text_end)) {
+                        found = true;
+                    }
+                    other = name.next;
+                }
+            }
+            if !found {
+                out = bytes.append(out, "ImportNotLocked\n".as_slice());
+            }
+            link = jn[link - 1u64].next;
+        }
+    }
+    // Raised: a module name of only whitespace names nothing.
+    let name: JNode = jn[module - 1u64];
+    if blank(jt.slice(name.text_start, name.text_end)) {
+        out = bytes.append(out, "InvalidModule\n".as_slice());
+    } else {
+        let checked: Check = check.check_locked(r.source.as_slice(), r.tokens.as_slice(), r.nodes.as_slice(), program, pairs.as_slice());
+        index = 0u64;
+        while index < checked.diagnostics.length() {
+            out = check.append_code(out, checked.diagnostics[index].code);
+            out.push(10u8);
+            index += 1u64;
+        }
+    }
+    if out.length() == 0u64 {
+        return bytes.append(out, "ok\n".as_slice());
+    }
+    out
+}
+
+// A list member with a default: 0 when absent, 1 when present but not a list
+// (`null` included), or its node + 2.
+fn list(jn: Slice<JNode>, jt: Slice<u8>, object: u64, key: Slice<u8>) -> u64 {
+    let found: u64 = field(jn, jt, object, key);
+    if found == 0u64 {
+        return 0u64;
+    }
+    if jn[found - 1u64].kind != J_ARRAY {
+        return 1u64;
+    }
+    found + 1u64
+}
+
+// Whether a name is empty or only whitespace, as Rust's `trim` sees ASCII.
+fn blank(text: Slice<u8>) -> bool {
+    let mut index: u64 = 0u64;
+    while index < text.length() {
+        let byte: u8 = text[index];
+        if byte != 32u8 && byte != 9u8 && byte != 10u8 && byte != 11u8 && byte != 12u8 && byte != 13u8 {
+            return false;
+        }
+        index += 1u64;
+    }
+    true
+}
