@@ -370,7 +370,11 @@ en cuatro subtareas:
   stage0 y alcanza un punto fijo al compilarse a sí mismo.
 - ESP-013.D: el pipeline en `compiler/pipeline.argx`, con un manifiesto de
   fuentes, orden de enlace, opciones y salida, con SHA-256 escrito en Argorix.
-- Falta ESP-013.B (verificador del IR leído de JSON).
+- ESP-013.B: el verificador del IR en `compiler/ir_verify.argx`, que lee el
+  JSON como serde y coincide con stage0 en 248 documentos.
+
+Las cuatro subtareas están hechas; la tarea se cierra al fusionarse con CI
+verde.
 
 ### ESP-014 — Primer compilador self-hosted completo
 

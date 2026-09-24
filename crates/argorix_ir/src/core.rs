@@ -408,6 +408,23 @@ pub fn core_package_ir_dump(files: &[Vec<u8>]) -> String {
     json
 }
 
+/// What the verifier says of a serialized IR document (ESP-013.B): `decode
+/// failed` when it is not an IR document, `ok` when it verifies, or one
+/// diagnostic code per line, in the order `verify_core_ir` reports them.
+/// `compiler/ir_verify.argx` must reproduce it.
+pub fn core_ir_verify_dump(document: &[u8]) -> String {
+    let Ok(program) = serde_json::from_slice::<CoreIrProgram>(document) else {
+        return "decode failed\n".into();
+    };
+    match verify_core_ir(&program) {
+        Ok(_) => "ok\n".into(),
+        Err(diagnostics) => diagnostics
+            .iter()
+            .map(|diagnostic| format!("{}\n", diagnostic.code))
+            .collect(),
+    }
+}
+
 pub fn verify_core_ir(
     program: &CoreIrProgram,
 ) -> Result<VerifiedCoreIr<'_>, Vec<CoreIrDiagnostic>> {

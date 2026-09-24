@@ -50,6 +50,9 @@ enum Command {
     CoreEmitIr { file: PathBuf },
     /// Verify serialized Argorix Core IR JSON.
     CoreVerifyIr { file: PathBuf },
+    /// Print what the IR verifier says of a serialized IR document: `ok`,
+    /// `decode failed`, or one diagnostic code per line.
+    CoreVerifyIrDump { file: PathBuf },
     /// Print the canonical token dump of a Core source file (spec/core/tokens.md).
     CoreTokens { file: PathBuf },
     /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
@@ -141,6 +144,11 @@ fn run() -> Result<()> {
             println!("Agents: {}", compiled.program.agents.len());
             println!("Protocols: {}", compiled.program.protocols.len());
             println!("Semantic checks: passed");
+        }
+        Command::CoreVerifyIrDump { file } => {
+            let document =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_ir::core_ir_verify_dump(&document));
         }
         Command::CoreCheckDump { file } => {
             let source =

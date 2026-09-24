@@ -3,8 +3,9 @@
 Status: normative bootstrap contract for ESP-007. The Rust implementation in
 `argorix_ir::core` is stage0 and must be replaced by Argorix sources in ESP-013.
 `compiler/ir.argx` lowers a linked package to the same canonical JSON, byte for
-byte (ESP-013.A, `crates/argorixc/tests/link_differential.rs`); the verifier
-and backend are still stage0.
+byte (ESP-013.A), and `compiler/ir_verify.argx` reads and verifies a document
+with the same outcome (ESP-013.B); both are checked by
+`crates/argorixc/tests/link_differential.rs`.
 
 ## Boundary
 
@@ -62,6 +63,15 @@ authoritative stage0 decoder; the schema documents the stable envelope and
 tagged unions for independent implementations. Fields not present in the
 contract are rejected by future strict decoders; compatibility changes require
 an IR version change.
+
+## Decoder depth
+
+The decoder is `serde_json` with its default recursion limit: a document with
+more than 127 nested objects and arrays does not decode. A program nested
+deeply enough lowers to such a document, so its IR cannot be read back; the
+corpus has one, `tests/selfhost/parser/samples/deep_unary_ok.src`. The Argorix
+reader keeps the same limit so the two agree. Lifting it is a change to this
+contract.
 
 ## Non-claims
 
