@@ -1,0 +1,30 @@
+argorix-build 1
+# The stage1 compiler: its root, then every module of compiler/ and stdlib/,
+# the locked set stage0 sees with `--stdlib stdlib` for a root in compiler/.
+root compiler/main.argx
+module compiler/ast.argx
+module compiler/c_emit.argx
+module compiler/check.argx
+module compiler/diagnostics.argx
+module compiler/ir.argx
+module compiler/ir_verify.argx
+module compiler/lexer.argx
+module compiler/link.argx
+module compiler/parser.argx
+module compiler/pipeline.argx
+module compiler/report.argx
+module compiler/sha256.argx
+module compiler/token.argx
+module compiler/token_dump.argx
+module stdlib/arena.argx
+module stdlib/bytes.argx
+module stdlib/compiler_host.argx
+module stdlib/json.argx
+module stdlib/ordered_map.argx
+module stdlib/path.argx
+module stdlib/result.argx
+module stdlib/text.argx
+module stdlib/vector.argx
+c compiler.c
+manifest compiler.json
+diagnostics diagnostics.txt

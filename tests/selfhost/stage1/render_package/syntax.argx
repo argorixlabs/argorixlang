@@ -1,0 +1,11 @@
+core 0.1;
+module demo.syntax;
+
+fn value( -> u8 {
+    1u8
+}
+
+fn other() -> u8 {
+    let x: u8 = ;
+    x
+}

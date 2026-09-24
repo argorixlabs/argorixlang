@@ -1,0 +1,15 @@
+core 0.1;
+module refusals.returns_slice;
+
+// Two functions return a view; stage0 names the first in name order.
+fn zeta(values: Slice<u8>) -> Slice<u8> {
+    values
+}
+
+fn alpha(values: Slice<u8>) -> Slice<u8> {
+    values
+}
+
+pub fn argorix_main() -> u64 {
+    0u64
+}

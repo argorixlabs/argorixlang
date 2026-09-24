@@ -1,0 +1,7 @@
+core 0.1;
+module demo.helper;
+
+pub fn twice(value: u32) -> u32 {
+    let doubled: u32 = value * 2u8;
+    doubled + missing
+}

@@ -1,0 +1,9 @@
+core 0.1;
+module refusals.value_break;
+
+pub fn argorix_main() -> u64 {
+    loop {
+        break 1u64;
+    }
+    0u64
+}

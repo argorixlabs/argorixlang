@@ -1,0 +1,11 @@
+core 0.1;
+module refusals.enum_holds_slice;
+
+enum View {
+    Empty,
+    Bytes { data: Slice<u8>, },
+}
+
+pub fn argorix_main() -> u64 {
+    0u64
+}

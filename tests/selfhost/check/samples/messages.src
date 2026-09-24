@@ -1,0 +1,74 @@
+core 0.1;
+module messages;
+
+// Diagnostics whose wording the stage1 renderer must reproduce
+// (compiler/report.argx): names sorted as stage0 sorts them, and each
+// message the other samples leave out.
+
+enum Shape { Circle, Square, Line, Arc, }
+
+struct Point { y: u64, x: u64, z: u64, }
+
+fn consume(data: Buffer<u8>) -> unit { unit }
+
+fn index_with_bool(values: Array<u64, 3>) -> u64 {
+    values[true]
+}
+
+fn assign_to_call() -> unit {
+    consume(Buffer::new()) = unit;
+}
+
+fn unknown_aggregate() -> u64 {
+    let p: Point = Missing { x: 1u64 };
+    0u64
+}
+
+fn missing_fields() -> Point {
+    Point { }
+}
+
+fn missing_variants(shape: Shape) -> u64 {
+    match shape {
+        Shape::Square => 1u64,
+    }
+}
+
+fn integer_pattern(flag: bool) -> u64 {
+    match flag {
+        1u64 => 0u64,
+        _ => 1u64,
+    }
+}
+
+fn variant_pattern(value: u64) -> u64 {
+    match value {
+        Shape::Circle => 0u64,
+        _ => 1u64,
+    }
+}
+
+fn two_moves(a: Buffer<u8>, b: Buffer<u8>) -> unit {
+    let first: Buffer<u8> = a;
+    let second: Buffer<u8> = b;
+    loop {
+        consume(second);
+        consume(first);
+    }
+}
+
+fn arrays(values: Array<u8, 2>) -> Array<u16, 2> {
+    values
+}
+
+fn handles(arena: Arena<u64>) -> Handle<u8> {
+    arena.alloc(1u64)
+}
+
+fn views(values: Slice<u16>) -> Slice<u8> {
+    values
+}
+
+fn outside() -> unit {
+    continue;
+}

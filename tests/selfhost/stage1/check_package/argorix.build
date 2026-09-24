@@ -1,0 +1,6 @@
+argorix-build 1
+root src/main.argx
+module src/helper.argx
+c out/program.c
+manifest out/program.json
+diagnostics out/diagnostics.txt

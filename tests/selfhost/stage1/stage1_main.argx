@@ -1,0 +1,12 @@
+core 0.1;
+module selfhost_stage1.stage1_main;
+
+// Stage1 itself (`compiler.main`), as a fixture the C harness can build: the
+// driver reads `argorix.build` from the package root it is lent, and writes
+// the C, the manifest and the diagnostics it names.
+
+import compiler.main;
+
+pub fn argorix_main(package: PackageRead, build: BuildWrite) -> u64 {
+    main.argorix_main(package, build)
+}

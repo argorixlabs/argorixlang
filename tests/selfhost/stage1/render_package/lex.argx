@@ -1,0 +1,6 @@
+core 0.1;
+module demo.lex;
+
+fn value() -> u8 {
+    1u8 # 2u8
+}

@@ -1,0 +1,7 @@
+core 0.1;
+module refusals.entry_two_reads;
+
+pub fn argorix_main(first: PackageRead, second: PackageRead) -> u64 {
+    let path: string = "a";
+    first.status(path.as_slice()) + second.status(path.as_slice())
+}

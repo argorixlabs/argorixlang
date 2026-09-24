@@ -1,0 +1,15 @@
+core 0.1;
+module refusals.nested_pattern;
+
+enum Reading {
+    Value { amount: u64, },
+    Missing,
+}
+
+pub fn argorix_main() -> u64 {
+    let reading: Reading = Reading::Value { amount: 1u64 };
+    match reading {
+        Reading::Value { amount: 1u64 } => 1u64,
+        _ => 0u64,
+    }
+}

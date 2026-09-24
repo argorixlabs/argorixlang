@@ -102,6 +102,8 @@ fn fail(tokens: Slice<Token>, tree: Tree, at: u64, code: Slice<u8>, message: Sli
     q.pending = SyntaxError {
         line: tokens[at].line,
         column: tokens[at].column,
+        start: tokens[at].start,
+        end: tokens[at].end,
         code_start: code_start,
         code_end: message_start,
         message_start: message_start,
@@ -316,6 +318,8 @@ fn version_unsupported(tokens: Slice<Token>, tree: Tree, major: u64, minor: u64)
     q.pending = SyntaxError {
         line: tokens[major].line,
         column: tokens[major].column,
+        start: tokens[major].start,
+        end: tokens[minor].end,
         code_start: code_start,
         code_end: message_start,
         message_start: message_start,
