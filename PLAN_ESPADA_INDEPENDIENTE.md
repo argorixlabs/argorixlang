@@ -2,7 +2,7 @@
 
 > Plan rector: [Plan maestro de ArgorixLang](PLAN_MAESTRO_ARGORIXLANG.md). Este documento desarrolla la entrega R1 de independencia; no acredita por sí solo la madurez final. Aplicar las dependencias cruzadas del maestro. ESP-026 queda sustituida por fichas MAT independientes.
 
-Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. ESP-009 (biblioteca estándar mínima), ESP-010 (lexer) y ESP-011 (parser) están HECHAS; ESP-012 (chequeo semántico en Argorix) está EN_CURSO. Self-hosting e independencia completa siguen pendientes.
+Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. ESP-009 (biblioteca estándar mínima), ESP-010 (lexer), ESP-011 (parser) y ESP-012 (resolución, tipos y módulos en Argorix) están HECHAS; ESP-013 (lowering y emisión en Argorix) está EN_CURSO. Self-hosting e independencia completa siguen pendientes.
 Fecha: 2026-09-17. Base inspeccionada: `5d73d66`, workspace `1.0.0`.
 Última actualización de estado: 2026-09-22 sobre `main@9c77061`. El estado operativo del día (quién tiene cada carril, ramas, PRs e issues abiertos) vive en [WORKBOARD.md](WORKBOARD.md) y en los registros de `coordination/`; esta tabla solo cambia al reclamar o cerrar una tarea.
 Este plan reemplazó la prioridad del backlog AL: self-hosting deja de estar diferido. El plan maestro vigente añade funcionalidad completa y producción como entregas obligatorias posteriores.
@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54). ESP-012 está EN_CURSO; ESP-013 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57). ESP-013 está EN_CURSO; ESP-014 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -107,8 +107,8 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-009.F | Gaps del backend (#39) e imports entre módulos (#45) | 009.B | HECHA |
 | ESP-010 | Lexer y diagnósticos en Argorix | 009 | HECHA |
 | ESP-011 | Parser y AST en Argorix | 010 | HECHA |
-| ESP-012 | Resolución, tipos y módulos en Argorix | 011 | EN_CURSO |
-| ESP-013 | Lowering y emisión en Argorix | 012 | PENDIENTE |
+| ESP-012 | Resolución, tipos y módulos en Argorix | 011 | HECHA |
+| ESP-013 | Lowering y emisión en Argorix | 012 | EN_CURSO |
 | ESP-014 | Primer compilador self-hosted completo | 013 | PENDIENTE |
 | ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | PENDIENTE |
 | ESP-016 | Backend nativo inicial | 015 | PENDIENTE |
@@ -339,17 +339,19 @@ ahora en 256 niveles con un diagnóstico.
 **Entregables:** frontend semántico `.argx` y diagnósticos comparables.
 **Aceptación:** valida sus fuentes; detecta símbolos duplicados, tipos incorrectos, retornos ausentes, handles mal usados e imports inválidos; decisiones de error tienen pruebas independientes.
 
-**Estado (2026-09-23):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-012.md)),
-dividida en tres subtareas, dos de ellas hechas:
+**Estado (2026-09-24):** HECHA en el carril de Claude ([ficha](tasks/espada/ESP-012.md)),
+en tres subtareas:
 
 - ESP-012.A (PR #55): el checker de declaraciones, tipos, scopes, nombres,
   expresiones, control de flujo, exhaustividad y literales, en
   `compiler/check.argx`;
-- ESP-012.B: el ownership de recursos (moves por cada camino, bucles, lugares,
-  arenas) y las vistas.
+- ESP-012.B (PR #56): el ownership de recursos (moves por cada camino, bucles,
+  lugares, arenas) y las vistas;
+- ESP-012.C (PR #57): el grafo de módulos y el linker, en `compiler/link.argx`.
 
-Los diagnósticos coinciden con los del checker stage0, sin excluir ningún
-código, en 141 archivos. Falta ESP-012.C (grafo de módulos y linker).
+Los diagnósticos coinciden byte a byte con los de stage0: 141 archivos sueltos
+y 170 paquetes, entre ellos el propio compilador enlazado consigo mismo. CI
+verde en `main@def7a46`.
 
 ### ESP-013 — Lowering y emisión en Argorix
 
@@ -358,6 +360,16 @@ código, en 141 archivos. Falta ESP-012.C (grafo de módulos y linker).
 **Pasos:** implementar IR, verificador, lowering y backend C en Argorix; respetar contratos de ESP-007/008; eliminar dependencia del emisor Rust en este recorrido; emitir manifiesto de fuentes y opciones.
 **Entregables:** pipeline escrito en `.argx` y comparación de comportamiento por backend.
 **Aceptación:** compila programas del corpus y componentes del compilador; no importa generar C idéntico a stage0, sí preservar semántica. Las diferencias de resultados deben explicarse contra especificación.
+
+**Estado (2026-09-24):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-013.md)),
+en cuatro subtareas:
+
+- ESP-013.A: el IR canónico en `compiler/ir.argx`, idéntico byte a byte al de
+  stage0 en 170 paquetes.
+- ESP-013.C: el backend C en `compiler/c_emit.argx`, que escribe el mismo C que
+  stage0 y alcanza un punto fijo al compilarse a sí mismo.
+- Faltan ESP-013.B (verificador del IR) y ESP-013.D (punto de entrada del
+  pipeline y manifiesto).
 
 ### ESP-014 — Primer compilador self-hosted completo
 
