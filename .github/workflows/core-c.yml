@@ -481,3 +481,38 @@ jobs:
             target/stage1/stage1-provenance.json
             target/stage1/self/compiler.json
           if-no-files-found: ignore
+
+  selfhost:
+    name: Stage2 and stage3 without Rust or network (ESP-015, ${{ matrix.cc }})
+    needs: stage1-emit
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: stage1-c
+          path: target/stage1
+      - name: Build the bootstrap environment (a C compiler and Python only)
+        run: |
+          docker build --build-arg CC_PACKAGE=${{ matrix.cc }} -t argorix-selfhost bootstrap/container
+          mkdir -p target/selfhost
+          docker image inspect debian:stable-slim --format '{{json .RepoDigests}}' > target/selfhost/base-image.json
+          cat target/selfhost/base-image.json
+      - name: stage1 builds stage2, stage2 builds stage3, with no network
+        run: >-
+          docker run --rm --network none --user "$(id -u):$(id -g)"
+          -v "$PWD:/w" -w /w argorix-selfhost
+          python3 bootstrap/selfhost.py --from target/stage1 --cc ${{ matrix.cc }}
+          --out target/selfhost --require-rust-free-host --require-no-network
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: selfhost-report-${{ matrix.cc }}
+          path: |
+            target/selfhost/selfhost-report.json
+            target/selfhost/base-image.json
+          if-no-files-found: ignore

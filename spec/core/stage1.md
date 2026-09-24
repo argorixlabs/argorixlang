@@ -133,5 +133,42 @@ exists. It fails in any case if an executable loads a Rust library. CI runs
 
 The provenance records `bootstrap_dependency: rust`: stage0 is written in
 Rust and produced `stage1.c`. That stays in the trusted base until ESP-017
-(`spec/provenance.md`, P1-02). Stage2 and stage3 without stage0, with
-binary identity, are ESP-015.
+(`spec/provenance.md`, P1-02).
+
+## Stage2 and stage3 (ESP-015)
+
+`bootstrap/selfhost.py` continues from `stage1.c`, with a C compiler and
+Python only.
+
+- **Generations.** Stage1 compiles the sources `argorix.build` lists, and
+  its C is stage2's; stage2's C is stage3's. Each stage's C is compiled as
+  `compiler.c`, in a directory of its own at the same depth. The flags and
+  the runtime path are the same for every stage. Tools run with `LC_ALL=C`,
+  `TZ=UTC` and no ccache.
+- **What must be identical.** The C, manifest and diagnostics of the three
+  stages, the C stage0 wrote, and the three executables, byte for byte.
+- **Why that holds.** The compiler has no host operation for time, and the C
+  runtime uses no `__DATE__` or `__TIME__`. Outputs name sources by their
+  path relative to the package root. The only difference found between
+  executables was the source file's name in the symbol table. Compiling
+  every stage under the same name removes it; nothing is normalized after
+  the fact.
+- **Paths and order.** Building from a copy of the sources in another
+  directory gives identical outputs. Listing the `module` lines in reverse
+  gives identical C, and a manifest that lists the sources in the new order.
+- **The suite.** The C fixture suites are compiled by stage2 and stage3,
+  which must agree, and run against each case's expected results.
+- **No prebuilt seed.** An edit to a diagnostic's wording, and one to the
+  header the C backend writes, show in the compilers built from the edited
+  sources. Each reaches a fixed point: in one generation for the
+  diagnostic, in two for the backend, whose first generation is still
+  compiled by the unedited backend.
+
+CI runs it in `bootstrap/container/Dockerfile` (a C compiler, its C library
+and Python) with `docker run --network none`. It uses
+`--require-rust-free-host` and `--require-no-network`, the latter checked
+against `/proc/net/dev`, and uploads `selfhost-report.json`.
+
+Equal stages show that the compiler reproduces itself; they do not show that
+stage0 is free of a defect that reproduces itself too. The report states
+this limit. Diverse double compilation is ESP-023 and MAT-023.
