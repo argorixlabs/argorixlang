@@ -1,0 +1,363 @@
+core 0.1;
+module compiler.main;
+
+// The stage1 compiler (ESP-014): the entry point that turns a Core package
+// into transitional C, with every phase in Argorix (`compiler.pipeline`).
+//
+// The compiler-host profile gives a program no command line, environment or
+// directory listing (spec/core/stdlib.md), so a build is described by a
+// file, `argorix.build`, at the root of the package the driver lends:
+//
+//     argorix-build 1
+//     root compiler/main.argx
+//     module stdlib/bytes.argx
+//     c stage1.c
+//     manifest stage1.json
+//     diagnostics diagnostics.txt
+//
+// - The first line names the format and its version.
+// - `root` is the file whose module holds `argorix_main`, and each `module`
+//   line adds a file to the locked compilation set, in the order given.
+//   Paths are relative to the package root.
+// - `c`, `manifest` and `diagnostics` are the files to write, relative to the
+//   build root.
+// - Blank lines and lines starting with `#` are ignored; a line may end in
+//   CR LF.
+//
+// Each of `root`, `c`, `manifest` and `diagnostics` appears exactly once, and
+// no other key exists. Because the build file is the whole input besides the
+// sources, the manifest can name everything a build depended on.
+//
+// What is written, and the result:
+// - 0: the C, the manifest, and an empty diagnostics file;
+// - 1 (the package does not link and check) or 2 (the C backend refuses it):
+//   the manifest and the diagnostics, and no C;
+// - 3: the build file is not valid. Its first error is written to the
+//   diagnostics file when that line could be read, and nothing else is
+//   written;
+// - 1000000 plus the failure digest (`stdlib.result`) when a file cannot be
+//   read or written. A read failure is also described in the diagnostics
+//   file.
+
+import stdlib.compiler_host;
+import stdlib.result;
+import stdlib.bytes;
+import compiler.pipeline;
+import compiler.report;
+
+pub const EMITTED: u64 = 0u64;
+pub const CHECK_FAILED: u64 = 1u64;
+pub const UNSUPPORTED: u64 = 2u64;
+pub const INVALID_BUILD: u64 = 3u64;
+pub const HOST_FAILED: u64 = 1000000u64;
+
+// Why a build file is not valid.
+const HEADER: u64 = 1u64;
+const MALFORMED: u64 = 2u64;
+const UNKNOWN_KEY: u64 = 3u64;
+const REPEATED_KEY: u64 = 4u64;
+const NO_ROOT: u64 = 5u64;
+const NO_C: u64 = 6u64;
+const NO_MANIFEST: u64 = 7u64;
+const NO_DIAGNOSTICS: u64 = 8u64;
+
+// A build file, read. Each path is a (start, end) range of the file's text;
+// an end of 0 means the key was not given.
+struct Build {
+    root_start: u64,
+    root_end: u64,
+    // The `module` paths, as (start, end) pairs.
+    modules: Buffer<u64>,
+    c_start: u64,
+    c_end: u64,
+    manifest_start: u64,
+    manifest_end: u64,
+    diagnostics_start: u64,
+    diagnostics_end: u64,
+    // The first error, and the line it is on (0 for a missing key).
+    error: u64,
+    error_line: u64,
+}
+
+pub fn argorix_main(package: PackageRead, build: BuildWrite) -> u64 {
+    match compiler_host.read(package, "argorix.build".as_slice()) {
+        BytesResult::Ok { value } => run(package, build, value.as_slice()),
+        BytesResult::Err { failure } => HOST_FAILED + result.failure_digest(failure),
+    }
+}
+
+fn run(package: PackageRead, build: BuildWrite, text: Slice<u8>) -> u64 {
+    let b: Build = read_build(text);
+    if b.error != 0u64 {
+        if b.diagnostics_end == 0u64 {
+            return INVALID_BUILD;
+        }
+        let message: Buffer<u8> = build_error(b.error, b.error_line);
+        let written: u64 = result.checked_digest(compiler_host.write(build, text.slice(b.diagnostics_start, b.diagnostics_end), message.as_slice()));
+        if written != 0u64 {
+            return HOST_FAILED + written;
+        }
+        return INVALID_BUILD;
+    }
+    // The files' paths, the root first, one after another.
+    let mut paths: Buffer<u8> = bytes.append(Buffer::new(), text.slice(b.root_start, b.root_end));
+    let mut path_ends: Buffer<u64> = Buffer::new();
+    path_ends.push(paths.length());
+    let mut index: u64 = 0u64;
+    while index < b.modules.length() {
+        paths = bytes.append(paths, text.slice(b.modules[index], b.modules[index + 1u64]));
+        path_ends.push(paths.length());
+        index += 2u64;
+    }
+    compile(package, build, text, b, paths.as_slice(), path_ends.as_slice())
+}
+
+fn compile(package: PackageRead, build: BuildWrite, text: Slice<u8>, b: Build, paths: Slice<u8>, path_ends: Slice<u64>) -> u64 {
+    let mut sources: Buffer<u8> = Buffer::new();
+    let mut ends: Buffer<u64> = Buffer::new();
+    let mut start: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < path_ends.length() {
+        match compiler_host.read(package, paths.slice(start, path_ends[index])) {
+            BytesResult::Ok { value } => {
+                sources = bytes.append(sources, value.as_slice());
+                ends.push(sources.length());
+            },
+            BytesResult::Err { failure } => {
+                return read_failed(build, text.slice(b.diagnostics_start, b.diagnostics_end), paths.slice(start, path_ends[index]), failure);
+            },
+        }
+        start = path_ends[index];
+        index += 1u64;
+    }
+    let c: Buffer<u8> = pipeline.compile(sources.as_slice(), ends.as_slice());
+    let manifest: Buffer<u8> = pipeline.manifest(paths, path_ends, sources.as_slice(), ends.as_slice(), c.as_slice());
+    let mut outcome: u64 = EMITTED;
+    let mut diagnostics: Buffer<u8> = Buffer::new();
+    if bytes.equal(c.as_slice(), "check failed\n".as_slice()) {
+        outcome = CHECK_FAILED;
+        diagnostics = report.render(paths, path_ends, sources.as_slice(), ends.as_slice());
+    } else if bytes.equal(c.as_slice(), "unsupported\n".as_slice()) {
+        outcome = UNSUPPORTED;
+        diagnostics = report.unsupported(paths.slice(0u64, path_ends[0u64]));
+    }
+    let mut written: u64 = result.checked_digest(compiler_host.write(build, text.slice(b.diagnostics_start, b.diagnostics_end), diagnostics.as_slice()));
+    if written != 0u64 {
+        return HOST_FAILED + written;
+    }
+    written = result.checked_digest(compiler_host.write(build, text.slice(b.manifest_start, b.manifest_end), manifest.as_slice()));
+    if written != 0u64 {
+        return HOST_FAILED + written;
+    }
+    if outcome == EMITTED {
+        written = result.checked_digest(compiler_host.write(build, text.slice(b.c_start, b.c_end), c.as_slice()));
+        if written != 0u64 {
+            return HOST_FAILED + written;
+        }
+    }
+    outcome
+}
+
+// `path: why it could not be read` in the diagnostics file, and the failure
+// as the result.
+fn read_failed(build: BuildWrite, diagnostics: Slice<u8>, path: Slice<u8>, failure: Failure) -> u64 {
+    let digest: u64 = result.failure_digest(failure);
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), path);
+    message = bytes.append(message, ": ".as_slice());
+    match failure {
+        Failure::Host { at } => {
+            message = append_host_status(message, at);
+        },
+        Failure::InvalidUtf8 { at: _ } => {
+            message = bytes.append(message, "the path is not valid UTF-8".as_slice());
+        },
+        Failure::InvalidPath { at: _ } => {
+            message = bytes.append(message, "the path is not a normalized relative path".as_slice());
+        },
+        Failure::OutOfRange { at: _ } => {
+            message = bytes.append(message, "cannot be read".as_slice());
+        },
+        Failure::DuplicateKey { at: _ } => {
+            message = bytes.append(message, "cannot be read".as_slice());
+        },
+        Failure::InvalidJson { at: _ } => {
+            message = bytes.append(message, "cannot be read".as_slice());
+        },
+        Failure::TooDeep { at: _ } => {
+            message = bytes.append(message, "cannot be read".as_slice());
+        },
+    }
+    message.push(10u8);
+    let written: u64 = result.checked_digest(compiler_host.write(build, diagnostics, message.as_slice()));
+    if written != 0u64 {
+        return HOST_FAILED + written;
+    }
+    HOST_FAILED + digest
+}
+
+fn append_host_status(out: Buffer<u8>, status: u64) -> Buffer<u8> {
+    if status == compiler_host.not_found() { return bytes.append(out, "not found".as_slice()); }
+    if status == compiler_host.outside_root() { return bytes.append(out, "outside the package root".as_slice()); }
+    if status == compiler_host.not_a_file() { return bytes.append(out, "not a regular file".as_slice()); }
+    if status == compiler_host.over_budget() { return bytes.append(out, "over the read budget".as_slice()); }
+    if status == compiler_host.io_error() { return bytes.append(out, "I/O error".as_slice()); }
+    bytes.append(out, "file access is not supported on this host".as_slice())
+}
+
+// ------------------------------------------------------------------ build file
+
+fn read_build(text: Slice<u8>) -> Build {
+    let mut b: Build = Build {
+        root_start: 0u64,
+        root_end: 0u64,
+        modules: Buffer::new(),
+        c_start: 0u64,
+        c_end: 0u64,
+        manifest_start: 0u64,
+        manifest_end: 0u64,
+        diagnostics_start: 0u64,
+        diagnostics_end: 0u64,
+        error: 0u64,
+        error_line: 0u64,
+    };
+    let mut line: u64 = 1u64;
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= text.length() {
+        if at == text.length() || text[at] == 10u8 {
+            // The line without its end, CR LF or LF.
+            let mut end: u64 = at;
+            if end > start && text[end - 1u64] == 13u8 {
+                end -= 1u64;
+            }
+            // A last line with nothing on it is only the end of the file.
+            if at < text.length() || end > start || line == 1u64 {
+                b = build_line(text, start, end, line, b);
+                if b.error != 0u64 {
+                    return b;
+                }
+            }
+            line += 1u64;
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    if b.root_end == 0u64 {
+        return build_failed(NO_ROOT, 0u64, b);
+    }
+    if b.c_end == 0u64 {
+        return build_failed(NO_C, 0u64, b);
+    }
+    if b.manifest_end == 0u64 {
+        return build_failed(NO_MANIFEST, 0u64, b);
+    }
+    if b.diagnostics_end == 0u64 {
+        return build_failed(NO_DIAGNOSTICS, 0u64, b);
+    }
+    b
+}
+
+fn build_line(text: Slice<u8>, start: u64, end: u64, line: u64, build: Build) -> Build {
+    let mut b: Build = build;
+    if line == 1u64 {
+        if !bytes.equal(text.slice(start, end), "argorix-build 1".as_slice()) {
+            return build_failed(HEADER, line, b);
+        }
+        return b;
+    }
+    if end == start || text[start] == 35u8 {
+        return b;
+    }
+    // `key value`: one space, and a value with no space in it.
+    let mut space: u64 = start;
+    while space < end && text[space] != 32u8 {
+        space += 1u64;
+    }
+    if space == start || space + 1u64 >= end {
+        return build_failed(MALFORMED, line, b);
+    }
+    let mut check: u64 = space + 1u64;
+    while check < end {
+        if text[check] == 32u8 {
+            return build_failed(MALFORMED, line, b);
+        }
+        check += 1u64;
+    }
+    let value_start: u64 = space + 1u64;
+    let key: Buffer<u8> = bytes.copy(text.slice(start, space));
+    if bytes.equal(key.as_slice(), "module".as_slice()) {
+        b.modules.push(value_start);
+        b.modules.push(end);
+        return b;
+    }
+    if bytes.equal(key.as_slice(), "root".as_slice()) {
+        if b.root_end != 0u64 {
+            return build_failed(REPEATED_KEY, line, b);
+        }
+        b.root_start = value_start;
+        b.root_end = end;
+        return b;
+    }
+    if bytes.equal(key.as_slice(), "c".as_slice()) {
+        if b.c_end != 0u64 {
+            return build_failed(REPEATED_KEY, line, b);
+        }
+        b.c_start = value_start;
+        b.c_end = end;
+        return b;
+    }
+    if bytes.equal(key.as_slice(), "manifest".as_slice()) {
+        if b.manifest_end != 0u64 {
+            return build_failed(REPEATED_KEY, line, b);
+        }
+        b.manifest_start = value_start;
+        b.manifest_end = end;
+        return b;
+    }
+    if bytes.equal(key.as_slice(), "diagnostics".as_slice()) {
+        if b.diagnostics_end != 0u64 {
+            return build_failed(REPEATED_KEY, line, b);
+        }
+        b.diagnostics_start = value_start;
+        b.diagnostics_end = end;
+        return b;
+    }
+    build_failed(UNKNOWN_KEY, line, b)
+}
+
+fn build_failed(error: u64, line: u64, build: Build) -> Build {
+    let mut b: Build = build;
+    b.error = error;
+    b.error_line = line;
+    b
+}
+
+// `argorix.build:line: message`, or `argorix.build: message` for a missing
+// key.
+fn build_error(error: u64, line: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "argorix.build:".as_slice());
+    if line != 0u64 {
+        out = bytes.append_decimal(out, line);
+        out.push(58u8);
+    }
+    out.push(32u8);
+    if error == HEADER {
+        out = bytes.append(out, "the first line must be `argorix-build 1`".as_slice());
+    } else if error == MALFORMED {
+        out = bytes.append(out, "expected `key value`, with one space and no space in the value".as_slice());
+    } else if error == UNKNOWN_KEY {
+        out = bytes.append(out, "unknown key; the keys are `root`, `module`, `c`, `manifest` and `diagnostics`".as_slice());
+    } else if error == REPEATED_KEY {
+        out = bytes.append(out, "this key was already given; only `module` may repeat".as_slice());
+    } else if error == NO_ROOT {
+        out = bytes.append(out, "no `root` line".as_slice());
+    } else if error == NO_C {
+        out = bytes.append(out, "no `c` line".as_slice());
+    } else if error == NO_MANIFEST {
+        out = bytes.append(out, "no `manifest` line".as_slice());
+    } else {
+        out = bytes.append(out, "no `diagnostics` line".as_slice());
+    }
+    out.push(10u8);
+    out
+}
