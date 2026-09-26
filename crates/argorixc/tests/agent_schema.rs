@@ -407,6 +407,15 @@ fn source_names() -> Vec<(String, Vec<(String, String)>)> {
                                 let word = word.trim_end_matches(',').trim_end_matches('"');
                                 words.push((variant.trim().to_string(), word.to_string()));
                             }
+                        } else if let Some(variant) = rest.strip_suffix(" => {") {
+                            // rustfmt puts a long word on its own line.
+                            let word = lines[index + 1].trim();
+                            if !variant.contains('(') && word.starts_with('"') {
+                                words.push((
+                                    variant.trim().to_string(),
+                                    word.trim_matches('"').to_string(),
+                                ));
+                            }
                         }
                     }
                 }

@@ -152,6 +152,7 @@ dependencies = [
  "argorix_ir",
  "argorix_parser",
  "argorix_semantics",
+ "serde_json",
  "thiserror",
 ]
 

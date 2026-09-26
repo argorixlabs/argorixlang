@@ -1,0 +1,1991 @@
+core 0.1;
+module compiler.agent_ir;
+
+// The IR of the agent language, in Argorix (ESP-018.D). It ports
+// `IrProgram::from(&Program)` of crates/argorix_ir/src/ir.rs over the tree of
+// compiler.agent_parser, and writes it as serde_json's pretty JSON: the dump
+// of spec/language/ir.md. The emitters of the IR types are generated from
+// ir.rs (crates/argorixc/tests/agent_ir_table.rs); the fields of no regular
+// shape are the `special_*` functions below.
+
+import stdlib.bytes;
+import compiler.agent_ast;
+import compiler.agent_schema;
+import compiler.agent_parser;
+import compiler.agent_check;
+
+// The output and serde_json's pretty layout: `depth` levels of two spaces,
+// and `first` while the innermost object or array has no member yet.
+struct Pretty { out: Buffer<u8>, depth: u64, first: bool, }
+
+// The dump: the checker's when the program does not parse or check,
+// otherwise the IR and a line feed.
+pub fn dump(source: Slice<u8>) -> Buffer<u8> {
+    let checked: Buffer<u8> = agent_check.dump(source);
+    if !bytes.equal(checked.as_slice(), "ok\n".as_slice()) {
+        return checked;
+    }
+    let parsed: Tree = agent_parser.parse(source);
+    let program: u64 = parsed.result;
+    let y: Pretty = emit_program(Pretty { out: Buffer::new(), depth: 0u64, first: true }, parsed.slots.as_slice(), parsed.nodes.as_slice(), parsed.strings.as_slice(), program);
+    let mut out: Buffer<u8> = bytes.copy(y.out.as_slice());
+    out.push(10u8);
+    out
+}
+
+// ------------------------------------------------------------------ the layout
+
+fn open(state: Pretty, byte: u8) -> Pretty {
+    let mut y: Pretty = state;
+    y.out.push(byte);
+    y.depth += 1u64;
+    y.first = true;
+    y
+}
+
+fn close(state: Pretty, byte: u8) -> Pretty {
+    let mut y: Pretty = state;
+    y.depth -= 1u64;
+    if !y.first {
+        y = newline(y);
+    }
+    y.out.push(byte);
+    y.first = false;
+    y
+}
+
+fn newline(state: Pretty) -> Pretty {
+    let mut y: Pretty = state;
+    y.out.push(10u8);
+    let mut index: u64 = 0u64;
+    while index < y.depth {
+        y.out.push(32u8);
+        y.out.push(32u8);
+        index += 1u64;
+    }
+    y
+}
+
+// Where the next member of the innermost object or array starts.
+fn member(state: Pretty) -> Pretty {
+    let mut y: Pretty = state;
+    if !y.first {
+        y.out.push(44u8);
+    }
+    y.first = false;
+    newline(y)
+}
+
+fn key(state: Pretty, name: Slice<u8>) -> Pretty {
+    let mut y: Pretty = text(member(state), name);
+    y.out.push(58u8);
+    y.out.push(32u8);
+    y
+}
+
+// `value` as a JSON string, escaped as serde_json escapes it.
+fn text(state: Pretty, value: Slice<u8>) -> Pretty {
+    let mut y: Pretty = state;
+    y.out.push(34u8);
+    let mut at: u64 = 0u64;
+    while at < value.length() {
+        let byte: u8 = value[at];
+        if byte == 34u8 || byte == 92u8 {
+            y.out.push(92u8);
+            y.out.push(byte);
+        } else if byte == 8u8 {
+            y.out.push(92u8);
+            y.out.push(98u8);
+        } else if byte == 9u8 {
+            y.out.push(92u8);
+            y.out.push(116u8);
+        } else if byte == 10u8 {
+            y.out.push(92u8);
+            y.out.push(110u8);
+        } else if byte == 12u8 {
+            y.out.push(92u8);
+            y.out.push(102u8);
+        } else if byte == 13u8 {
+            y.out.push(92u8);
+            y.out.push(114u8);
+        } else if byte < 32u8 {
+            y.out.push(92u8);
+            y.out.push(117u8);
+            y.out.push(48u8);
+            y.out.push(48u8);
+            y.out.push(hex(byte / 16u8));
+            y.out.push(hex(byte % 16u8));
+        } else {
+            y.out.push(byte);
+        }
+        at += 1u64;
+    }
+    y.out.push(34u8);
+    y
+}
+
+fn hex(digit: u8) -> u8 {
+    if digit < 10u8 {
+        return 48u8 + digit;
+    }
+    87u8 + digit
+}
+
+fn word(state: Pretty, value: Slice<u8>) -> Pretty {
+    let mut y: Pretty = state;
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        y.out.push(value[index]);
+        index += 1u64;
+    }
+    y
+}
+
+// ------------------------------------------------------------------ values of the tree
+
+fn get(sl: Slice<u64>, n: Slice<AgentNode>, node: u64, field: u64) -> u64 {
+    agent_ast.get(sl, n, node, field)
+}
+
+// A string, integer, boolean, null or enum of the tree, as JSON.
+fn scalar(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let found: AgentNode = n[node];
+    if found.kind == agent_ast.N_STRING {
+        return text(state, st.slice(found.a, found.b));
+    }
+    if found.kind == agent_ast.N_INTEGER {
+        let digits: Buffer<u8> = bytes.append_decimal(Buffer::new(), found.a);
+        return word(state, digits.as_slice());
+    }
+    if found.kind == agent_ast.N_BOOL {
+        if found.a == 1u64 {
+            return word(state, "true".as_slice());
+        }
+        return word(state, "false".as_slice());
+    }
+    if found.kind == agent_ast.N_VARIANT {
+        return variant_name(state, n, st, node);
+    }
+    word(state, "null".as_slice())
+}
+
+// An enum's `source_name()`: the word itself for `Unknown`.
+fn variant_name(state: Pretty, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let found: AgentNode = n[node];
+    if found.b != 0u64 && n[found.b].kind == agent_ast.N_STRING {
+        return text(state, st.slice(n[found.b].a, n[found.b].b));
+    }
+    let named: Buffer<u8> = agent_schema.append_source_name(Buffer::new(), found.schema, found.a);
+    text(state, named.as_slice())
+}
+
+// The value of a `Spanned`.
+fn value(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64) -> Pretty {
+    scalar(state, sl, n, st, get(sl, n, spanned, agent_schema.SPANNED_VALUE))
+}
+
+// The source name of a `Spanned` enum.
+fn name(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64) -> Pretty {
+    variant_name(state, n, st, get(sl, n, spanned, agent_schema.SPANNED_VALUE))
+}
+
+fn optional_value_skip(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, spanned: u64) -> Pretty {
+    if spanned == 0u64 {
+        return state;
+    }
+    value(key(state, field), sl, n, st, spanned)
+}
+
+fn optional_value_null(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, spanned: u64) -> Pretty {
+    let y: Pretty = key(state, field);
+    if spanned == 0u64 {
+        return word(y, "null".as_slice());
+    }
+    value(y, sl, n, st, spanned)
+}
+
+fn optional_name_skip(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, spanned: u64) -> Pretty {
+    if spanned == 0u64 {
+        return state;
+    }
+    name(key(state, field), sl, n, st, spanned)
+}
+
+fn optional_name_null(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, spanned: u64) -> Pretty {
+    let y: Pretty = key(state, field);
+    if spanned == 0u64 {
+        return word(y, "null".as_slice());
+    }
+    name(y, sl, n, st, spanned)
+}
+
+// A list of `Spanned` values.
+fn values(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, array: u64) -> Pretty {
+    let mut y: Pretty = open(key(state, field), 91u8);
+    let mut link: u64 = n[array].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        y = value(member(y), sl, n, st, item);
+    }
+    close(y, 93u8)
+}
+
+fn values_skip(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, array: u64) -> Pretty {
+    if n[array].a == 0u64 {
+        return state;
+    }
+    values(state, sl, n, st, field, array)
+}
+
+// A list of IR type `s`, one per element of `array`.
+fn list(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, array: u64, s: u64) -> Pretty {
+    let mut y: Pretty = open(key(state, field), 91u8);
+    let mut link: u64 = n[array].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        y = emit(member(y), sl, n, st, s, item);
+    }
+    close(y, 93u8)
+}
+
+fn list_skip(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, array: u64, s: u64) -> Pretty {
+    if n[array].a == 0u64 {
+        return state;
+    }
+    list(state, sl, n, st, field, array, s)
+}
+
+fn optional_skip(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64, s: u64) -> Pretty {
+    if node == 0u64 {
+        return state;
+    }
+    emit(key(state, field), sl, n, st, s, node)
+}
+
+fn optional_null(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64, s: u64) -> Pretty {
+    let y: Pretty = key(state, field);
+    if node == 0u64 {
+        return word(y, "null".as_slice());
+    }
+    emit(y, sl, n, st, s, node)
+}
+
+// ------------------------------------------------------------------ the fields written by hand
+
+// One file has no modules or imports; `package_ir` fills them (both are
+// left out when empty).
+fn special_program_modules(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
+    state
+}
+
+fn special_program_imports(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
+    state
+}
+
+// `declaration.effect()`: `require` or `deny`.
+fn special_policy_rule_effect(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
+    let y: Pretty = key(state, field);
+    if n[node].a == agent_schema.POLICY_RULE_DECL_REQUIRE {
+        return text(y, "require".as_slice());
+    }
+    text(y, "deny".as_slice())
+}
+
+// `declaration.rule().value.source_name()`.
+fn special_policy_rule_rule(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
+    let rule: u64 = get(sl, n, n[node].b, 0u64);
+    name(key(state, field), sl, n, st, rule)
+}
+
+// `resolved_provider`: the tool's provider, or `simulated`.
+fn special_tool_provider(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
+    let y: Pretty = key(state, field);
+    let provider: u64 = get(sl, n, node, agent_schema.TOOL_DECL_PROVIDER);
+    if provider == 0u64 {
+        return text(y, "simulated".as_slice());
+    }
+    value(y, sl, n, st, provider)
+}
+
+// `effective_approval()`: the agent's approval, or `denied`.
+fn special_agent_approval(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
+    let y: Pretty = key(state, field);
+    let approval: u64 = get(sl, n, node, agent_schema.AGENT_DECL_APPROVAL);
+    if approval == 0u64 {
+        return text(y, "denied".as_slice());
+    }
+    name(y, sl, n, st, approval)
+}
+
+// Each instruction as an object tagged by `op`, its fields in order.
+fn special_handler_instructions(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(key(state, field), 91u8);
+    let mut link: u64 = n[get(sl, n, node, agent_schema.HANDLER_DECL_INSTRUCTIONS)].a;
+    while link != 0u64 {
+        let instruction: u64 = link - 1u64;
+        link = n[instruction].next;
+        y = open(member(y), 123u8);
+        let which: u64 = n[instruction].a;
+        let fields: u64 = n[instruction].b;
+        if which == agent_schema.HANDLER_INSTRUCTION_EMIT {
+            y = text(key(y, "op".as_slice()), "emit".as_slice());
+            y = value(key(y, "message_type".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__EMIT_MESSAGE_TYPE));
+            y = value(key(y, "to".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__EMIT_TO));
+        } else if which == agent_schema.HANDLER_INSTRUCTION_TRACE {
+            y = text(key(y, "op".as_slice()), "trace".as_slice());
+            y = value(key(y, "binding".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__TRACE_BINDING));
+        } else if which == agent_schema.HANDLER_INSTRUCTION_HALT {
+            y = text(key(y, "op".as_slice()), "halt".as_slice());
+        } else if which == agent_schema.HANDLER_INSTRUCTION_INTRINSIC_CALL {
+            y = text(key(y, "op".as_slice()), "intrinsic".as_slice());
+            y = value(key(y, "name".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__INTRINSIC_CALL_NAME));
+            y = value(key(y, "argument".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__INTRINSIC_CALL_ARGUMENT));
+        } else if which == agent_schema.HANDLER_INSTRUCTION_CALL_TOOL {
+            y = text(key(y, "op".as_slice()), "call".as_slice());
+            y = value(key(y, "tool".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__CALL_TOOL_TOOL));
+            y = value(key(y, "binding".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__CALL_TOOL_BINDING));
+        } else {
+            y = text(key(y, "op".as_slice()), "ask".as_slice());
+            y = value(key(y, "model".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__ASK_MODEL_MODEL));
+            y = value(key(y, "binding".as_slice()), sl, n, st, get(sl, n, fields, agent_schema.HANDLER_INSTRUCTION__ASK_MODEL_BINDING));
+        }
+        y = close(y, 125u8);
+    }
+    close(y, 93u8)
+}
+
+// ------------------------------------------------------------------ generated IR emitters
+// GENERATED by crates/argorixc/tests/agent_ir_table.rs from the IR types and
+// `IrProgram::from` of crates/argorix_ir/src/ir.rs. Do not edit by hand;
+// ARGORIX_BLESS=1 regenerates it.
+
+pub const IR_PROGRAM: u64 = 0u64;
+pub const IR_PROVIDER_CONTRACT: u64 = 1u64;
+pub const IR_PROVIDER_HARNESS: u64 = 2u64;
+pub const IR_FEATURE: u64 = 3u64;
+pub const IR_SECRET: u64 = 4u64;
+pub const IR_ADAPTER: u64 = 5u64;
+pub const IR_ADAPTER_PROFILE: u64 = 6u64;
+pub const IR_CRYPTO: u64 = 7u64;
+pub const IR_CRYPTO_BOUNDARY: u64 = 8u64;
+pub const IR_DID_METHOD: u64 = 9u64;
+pub const IR_A_TRUST_BOUNDARY: u64 = 10u64;
+pub const IR_A_TRUST_IDENTITY: u64 = 11u64;
+pub const IR_A_TRUST_CREDENTIAL_CONTRACT: u64 = 12u64;
+pub const IR_A_TRUST_HANDSHAKE: u64 = 13u64;
+pub const IR_TRUST_LEDGER: u64 = 14u64;
+pub const IR_TRUST_LEDGER_ENTRY: u64 = 15u64;
+pub const IR_MCP_BRIDGE_CONTRACT: u64 = 16u64;
+pub const IR_A2_A_BRIDGE_CONTRACT: u64 = 17u64;
+pub const IR_A_TRUST_EVIDENCE_MAP: u64 = 18u64;
+pub const IR_GOVERNANCE_PROFILE: u64 = 19u64;
+pub const IR_GOVERNANCE_CONTROL: u64 = 20u64;
+pub const IR_REGULATORY_MAPPING: u64 = 21u64;
+pub const IR_REGULATORY_OBLIGATION: u64 = 22u64;
+pub const IR_THIRD_PARTY_VERIFIER: u64 = 23u64;
+pub const IR_PUBLIC_CONFORMANCE_REPORT: u64 = 24u64;
+pub const IR_PUBLIC_CONFORMANCE_CLAIM: u64 = 25u64;
+pub const IR_RUNTIME_HARDENING_PROFILE: u64 = 26u64;
+pub const IR_THREAT_MODEL: u64 = 27u64;
+pub const IR_THREAT_ASSET: u64 = 28u64;
+pub const IR_THREAT: u64 = 29u64;
+pub const IR_THREAT_MITIGATION: u64 = 30u64;
+pub const IR_SPEC_FREEZE: u64 = 31u64;
+pub const IR_RELEASE_CANDIDATE: u64 = 32u64;
+pub const IR_COMPATIBILITY_MATRIX_ENTRY: u64 = 33u64;
+pub const IR_RUNTIME_EXECUTION_PROFILE: u64 = 34u64;
+pub const IR_SANDBOXED_PROVIDER_ADAPTER: u64 = 35u64;
+pub const IR_ASSERTION: u64 = 36u64;
+pub const IR_POLICY: u64 = 37u64;
+pub const IR_POLICY_RULE: u64 = 38u64;
+pub const IR_POLICY_VIOLATION: u64 = 39u64;
+pub const IR_FAILURE: u64 = 40u64;
+pub const IR_CAPABILITY: u64 = 41u64;
+pub const IR_ENUM: u64 = 42u64;
+pub const IR_TYPE: u64 = 43u64;
+pub const IR_FIELD: u64 = 44u64;
+pub const IR_TOOL: u64 = 45u64;
+pub const IR_MODEL: u64 = 46u64;
+pub const IR_AGENT: u64 = 47u64;
+pub const IR_RECEIVE: u64 = 48u64;
+pub const IR_SEND: u64 = 49u64;
+pub const IR_HANDLER: u64 = 50u64;
+pub const IR_PROTOCOL: u64 = 51u64;
+pub const IR_PROTOCOL_STEP: u64 = 52u64;
+pub const IR_PASSPORT: u64 = 53u64;
+pub const IR_PASSPORT_ASN: u64 = 54u64;
+
+// The emitter of IR type `s` over the tree node `node`.
+fn emit(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, s: u64, node: u64) -> Pretty {
+    if s == IR_PROGRAM {
+        return emit_program(state, sl, n, st, node);
+    }
+    if s == IR_PROVIDER_CONTRACT {
+        return emit_provider_contract(state, sl, n, st, node);
+    }
+    if s == IR_PROVIDER_HARNESS {
+        return emit_provider_harness(state, sl, n, st, node);
+    }
+    if s == IR_FEATURE {
+        return emit_feature(state, sl, n, st, node);
+    }
+    if s == IR_SECRET {
+        return emit_secret(state, sl, n, st, node);
+    }
+    if s == IR_ADAPTER {
+        return emit_adapter(state, sl, n, st, node);
+    }
+    if s == IR_ADAPTER_PROFILE {
+        return emit_adapter_profile(state, sl, n, st, node);
+    }
+    if s == IR_CRYPTO {
+        return emit_crypto(state, sl, n, st, node);
+    }
+    if s == IR_CRYPTO_BOUNDARY {
+        return emit_crypto_boundary(state, sl, n, st, node);
+    }
+    if s == IR_DID_METHOD {
+        return emit_did_method(state, sl, n, st, node);
+    }
+    if s == IR_A_TRUST_BOUNDARY {
+        return emit_a_trust_boundary(state, sl, n, st, node);
+    }
+    if s == IR_A_TRUST_IDENTITY {
+        return emit_a_trust_identity(state, sl, n, st, node);
+    }
+    if s == IR_A_TRUST_CREDENTIAL_CONTRACT {
+        return emit_a_trust_credential_contract(state, sl, n, st, node);
+    }
+    if s == IR_A_TRUST_HANDSHAKE {
+        return emit_a_trust_handshake(state, sl, n, st, node);
+    }
+    if s == IR_TRUST_LEDGER {
+        return emit_trust_ledger(state, sl, n, st, node);
+    }
+    if s == IR_TRUST_LEDGER_ENTRY {
+        return emit_trust_ledger_entry(state, sl, n, st, node);
+    }
+    if s == IR_MCP_BRIDGE_CONTRACT {
+        return emit_mcp_bridge_contract(state, sl, n, st, node);
+    }
+    if s == IR_A2_A_BRIDGE_CONTRACT {
+        return emit_a2_a_bridge_contract(state, sl, n, st, node);
+    }
+    if s == IR_A_TRUST_EVIDENCE_MAP {
+        return emit_a_trust_evidence_map(state, sl, n, st, node);
+    }
+    if s == IR_GOVERNANCE_PROFILE {
+        return emit_governance_profile(state, sl, n, st, node);
+    }
+    if s == IR_GOVERNANCE_CONTROL {
+        return emit_governance_control(state, sl, n, st, node);
+    }
+    if s == IR_REGULATORY_MAPPING {
+        return emit_regulatory_mapping(state, sl, n, st, node);
+    }
+    if s == IR_REGULATORY_OBLIGATION {
+        return emit_regulatory_obligation(state, sl, n, st, node);
+    }
+    if s == IR_THIRD_PARTY_VERIFIER {
+        return emit_third_party_verifier(state, sl, n, st, node);
+    }
+    if s == IR_PUBLIC_CONFORMANCE_REPORT {
+        return emit_public_conformance_report(state, sl, n, st, node);
+    }
+    if s == IR_PUBLIC_CONFORMANCE_CLAIM {
+        return emit_public_conformance_claim(state, sl, n, st, node);
+    }
+    if s == IR_RUNTIME_HARDENING_PROFILE {
+        return emit_runtime_hardening_profile(state, sl, n, st, node);
+    }
+    if s == IR_THREAT_MODEL {
+        return emit_threat_model(state, sl, n, st, node);
+    }
+    if s == IR_THREAT_ASSET {
+        return emit_threat_asset(state, sl, n, st, node);
+    }
+    if s == IR_THREAT {
+        return emit_threat(state, sl, n, st, node);
+    }
+    if s == IR_THREAT_MITIGATION {
+        return emit_threat_mitigation(state, sl, n, st, node);
+    }
+    if s == IR_SPEC_FREEZE {
+        return emit_spec_freeze(state, sl, n, st, node);
+    }
+    if s == IR_RELEASE_CANDIDATE {
+        return emit_release_candidate(state, sl, n, st, node);
+    }
+    if s == IR_COMPATIBILITY_MATRIX_ENTRY {
+        return emit_compatibility_matrix_entry(state, sl, n, st, node);
+    }
+    if s == IR_RUNTIME_EXECUTION_PROFILE {
+        return emit_runtime_execution_profile(state, sl, n, st, node);
+    }
+    if s == IR_SANDBOXED_PROVIDER_ADAPTER {
+        return emit_sandboxed_provider_adapter(state, sl, n, st, node);
+    }
+    if s == IR_ASSERTION {
+        return emit_assertion(state, sl, n, st, node);
+    }
+    if s == IR_POLICY {
+        return emit_policy(state, sl, n, st, node);
+    }
+    if s == IR_POLICY_RULE {
+        return emit_policy_rule(state, sl, n, st, node);
+    }
+    if s == IR_POLICY_VIOLATION {
+        return emit_policy_violation(state, sl, n, st, node);
+    }
+    if s == IR_FAILURE {
+        return emit_failure(state, sl, n, st, node);
+    }
+    if s == IR_CAPABILITY {
+        return emit_capability(state, sl, n, st, node);
+    }
+    if s == IR_ENUM {
+        return emit_enum(state, sl, n, st, node);
+    }
+    if s == IR_TYPE {
+        return emit_type(state, sl, n, st, node);
+    }
+    if s == IR_FIELD {
+        return emit_field(state, sl, n, st, node);
+    }
+    if s == IR_TOOL {
+        return emit_tool(state, sl, n, st, node);
+    }
+    if s == IR_MODEL {
+        return emit_model(state, sl, n, st, node);
+    }
+    if s == IR_AGENT {
+        return emit_agent(state, sl, n, st, node);
+    }
+    if s == IR_RECEIVE {
+        return emit_receive(state, sl, n, st, node);
+    }
+    if s == IR_SEND {
+        return emit_send(state, sl, n, st, node);
+    }
+    if s == IR_HANDLER {
+        return emit_handler(state, sl, n, st, node);
+    }
+    if s == IR_PROTOCOL {
+        return emit_protocol(state, sl, n, st, node);
+    }
+    if s == IR_PROTOCOL_STEP {
+        return emit_protocol_step(state, sl, n, st, node);
+    }
+    if s == IR_PASSPORT {
+        return emit_passport(state, sl, n, st, node);
+    }
+    if s == IR_PASSPORT_ASN {
+        return emit_passport_asn(state, sl, n, st, node);
+    }
+    state
+}
+
+fn emit_program(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "ir_version".as_slice());
+    y = text(y, "1.0".as_slice());
+    y = key(y, "language".as_slice());
+    y = text(y, "Argorix Lang".as_slice());
+    y = key(y, "module".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROGRAM_MODULE));
+    y = special_program_modules(y, sl, n, st, "modules".as_slice(), node);
+    y = special_program_imports(y, sl, n, st, "imports".as_slice(), node);
+    y = list(y, sl, n, st, "providers".as_slice(), get(sl, n, node, agent_schema.PROGRAM_PROVIDERS), IR_PROVIDER_CONTRACT);
+    y = list(y, sl, n, st, "provider_harnesses".as_slice(), get(sl, n, node, agent_schema.PROGRAM_HARNESSES), IR_PROVIDER_HARNESS);
+    y = list_skip(y, sl, n, st, "features".as_slice(), get(sl, n, node, agent_schema.PROGRAM_FEATURES), IR_FEATURE);
+    y = list_skip(y, sl, n, st, "secrets".as_slice(), get(sl, n, node, agent_schema.PROGRAM_SECRETS), IR_SECRET);
+    y = list_skip(y, sl, n, st, "adapters".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ADAPTERS), IR_ADAPTER);
+    y = list_skip(y, sl, n, st, "adapter_profiles".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ADAPTER_PROFILES), IR_ADAPTER_PROFILE);
+    y = list_skip(y, sl, n, st, "cryptos".as_slice(), get(sl, n, node, agent_schema.PROGRAM_CRYPTOS), IR_CRYPTO);
+    y = list_skip(y, sl, n, st, "crypto_boundaries".as_slice(), get(sl, n, node, agent_schema.PROGRAM_CRYPTO_BOUNDARIES), IR_CRYPTO_BOUNDARY);
+    y = list_skip(y, sl, n, st, "did_methods".as_slice(), get(sl, n, node, agent_schema.PROGRAM_DID_METHODS), IR_DID_METHOD);
+    y = list_skip(y, sl, n, st, "atrust_boundaries".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ATRUST_BOUNDARIES), IR_A_TRUST_BOUNDARY);
+    y = list_skip(y, sl, n, st, "atrust_identities".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ATRUST_IDENTITIES), IR_A_TRUST_IDENTITY);
+    y = list_skip(y, sl, n, st, "atrust_credential_contracts".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS), IR_A_TRUST_CREDENTIAL_CONTRACT);
+    y = list_skip(y, sl, n, st, "atrust_handshakes".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ATRUST_HANDSHAKES), IR_A_TRUST_HANDSHAKE);
+    y = list_skip(y, sl, n, st, "trust_ledgers".as_slice(), get(sl, n, node, agent_schema.PROGRAM_TRUST_LEDGERS), IR_TRUST_LEDGER);
+    y = list_skip(y, sl, n, st, "mcp_bridge_contracts".as_slice(), get(sl, n, node, agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS), IR_MCP_BRIDGE_CONTRACT);
+    y = list_skip(y, sl, n, st, "a2a_bridge_contracts".as_slice(), get(sl, n, node, agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS), IR_A2_A_BRIDGE_CONTRACT);
+    y = list_skip(y, sl, n, st, "atrust_evidence_maps".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS), IR_A_TRUST_EVIDENCE_MAP);
+    y = list_skip(y, sl, n, st, "governance_profiles".as_slice(), get(sl, n, node, agent_schema.PROGRAM_GOVERNANCE_PROFILES), IR_GOVERNANCE_PROFILE);
+    y = list_skip(y, sl, n, st, "regulatory_mappings".as_slice(), get(sl, n, node, agent_schema.PROGRAM_REGULATORY_MAPPINGS), IR_REGULATORY_MAPPING);
+    y = list_skip(y, sl, n, st, "third_party_verifiers".as_slice(), get(sl, n, node, agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS), IR_THIRD_PARTY_VERIFIER);
+    y = list_skip(y, sl, n, st, "public_conformance_reports".as_slice(), get(sl, n, node, agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS), IR_PUBLIC_CONFORMANCE_REPORT);
+    y = list_skip(y, sl, n, st, "runtime_hardening_profiles".as_slice(), get(sl, n, node, agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES), IR_RUNTIME_HARDENING_PROFILE);
+    y = list_skip(y, sl, n, st, "threat_models".as_slice(), get(sl, n, node, agent_schema.PROGRAM_THREAT_MODELS), IR_THREAT_MODEL);
+    y = list_skip(y, sl, n, st, "spec_freezes".as_slice(), get(sl, n, node, agent_schema.PROGRAM_SPEC_FREEZES), IR_SPEC_FREEZE);
+    y = list_skip(y, sl, n, st, "release_candidates".as_slice(), get(sl, n, node, agent_schema.PROGRAM_RELEASE_CANDIDATES), IR_RELEASE_CANDIDATE);
+    y = list_skip(y, sl, n, st, "runtime_execution_profiles".as_slice(), get(sl, n, node, agent_schema.PROGRAM_RUNTIME_EXECUTION_PROFILES), IR_RUNTIME_EXECUTION_PROFILE);
+    y = list_skip(y, sl, n, st, "sandboxed_provider_adapters".as_slice(), get(sl, n, node, agent_schema.PROGRAM_SANDBOXED_PROVIDER_ADAPTERS), IR_SANDBOXED_PROVIDER_ADAPTER);
+    y = list(y, sl, n, st, "assertions".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ASSERTIONS), IR_ASSERTION);
+    y = list(y, sl, n, st, "policies".as_slice(), get(sl, n, node, agent_schema.PROGRAM_POLICIES), IR_POLICY);
+    y = list(y, sl, n, st, "failures".as_slice(), get(sl, n, node, agent_schema.PROGRAM_FAILURES), IR_FAILURE);
+    y = list(y, sl, n, st, "capabilities".as_slice(), get(sl, n, node, agent_schema.PROGRAM_CAPABILITIES), IR_CAPABILITY);
+    y = list(y, sl, n, st, "enums".as_slice(), get(sl, n, node, agent_schema.PROGRAM_ENUMS), IR_ENUM);
+    y = list(y, sl, n, st, "types".as_slice(), get(sl, n, node, agent_schema.PROGRAM_TYPES), IR_TYPE);
+    y = list(y, sl, n, st, "tools".as_slice(), get(sl, n, node, agent_schema.PROGRAM_TOOLS), IR_TOOL);
+    y = list(y, sl, n, st, "models".as_slice(), get(sl, n, node, agent_schema.PROGRAM_MODELS), IR_MODEL);
+    y = list(y, sl, n, st, "agents".as_slice(), get(sl, n, node, agent_schema.PROGRAM_AGENTS), IR_AGENT);
+    y = list(y, sl, n, st, "protocols".as_slice(), get(sl, n, node, agent_schema.PROGRAM_PROTOCOLS), IR_PROTOCOL);
+    y = list_skip(y, sl, n, st, "passports".as_slice(), get(sl, n, node, agent_schema.PROGRAM_PASSPORTS), IR_PASSPORT);
+    close(y, 125u8)
+}
+
+fn emit_provider_contract(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_DECL_NAME));
+    y = key(y, "kind".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_DECL_KIND));
+    y = key(y, "enabled".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_DECL_ENABLED));
+    y = key(y, "dry_run_only".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_DECL_DRY_RUN_ONLY));
+    y = key(y, "requires_feature_flag".as_slice());
+    y = scalar(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_DECL_REQUIRES_FEATURE_FLAG));
+    y = key(y, "requires_explicit_approval".as_slice());
+    y = scalar(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_DECL_REQUIRES_EXPLICIT_APPROVAL));
+    y = values(y, sl, n, st, "allowed_targets".as_slice(), get(sl, n, node, agent_schema.PROVIDER_DECL_ALLOWED_TARGETS));
+    y = values(y, sl, n, st, "allowed_capabilities".as_slice(), get(sl, n, node, agent_schema.PROVIDER_DECL_ALLOWED_CAPABILITIES));
+    close(y, 125u8)
+}
+
+fn emit_provider_harness(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_NAME));
+    y = key(y, "provider".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_PROVIDER));
+    y = optional_value_skip(y, sl, n, st, "feature".as_slice(), get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_FEATURE));
+    y = optional_value_skip(y, sl, n, st, "secret".as_slice(), get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_SECRET));
+    y = key(y, "mode".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_MODE));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_NETWORK));
+    y = key(y, "secrets".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_SECRETS));
+    y = key(y, "filesystem".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_FILESYSTEM));
+    y = optional_value_null(y, sl, n, st, "max_steps".as_slice(), get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_MAX_STEPS));
+    y = optional_value_null(y, sl, n, st, "timeout_ms".as_slice(), get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_TIMEOUT_MS));
+    y = optional_value_null(y, sl, n, st, "input_contract".as_slice(), get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_INPUT_CONTRACT));
+    y = optional_value_null(y, sl, n, st, "output_contract".as_slice(), get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_OUTPUT_CONTRACT));
+    y = values(y, sl, n, st, "attestations".as_slice(), get(sl, n, node, agent_schema.PROVIDER_HARNESS_DECL_ATTESTATIONS));
+    close(y, 125u8)
+}
+
+fn emit_feature(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.FEATURE_DECL_NAME));
+    y = optional_value_skip(y, sl, n, st, "provider".as_slice(), get(sl, n, node, agent_schema.FEATURE_DECL_PROVIDER));
+    y = key(y, "status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.FEATURE_DECL_STATUS));
+    y = key(y, "default".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.FEATURE_DECL_DEFAULT));
+    y = key(y, "requires_approval".as_slice());
+    y = scalar(y, sl, n, st, get(sl, n, node, agent_schema.FEATURE_DECL_REQUIRES_APPROVAL));
+    y = optional_value_skip(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.FEATURE_DECL_PURPOSE));
+    close(y, 125u8)
+}
+
+fn emit_secret(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SECRET_DECL_NAME));
+    y = key(y, "handle".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SECRET_DECL_HANDLE));
+    y = optional_value_skip(y, sl, n, st, "provider".as_slice(), get(sl, n, node, agent_schema.SECRET_DECL_PROVIDER));
+    y = optional_value_skip(y, sl, n, st, "required_by".as_slice(), get(sl, n, node, agent_schema.SECRET_DECL_REQUIRED_BY));
+    y = key(y, "scope".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.SECRET_DECL_SCOPE));
+    y = key(y, "access".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.SECRET_DECL_ACCESS));
+    y = key(y, "source".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.SECRET_DECL_SOURCE));
+    close(y, 125u8)
+}
+
+fn emit_adapter(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_DECL_NAME));
+    y = key(y, "provider".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_DECL_PROVIDER));
+    y = optional_value_skip(y, sl, n, st, "feature".as_slice(), get(sl, n, node, agent_schema.ADAPTER_DECL_FEATURE));
+    y = optional_value_skip(y, sl, n, st, "secret".as_slice(), get(sl, n, node, agent_schema.ADAPTER_DECL_SECRET));
+    y = optional_value_skip(y, sl, n, st, "harness".as_slice(), get(sl, n, node, agent_schema.ADAPTER_DECL_HARNESS));
+    y = optional_name_skip(y, sl, n, st, "kind".as_slice(), get(sl, n, node, agent_schema.ADAPTER_DECL_KIND));
+    y = optional_value_skip(y, sl, n, st, "vendor".as_slice(), get(sl, n, node, agent_schema.ADAPTER_DECL_VENDOR));
+    y = key(y, "mode".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_DECL_MODE));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_DECL_EXECUTION));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_DECL_NETWORK));
+    y = key(y, "secrets".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_DECL_SECRETS));
+    y = key(y, "filesystem".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_DECL_FILESYSTEM));
+    y = optional_value_skip(y, sl, n, st, "input_contract".as_slice(), get(sl, n, node, agent_schema.ADAPTER_DECL_INPUT_CONTRACT));
+    y = optional_value_skip(y, sl, n, st, "output_contract".as_slice(), get(sl, n, node, agent_schema.ADAPTER_DECL_OUTPUT_CONTRACT));
+    y = values(y, sl, n, st, "conformance".as_slice(), get(sl, n, node, agent_schema.ADAPTER_DECL_CONFORMANCE));
+    close(y, 125u8)
+}
+
+fn emit_adapter_profile(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_NAME));
+    y = key(y, "adapter".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_ADAPTER));
+    y = key(y, "provider".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_PROVIDER));
+    y = key(y, "vendor".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_VENDOR));
+    y = key(y, "family".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_FAMILY));
+    y = key(y, "api_style".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_API_STYLE));
+    y = key(y, "auth".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_AUTH));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_EXECUTION));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_NETWORK));
+    y = key(y, "secrets".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_SECRETS));
+    y = optional_value_skip(y, sl, n, st, "request_contract".as_slice(), get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_REQUEST_CONTRACT));
+    y = optional_value_skip(y, sl, n, st, "response_contract".as_slice(), get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_RESPONSE_CONTRACT));
+    y = values(y, sl, n, st, "capabilities".as_slice(), get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_CAPABILITIES));
+    y = values(y, sl, n, st, "required_conformance".as_slice(), get(sl, n, node, agent_schema.ADAPTER_PROFILE_DECL_REQUIRED_CONFORMANCE));
+    close(y, 125u8)
+}
+
+fn emit_crypto(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.CRYPTO_DECL_NAME));
+    y = key(y, "kind".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.CRYPTO_DECL_KIND));
+    y = key(y, "status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.CRYPTO_DECL_STATUS));
+    y = key(y, "strength".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.CRYPTO_DECL_STRENGTH));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.CRYPTO_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "output_bits".as_slice(), get(sl, n, node, agent_schema.CRYPTO_DECL_OUTPUT_BITS));
+    y = optional_value_skip(y, sl, n, st, "min_key_bits".as_slice(), get(sl, n, node, agent_schema.CRYPTO_DECL_MIN_KEY_BITS));
+    y = optional_value_skip(y, sl, n, st, "security_level".as_slice(), get(sl, n, node, agent_schema.CRYPTO_DECL_SECURITY_LEVEL));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.CRYPTO_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_crypto_boundary(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_NAME));
+    y = values(y, sl, n, st, "allowed_hashes".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_HASHES));
+    y = values(y, sl, n, st, "allowed_signatures".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_SIGNATURES));
+    y = values(y, sl, n, st, "allowed_kems".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_KEMS));
+    y = values(y, sl, n, st, "allowed_aeads".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_AEADS));
+    y = values(y, sl, n, st, "legacy_allowed".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_LEGACY_ALLOWED));
+    y = values(y, sl, n, st, "denied".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_DENIED));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "min_hash_bits".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_MIN_HASH_BITS));
+    y = optional_value_skip(y, sl, n, st, "post_quantum_ready".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_POST_QUANTUM_READY));
+    y = optional_value_skip(y, sl, n, st, "hybrid_allowed".as_slice(), get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_HYBRID_ALLOWED));
+    y = key(y, "key_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_KEY_MATERIAL));
+    y = key(y, "secret_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_SECRET_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.CRYPTO_BOUNDARY_DECL_EXECUTION));
+    close(y, 125u8)
+}
+
+fn emit_did_method(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.DID_METHOD_DECL_NAME));
+    y = key(y, "status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.DID_METHOD_DECL_STATUS));
+    y = key(y, "resolution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.DID_METHOD_DECL_RESOLUTION));
+    y = key(y, "ledger".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.DID_METHOD_DECL_LEDGER));
+    y = key(y, "crypto_boundary".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.DID_METHOD_DECL_CRYPTO_BOUNDARY));
+    y = optional_value_skip(y, sl, n, st, "governance".as_slice(), get(sl, n, node, agent_schema.DID_METHOD_DECL_GOVERNANCE));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.DID_METHOD_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.DID_METHOD_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_a_trust_boundary(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_NAME));
+    y = key(y, "crypto_boundary".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_CRYPTO_BOUNDARY));
+    y = values(y, sl, n, st, "did_methods".as_slice(), get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_DID_METHODS));
+    y = key(y, "identity_format".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_IDENTITY_FORMAT));
+    y = key(y, "credential_mode".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_CREDENTIAL_MODE));
+    y = key(y, "handshake".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_HANDSHAKE));
+    y = key(y, "resolution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_RESOLUTION));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_KEY_MATERIAL));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_SECRET_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_EXECUTION));
+    y = optional_name_skip(y, sl, n, st, "post_quantum_ready".as_slice(), get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_POST_QUANTUM_READY));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.A_TRUST_BOUNDARY_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_a_trust_identity(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_NAME));
+    y = key(y, "subject".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_SUBJECT));
+    y = key(y, "did".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_DID));
+    y = key(y, "method".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_METHOD));
+    y = key(y, "boundary".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_BOUNDARY));
+    y = key(y, "status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_STATUS));
+    y = key(y, "validation".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_VALIDATION));
+    y = key(y, "resolution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_RESOLUTION));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_KEY_MATERIAL));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_SECRET_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_EXECUTION));
+    y = key(y, "evidence".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_EVIDENCE));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.A_TRUST_IDENTITY_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_a_trust_credential_contract(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_NAME));
+    y = key(y, "subject".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SUBJECT));
+    y = key(y, "identity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_IDENTITY));
+    y = key(y, "boundary".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_BOUNDARY));
+    y = key(y, "method".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_METHOD));
+    y = key(y, "issuer_did".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_ISSUER_DID));
+    y = key(y, "holder_did".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_HOLDER_DID));
+    y = key(y, "credential_type".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_CREDENTIAL_TYPE));
+    y = key(y, "schema".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SCHEMA));
+    y = key(y, "status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_STATUS));
+    y = key(y, "verification".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_VERIFICATION));
+    y = key(y, "presentation".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_PRESENTATION));
+    y = key(y, "resolution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_RESOLUTION));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_KEY_MATERIAL));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SECRET_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_EXECUTION));
+    y = key(y, "evidence".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_EVIDENCE));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "claims".as_slice(), get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_a_trust_handshake(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_NAME));
+    y = key(y, "initiator".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR));
+    y = key(y, "responder".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER));
+    y = key(y, "initiator_identity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR_IDENTITY));
+    y = key(y, "responder_identity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER_IDENTITY));
+    y = values(y, sl, n, st, "credential_contracts".as_slice(), get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_CREDENTIAL_CONTRACTS));
+    y = key(y, "boundary".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_BOUNDARY));
+    y = key(y, "method".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_METHOD));
+    y = key(y, "mode".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_MODE));
+    y = key(y, "direction".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_DIRECTION));
+    y = key(y, "challenge".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_CHALLENGE));
+    y = key(y, "response".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONSE));
+    y = key(y, "transcript".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_TRANSCRIPT));
+    y = key(y, "verification".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_VERIFICATION));
+    y = key(y, "resolution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESOLUTION));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_NETWORK));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_KEY_MATERIAL));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_SECRET_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_EXECUTION));
+    y = key(y, "evidence".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_EVIDENCE));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.A_TRUST_HANDSHAKE_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_trust_ledger(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_NAME));
+    y = key(y, "scope".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_SCOPE));
+    y = key(y, "mode".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_MODE));
+    y = key(y, "hash_algorithm".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_HASH_ALGORITHM));
+    y = key(y, "chain_policy".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_CHAIN_POLICY));
+    y = list(y, sl, n, st, "entries".as_slice(), get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_ENTRIES), IR_TRUST_LEDGER_ENTRY);
+    y = key(y, "chain_root".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_CHAIN_ROOT));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_NETWORK));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_KEY_MATERIAL));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_SECRET_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_EXECUTION));
+    y = key(y, "evidence".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_EVIDENCE));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.TRUST_LEDGER_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_trust_ledger_entry(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "id".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_ID));
+    y = key(y, "kind".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_KIND));
+    y = key(y, "subject".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_SUBJECT));
+    y = key(y, "previous_hash".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_PREVIOUS_HASH));
+    y = key(y, "entry_hash".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_ENTRY_HASH));
+    y = key(y, "evidence_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_EVIDENCE_REF));
+    close(y, 125u8)
+}
+
+fn emit_mcp_bridge_contract(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NAME));
+    y = key(y, "agent".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AGENT));
+    y = key(y, "passport".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PASSPORT));
+    y = key(y, "identity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_IDENTITY));
+    y = key(y, "boundary".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_BOUNDARY));
+    y = key(y, "transport".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TRANSPORT));
+    y = key(y, "protocol".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PROTOCOL));
+    y = key(y, "direction".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_DIRECTION));
+    y = values(y, sl, n, st, "tools".as_slice(), get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TOOLS));
+    y = values(y, sl, n, st, "resources".as_slice(), get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_RESOURCES));
+    y = values(y, sl, n, st, "prompts".as_slice(), get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PROMPTS));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "tool_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TOOL_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_KEY_MATERIAL));
+    y = key(y, "authentication".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AUTHENTICATION));
+    y = key(y, "authorization".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AUTHORIZATION));
+    y = key(y, "evidence".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_EVIDENCE));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_a2_a_bridge_contract(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NAME));
+    y = key(y, "initiator".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR));
+    y = key(y, "responder".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER));
+    y = key(y, "initiator_passport".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_PASSPORT));
+    y = key(y, "responder_passport".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_PASSPORT));
+    y = key(y, "initiator_identity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_IDENTITY));
+    y = key(y, "responder_identity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_IDENTITY));
+    y = key(y, "handshake".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_HANDSHAKE));
+    y = key(y, "trust_ledger".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRUST_LEDGER));
+    y = key(y, "boundary".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_BOUNDARY));
+    y = key(y, "protocol".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PROTOCOL));
+    y = key(y, "transport".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRANSPORT));
+    y = key(y, "direction".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_DIRECTION));
+    y = values(y, sl, n, st, "message_contracts".as_slice(), get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_MESSAGE_CONTRACTS));
+    y = values(y, sl, n, st, "capabilities".as_slice(), get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_CAPABILITIES));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "agent_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AGENT_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_KEY_MATERIAL));
+    y = key(y, "authentication".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AUTHENTICATION));
+    y = key(y, "authorization".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AUTHORIZATION));
+    y = key(y, "evidence".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_EVIDENCE));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_a_trust_evidence_map(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NAME));
+    y = key(y, "agent".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_AGENT));
+    y = key(y, "passport".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PASSPORT));
+    y = key(y, "identity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_IDENTITY));
+    y = key(y, "credential_contract".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_CREDENTIAL_CONTRACT));
+    y = key(y, "handshake".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_HANDSHAKE));
+    y = key(y, "trust_ledger".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRUST_LEDGER));
+    y = values(y, sl, n, st, "mcp_bridges".as_slice(), get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MCP_BRIDGES));
+    y = values(y, sl, n, st, "a2a_bridges".as_slice(), get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_A2A_BRIDGES));
+    y = values(y, sl, n, st, "policies".as_slice(), get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_POLICIES));
+    y = key(y, "coverage".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_COVERAGE));
+    y = key(y, "mapping_mode".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MAPPING_MODE));
+    y = key(y, "verification".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_VERIFICATION));
+    y = key(y, "resolution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_RESOLUTION));
+    y = key(y, "evidence_bundle".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EVIDENCE_BUNDLE));
+    y = key(y, "security_report".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_REPORT));
+    y = key(y, "trace".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRACE));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_KEY_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EXECUTION));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_governance_profile(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_NAME));
+    y = key(y, "scope".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_SCOPE));
+    y = key(y, "level".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_LEVEL));
+    y = key(y, "domain".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_DOMAIN));
+    y = key(y, "owner".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_OWNER));
+    y = key(y, "jurisdiction".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_JURISDICTION));
+    y = key(y, "framework".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_FRAMEWORK));
+    y = key(y, "evidence_map".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_EVIDENCE_MAP));
+    y = key(y, "trust_ledger".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_TRUST_LEDGER));
+    y = values(y, sl, n, st, "policies".as_slice(), get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_POLICIES));
+    y = list(y, sl, n, st, "controls".as_slice(), get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_CONTROLS), IR_GOVERNANCE_CONTROL);
+    y = key(y, "risk_level".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_RISK_LEVEL));
+    y = key(y, "review_status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_REVIEW_STATUS));
+    y = key(y, "assurance".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_ASSURANCE));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_KEY_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_EXECUTION));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.GOVERNANCE_PROFILE_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_governance_control(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "id".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_CONTROL_DECL_ID));
+    y = key(y, "category".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_CONTROL_DECL_CATEGORY));
+    y = key(y, "requirement".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_CONTROL_DECL_REQUIREMENT));
+    y = key(y, "evidence_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_CONTROL_DECL_EVIDENCE_REF));
+    y = key(y, "status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.GOVERNANCE_CONTROL_DECL_STATUS));
+    close(y, 125u8)
+}
+
+fn emit_regulatory_mapping(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_NAME));
+    y = key(y, "governance_profile".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_GOVERNANCE_PROFILE));
+    y = key(y, "evidence_map".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_EVIDENCE_MAP));
+    y = key(y, "jurisdiction".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_JURISDICTION));
+    y = key(y, "framework".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_FRAMEWORK));
+    y = list(y, sl, n, st, "obligations".as_slice(), get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_OBLIGATIONS), IR_REGULATORY_OBLIGATION);
+    y = key(y, "coverage".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_COVERAGE));
+    y = key(y, "assessment".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_ASSESSMENT));
+    y = key(y, "legal_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_LEGAL_CLAIMS));
+    y = key(y, "certification".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_CERTIFICATION));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_KEY_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_EXECUTION));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.REGULATORY_MAPPING_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_regulatory_obligation(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "id".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_OBLIGATION_DECL_ID));
+    y = key(y, "source".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_OBLIGATION_DECL_SOURCE));
+    y = key(y, "requirement".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_OBLIGATION_DECL_REQUIREMENT));
+    y = key(y, "control".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_OBLIGATION_DECL_CONTROL));
+    y = key(y, "evidence_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_OBLIGATION_DECL_EVIDENCE_REF));
+    y = key(y, "status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.REGULATORY_OBLIGATION_DECL_STATUS));
+    close(y, 125u8)
+}
+
+fn emit_third_party_verifier(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_NAME));
+    y = key(y, "verifier_type".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_VERIFIER_TYPE));
+    y = key(y, "independence".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_INDEPENDENCE));
+    y = key(y, "identity_mode".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_IDENTITY_MODE));
+    y = key(y, "verification_mode".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_VERIFICATION_MODE));
+    y = key(y, "display_name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISPLAY_NAME));
+    y = key(y, "organization".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_ORGANIZATION));
+    y = key(y, "jurisdiction".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_JURISDICTION));
+    y = values(y, sl, n, st, "allowed_scopes".as_slice(), get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_ALLOWED_SCOPES));
+    y = values(y, sl, n, st, "disallowed_claims".as_slice(), get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISALLOWED_CLAIMS));
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_KEY_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_EXECUTION));
+    y = key(y, "legal_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_LEGAL_CLAIMS));
+    y = key(y, "certification".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_CERTIFICATION));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_public_conformance_report(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NAME));
+    y = key(y, "verifier".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_VERIFIER));
+    y = key(y, "suite".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE));
+    y = key(y, "suite_version".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE_VERSION));
+    y = key(y, "source_artifact".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SOURCE_ARTIFACT));
+    y = key(y, "bytecode_artifact".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_BYTECODE_ARTIFACT));
+    y = key(y, "evidence_map".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EVIDENCE_MAP));
+    y = key(y, "governance_profile".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_GOVERNANCE_PROFILE));
+    y = key(y, "regulatory_mapping".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REGULATORY_MAPPING));
+    y = key(y, "trust_ledger".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_TRUST_LEDGER));
+    y = key(y, "security_report".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECURITY_REPORT));
+    y = key(y, "evidence_bundle".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EVIDENCE_BUNDLE));
+    y = key(y, "trace".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_TRACE));
+    y = key(y, "result".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_RESULT));
+    y = key(y, "reproducibility".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REPRODUCIBILITY));
+    y = key(y, "review_status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REVIEW_STATUS));
+    y = list(y, sl, n, st, "claims".as_slice(), get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_CLAIMS), IR_PUBLIC_CONFORMANCE_CLAIM);
+    y = key(y, "network".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_KEY_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EXECUTION));
+    y = key(y, "legal_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_LEGAL_CLAIMS));
+    y = key(y, "certification".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_CERTIFICATION));
+    y = key(y, "security_claims".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_public_conformance_claim(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "id".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_ID));
+    y = key(y, "category".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_CATEGORY));
+    y = key(y, "statement".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_STATEMENT));
+    y = key(y, "evidence_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_EVIDENCE_REF));
+    y = key(y, "status".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_STATUS));
+    close(y, 125u8)
+}
+
+fn emit_runtime_hardening_profile(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NAME));
+    y = key(y, "scope".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SCOPE));
+    y = key(y, "mode".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_MODE));
+    y = key(y, "enforcement".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ENFORCEMENT));
+    y = key(y, "sandbox".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SANDBOX));
+    y = key(y, "provider_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROVIDER_EXECUTION));
+    y = key(y, "external_providers".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EXTERNAL_PROVIDERS));
+    y = key(y, "network".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NETWORK));
+    y = key(y, "tool_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_TOOL_EXECUTION));
+    y = key(y, "agent_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_AGENT_EXECUTION));
+    y = key(y, "filesystem_access".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_FILESYSTEM_ACCESS));
+    y = key(y, "env_access".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ENV_ACCESS));
+    y = key(y, "secret_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_KEY_MATERIAL));
+    y = key(y, "allowlist".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ALLOWLIST));
+    y = key(y, "deny_by_default".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_DENY_BY_DEFAULT));
+    y = key(y, "approval".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_APPROVAL));
+    y = key(y, "audit_log".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_AUDIT_LOG));
+    y = key(y, "evidence".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE));
+    y = key(y, "incident_response".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_INCIDENT_RESPONSE));
+    y = key(y, "evidence_map".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE_MAP));
+    y = key(y, "governance_profile".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_GOVERNANCE_PROFILE));
+    y = key(y, "public_conformance_report".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PUBLIC_CONFORMANCE_REPORT));
+    y = values(y, sl, n, st, "protected_assets".as_slice(), get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROTECTED_ASSETS));
+    y = values(y, sl, n, st, "runtime_boundaries".as_slice(), get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RUNTIME_BOUNDARIES));
+    y = key(y, "residual_risk".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RESIDUAL_RISK));
+    y = key(y, "review_status".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_REVIEW_STATUS));
+    y = key(y, "assurance".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ASSURANCE));
+    y = key(y, "security_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_threat_model(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_NAME));
+    y = key(y, "hardening_profile".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_HARDENING_PROFILE));
+    y = key(y, "evidence_map".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_EVIDENCE_MAP));
+    y = key(y, "governance_profile".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_GOVERNANCE_PROFILE));
+    y = key(y, "public_conformance_report".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_PUBLIC_CONFORMANCE_REPORT));
+    y = key(y, "methodology".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_METHODOLOGY));
+    y = key(y, "scope".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_SCOPE));
+    y = key(y, "review_status".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_REVIEW_STATUS));
+    y = list(y, sl, n, st, "assets".as_slice(), get(sl, n, node, agent_schema.THREAT_MODEL_DECL_ASSETS), IR_THREAT_ASSET);
+    y = list(y, sl, n, st, "threats".as_slice(), get(sl, n, node, agent_schema.THREAT_MODEL_DECL_THREATS), IR_THREAT);
+    y = list(y, sl, n, st, "mitigations".as_slice(), get(sl, n, node, agent_schema.THREAT_MODEL_DECL_MITIGATIONS), IR_THREAT_MITIGATION);
+    y = key(y, "residual_risk".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_RESIDUAL_RISK));
+    y = key(y, "risk_acceptance".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_RISK_ACCEPTANCE));
+    y = key(y, "network".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "tool_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_TOOL_EXECUTION));
+    y = key(y, "agent_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_AGENT_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_KEY_MATERIAL));
+    y = key(y, "execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_EXECUTION));
+    y = key(y, "security_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MODEL_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.THREAT_MODEL_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.THREAT_MODEL_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_threat_asset(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "id".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_ASSET_DECL_ID));
+    y = key(y, "category".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_ASSET_DECL_CATEGORY));
+    y = key(y, "description".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_ASSET_DECL_DESCRIPTION));
+    y = key(y, "sensitivity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_ASSET_DECL_SENSITIVITY));
+    y = key(y, "evidence_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_ASSET_DECL_EVIDENCE_REF));
+    close(y, 125u8)
+}
+
+fn emit_threat(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "id".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_DECL_ID));
+    y = key(y, "category".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_DECL_CATEGORY));
+    y = key(y, "target".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_DECL_TARGET));
+    y = key(y, "impact".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_DECL_IMPACT));
+    y = key(y, "mitigation".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_DECL_MITIGATION));
+    y = key(y, "status".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_DECL_STATUS));
+    close(y, 125u8)
+}
+
+fn emit_threat_mitigation(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "id".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MITIGATION_DECL_ID));
+    y = key(y, "category".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MITIGATION_DECL_CATEGORY));
+    y = key(y, "control_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MITIGATION_DECL_CONTROL_REF));
+    y = key(y, "evidence_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MITIGATION_DECL_EVIDENCE_REF));
+    y = key(y, "status".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.THREAT_MITIGATION_DECL_STATUS));
+    close(y, 125u8)
+}
+
+fn emit_spec_freeze(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_NAME));
+    y = key(y, "version".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_VERSION));
+    y = key(y, "target".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_TARGET));
+    y = key(y, "freeze_scope".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_FREEZE_SCOPE));
+    y = key(y, "compatibility".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_COMPATIBILITY));
+    y = key(y, "stability".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_STABILITY));
+    y = values(y, sl, n, st, "frozen_features".as_slice(), get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_FROZEN_FEATURES));
+    y = values(y, sl, n, st, "compatible_versions".as_slice(), get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_COMPATIBLE_VERSIONS));
+    y = values(y, sl, n, st, "required_suites".as_slice(), get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_REQUIRED_SUITES));
+    y = key(y, "evidence_bundle".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_EVIDENCE_BUNDLE));
+    y = key(y, "security_report".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_SECURITY_REPORT));
+    y = key(y, "conformance".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_CONFORMANCE));
+    y = key(y, "backward_compatibility".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_BACKWARD_COMPATIBILITY));
+    y = key(y, "runtime_status".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_RUNTIME_STATUS));
+    y = key(y, "network".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "provider_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_PROVIDER_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_KEY_MATERIAL));
+    y = key(y, "env_access".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_ENV_ACCESS));
+    y = key(y, "filesystem_access".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_FILESYSTEM_ACCESS));
+    y = key(y, "tool_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_TOOL_EXECUTION));
+    y = key(y, "agent_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_AGENT_EXECUTION));
+    y = key(y, "security_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_SECURITY_CLAIMS));
+    y = key(y, "legal_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_LEGAL_CLAIMS));
+    y = key(y, "certification".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_CERTIFICATION));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.SPEC_FREEZE_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_release_candidate(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_NAME));
+    y = key(y, "version".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_VERSION));
+    y = key(y, "base_version".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_BASE_VERSION));
+    y = key(y, "spec_freeze".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_SPEC_FREEZE));
+    y = key(y, "readiness".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_READINESS));
+    y = values(y, sl, n, st, "required_artifacts".as_slice(), get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_REQUIRED_ARTIFACTS));
+    y = values(y, sl, n, st, "required_checks".as_slice(), get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_REQUIRED_CHECKS));
+    y = list(y, sl, n, st, "compatibility_matrix".as_slice(), get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_COMPATIBILITY_MATRIX), IR_COMPATIBILITY_MATRIX_ENTRY);
+    y = values(y, sl, n, st, "known_limitations".as_slice(), get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_KNOWN_LIMITATIONS));
+    y = key(y, "runtime_status".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_RUNTIME_STATUS));
+    y = key(y, "network".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "provider_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_PROVIDER_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_KEY_MATERIAL));
+    y = key(y, "env_access".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_ENV_ACCESS));
+    y = key(y, "filesystem_access".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_FILESYSTEM_ACCESS));
+    y = key(y, "tool_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_TOOL_EXECUTION));
+    y = key(y, "agent_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_AGENT_EXECUTION));
+    y = key(y, "security_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_SECURITY_CLAIMS));
+    y = key(y, "legal_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_LEGAL_CLAIMS));
+    y = key(y, "certification".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_CERTIFICATION));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.RELEASE_CANDIDATE_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_compatibility_matrix_entry(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "version".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_VERSION));
+    y = key(y, "bytecode".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_BYTECODE));
+    y = key(y, "evidence".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_EVIDENCE));
+    y = key(y, "conformance".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_CONFORMANCE));
+    close(y, 125u8)
+}
+
+fn emit_runtime_execution_profile(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NAME));
+    y = key(y, "mode".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_MODE));
+    y = values(y, sl, n, st, "agents".as_slice(), get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENTS));
+    y = key(y, "provider".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PROVIDER));
+    y = key(y, "hardening".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_HARDENING));
+    y = key(y, "threat_model".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_THREAT_MODEL));
+    y = key(y, "evidence_map".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE_MAP));
+    y = key(y, "governance_profile".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_GOVERNANCE_PROFILE));
+    y = values(y, sl, n, st, "allowed_actions".as_slice(), get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_ALLOWED_ACTIONS));
+    y = values(y, sl, n, st, "denied_actions".as_slice(), get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_DENIED_ACTIONS));
+    y = key(y, "network".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "tool_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_TOOL_EXECUTION));
+    y = key(y, "agent_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENT_EXECUTION));
+    y = key(y, "secrets".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECRETS));
+    y = key(y, "key_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_KEY_MATERIAL));
+    y = key(y, "audit".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AUDIT));
+    y = key(y, "evidence".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE));
+    y = key(y, "security_report".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECURITY_REPORT));
+    y = key(y, "fail_closed".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_FAIL_CLOSED));
+    y = key(y, "security_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_sandboxed_provider_adapter(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NAME));
+    y = key(y, "provider".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PROVIDER));
+    y = key(y, "runtime".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_RUNTIME));
+    y = key(y, "adapter_kind".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ADAPTER_KIND));
+    y = key(y, "protocol".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PROTOCOL));
+    y = key(y, "endpoint_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ENDPOINT_REF));
+    y = key(y, "secret_ref".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECRET_REF));
+    y = values(y, sl, n, st, "allowed_operations".as_slice(), get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ALLOWED_OPERATIONS));
+    y = values(y, sl, n, st, "denied_operations".as_slice(), get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_DENIED_OPERATIONS));
+    y = key(y, "request_policy".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_REQUEST_POLICY));
+    y = key(y, "response_policy".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_RESPONSE_POLICY));
+    y = key(y, "network".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NETWORK));
+    y = key(y, "external_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EXTERNAL_EXECUTION));
+    y = key(y, "tool_execution".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_TOOL_EXECUTION));
+    y = key(y, "secret_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECRET_MATERIAL));
+    y = key(y, "key_material".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_KEY_MATERIAL));
+    y = key(y, "audit".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_AUDIT));
+    y = key(y, "evidence".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EVIDENCE));
+    y = key(y, "security_report".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_REPORT));
+    y = key(y, "fail_closed".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_FAIL_CLOSED));
+    y = key(y, "security_claims".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_CLAIMS));
+    y = values(y, sl, n, st, "purpose".as_slice(), get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PURPOSE));
+    y = optional_value_skip(y, sl, n, st, "notes".as_slice(), get(sl, n, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NOTES));
+    close(y, 125u8)
+}
+
+fn emit_assertion(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.ASSERTION_DECL_NAME));
+    y = optional_value_null(y, sl, n, st, "argument".as_slice(), get(sl, n, node, agent_schema.ASSERTION_DECL_ARGUMENT));
+    close(y, 125u8)
+}
+
+fn emit_policy(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.POLICY_DECL_NAME));
+    y = list(y, sl, n, st, "rules".as_slice(), get(sl, n, node, agent_schema.POLICY_DECL_RULES), IR_POLICY_RULE);
+    y = optional_null(y, sl, n, st, "on_violation".as_slice(), get(sl, n, node, agent_schema.POLICY_DECL_VIOLATION), IR_POLICY_VIOLATION);
+    close(y, 125u8)
+}
+
+fn emit_policy_rule(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = special_policy_rule_effect(y, sl, n, st, "effect".as_slice(), node);
+    y = special_policy_rule_rule(y, sl, n, st, "rule".as_slice(), node);
+    close(y, 125u8)
+}
+
+fn emit_policy_violation(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "action".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.POLICY_VIOLATION_DECL_ACTION));
+    y = key(y, "trace_required".as_slice());
+    y = scalar(y, sl, n, st, get(sl, n, node, agent_schema.POLICY_VIOLATION_DECL_TRACE_REQUIRED));
+    close(y, 125u8)
+}
+
+fn emit_failure(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.FAILURE_DECL_NAME));
+    y = key(y, "action".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.FAILURE_DECL_ACTION));
+    y = key(y, "trace".as_slice());
+    y = text(y, "required".as_slice());
+    close(y, 125u8)
+}
+
+fn emit_capability(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.CAPABILITY_DECL_NAME));
+    y = key(y, "level".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.CAPABILITY_DECL_LEVEL));
+    y = key(y, "requires_approval".as_slice());
+    y = scalar(y, sl, n, st, get(sl, n, node, agent_schema.CAPABILITY_DECL_REQUIRES_APPROVAL));
+    close(y, 125u8)
+}
+
+fn emit_enum(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.ENUM_DECL_NAME));
+    y = values(y, sl, n, st, "variants".as_slice(), get(sl, n, node, agent_schema.ENUM_DECL_VARIANTS));
+    close(y, 125u8)
+}
+
+fn emit_type(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TYPE_DECL_NAME));
+    y = list(y, sl, n, st, "fields".as_slice(), get(sl, n, node, agent_schema.TYPE_DECL_FIELDS), IR_FIELD);
+    close(y, 125u8)
+}
+
+fn emit_field(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.FIELD_DECL_NAME));
+    y = key(y, "type".as_slice());
+    y = name(y, sl, n, st, get(sl, n, node, agent_schema.FIELD_DECL_FIELD_TYPE));
+    close(y, 125u8)
+}
+
+fn emit_tool(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TOOL_DECL_NAME));
+    y = special_tool_provider(y, sl, n, st, "provider".as_slice(), node);
+    y = key(y, "capability".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TOOL_DECL_CAPABILITY));
+    y = key(y, "input".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TOOL_DECL_INPUT));
+    y = key(y, "output".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.TOOL_DECL_OUTPUT));
+    close(y, 125u8)
+}
+
+fn emit_model(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MODEL_DECL_NAME));
+    y = key(y, "provider".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MODEL_DECL_PROVIDER));
+    y = key(y, "capability".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MODEL_DECL_CAPABILITY));
+    y = key(y, "input".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MODEL_DECL_INPUT));
+    y = key(y, "output".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.MODEL_DECL_OUTPUT));
+    close(y, 125u8)
+}
+
+fn emit_agent(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.AGENT_DECL_NAME));
+    y = special_agent_approval(y, sl, n, st, "approval".as_slice(), node);
+    y = list(y, sl, n, st, "receives".as_slice(), get(sl, n, node, agent_schema.AGENT_DECL_RECEIVES), IR_RECEIVE);
+    y = list(y, sl, n, st, "sends".as_slice(), get(sl, n, node, agent_schema.AGENT_DECL_SENDS), IR_SEND);
+    y = values(y, sl, n, st, "capabilities".as_slice(), get(sl, n, node, agent_schema.AGENT_DECL_CAPABILITIES));
+    y = values(y, sl, n, st, "tools".as_slice(), get(sl, n, node, agent_schema.AGENT_DECL_TOOLS));
+    y = values(y, sl, n, st, "models".as_slice(), get(sl, n, node, agent_schema.AGENT_DECL_MODELS));
+    y = list(y, sl, n, st, "handlers".as_slice(), get(sl, n, node, agent_schema.AGENT_DECL_HANDLERS), IR_HANDLER);
+    close(y, 125u8)
+}
+
+fn emit_receive(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "message_type".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.RECEIVE_DECL_MESSAGE_TYPE));
+    y = optional_value_null(y, sl, n, st, "from".as_slice(), get(sl, n, node, agent_schema.RECEIVE_DECL_FROM));
+    close(y, 125u8)
+}
+
+fn emit_send(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "message_type".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SEND_DECL_MESSAGE_TYPE));
+    y = key(y, "to".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.SEND_DECL_TO));
+    close(y, 125u8)
+}
+
+fn emit_handler(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "message_type".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.HANDLER_DECL_MESSAGE_TYPE));
+    y = key(y, "binding".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.HANDLER_DECL_BINDING));
+    y = special_handler_instructions(y, sl, n, st, "instructions".as_slice(), node);
+    close(y, 125u8)
+}
+
+fn emit_protocol(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROTOCOL_DECL_NAME));
+    y = list(y, sl, n, st, "steps".as_slice(), get(sl, n, node, agent_schema.PROTOCOL_DECL_STEPS), IR_PROTOCOL_STEP);
+    close(y, 125u8)
+}
+
+fn emit_protocol_step(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "from".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROTOCOL_STEP_FROM));
+    y = key(y, "to".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROTOCOL_STEP_TO));
+    y = key(y, "act".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROTOCOL_STEP_ACT));
+    y = key(y, "message_type".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PROTOCOL_STEP_MESSAGE_TYPE));
+    close(y, 125u8)
+}
+
+fn emit_passport(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_NAME));
+    y = key(y, "agent".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_AGENT));
+    y = key(y, "agent_name".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_AGENT_NAME));
+    y = key(y, "global_id".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_GLOBAL_ID));
+    y = key(y, "identity".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_IDENTITY));
+    y = key(y, "provider".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_PROVIDER));
+    y = key(y, "version".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_VERSION));
+    y = optional_value_skip(y, sl, n, st, "ans_name".as_slice(), get(sl, n, node, agent_schema.PASSPORT_DECL_ANS_NAME));
+    y = key(y, "country".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_COUNTRY));
+    y = key(y, "jurisdiction".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_JURISDICTION));
+    y = values(y, sl, n, st, "data_residency".as_slice(), get(sl, n, node, agent_schema.PASSPORT_DECL_DATA_RESIDENCY));
+    y = optional_skip(y, sl, n, st, "asn".as_slice(), get(sl, n, node, agent_schema.PASSPORT_DECL_ASN), IR_PASSPORT_ASN);
+    y = optional_value_skip(y, sl, n, st, "model".as_slice(), get(sl, n, node, agent_schema.PASSPORT_DECL_MODEL));
+    y = key(y, "risk_level".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_RISK_LEVEL));
+    y = values(y, sl, n, st, "data_scope".as_slice(), get(sl, n, node, agent_schema.PASSPORT_DECL_DATA_SCOPE));
+    y = key(y, "intent".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_DECL_INTENT));
+    y = values(y, sl, n, st, "intended_use".as_slice(), get(sl, n, node, agent_schema.PASSPORT_DECL_INTENDED_USE));
+    y = values(y, sl, n, st, "prohibited_use".as_slice(), get(sl, n, node, agent_schema.PASSPORT_DECL_PROHIBITED_USE));
+    y = values(y, sl, n, st, "attestations".as_slice(), get(sl, n, node, agent_schema.PASSPORT_DECL_ATTESTATIONS));
+    close(y, 125u8)
+}
+
+fn emit_passport_asn(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {
+    let mut y: Pretty = open(state, 123u8);
+    y = key(y, "registry".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_ASN_DECL_REGISTRY));
+    y = key(y, "number".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_ASN_DECL_NUMBER));
+    y = key(y, "holder".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_ASN_DECL_HOLDER));
+    y = key(y, "country".as_slice());
+    y = value(y, sl, n, st, get(sl, n, node, agent_schema.PASSPORT_ASN_DECL_COUNTRY));
+    close(y, 125u8)
+}
+// ------------------------------------------------------------------ end of generated IR emitters

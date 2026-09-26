@@ -18,13 +18,13 @@ module compiler.agent_ast;
 import stdlib.bytes;
 import compiler.agent_schema;
 
-const N_NULL: u64 = 0u64;
-const N_OBJECT: u64 = 1u64;
-const N_ARRAY: u64 = 2u64;
-const N_STRING: u64 = 3u64;
-const N_INTEGER: u64 = 4u64;
-const N_BOOL: u64 = 5u64;
-const N_VARIANT: u64 = 6u64;
+pub const N_NULL: u64 = 0u64;
+pub const N_OBJECT: u64 = 1u64;
+pub const N_ARRAY: u64 = 2u64;
+pub const N_STRING: u64 = 3u64;
+pub const N_INTEGER: u64 = 4u64;
+pub const N_BOOL: u64 = 5u64;
+pub const N_VARIANT: u64 = 6u64;
 
 // `kind`, then by kind:
 // - an object: its struct in `schema`, its first slot in `a`;
