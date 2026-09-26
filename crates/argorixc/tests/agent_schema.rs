@@ -432,6 +432,7 @@ fn word_tables() -> Vec<(String, String, Vec<(String, String)>)> {
 fn words_module() -> String {
     let enums = schema_enums();
     let mut out = String::new();
+    let mut numbered: Vec<String> = Vec::new();
     out.push_str(
         "core 0.1;
 module compiler.agent_words;
@@ -455,11 +456,14 @@ pub const NO_VARIANT: u64 = 1000000u64;
         let Some(found) = enums.iter().find(|item| item.name == enum_name) else {
             continue;
         };
+        let table = format!("{function}__{}", lower_snake(&enum_name));
         let _ = write!(
             out,
-            "\n// `{function}`: the `{enum_name}` a word names.\npub fn words_{function}__{}(word: Slice<u8>) -> u64 {{\n",
-            lower_snake(&enum_name)
+            "\n// `{function}`: the `{enum_name}` a word names.\npub const T_{}: u64 = {}u64;\npub fn words_{table}(word: Slice<u8>) -> u64 {{\n",
+            table.to_ascii_uppercase(),
+            numbered.len()
         );
+        numbered.push(table);
         for (word, variant) in words {
             let index = found
                 .variants
@@ -473,6 +477,16 @@ pub const NO_VARIANT: u64 = 1000000u64;
         }
         out.push_str("    NO_VARIANT\n}\n");
     }
+    out.push_str(
+        "\n// The variant `word` names in table `table` (a `T_` constant), or\n// NO_VARIANT.\npub fn lookup(table: u64, word: Slice<u8>) -> u64 {\n",
+    );
+    for (number, table) in numbered.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "    if table == {number}u64 {{ return words_{table}(word); }}"
+        );
+    }
+    out.push_str("    NO_VARIANT\n}\n");
     out
 }
 

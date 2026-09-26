@@ -1,0 +1,4 @@
+module demo
+did_method web { status stable resolution disabled ledger none crypto_boundary edge governance "w3c" purpose ["id"] notes "n" }
+did_method bare { }
+did_method odd { status x resolution y ledger z }

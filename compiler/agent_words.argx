@@ -16,6 +16,7 @@ import stdlib.bytes;
 pub const NO_VARIANT: u64 = 1000000u64;
 
 // `parse_bridge_direction`: the `BridgeDirection` a word names.
+pub const T_PARSE_BRIDGE_DIRECTION__BRIDGE_DIRECTION: u64 = 0u64;
 pub fn words_parse_bridge_direction__bridge_direction(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "inbound".as_slice()) { return 0u64; }
     if bytes.equal(word, "outbound".as_slice()) { return 1u64; }
@@ -24,18 +25,21 @@ pub fn words_parse_bridge_direction__bridge_direction(word: Slice<u8>) -> u64 {
 }
 
 // `parse_bridge_execution`: the `ATrustExecution` a word names.
+pub const T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION: u64 = 1u64;
 pub fn words_parse_bridge_execution__a_trust_execution(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_bridge_material`: the `ATrustMaterialBoundary` a word names.
+pub const T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY: u64 = 2u64;
 pub fn words_parse_bridge_material__a_trust_material_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_bridge_authentication`: the `BridgeAuthentication` a word names.
+pub const T_PARSE_BRIDGE_AUTHENTICATION__BRIDGE_AUTHENTICATION: u64 = 3u64;
 pub fn words_parse_bridge_authentication__bridge_authentication(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -43,6 +47,7 @@ pub fn words_parse_bridge_authentication__bridge_authentication(word: Slice<u8>)
 }
 
 // `parse_bridge_authorization`: the `BridgeAuthorization` a word names.
+pub const T_PARSE_BRIDGE_AUTHORIZATION__BRIDGE_AUTHORIZATION: u64 = 4u64;
 pub fn words_parse_bridge_authorization__bridge_authorization(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "policy_bound".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -50,18 +55,21 @@ pub fn words_parse_bridge_authorization__bridge_authorization(word: Slice<u8>) -
 }
 
 // `parse_governance_network`: the `ATrustNetworkBoundary` a word names.
+pub const T_PARSE_GOVERNANCE_NETWORK__A_TRUST_NETWORK_BOUNDARY: u64 = 5u64;
 pub fn words_parse_governance_network__a_trust_network_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_governance_security_claims`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_GOVERNANCE_SECURITY_CLAIMS__A_TRUST_SECURITY_CLAIMS: u64 = 6u64;
 pub fn words_parse_governance_security_claims__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_provider`: the `ProviderKindDecl` a word names.
+pub const T_PARSE_PROVIDER__PROVIDER_KIND_DECL: u64 = 7u64;
 pub fn words_parse_provider__provider_kind_decl(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "simulated".as_slice()) { return 0u64; }
     if bytes.equal(word, "external".as_slice()) { return 1u64; }
@@ -69,6 +77,7 @@ pub fn words_parse_provider__provider_kind_decl(word: Slice<u8>) -> u64 {
 }
 
 // `parse_harness`: the `HarnessMode` a word names.
+pub const T_PARSE_HARNESS__HARNESS_MODE: u64 = 8u64;
 pub fn words_parse_harness__harness_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "dry_run".as_slice()) { return 0u64; }
     if bytes.equal(word, "simulated".as_slice()) { return 1u64; }
@@ -76,18 +85,21 @@ pub fn words_parse_harness__harness_mode(word: Slice<u8>) -> u64 {
 }
 
 // `parse_harness`: the `HarnessNetwork` a word names.
+pub const T_PARSE_HARNESS__HARNESS_NETWORK: u64 = 9u64;
 pub fn words_parse_harness__harness_network(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_harness`: the `HarnessSecrets` a word names.
+pub const T_PARSE_HARNESS__HARNESS_SECRETS: u64 = 10u64;
 pub fn words_parse_harness__harness_secrets(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_harness`: the `HarnessFilesystem` a word names.
+pub const T_PARSE_HARNESS__HARNESS_FILESYSTEM: u64 = 11u64;
 pub fn words_parse_harness__harness_filesystem(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     if bytes.equal(word, "read_only".as_slice()) { return 1u64; }
@@ -95,6 +107,7 @@ pub fn words_parse_harness__harness_filesystem(word: Slice<u8>) -> u64 {
 }
 
 // `parse_feature`: the `FeatureStatus` a word names.
+pub const T_PARSE_FEATURE__FEATURE_STATUS: u64 = 12u64;
 pub fn words_parse_feature__feature_status(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "experimental".as_slice()) { return 0u64; }
     if bytes.equal(word, "preview".as_slice()) { return 1u64; }
@@ -104,6 +117,7 @@ pub fn words_parse_feature__feature_status(word: Slice<u8>) -> u64 {
 }
 
 // `parse_feature`: the `FeatureDefault` a word names.
+pub const T_PARSE_FEATURE__FEATURE_DEFAULT: u64 = 13u64;
 pub fn words_parse_feature__feature_default(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "enabled".as_slice()) { return 1u64; }
@@ -111,6 +125,7 @@ pub fn words_parse_feature__feature_default(word: Slice<u8>) -> u64 {
 }
 
 // `parse_secret`: the `SecretScope` a word names.
+pub const T_PARSE_SECRET__SECRET_SCOPE: u64 = 14u64;
 pub fn words_parse_secret__secret_scope(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "provider".as_slice()) { return 0u64; }
     if bytes.equal(word, "adapter".as_slice()) { return 1u64; }
@@ -121,18 +136,21 @@ pub fn words_parse_secret__secret_scope(word: Slice<u8>) -> u64 {
 }
 
 // `parse_secret`: the `SecretAccess` a word names.
+pub const T_PARSE_SECRET__SECRET_ACCESS: u64 = 15u64;
 pub fn words_parse_secret__secret_access(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_secret`: the `SecretSource` a word names.
+pub const T_PARSE_SECRET__SECRET_SOURCE: u64 = 16u64;
 pub fn words_parse_secret__secret_source(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_adapter`: the `AdapterKind` a word names.
+pub const T_PARSE_ADAPTER__ADAPTER_KIND: u64 = 17u64;
 pub fn words_parse_adapter__adapter_kind(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "llm".as_slice()) { return 0u64; }
     if bytes.equal(word, "tool".as_slice()) { return 1u64; }
@@ -146,6 +164,7 @@ pub fn words_parse_adapter__adapter_kind(word: Slice<u8>) -> u64 {
 }
 
 // `parse_adapter`: the `AdapterMode` a word names.
+pub const T_PARSE_ADAPTER__ADAPTER_MODE: u64 = 18u64;
 pub fn words_parse_adapter__adapter_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "experimental".as_slice()) { return 0u64; }
     if bytes.equal(word, "preview".as_slice()) { return 1u64; }
@@ -155,24 +174,28 @@ pub fn words_parse_adapter__adapter_mode(word: Slice<u8>) -> u64 {
 }
 
 // `parse_adapter`: the `AdapterExecution` a word names.
+pub const T_PARSE_ADAPTER__ADAPTER_EXECUTION: u64 = 19u64;
 pub fn words_parse_adapter__adapter_execution(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_adapter`: the `AdapterNetwork` a word names.
+pub const T_PARSE_ADAPTER__ADAPTER_NETWORK: u64 = 20u64;
 pub fn words_parse_adapter__adapter_network(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_adapter`: the `AdapterSecrets` a word names.
+pub const T_PARSE_ADAPTER__ADAPTER_SECRETS: u64 = 21u64;
 pub fn words_parse_adapter__adapter_secrets(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_adapter`: the `AdapterFilesystem` a word names.
+pub const T_PARSE_ADAPTER__ADAPTER_FILESYSTEM: u64 = 22u64;
 pub fn words_parse_adapter__adapter_filesystem(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     if bytes.equal(word, "read_only".as_slice()) { return 1u64; }
@@ -180,6 +203,7 @@ pub fn words_parse_adapter__adapter_filesystem(word: Slice<u8>) -> u64 {
 }
 
 // `parse_adapter_profile`: the `AdapterProfileFamily` a word names.
+pub const T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_FAMILY: u64 = 23u64;
 pub fn words_parse_adapter_profile__adapter_profile_family(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "llm".as_slice()) { return 0u64; }
     if bytes.equal(word, "tool".as_slice()) { return 1u64; }
@@ -193,6 +217,7 @@ pub fn words_parse_adapter_profile__adapter_profile_family(word: Slice<u8>) -> u
 }
 
 // `parse_adapter_profile`: the `AdapterProfileApiStyle` a word names.
+pub const T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_API_STYLE: u64 = 24u64;
 pub fn words_parse_adapter_profile__adapter_profile_api_style(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "responses".as_slice()) { return 0u64; }
     if bytes.equal(word, "messages".as_slice()) { return 1u64; }
@@ -207,6 +232,7 @@ pub fn words_parse_adapter_profile__adapter_profile_api_style(word: Slice<u8>) -
 }
 
 // `parse_adapter_profile`: the `AdapterProfileAuth` a word names.
+pub const T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_AUTH: u64 = 25u64;
 pub fn words_parse_adapter_profile__adapter_profile_auth(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     if bytes.equal(word, "secret_boundary".as_slice()) { return 1u64; }
@@ -217,24 +243,28 @@ pub fn words_parse_adapter_profile__adapter_profile_auth(word: Slice<u8>) -> u64
 }
 
 // `parse_adapter_profile`: the `AdapterProfileExecution` a word names.
+pub const T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_EXECUTION: u64 = 26u64;
 pub fn words_parse_adapter_profile__adapter_profile_execution(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_adapter_profile`: the `AdapterProfileNetwork` a word names.
+pub const T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_NETWORK: u64 = 27u64;
 pub fn words_parse_adapter_profile__adapter_profile_network(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_adapter_profile`: the `AdapterProfileSecrets` a word names.
+pub const T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_SECRETS: u64 = 28u64;
 pub fn words_parse_adapter_profile__adapter_profile_secrets(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_crypto`: the `CryptoKind` a word names.
+pub const T_PARSE_CRYPTO__CRYPTO_KIND: u64 = 29u64;
 pub fn words_parse_crypto__crypto_kind(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "hash".as_slice()) { return 0u64; }
     if bytes.equal(word, "signature".as_slice()) { return 1u64; }
@@ -249,6 +279,7 @@ pub fn words_parse_crypto__crypto_kind(word: Slice<u8>) -> u64 {
 }
 
 // `parse_crypto`: the `CryptoStatus` a word names.
+pub const T_PARSE_CRYPTO__CRYPTO_STATUS: u64 = 30u64;
 pub fn words_parse_crypto__crypto_status(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "allowed".as_slice()) { return 0u64; }
     if bytes.equal(word, "legacy".as_slice()) { return 1u64; }
@@ -260,6 +291,7 @@ pub fn words_parse_crypto__crypto_status(word: Slice<u8>) -> u64 {
 }
 
 // `parse_crypto`: the `CryptoStrength` a word names.
+pub const T_PARSE_CRYPTO__CRYPTO_STRENGTH: u64 = 31u64;
 pub fn words_parse_crypto__crypto_strength(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "classical".as_slice()) { return 0u64; }
     if bytes.equal(word, "post_quantum".as_slice()) { return 1u64; }
@@ -269,6 +301,7 @@ pub fn words_parse_crypto__crypto_strength(word: Slice<u8>) -> u64 {
 }
 
 // `parse_did_method`: the `DidMethodStatus` a word names.
+pub const T_PARSE_DID_METHOD__DID_METHOD_STATUS: u64 = 32u64;
 pub fn words_parse_did_method__did_method_status(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "experimental".as_slice()) { return 0u64; }
     if bytes.equal(word, "preview".as_slice()) { return 1u64; }
@@ -279,6 +312,7 @@ pub fn words_parse_did_method__did_method_status(word: Slice<u8>) -> u64 {
 }
 
 // `parse_did_method`: the `DidResolutionMode` a word names.
+pub const T_PARSE_DID_METHOD__DID_RESOLUTION_MODE: u64 = 33u64;
 pub fn words_parse_did_method__did_resolution_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "embedded".as_slice()) { return 1u64; }
@@ -287,6 +321,7 @@ pub fn words_parse_did_method__did_resolution_mode(word: Slice<u8>) -> u64 {
 }
 
 // `parse_did_method`: the `DidLedgerMode` a word names.
+pub const T_PARSE_DID_METHOD__DID_LEDGER_MODE: u64 = 34u64;
 pub fn words_parse_did_method__did_ledger_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     if bytes.equal(word, "local".as_slice()) { return 1u64; }
@@ -296,6 +331,7 @@ pub fn words_parse_did_method__did_ledger_mode(word: Slice<u8>) -> u64 {
 }
 
 // `parse_atrust_boundary`: the `ATrustIdentityFormat` a word names.
+pub const T_PARSE_ATRUST_BOUNDARY__A_TRUST_IDENTITY_FORMAT: u64 = 35u64;
 pub fn words_parse_atrust_boundary__a_trust_identity_format(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "did".as_slice()) { return 0u64; }
     if bytes.equal(word, "opaque".as_slice()) { return 1u64; }
@@ -304,6 +340,7 @@ pub fn words_parse_atrust_boundary__a_trust_identity_format(word: Slice<u8>) -> 
 }
 
 // `parse_atrust_boundary`: the `ATrustCredentialMode` a word names.
+pub const T_PARSE_ATRUST_BOUNDARY__A_TRUST_CREDENTIAL_MODE: u64 = 36u64;
 pub fn words_parse_atrust_boundary__a_trust_credential_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -311,6 +348,7 @@ pub fn words_parse_atrust_boundary__a_trust_credential_mode(word: Slice<u8>) -> 
 }
 
 // `parse_atrust_boundary`: the `ATrustHandshakeMode` a word names.
+pub const T_PARSE_ATRUST_BOUNDARY__A_TRUST_HANDSHAKE_MODE: u64 = 37u64;
 pub fn words_parse_atrust_boundary__a_trust_handshake_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -318,6 +356,7 @@ pub fn words_parse_atrust_boundary__a_trust_handshake_mode(word: Slice<u8>) -> u
 }
 
 // `parse_atrust_boundary`: the `ATrustResolutionMode` a word names.
+pub const T_PARSE_ATRUST_BOUNDARY__A_TRUST_RESOLUTION_MODE: u64 = 38u64;
 pub fn words_parse_atrust_boundary__a_trust_resolution_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "embedded".as_slice()) { return 1u64; }
@@ -326,18 +365,21 @@ pub fn words_parse_atrust_boundary__a_trust_resolution_mode(word: Slice<u8>) -> 
 }
 
 // `parse_atrust_boundary`: the `ATrustMaterialBoundary` a word names.
+pub const T_PARSE_ATRUST_BOUNDARY__A_TRUST_MATERIAL_BOUNDARY: u64 = 39u64;
 pub fn words_parse_atrust_boundary__a_trust_material_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_boundary`: the `ATrustExecution` a word names.
+pub const T_PARSE_ATRUST_BOUNDARY__A_TRUST_EXECUTION: u64 = 40u64;
 pub fn words_parse_atrust_boundary__a_trust_execution(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_boundary`: the `ATrustPostQuantumRequirement` a word names.
+pub const T_PARSE_ATRUST_BOUNDARY__A_TRUST_POST_QUANTUM_REQUIREMENT: u64 = 41u64;
 pub fn words_parse_atrust_boundary__a_trust_post_quantum_requirement(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     if bytes.equal(word, "optional".as_slice()) { return 1u64; }
@@ -346,12 +388,14 @@ pub fn words_parse_atrust_boundary__a_trust_post_quantum_requirement(word: Slice
 }
 
 // `parse_atrust_boundary`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_ATRUST_BOUNDARY__A_TRUST_SECURITY_CLAIMS: u64 = 42u64;
 pub fn words_parse_atrust_boundary__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_identity`: the `ATrustIdentityStatus` a word names.
+pub const T_PARSE_ATRUST_IDENTITY__A_TRUST_IDENTITY_STATUS: u64 = 43u64;
 pub fn words_parse_atrust_identity__a_trust_identity_status(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "active".as_slice()) { return 0u64; }
     if bytes.equal(word, "suspended".as_slice()) { return 1u64; }
@@ -360,12 +404,14 @@ pub fn words_parse_atrust_identity__a_trust_identity_status(word: Slice<u8>) -> 
 }
 
 // `parse_atrust_identity`: the `ATrustIdentityValidation` a word names.
+pub const T_PARSE_ATRUST_IDENTITY__A_TRUST_IDENTITY_VALIDATION: u64 = 44u64;
 pub fn words_parse_atrust_identity__a_trust_identity_validation(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "dry_run".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_identity`: the `ATrustResolutionMode` a word names.
+pub const T_PARSE_ATRUST_IDENTITY__A_TRUST_RESOLUTION_MODE: u64 = 45u64;
 pub fn words_parse_atrust_identity__a_trust_resolution_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "embedded".as_slice()) { return 1u64; }
@@ -374,30 +420,35 @@ pub fn words_parse_atrust_identity__a_trust_resolution_mode(word: Slice<u8>) -> 
 }
 
 // `parse_atrust_identity`: the `ATrustMaterialBoundary` a word names.
+pub const T_PARSE_ATRUST_IDENTITY__A_TRUST_MATERIAL_BOUNDARY: u64 = 46u64;
 pub fn words_parse_atrust_identity__a_trust_material_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_identity`: the `ATrustExecution` a word names.
+pub const T_PARSE_ATRUST_IDENTITY__A_TRUST_EXECUTION: u64 = 47u64;
 pub fn words_parse_atrust_identity__a_trust_execution(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_identity`: the `ATrustEvidenceRequirement` a word names.
+pub const T_PARSE_ATRUST_IDENTITY__A_TRUST_EVIDENCE_REQUIREMENT: u64 = 48u64;
 pub fn words_parse_atrust_identity__a_trust_evidence_requirement(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_identity`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_ATRUST_IDENTITY__A_TRUST_SECURITY_CLAIMS: u64 = 49u64;
 pub fn words_parse_atrust_identity__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_credential_contract`: the `ATrustCredentialStatus` a word names.
+pub const T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_CREDENTIAL_STATUS: u64 = 50u64;
 pub fn words_parse_atrust_credential_contract__a_trust_credential_status(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "declared".as_slice()) { return 0u64; }
     if bytes.equal(word, "active".as_slice()) { return 1u64; }
@@ -407,12 +458,14 @@ pub fn words_parse_atrust_credential_contract__a_trust_credential_status(word: S
 }
 
 // `parse_atrust_credential_contract`: the `ATrustCredentialVerification` a word names.
+pub const T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_CREDENTIAL_VERIFICATION: u64 = 51u64;
 pub fn words_parse_atrust_credential_contract__a_trust_credential_verification(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "declared_only".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_credential_contract`: the `ATrustCredentialPresentation` a word names.
+pub const T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_CREDENTIAL_PRESENTATION: u64 = 52u64;
 pub fn words_parse_atrust_credential_contract__a_trust_credential_presentation(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -420,6 +473,7 @@ pub fn words_parse_atrust_credential_contract__a_trust_credential_presentation(w
 }
 
 // `parse_atrust_credential_contract`: the `ATrustResolutionMode` a word names.
+pub const T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_RESOLUTION_MODE: u64 = 53u64;
 pub fn words_parse_atrust_credential_contract__a_trust_resolution_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "embedded".as_slice()) { return 1u64; }
@@ -428,36 +482,42 @@ pub fn words_parse_atrust_credential_contract__a_trust_resolution_mode(word: Sli
 }
 
 // `parse_atrust_credential_contract`: the `ATrustMaterialBoundary` a word names.
+pub const T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_MATERIAL_BOUNDARY: u64 = 54u64;
 pub fn words_parse_atrust_credential_contract__a_trust_material_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_credential_contract`: the `ATrustExecution` a word names.
+pub const T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_EXECUTION: u64 = 55u64;
 pub fn words_parse_atrust_credential_contract__a_trust_execution(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_credential_contract`: the `ATrustEvidenceRequirement` a word names.
+pub const T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_EVIDENCE_REQUIREMENT: u64 = 56u64;
 pub fn words_parse_atrust_credential_contract__a_trust_evidence_requirement(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_credential_contract`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_SECURITY_CLAIMS: u64 = 57u64;
 pub fn words_parse_atrust_credential_contract__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_handshake`: the `ATrustHandshakeDryRunMode` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_DRY_RUN_MODE: u64 = 58u64;
 pub fn words_parse_atrust_handshake__a_trust_handshake_dry_run_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "dry_run".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_handshake`: the `ATrustHandshakeDirection` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_DIRECTION: u64 = 59u64;
 pub fn words_parse_atrust_handshake__a_trust_handshake_direction(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "one_way".as_slice()) { return 0u64; }
     if bytes.equal(word, "mutual".as_slice()) { return 1u64; }
@@ -465,6 +525,7 @@ pub fn words_parse_atrust_handshake__a_trust_handshake_direction(word: Slice<u8>
 }
 
 // `parse_atrust_handshake`: the `ATrustHandshakeChallenge` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_CHALLENGE: u64 = 60u64;
 pub fn words_parse_atrust_handshake__a_trust_handshake_challenge(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -472,6 +533,7 @@ pub fn words_parse_atrust_handshake__a_trust_handshake_challenge(word: Slice<u8>
 }
 
 // `parse_atrust_handshake`: the `ATrustHandshakeResponse` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_RESPONSE: u64 = 61u64;
 pub fn words_parse_atrust_handshake__a_trust_handshake_response(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -479,6 +541,7 @@ pub fn words_parse_atrust_handshake__a_trust_handshake_response(word: Slice<u8>)
 }
 
 // `parse_atrust_handshake`: the `ATrustHandshakeTranscript` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_TRANSCRIPT: u64 = 62u64;
 pub fn words_parse_atrust_handshake__a_trust_handshake_transcript(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "metadata_only".as_slice()) { return 0u64; }
     if bytes.equal(word, "evidence_only".as_slice()) { return 1u64; }
@@ -486,6 +549,7 @@ pub fn words_parse_atrust_handshake__a_trust_handshake_transcript(word: Slice<u8
 }
 
 // `parse_atrust_handshake`: the `ATrustHandshakeVerification` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_VERIFICATION: u64 = 63u64;
 pub fn words_parse_atrust_handshake__a_trust_handshake_verification(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -493,6 +557,7 @@ pub fn words_parse_atrust_handshake__a_trust_handshake_verification(word: Slice<
 }
 
 // `parse_atrust_handshake`: the `ATrustResolutionMode` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_RESOLUTION_MODE: u64 = 64u64;
 pub fn words_parse_atrust_handshake__a_trust_resolution_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "embedded".as_slice()) { return 1u64; }
@@ -501,36 +566,42 @@ pub fn words_parse_atrust_handshake__a_trust_resolution_mode(word: Slice<u8>) ->
 }
 
 // `parse_atrust_handshake`: the `ATrustNetworkBoundary` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_NETWORK_BOUNDARY: u64 = 65u64;
 pub fn words_parse_atrust_handshake__a_trust_network_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_handshake`: the `ATrustMaterialBoundary` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_MATERIAL_BOUNDARY: u64 = 66u64;
 pub fn words_parse_atrust_handshake__a_trust_material_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_handshake`: the `ATrustExecution` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_EXECUTION: u64 = 67u64;
 pub fn words_parse_atrust_handshake__a_trust_execution(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_handshake`: the `ATrustEvidenceRequirement` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_EVIDENCE_REQUIREMENT: u64 = 68u64;
 pub fn words_parse_atrust_handshake__a_trust_evidence_requirement(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_handshake`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_ATRUST_HANDSHAKE__A_TRUST_SECURITY_CLAIMS: u64 = 69u64;
 pub fn words_parse_atrust_handshake__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_trust_ledger`: the `TrustLedgerScope` a word names.
+pub const T_PARSE_TRUST_LEDGER__TRUST_LEDGER_SCOPE: u64 = 70u64;
 pub fn words_parse_trust_ledger__trust_ledger_scope(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "local".as_slice()) { return 0u64; }
     if bytes.equal(word, "package".as_slice()) { return 1u64; }
@@ -539,6 +610,7 @@ pub fn words_parse_trust_ledger__trust_ledger_scope(word: Slice<u8>) -> u64 {
 }
 
 // `parse_trust_ledger`: the `TrustLedgerMode` a word names.
+pub const T_PARSE_TRUST_LEDGER__TRUST_LEDGER_MODE: u64 = 71u64;
 pub fn words_parse_trust_ledger__trust_ledger_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "dry_run".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -546,6 +618,7 @@ pub fn words_parse_trust_ledger__trust_ledger_mode(word: Slice<u8>) -> u64 {
 }
 
 // `parse_trust_ledger`: the `TrustLedgerChainPolicy` a word names.
+pub const T_PARSE_TRUST_LEDGER__TRUST_LEDGER_CHAIN_POLICY: u64 = 72u64;
 pub fn words_parse_trust_ledger__trust_ledger_chain_policy(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "append_only".as_slice()) { return 0u64; }
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
@@ -553,36 +626,42 @@ pub fn words_parse_trust_ledger__trust_ledger_chain_policy(word: Slice<u8>) -> u
 }
 
 // `parse_trust_ledger`: the `ATrustNetworkBoundary` a word names.
+pub const T_PARSE_TRUST_LEDGER__A_TRUST_NETWORK_BOUNDARY: u64 = 73u64;
 pub fn words_parse_trust_ledger__a_trust_network_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_trust_ledger`: the `ATrustMaterialBoundary` a word names.
+pub const T_PARSE_TRUST_LEDGER__A_TRUST_MATERIAL_BOUNDARY: u64 = 74u64;
 pub fn words_parse_trust_ledger__a_trust_material_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_trust_ledger`: the `ATrustExecution` a word names.
+pub const T_PARSE_TRUST_LEDGER__A_TRUST_EXECUTION: u64 = 75u64;
 pub fn words_parse_trust_ledger__a_trust_execution(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_trust_ledger`: the `ATrustEvidenceRequirement` a word names.
+pub const T_PARSE_TRUST_LEDGER__A_TRUST_EVIDENCE_REQUIREMENT: u64 = 76u64;
 pub fn words_parse_trust_ledger__a_trust_evidence_requirement(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_trust_ledger`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_TRUST_LEDGER__A_TRUST_SECURITY_CLAIMS: u64 = 77u64;
 pub fn words_parse_trust_ledger__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_trust_ledger_entry`: the `TrustLedgerEntryKind` a word names.
+pub const T_PARSE_TRUST_LEDGER_ENTRY__TRUST_LEDGER_ENTRY_KIND: u64 = 78u64;
 pub fn words_parse_trust_ledger_entry__trust_ledger_entry_kind(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "identity".as_slice()) { return 0u64; }
     if bytes.equal(word, "credential".as_slice()) { return 1u64; }
@@ -594,6 +673,7 @@ pub fn words_parse_trust_ledger_entry__trust_ledger_entry_kind(word: Slice<u8>) 
 }
 
 // `parse_mcp_bridge_contract`: the `BridgeTransport` a word names.
+pub const T_PARSE_MCP_BRIDGE_CONTRACT__BRIDGE_TRANSPORT: u64 = 79u64;
 pub fn words_parse_mcp_bridge_contract__bridge_transport(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "declared_only".as_slice()) { return 0u64; }
     if bytes.equal(word, "disabled".as_slice()) { return 1u64; }
@@ -601,36 +681,42 @@ pub fn words_parse_mcp_bridge_contract__bridge_transport(word: Slice<u8>) -> u64
 }
 
 // `parse_mcp_bridge_contract`: the `McpProtocol` a word names.
+pub const T_PARSE_MCP_BRIDGE_CONTRACT__MCP_PROTOCOL: u64 = 80u64;
 pub fn words_parse_mcp_bridge_contract__mcp_protocol(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "mcp".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_mcp_bridge_contract`: the `ATrustNetworkBoundary` a word names.
+pub const T_PARSE_MCP_BRIDGE_CONTRACT__A_TRUST_NETWORK_BOUNDARY: u64 = 81u64;
 pub fn words_parse_mcp_bridge_contract__a_trust_network_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_mcp_bridge_contract`: the `ATrustEvidenceRequirement` a word names.
+pub const T_PARSE_MCP_BRIDGE_CONTRACT__A_TRUST_EVIDENCE_REQUIREMENT: u64 = 82u64;
 pub fn words_parse_mcp_bridge_contract__a_trust_evidence_requirement(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_mcp_bridge_contract`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_MCP_BRIDGE_CONTRACT__A_TRUST_SECURITY_CLAIMS: u64 = 83u64;
 pub fn words_parse_mcp_bridge_contract__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_a2a_bridge_contract`: the `A2AProtocol` a word names.
+pub const T_PARSE_A2A_BRIDGE_CONTRACT__A2_A_PROTOCOL: u64 = 84u64;
 pub fn words_parse_a2a_bridge_contract__a2_a_protocol(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "a2a".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_a2a_bridge_contract`: the `BridgeTransport` a word names.
+pub const T_PARSE_A2A_BRIDGE_CONTRACT__BRIDGE_TRANSPORT: u64 = 85u64;
 pub fn words_parse_a2a_bridge_contract__bridge_transport(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "declared_only".as_slice()) { return 0u64; }
     if bytes.equal(word, "disabled".as_slice()) { return 1u64; }
@@ -638,24 +724,28 @@ pub fn words_parse_a2a_bridge_contract__bridge_transport(word: Slice<u8>) -> u64
 }
 
 // `parse_a2a_bridge_contract`: the `ATrustNetworkBoundary` a word names.
+pub const T_PARSE_A2A_BRIDGE_CONTRACT__A_TRUST_NETWORK_BOUNDARY: u64 = 86u64;
 pub fn words_parse_a2a_bridge_contract__a_trust_network_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_a2a_bridge_contract`: the `ATrustEvidenceRequirement` a word names.
+pub const T_PARSE_A2A_BRIDGE_CONTRACT__A_TRUST_EVIDENCE_REQUIREMENT: u64 = 87u64;
 pub fn words_parse_a2a_bridge_contract__a_trust_evidence_requirement(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_a2a_bridge_contract`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_A2A_BRIDGE_CONTRACT__A_TRUST_SECURITY_CLAIMS: u64 = 88u64;
 pub fn words_parse_a2a_bridge_contract__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_evidence_map`: the `ATrustEvidenceMapCoverage` a word names.
+pub const T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_EVIDENCE_MAP_COVERAGE: u64 = 89u64;
 pub fn words_parse_atrust_evidence_map__a_trust_evidence_map_coverage(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     if bytes.equal(word, "complete".as_slice()) { return 1u64; }
@@ -663,6 +753,7 @@ pub fn words_parse_atrust_evidence_map__a_trust_evidence_map_coverage(word: Slic
 }
 
 // `parse_atrust_evidence_map`: the `ATrustEvidenceMapMappingMode` a word names.
+pub const T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_EVIDENCE_MAP_MAPPING_MODE: u64 = 90u64;
 pub fn words_parse_atrust_evidence_map__a_trust_evidence_map_mapping_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "declared_only".as_slice()) { return 0u64; }
     if bytes.equal(word, "evidence_only".as_slice()) { return 1u64; }
@@ -670,6 +761,7 @@ pub fn words_parse_atrust_evidence_map__a_trust_evidence_map_mapping_mode(word: 
 }
 
 // `parse_atrust_evidence_map`: the `ATrustHandshakeVerification` a word names.
+pub const T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_HANDSHAKE_VERIFICATION: u64 = 91u64;
 pub fn words_parse_atrust_evidence_map__a_trust_handshake_verification(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "declared_only".as_slice()) { return 1u64; }
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
@@ -677,6 +769,7 @@ pub fn words_parse_atrust_evidence_map__a_trust_handshake_verification(word: Sli
 }
 
 // `parse_atrust_evidence_map`: the `ATrustResolutionMode` a word names.
+pub const T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_RESOLUTION_MODE: u64 = 92u64;
 pub fn words_parse_atrust_evidence_map__a_trust_resolution_mode(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "disabled".as_slice()) { return 0u64; }
     if bytes.equal(word, "embedded".as_slice()) { return 1u64; }
@@ -685,24 +778,28 @@ pub fn words_parse_atrust_evidence_map__a_trust_resolution_mode(word: Slice<u8>)
 }
 
 // `parse_atrust_evidence_map`: the `ATrustEvidenceRequirement` a word names.
+pub const T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_EVIDENCE_REQUIREMENT: u64 = 93u64;
 pub fn words_parse_atrust_evidence_map__a_trust_evidence_requirement(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "required".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_evidence_map`: the `ATrustNetworkBoundary` a word names.
+pub const T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_NETWORK_BOUNDARY: u64 = 94u64;
 pub fn words_parse_atrust_evidence_map__a_trust_network_boundary(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "denied".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_atrust_evidence_map`: the `ATrustSecurityClaims` a word names.
+pub const T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_SECURITY_CLAIMS: u64 = 95u64;
 pub fn words_parse_atrust_evidence_map__a_trust_security_claims(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "none".as_slice()) { return 0u64; }
     NO_VARIANT
 }
 
 // `parse_policy_rule`: the `PolicyRule` a word names.
+pub const T_PARSE_POLICY_RULE__POLICY_RULE: u64 = 96u64;
 pub fn words_parse_policy_rule__policy_rule(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "no_unhandled_messages".as_slice()) { return 0u64; }
     if bytes.equal(word, "all_tool_calls_traced".as_slice()) { return 1u64; }
@@ -988,6 +1085,7 @@ pub fn words_parse_policy_rule__policy_rule(word: Slice<u8>) -> u64 {
 }
 
 // `parse_policy_violation`: the `PolicyViolationAction` a word names.
+pub const T_PARSE_POLICY_VIOLATION__POLICY_VIOLATION_ACTION: u64 = 97u64;
 pub fn words_parse_policy_violation__policy_violation_action(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "block".as_slice()) { return 0u64; }
     if bytes.equal(word, "review".as_slice()) { return 1u64; }
@@ -996,6 +1094,7 @@ pub fn words_parse_policy_violation__policy_violation_action(word: Slice<u8>) ->
 }
 
 // `parse_capability`: the `CapabilityLevel` a word names.
+pub const T_PARSE_CAPABILITY__CAPABILITY_LEVEL: u64 = 98u64;
 pub fn words_parse_capability__capability_level(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "safe".as_slice()) { return 0u64; }
     if bytes.equal(word, "restricted".as_slice()) { return 1u64; }
@@ -1004,6 +1103,7 @@ pub fn words_parse_capability__capability_level(word: Slice<u8>) -> u64 {
 }
 
 // `parse_type`: the `MessageFieldType` a word names.
+pub const T_PARSE_TYPE__MESSAGE_FIELD_TYPE: u64 = 99u64;
 pub fn words_parse_type__message_field_type(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "string".as_slice()) { return 0u64; }
     if bytes.equal(word, "bool".as_slice()) { return 1u64; }
@@ -1013,8 +1113,116 @@ pub fn words_parse_type__message_field_type(word: Slice<u8>) -> u64 {
 }
 
 // `parse_agent`: the `Approval` a word names.
+pub const T_PARSE_AGENT__APPROVAL: u64 = 100u64;
 pub fn words_parse_agent__approval(word: Slice<u8>) -> u64 {
     if bytes.equal(word, "granted".as_slice()) { return 0u64; }
     if bytes.equal(word, "denied".as_slice()) { return 1u64; }
+    NO_VARIANT
+}
+
+// The variant `word` names in table `table` (a `T_` constant), or
+// NO_VARIANT.
+pub fn lookup(table: u64, word: Slice<u8>) -> u64 {
+    if table == 0u64 { return words_parse_bridge_direction__bridge_direction(word); }
+    if table == 1u64 { return words_parse_bridge_execution__a_trust_execution(word); }
+    if table == 2u64 { return words_parse_bridge_material__a_trust_material_boundary(word); }
+    if table == 3u64 { return words_parse_bridge_authentication__bridge_authentication(word); }
+    if table == 4u64 { return words_parse_bridge_authorization__bridge_authorization(word); }
+    if table == 5u64 { return words_parse_governance_network__a_trust_network_boundary(word); }
+    if table == 6u64 { return words_parse_governance_security_claims__a_trust_security_claims(word); }
+    if table == 7u64 { return words_parse_provider__provider_kind_decl(word); }
+    if table == 8u64 { return words_parse_harness__harness_mode(word); }
+    if table == 9u64 { return words_parse_harness__harness_network(word); }
+    if table == 10u64 { return words_parse_harness__harness_secrets(word); }
+    if table == 11u64 { return words_parse_harness__harness_filesystem(word); }
+    if table == 12u64 { return words_parse_feature__feature_status(word); }
+    if table == 13u64 { return words_parse_feature__feature_default(word); }
+    if table == 14u64 { return words_parse_secret__secret_scope(word); }
+    if table == 15u64 { return words_parse_secret__secret_access(word); }
+    if table == 16u64 { return words_parse_secret__secret_source(word); }
+    if table == 17u64 { return words_parse_adapter__adapter_kind(word); }
+    if table == 18u64 { return words_parse_adapter__adapter_mode(word); }
+    if table == 19u64 { return words_parse_adapter__adapter_execution(word); }
+    if table == 20u64 { return words_parse_adapter__adapter_network(word); }
+    if table == 21u64 { return words_parse_adapter__adapter_secrets(word); }
+    if table == 22u64 { return words_parse_adapter__adapter_filesystem(word); }
+    if table == 23u64 { return words_parse_adapter_profile__adapter_profile_family(word); }
+    if table == 24u64 { return words_parse_adapter_profile__adapter_profile_api_style(word); }
+    if table == 25u64 { return words_parse_adapter_profile__adapter_profile_auth(word); }
+    if table == 26u64 { return words_parse_adapter_profile__adapter_profile_execution(word); }
+    if table == 27u64 { return words_parse_adapter_profile__adapter_profile_network(word); }
+    if table == 28u64 { return words_parse_adapter_profile__adapter_profile_secrets(word); }
+    if table == 29u64 { return words_parse_crypto__crypto_kind(word); }
+    if table == 30u64 { return words_parse_crypto__crypto_status(word); }
+    if table == 31u64 { return words_parse_crypto__crypto_strength(word); }
+    if table == 32u64 { return words_parse_did_method__did_method_status(word); }
+    if table == 33u64 { return words_parse_did_method__did_resolution_mode(word); }
+    if table == 34u64 { return words_parse_did_method__did_ledger_mode(word); }
+    if table == 35u64 { return words_parse_atrust_boundary__a_trust_identity_format(word); }
+    if table == 36u64 { return words_parse_atrust_boundary__a_trust_credential_mode(word); }
+    if table == 37u64 { return words_parse_atrust_boundary__a_trust_handshake_mode(word); }
+    if table == 38u64 { return words_parse_atrust_boundary__a_trust_resolution_mode(word); }
+    if table == 39u64 { return words_parse_atrust_boundary__a_trust_material_boundary(word); }
+    if table == 40u64 { return words_parse_atrust_boundary__a_trust_execution(word); }
+    if table == 41u64 { return words_parse_atrust_boundary__a_trust_post_quantum_requirement(word); }
+    if table == 42u64 { return words_parse_atrust_boundary__a_trust_security_claims(word); }
+    if table == 43u64 { return words_parse_atrust_identity__a_trust_identity_status(word); }
+    if table == 44u64 { return words_parse_atrust_identity__a_trust_identity_validation(word); }
+    if table == 45u64 { return words_parse_atrust_identity__a_trust_resolution_mode(word); }
+    if table == 46u64 { return words_parse_atrust_identity__a_trust_material_boundary(word); }
+    if table == 47u64 { return words_parse_atrust_identity__a_trust_execution(word); }
+    if table == 48u64 { return words_parse_atrust_identity__a_trust_evidence_requirement(word); }
+    if table == 49u64 { return words_parse_atrust_identity__a_trust_security_claims(word); }
+    if table == 50u64 { return words_parse_atrust_credential_contract__a_trust_credential_status(word); }
+    if table == 51u64 { return words_parse_atrust_credential_contract__a_trust_credential_verification(word); }
+    if table == 52u64 { return words_parse_atrust_credential_contract__a_trust_credential_presentation(word); }
+    if table == 53u64 { return words_parse_atrust_credential_contract__a_trust_resolution_mode(word); }
+    if table == 54u64 { return words_parse_atrust_credential_contract__a_trust_material_boundary(word); }
+    if table == 55u64 { return words_parse_atrust_credential_contract__a_trust_execution(word); }
+    if table == 56u64 { return words_parse_atrust_credential_contract__a_trust_evidence_requirement(word); }
+    if table == 57u64 { return words_parse_atrust_credential_contract__a_trust_security_claims(word); }
+    if table == 58u64 { return words_parse_atrust_handshake__a_trust_handshake_dry_run_mode(word); }
+    if table == 59u64 { return words_parse_atrust_handshake__a_trust_handshake_direction(word); }
+    if table == 60u64 { return words_parse_atrust_handshake__a_trust_handshake_challenge(word); }
+    if table == 61u64 { return words_parse_atrust_handshake__a_trust_handshake_response(word); }
+    if table == 62u64 { return words_parse_atrust_handshake__a_trust_handshake_transcript(word); }
+    if table == 63u64 { return words_parse_atrust_handshake__a_trust_handshake_verification(word); }
+    if table == 64u64 { return words_parse_atrust_handshake__a_trust_resolution_mode(word); }
+    if table == 65u64 { return words_parse_atrust_handshake__a_trust_network_boundary(word); }
+    if table == 66u64 { return words_parse_atrust_handshake__a_trust_material_boundary(word); }
+    if table == 67u64 { return words_parse_atrust_handshake__a_trust_execution(word); }
+    if table == 68u64 { return words_parse_atrust_handshake__a_trust_evidence_requirement(word); }
+    if table == 69u64 { return words_parse_atrust_handshake__a_trust_security_claims(word); }
+    if table == 70u64 { return words_parse_trust_ledger__trust_ledger_scope(word); }
+    if table == 71u64 { return words_parse_trust_ledger__trust_ledger_mode(word); }
+    if table == 72u64 { return words_parse_trust_ledger__trust_ledger_chain_policy(word); }
+    if table == 73u64 { return words_parse_trust_ledger__a_trust_network_boundary(word); }
+    if table == 74u64 { return words_parse_trust_ledger__a_trust_material_boundary(word); }
+    if table == 75u64 { return words_parse_trust_ledger__a_trust_execution(word); }
+    if table == 76u64 { return words_parse_trust_ledger__a_trust_evidence_requirement(word); }
+    if table == 77u64 { return words_parse_trust_ledger__a_trust_security_claims(word); }
+    if table == 78u64 { return words_parse_trust_ledger_entry__trust_ledger_entry_kind(word); }
+    if table == 79u64 { return words_parse_mcp_bridge_contract__bridge_transport(word); }
+    if table == 80u64 { return words_parse_mcp_bridge_contract__mcp_protocol(word); }
+    if table == 81u64 { return words_parse_mcp_bridge_contract__a_trust_network_boundary(word); }
+    if table == 82u64 { return words_parse_mcp_bridge_contract__a_trust_evidence_requirement(word); }
+    if table == 83u64 { return words_parse_mcp_bridge_contract__a_trust_security_claims(word); }
+    if table == 84u64 { return words_parse_a2a_bridge_contract__a2_a_protocol(word); }
+    if table == 85u64 { return words_parse_a2a_bridge_contract__bridge_transport(word); }
+    if table == 86u64 { return words_parse_a2a_bridge_contract__a_trust_network_boundary(word); }
+    if table == 87u64 { return words_parse_a2a_bridge_contract__a_trust_evidence_requirement(word); }
+    if table == 88u64 { return words_parse_a2a_bridge_contract__a_trust_security_claims(word); }
+    if table == 89u64 { return words_parse_atrust_evidence_map__a_trust_evidence_map_coverage(word); }
+    if table == 90u64 { return words_parse_atrust_evidence_map__a_trust_evidence_map_mapping_mode(word); }
+    if table == 91u64 { return words_parse_atrust_evidence_map__a_trust_handshake_verification(word); }
+    if table == 92u64 { return words_parse_atrust_evidence_map__a_trust_resolution_mode(word); }
+    if table == 93u64 { return words_parse_atrust_evidence_map__a_trust_evidence_requirement(word); }
+    if table == 94u64 { return words_parse_atrust_evidence_map__a_trust_network_boundary(word); }
+    if table == 95u64 { return words_parse_atrust_evidence_map__a_trust_security_claims(word); }
+    if table == 96u64 { return words_parse_policy_rule__policy_rule(word); }
+    if table == 97u64 { return words_parse_policy_violation__policy_violation_action(word); }
+    if table == 98u64 { return words_parse_capability__capability_level(word); }
+    if table == 99u64 { return words_parse_type__message_field_type(word); }
+    if table == 100u64 { return words_parse_agent__approval(word); }
     NO_VARIANT
 }

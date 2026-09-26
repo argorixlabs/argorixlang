@@ -1,0 +1,5 @@
+module demo
+crypto sha256 { kind hash status allowed strength classical purpose ["integrity", "ids"] output_bits 256 min_key_bits 0 security_level "128" notes "ok" }
+crypto odd { kind mystery status weird strength unknown }
+crypto odd2 { strength galactic }
+crypto bare { }

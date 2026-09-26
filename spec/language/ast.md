@@ -67,3 +67,4 @@ it instead of comparing it. Every program that is compared must match.
 | --- | --- | --- |
 | 1 | `module`, `import`, `type`, `enum`, `capability`, `tool`, `model`, `failure`, `assert`, `agent` (with its handlers), `protocol` | 267 of 1,385: 224 of the corpus and 43 samples |
 | 2 | `policy`: `require` and `deny` rules, `on violation` | 496 of 1,394 |
+| 3 | `crypto`, `did_method`, and the keyed-block helpers (`set_block_field`, defaults) | 541 of 1,403 |

@@ -1,0 +1,2 @@
+module demo
+crypto a { output_bits many }

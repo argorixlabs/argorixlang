@@ -191,6 +191,8 @@ fn parse_declaration(s: Slice<u8>, t: Slice<AgentToken>, p: Tree, into: u64) -> 
     if into == agent_schema.PROGRAM_AGENTS { return parse_agent(s, t, p); }
     if into == agent_schema.PROGRAM_PROTOCOLS { return parse_protocol(s, t, p); }
     if into == agent_schema.PROGRAM_POLICIES { return parse_policy(s, t, p); }
+    if into == agent_schema.PROGRAM_CRYPTOS { return parse_crypto(s, t, p); }
+    if into == agent_schema.PROGRAM_DID_METHODS { return parse_did_method(s, t, p); }
     let mut q: Tree = p;
     q.unsupported = true;
     q
@@ -1162,4 +1164,308 @@ fn word_variant(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, at: u64, e: u6
     }
     p = agent_ast.variant(p, e, value, payload);
     spanned_last(t, p, at)
+}
+
+// ------------------------------------------------------------------ keyed blocks
+
+// Most declarations are `<keyword> <name> { key value ... }`, each key at most
+// once (stage0's `set_block_field`), with defaults for the keys left out.
+// These helpers are that pattern; each declaration below is its list of
+// keys.
+
+// `<keyword> <name> {`: `result` is a new object of `struct_id`, with the
+// name in field 0.
+fn block_start(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, keyword: Slice<u8>, name_description: Slice<u8>, struct_id: u64) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, keyword);
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, name_description);
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, struct_id);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, 0u64, name);
+    p.result = node;
+    p
+}
+
+// The key at `current`: consumed, and refused when field `field` of `node` is
+// already set, as "duplicate <block> field `<key>`".
+fn field_start(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>) -> Tree {
+    let mut p: Tree = parser;
+    let at: u64 = p.current;
+    p = advance(t, p);
+    if agent_ast.get(p.slots.as_slice(), p.nodes.as_slice(), node, field) != 0u64 {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "duplicate ".as_slice());
+        message = bytes.append(message, block);
+        message = bytes.append(message, " field `".as_slice());
+        message = bytes.append(message, s.slice(text_start(t, at), text_end(t, at)));
+        message.push(96u8);
+        return fail_at(t, p, message, at);
+    }
+    p
+}
+
+// A key whose value is an identifier naming a variant of enum `e` by word
+// table `table`, or `unknown` holding the word.
+fn field_enum(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, description: Slice<u8>, e: u64, table: u64, unknown: u64) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, description);
+    if p.failed { return p; }
+    let at: u64 = p.current - 1u64;
+    p = word_variant(s, t, p, at, e, agent_words.lookup(table, s.slice(text_start(t, at), text_end(t, at))), unknown);
+    agent_ast.set_last(p, node, field)
+}
+
+fn field_ident(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, description: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, description);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+fn field_string(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, description: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = expect_string(s, t, p, description);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+fn field_integer(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, description: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = expect_integer(t, p, description);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+fn field_bool(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, description: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = expect_bool(s, t, p, description);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+fn field_string_array(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, description: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = parse_string_array(s, t, p, description);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+fn field_identifier_block(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, description: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = parse_identifier_block(s, t, p, description);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+// The token at `current` is no key of `block`: "unexpected <block> item `x`"
+// for an identifier, "expected a <block> field" otherwise.
+fn block_unexpected(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, block: Slice<u8>) -> Tree {
+    let p: Tree = parser;
+    let at: u64 = p.current;
+    if peek_kind(t, at) == agent_lexer.IDENT {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unexpected ".as_slice());
+        message = bytes.append(message, block);
+        message = bytes.append(message, " item `".as_slice());
+        message = bytes.append(message, s.slice(text_start(t, at), text_end(t, at)));
+        message.push(96u8);
+        return fail_at(t, p, message, at);
+    }
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected a ".as_slice());
+    message = bytes.append(message, block);
+    message = bytes.append(message, " field".as_slice());
+    fail_at(t, p, message, at)
+}
+
+// `[ "a", "b" ]`.
+fn parse_string_array(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, description: Slice<u8>) -> Tree {
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACKET, "`[`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let values: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACKET {
+        p = ensure_not_eof(t, p, "unterminated string array".as_slice());
+        if p.failed { return p; }
+        p = expect_string(s, t, p, description);
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, values, value);
+        if peek_kind(t, p.current) != agent_lexer.RIGHT_BRACKET {
+            p = expect_symbol(t, p, agent_lexer.COMMA, "`,`".as_slice());
+            if p.failed { return p; }
+        }
+    }
+    p = advance(t, p);
+    p.result = values;
+    p
+}
+
+// `{ a b }`.
+fn parse_identifier_block(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, description: Slice<u8>) -> Tree {
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let values: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated provider allowlist block".as_slice());
+        if p.failed { return p; }
+        p = expect_identifier(s, t, p, description);
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, values, value);
+    }
+    p = advance(t, p);
+    p.result = values;
+    p
+}
+
+// The span node of the name in field 0 of `node`.
+fn name_span(slots: Slice<u64>, nodes: Slice<AgentNode>, node: u64) -> u64 {
+    let name: u64 = agent_ast.get(slots, nodes, node, 0u64);
+    agent_ast.get(slots, nodes, name, agent_schema.SPANNED_SPAN)
+}
+
+// Whether field `field` of `node` is still unset.
+fn unset(slots: Slice<u64>, nodes: Slice<AgentNode>, node: u64, field: u64) -> bool {
+    agent_ast.get(slots, nodes, node, field) == 0u64
+}
+
+// Defaults for keys left out, spanned by the declaration's name.
+
+// `Spanned::new(<e>::<variant>(String::new()), name.span)`.
+fn default_unknown(parser: Tree, node: u64, field: u64, e: u64, variant: u64) -> Tree {
+    let mut p: Tree = parser;
+    if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
+        return p;
+    }
+    let span_node: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = agent_ast.string(p, "".as_slice());
+    let payload: u64 = p.result;
+    p = agent_ast.variant(p, e, variant, payload);
+    let value: u64 = p.result;
+    p = agent_ast.spanned(p, value, span_node);
+    agent_ast.set_last(p, node, field)
+}
+
+// `Spanned::new(<e>::<variant>, name.span)`, a variant without data.
+fn default_variant(parser: Tree, node: u64, field: u64, e: u64, variant: u64) -> Tree {
+    let mut p: Tree = parser;
+    if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
+        return p;
+    }
+    let span_node: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = agent_ast.variant(p, e, variant, 0u64);
+    let value: u64 = p.result;
+    p = agent_ast.spanned(p, value, span_node);
+    agent_ast.set_last(p, node, field)
+}
+
+// `Spanned::new(String::new(), name.span)`.
+fn default_string(parser: Tree, node: u64, field: u64) -> Tree {
+    let mut p: Tree = parser;
+    if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
+        return p;
+    }
+    let span_node: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = agent_ast.string(p, "".as_slice());
+    let value: u64 = p.result;
+    p = agent_ast.spanned(p, value, span_node);
+    agent_ast.set_last(p, node, field)
+}
+
+// `Vec::new()`.
+fn default_array(parser: Tree, node: u64, field: u64) -> Tree {
+    let mut p: Tree = parser;
+    if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
+        return p;
+    }
+    p = agent_ast.array(p);
+    agent_ast.set_last(p, node, field)
+}
+
+// The block's `}` consumed; `result` is `node`.
+fn block_end(t: Slice<AgentToken>, parser: Tree, node: u64) -> Tree {
+    let mut p: Tree = advance(t, parser);
+    p.result = node;
+    p
+}
+
+// ------------------------------------------------------------------ crypto and DIDs
+
+fn parse_crypto(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "crypto".as_slice(), "crypto primitive name".as_slice(), agent_schema.CRYPTO_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated crypto declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "kind".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.CRYPTO_DECL_KIND, "crypto".as_slice(), "crypto kind".as_slice(), agent_schema.CRYPTO_KIND, agent_words.T_PARSE_CRYPTO__CRYPTO_KIND, agent_schema.CRYPTO_KIND_UNKNOWN);
+        } else if peek_is(s, t, p.current, "status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.CRYPTO_DECL_STATUS, "crypto".as_slice(), "crypto status".as_slice(), agent_schema.CRYPTO_STATUS, agent_words.T_PARSE_CRYPTO__CRYPTO_STATUS, agent_schema.CRYPTO_STATUS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "strength".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.CRYPTO_DECL_STRENGTH, "crypto".as_slice(), "crypto strength".as_slice(), agent_schema.CRYPTO_STRENGTH, agent_words.T_PARSE_CRYPTO__CRYPTO_STRENGTH, agent_schema.CRYPTO_STRENGTH_UNKNOWN_VALUE);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.CRYPTO_DECL_PURPOSE, "crypto".as_slice(), "crypto purpose".as_slice());
+        } else if peek_is(s, t, p.current, "output_bits".as_slice()) {
+            p = field_integer(s, t, p, node, agent_schema.CRYPTO_DECL_OUTPUT_BITS, "crypto".as_slice(), "crypto output_bits".as_slice());
+        } else if peek_is(s, t, p.current, "min_key_bits".as_slice()) {
+            p = field_integer(s, t, p, node, agent_schema.CRYPTO_DECL_MIN_KEY_BITS, "crypto".as_slice(), "crypto min_key_bits".as_slice());
+        } else if peek_is(s, t, p.current, "security_level".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.CRYPTO_DECL_SECURITY_LEVEL, "crypto".as_slice(), "crypto security_level".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.CRYPTO_DECL_NOTES, "crypto".as_slice(), "crypto notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "crypto".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_KIND, agent_schema.CRYPTO_KIND, agent_schema.CRYPTO_KIND_UNKNOWN);
+    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_STATUS, agent_schema.CRYPTO_STATUS, agent_schema.CRYPTO_STATUS_UNKNOWN);
+    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_STRENGTH, agent_schema.CRYPTO_STRENGTH, agent_schema.CRYPTO_STRENGTH_UNKNOWN_VALUE);
+    p = default_array(p, node, agent_schema.CRYPTO_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+fn parse_did_method(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "did_method".as_slice(), "did method name".as_slice(), agent_schema.DID_METHOD_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated did_method declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.DID_METHOD_DECL_STATUS, "did_method".as_slice(), "did_method status".as_slice(), agent_schema.DID_METHOD_STATUS, agent_words.T_PARSE_DID_METHOD__DID_METHOD_STATUS, agent_schema.DID_METHOD_STATUS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "resolution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.DID_METHOD_DECL_RESOLUTION, "did_method".as_slice(), "did_method resolution".as_slice(), agent_schema.DID_RESOLUTION_MODE, agent_words.T_PARSE_DID_METHOD__DID_RESOLUTION_MODE, agent_schema.DID_RESOLUTION_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "ledger".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.DID_METHOD_DECL_LEDGER, "did_method".as_slice(), "did_method ledger".as_slice(), agent_schema.DID_LEDGER_MODE, agent_words.T_PARSE_DID_METHOD__DID_LEDGER_MODE, agent_schema.DID_LEDGER_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "crypto_boundary".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.DID_METHOD_DECL_CRYPTO_BOUNDARY, "did_method".as_slice(), "did_method crypto_boundary reference".as_slice());
+        } else if peek_is(s, t, p.current, "governance".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.DID_METHOD_DECL_GOVERNANCE, "did_method".as_slice(), "did_method governance".as_slice());
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.DID_METHOD_DECL_PURPOSE, "did_method".as_slice(), "did_method purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.DID_METHOD_DECL_NOTES, "did_method".as_slice(), "did_method notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "did_method".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_STATUS, agent_schema.DID_METHOD_STATUS, agent_schema.DID_METHOD_STATUS_UNKNOWN);
+    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_RESOLUTION, agent_schema.DID_RESOLUTION_MODE, agent_schema.DID_RESOLUTION_MODE_UNKNOWN);
+    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_LEDGER, agent_schema.DID_LEDGER_MODE, agent_schema.DID_LEDGER_MODE_UNKNOWN);
+    p = default_string(p, node, agent_schema.DID_METHOD_DECL_CRYPTO_BOUNDARY);
+    p = default_array(p, node, agent_schema.DID_METHOD_DECL_PURPOSE);
+    block_end(t, p, node)
 }

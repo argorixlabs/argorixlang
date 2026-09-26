@@ -1,0 +1,2 @@
+module demo
+did_method web { notes "a" notes "b" }
