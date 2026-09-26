@@ -41,3 +41,4 @@ far the port has come.
 | 6 | A-Trust boundaries, identities, credential contracts and handshakes | 976 of 1,430 |
 | 7 | Trust ledgers and their hash chains | 1,025 of 1,430 |
 | 8 | MCP and A2A bridge contracts | 1,083 of 1,430 |
+| 9 | A-Trust evidence maps | 1,135 of 1,430 |

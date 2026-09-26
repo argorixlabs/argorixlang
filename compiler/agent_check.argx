@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -105,6 +105,7 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_trust_ledgers(sl, n, st, program, y);
     y = check_mcp_bridge_contracts(sl, n, st, program, y);
     y = check_a2a_bridge_contracts(sl, n, st, program, y);
+    y = check_atrust_evidence_maps(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -3131,4 +3132,176 @@ fn ledger_has_handshake(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, ledg
         }
     }
     false
+}
+
+// ------------------------------------------------------------------ evidence maps
+
+// A required list of an evidence map: non-empty, without blank entries.
+fn map_list(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, map: u64, index: u64, name: u64, field: Slice<u8>) -> Symbols {
+    let y: Symbols = required_list(symbols, sl, n, st, map, index, "atrust_evidence_map".as_slice(), name, field);
+    blank_strings(y, sl, n, st, map, index, "atrust_evidence_map".as_slice(), name, field)
+}
+
+// "atrust_evidence_map `<name>` <what> `<reference>`<rest><other>`".
+fn map_says(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, name: u64, what: Slice<u8>, reference: u64, rest: Slice<u8>, other: u64) -> Symbols {
+    let mut y: Symbols = say(symbols, sl, n, st, reference, "atrust_evidence_map".as_slice(), name, what);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, reference);
+    y = put(y, rest);
+    y = text(y, sl, n, st, other);
+    close(y)
+}
+
+// The ledger has a `kind` entry for `subject`, unless `subject` is empty.
+fn map_ledger_entry(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, name: u64, ledger: u64, reference: u64, kind: Slice<u8>, subject: u64) -> Symbols {
+    if empty(sl, n, subject) {
+        return symbols;
+    }
+    let mut link: u64 = first(sl, n, ledger, agent_schema.TRUST_LEDGER_DECL_ENTRIES);
+    while link != 0u64 {
+        let e: u64 = link - 1u64;
+        link = n[e].next;
+        if named(sl, n, st, get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_KIND), kind) && same(sl, n, st, get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_SUBJECT), subject) {
+            return symbols;
+        }
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, reference, "atrust_evidence_map".as_slice(), name, "trust_ledger `".as_slice());
+    y = text(y, sl, n, st, get(sl, n, ledger, agent_schema.TRUST_LEDGER_DECL_NAME));
+    y = put(y, "` does not contain ".as_slice());
+    y = put(y, kind);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, subject);
+    close(y)
+}
+
+fn check_atrust_evidence_maps(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS);
+    while link != 0u64 {
+        let map: u64 = link - 1u64;
+        link = n[map].next;
+        let name: u64 = get(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "atrust_evidence_map".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = required_string(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_AGENT, "atrust_evidence_map".as_slice(), name, "agent".as_slice());
+        y = required_string(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PASSPORT, "atrust_evidence_map".as_slice(), name, "passport".as_slice());
+        y = required_string(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_IDENTITY, "atrust_evidence_map".as_slice(), name, "identity".as_slice());
+        y = required_string(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_CREDENTIAL_CONTRACT, "atrust_evidence_map".as_slice(), name, "credential_contract".as_slice());
+        y = required_string(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_HANDSHAKE, "atrust_evidence_map".as_slice(), name, "handshake".as_slice());
+        y = required_string(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRUST_LEDGER, "atrust_evidence_map".as_slice(), name, "trust_ledger".as_slice());
+        y = map_list(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MCP_BRIDGES, name, "mcp_bridges".as_slice());
+        y = map_list(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_A2A_BRIDGES, name, "a2a_bridges".as_slice());
+        y = map_list(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_POLICIES, name, "policies".as_slice());
+        y = map_list(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PURPOSE, name, "purpose".as_slice());
+        y = blank_notes(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NOTES, "atrust_evidence_map".as_slice(), name);
+
+        let agent: u64 = get(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_AGENT);
+        let passport_ref: u64 = get(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PASSPORT);
+        let identity_ref: u64 = get(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_IDENTITY);
+        let credential_ref: u64 = get(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_CREDENTIAL_CONTRACT);
+        let handshake_ref: u64 = get(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_HANDSHAKE);
+        let ledger_ref: u64 = get(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRUST_LEDGER);
+        if !empty(sl, n, agent) && !contains(sl, n, st, y.agents.as_slice(), agent) {
+            y = references_unknown(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "agent".as_slice(), agent);
+        }
+        y = passport_binding(y, sl, n, st, program, "atrust_evidence_map".as_slice(), name, passport_ref, agent);
+        let identity: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_ATRUST_IDENTITIES, identity_ref);
+        if identity == NONE {
+            if !empty(sl, n, identity_ref) {
+                y = references_unknown(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "identity".as_slice(), identity_ref);
+            }
+        } else if !empty(sl, n, agent) && !same(sl, n, st, get(sl, n, identity, agent_schema.A_TRUST_IDENTITY_DECL_SUBJECT), agent) {
+            y = not_bound(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "identity".as_slice(), identity_ref, agent);
+        }
+        let credential: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS, credential_ref);
+        if credential == NONE {
+            if !empty(sl, n, credential_ref) {
+                y = references_unknown(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "credential_contract".as_slice(), credential_ref);
+            }
+        } else {
+            if !empty(sl, n, identity_ref) && !same(sl, n, st, get(sl, n, credential, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_IDENTITY), identity_ref) {
+                y = map_says(y, sl, n, st, name, "credential_contract".as_slice(), credential_ref, "` is not bound to identity `".as_slice(), identity_ref);
+            }
+            if !empty(sl, n, agent) && !same(sl, n, st, get(sl, n, credential, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SUBJECT), agent) {
+                y = map_says(y, sl, n, st, name, "credential_contract".as_slice(), credential_ref, "` is not bound to agent `".as_slice(), agent);
+            }
+        }
+        let handshake: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_ATRUST_HANDSHAKES, handshake_ref);
+        if handshake == NONE {
+            if !empty(sl, n, handshake_ref) {
+                y = references_unknown(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "handshake".as_slice(), handshake_ref);
+            }
+        } else if !empty(sl, n, agent) && !same(sl, n, st, get(sl, n, handshake, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR), agent) && !same(sl, n, st, get(sl, n, handshake, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER), agent) {
+            y = map_says(y, sl, n, st, name, "handshake".as_slice(), handshake_ref, "` does not include agent `".as_slice(), agent);
+        }
+        let ledger: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_TRUST_LEDGERS, ledger_ref);
+        if ledger == NONE {
+            if !empty(sl, n, ledger_ref) {
+                y = references_unknown(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "trust_ledger".as_slice(), ledger_ref);
+            }
+        } else {
+            y = map_ledger_entry(y, sl, n, st, name, ledger, ledger_ref, "identity".as_slice(), identity_ref);
+            y = map_ledger_entry(y, sl, n, st, name, ledger, ledger_ref, "credential".as_slice(), credential_ref);
+            y = map_ledger_entry(y, sl, n, st, name, ledger, ledger_ref, "handshake".as_slice(), handshake_ref);
+        }
+        let mut bridge_link: u64 = first(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MCP_BRIDGES);
+        while bridge_link != 0u64 {
+            let bridge_ref: u64 = bridge_link - 1u64;
+            bridge_link = n[bridge_ref].next;
+            let bridge: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS, bridge_ref);
+            if bridge == NONE {
+                y = references_unknown(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "mcp_bridge".as_slice(), bridge_ref);
+            } else if !same(sl, n, st, get(sl, n, bridge, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AGENT), agent) || !same(sl, n, st, get(sl, n, bridge, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PASSPORT), passport_ref) || !same(sl, n, st, get(sl, n, bridge, agent_schema.MCP_BRIDGE_CONTRACT_DECL_IDENTITY), identity_ref) {
+                y = say(y, sl, n, st, bridge_ref, "atrust_evidence_map".as_slice(), name, "mcp_bridge `".as_slice());
+                y = text(y, sl, n, st, bridge_ref);
+                y = put(y, "` has incompatible agent/passport/identity binding\n".as_slice());
+            }
+        }
+        bridge_link = first(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_A2A_BRIDGES);
+        while bridge_link != 0u64 {
+            let bridge_ref: u64 = bridge_link - 1u64;
+            bridge_link = n[bridge_ref].next;
+            let bridge: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS, bridge_ref);
+            if bridge == NONE {
+                y = references_unknown(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "a2a_bridge".as_slice(), bridge_ref);
+            } else {
+                if !same(sl, n, st, get(sl, n, bridge, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_HANDSHAKE), handshake_ref) {
+                    y = say(y, sl, n, st, bridge_ref, "atrust_evidence_map".as_slice(), name, "a2a_bridge `".as_slice());
+                    y = text(y, sl, n, st, bridge_ref);
+                    y = put(y, "` handshake mismatch\n".as_slice());
+                }
+                if !same(sl, n, st, get(sl, n, bridge, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRUST_LEDGER), ledger_ref) {
+                    y = say(y, sl, n, st, bridge_ref, "atrust_evidence_map".as_slice(), name, "a2a_bridge `".as_slice());
+                    y = text(y, sl, n, st, bridge_ref);
+                    y = put(y, "` ledger mismatch\n".as_slice());
+                }
+            }
+        }
+        let mut policy_link: u64 = first(sl, n, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_POLICIES);
+        while policy_link != 0u64 {
+            let policy: u64 = policy_link - 1u64;
+            policy_link = n[policy].next;
+            if find_named(sl, n, st, program, agent_schema.PROGRAM_POLICIES, policy) == NONE {
+                y = references_unknown(y, sl, n, st, "atrust_evidence_map".as_slice(), name, "policy".as_slice(), policy);
+            }
+        }
+        y = requires_either(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_COVERAGE, "atrust_evidence_map".as_slice(), name, "coverage".as_slice(), "required".as_slice(), "complete".as_slice());
+        y = requires_either(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MAPPING_MODE, "atrust_evidence_map".as_slice(), name, "mapping_mode".as_slice(), "declared_only".as_slice(), "evidence_only".as_slice());
+        y = requires_either(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_VERIFICATION, "atrust_evidence_map".as_slice(), name, "verification".as_slice(), "declared_only".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_RESOLUTION, "atrust_evidence_map".as_slice(), name, "resolution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EVIDENCE_BUNDLE, "atrust_evidence_map".as_slice(), name, "evidence_bundle".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_REPORT, "atrust_evidence_map".as_slice(), name, "security_report".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRACE, "atrust_evidence_map".as_slice(), name, "trace".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NETWORK, "atrust_evidence_map".as_slice(), name, "network".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EXTERNAL_EXECUTION, "atrust_evidence_map".as_slice(), name, "external_execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECRET_MATERIAL, "atrust_evidence_map".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_KEY_MATERIAL, "atrust_evidence_map".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EXECUTION, "atrust_evidence_map".as_slice(), name, "execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_CLAIMS, "atrust_evidence_map".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+    }
+    y
 }
