@@ -1743,6 +1743,7 @@ pub fn verify(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<
     }
     out = validate_policies(out, n, sl, st, policies);
     out = validate_message_contracts(out, n, sl, st, p, rank);
+    out = metadata(out, n, sl, st, p, rank);
     verify_rest(out, n, sl, st, p, rank)
 }
 
@@ -2194,7 +2195,7 @@ fn same_value(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, left: u64, right: 
 fn unported(n: Slice<Value>, sl: Slice<u64>, p: u64) -> bool {
     let mut field: u64 = 0u64;
     while field < agent_bytecode_schema.field_count(agent_bytecode_schema.BS_PROGRAM) {
-        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS;
+        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS || field == agent_bytecode_schema.BS_PROGRAM__PASSPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES || field == agent_bytecode_schema.BS_PROGRAM__FEATURES || field == agent_bytecode_schema.BS_PROGRAM__SECRETS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTERS;
         let value: u64 = fld(n, sl, p, field);
         if !ported && n[value].kind == V_ARRAY && n[value].a != 0u64 {
             return true;
@@ -2202,4 +2203,394 @@ fn unported(n: Slice<Value>, sl: Slice<u64>, p: u64) -> bool {
         field += 1u64;
     }
     false
+}
+
+// ------------------------------------------------------------------ the metadata validators
+
+fn list_of(n: Slice<Value>, sl: Slice<u64>, p: u64, field: u64) -> u64 {
+    fld(n, sl, p, field)
+}
+
+// "<head>" when list `field` of the program is not empty and the version is
+// below 0.<minor>.
+fn gate(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, p: u64, rank: u64, field: u64, minor: u64, head: Slice<u8>) -> Buffer<u8> {
+    if is_empty(n, list_of(n, sl, p, field)) || at_least(rank, minor) {
+        return out;
+    }
+    line(out, head)
+}
+
+// "unsupported bytecode version `<v>`", the gate some lists use.
+fn gate_version(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64, empty: bool, minor: u64) -> Buffer<u8> {
+    if empty || at_least(rank, minor) {
+        return out;
+    }
+    named(out, n, st, "unsupported bytecode version ".as_slice(), fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION), "".as_slice())
+}
+
+// The validators and gates between the message contracts and the provider
+// contracts, in `verify_bytecode`'s order.
+fn metadata(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = validate_passports(out, n, sl, st, p, rank);
+    o = validate_harnesses(o, n, sl, st, p, rank);
+    o = validate_features(o, n, sl, st, p, rank);
+    o = validate_secrets(o, n, sl, st, p, rank);
+    o = gate(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__ADAPTERS, 22u64, "adapter framework metadata requires bytecode version 0.22".as_slice());
+    o = gate(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__ADAPTER_PROFILES, 23u64, "adapter profile metadata requires bytecode version 0.23".as_slice());
+    o = gate(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__CRYPTOS, 24u64, "crypto primitive metadata requires bytecode version 0.24".as_slice());
+    o = gate(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__CRYPTO_BOUNDARIES, 25u64, "crypto boundary metadata requires bytecode version 0.25".as_slice());
+    o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_CREDENTIAL_CONTRACTS)), 28u64);
+    o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES)), 29u64);
+    o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS)), 30u64);
+    o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__MCP_BRIDGE_CONTRACTS)) && is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__A2A_BRIDGE_CONTRACTS)), 31u64);
+    o = gate(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS, 32u64, "atrust_evidence_maps require bytecode_version 0.32".as_slice());
+    o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES, agent_bytecode_schema.BS_PROGRAM__REGULATORY_MAPPINGS, 33u64, "governance_profiles and regulatory_mappings require bytecode_version 0.33".as_slice());
+    o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__THIRD_PARTY_VERIFIERS, agent_bytecode_schema.BS_PROGRAM__PUBLIC_CONFORMANCE_REPORTS, 34u64, "third_party_verifiers and public_conformance_reports require bytecode_version 0.34".as_slice());
+    o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__RUNTIME_HARDENING_PROFILES, agent_bytecode_schema.BS_PROGRAM__THREAT_MODELS, 35u64, "runtime_hardening_profiles and threat_models require bytecode_version 0.35".as_slice());
+    o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__SPEC_FREEZES, agent_bytecode_schema.BS_PROGRAM__RELEASE_CANDIDATES, 36u64, "spec_freezes and release_candidates require bytecode_version 0.36".as_slice());
+    o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__RUNTIME_EXECUTION_PROFILES, agent_bytecode_schema.BS_PROGRAM__SANDBOXED_PROVIDER_ADAPTERS, 100u64, "runtime MVP metadata requires bytecode version 1.0".as_slice());
+    validate_adapters(o, n, sl, st, p)
+}
+
+fn gate_pair(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, p: u64, rank: u64, first: u64, second: u64, minor: u64, head: Slice<u8>) -> Buffer<u8> {
+    if (is_empty(n, list_of(n, sl, p, first)) && is_empty(n, list_of(n, sl, p, second))) || at_least(rank, minor) {
+        return out;
+    }
+    line(out, head)
+}
+
+fn one_of(n: Slice<Value>, st: Slice<u8>, node: u64, words: Slice<u8>) -> bool {
+    let value: Slice<u8> = st.slice(n[node].a, n[node].b);
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= words.length() {
+        if at == words.length() || words[at] == 32u8 {
+            if bytes.equal(words.slice(start, at), value) {
+                return true;
+            }
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    false
+}
+
+fn validate_passports(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = gate(out, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__PASSPORTS, 19u64, "agent passports require bytecode version 0.19".as_slice());
+    let passports: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PASSPORTS);
+    let agents: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__AGENTS);
+    let mut link: u64 = n[passports].a;
+    while link != 0u64 {
+        let passport: u64 = link - 1u64;
+        link = n[passport].next;
+        let name: u64 = fld(n, sl, passport, agent_bytecode_schema.BS_PASSPORT__NAME);
+        if seen_before(n, sl, st, passports, agent_bytecode_schema.BS_PASSPORT__NAME, passport, name) {
+            o = invalid(o, n, st, "passport".as_slice(), name, "duplicate passport name".as_slice(), NONE);
+        }
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__AGENT, "missing required field `agent`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__AGENT_NAME, "missing required field `agent_name`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__GLOBAL_ID, "missing required field `global_id`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__IDENTITY, "missing required field `identity`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__PROVIDER, "missing required field `provider`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__VERSION, "missing required field `version`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__COUNTRY, "missing required field `country`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__JURISDICTION, "missing required field `jurisdiction`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__INTENT, "missing required field `intent`".as_slice());
+        o = passport_field(o, n, sl, st, passport, name, agent_bytecode_schema.BS_PASSPORT__RISK_LEVEL, "missing required field `risk_level`".as_slice());
+        if is_empty(n, fld(n, sl, passport, agent_bytecode_schema.BS_PASSPORT__DATA_RESIDENCY)) {
+            o = invalid(o, n, st, "passport".as_slice(), name, "data_residency must not be empty".as_slice(), NONE);
+        }
+        let agent: u64 = fld(n, sl, passport, agent_bytecode_schema.BS_PASSPORT__AGENT);
+        if !blank(n, st, agent) {
+            if !list_has(n, sl, st, agents, agent_bytecode_schema.BS_AGENT__NAME, agent) {
+                o = invalid(o, n, st, "passport".as_slice(), name, "unknown agent `".as_slice(), agent);
+            } else if earlier_passport_agent(n, sl, st, passports, agents, passport, agent) {
+                let mut reason: Buffer<u8> = bytes.append(Buffer::new(), "agent `".as_slice());
+                reason = put_text(reason, n, st, agent);
+                reason = put(reason, "` already has a passport".as_slice());
+                o = invalid(o, n, st, "passport".as_slice(), name, reason.as_slice(), NONE);
+            }
+        }
+        let risk: u64 = fld(n, sl, passport, agent_bytecode_schema.BS_PASSPORT__RISK_LEVEL);
+        if !blank(n, st, risk) && !one_of(n, st, risk, "low medium high critical".as_slice()) {
+            o = invalid(o, n, st, "passport".as_slice(), name, "invalid risk_level `".as_slice(), risk);
+        }
+        let asn: u64 = fld(n, sl, passport, agent_bytecode_schema.BS_PASSPORT__ASN);
+        if n[asn].kind == V_OBJECT {
+            let registry: u64 = fld(n, sl, asn, agent_bytecode_schema.BS_PASSPORT_ASN__REGISTRY);
+            if !one_of(n, st, registry, "LACNIC ARIN RIPE APNIC AFRINIC UNKNOWN".as_slice()) {
+                o = invalid(o, n, st, "passport".as_slice(), name, "invalid asn registry `".as_slice(), registry);
+            }
+        }
+    }
+    o
+}
+
+fn passport_field(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, passport: u64, name: u64, field: u64, reason: Slice<u8>) -> Buffer<u8> {
+    if !blank(n, st, fld(n, sl, passport, field)) {
+        return out;
+    }
+    invalid(out, n, st, "passport".as_slice(), name, reason, NONE)
+}
+
+// Whether an earlier passport's agent, non-blank and declared, is `agent`:
+// `passport_agents` only takes those.
+fn earlier_passport_agent(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, passports: u64, agents: u64, before: u64, agent: u64) -> bool {
+    let mut link: u64 = n[passports].a;
+    while link != 0u64 && link - 1u64 != before {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        let other: u64 = fld(n, sl, item, agent_bytecode_schema.BS_PASSPORT__AGENT);
+        if !blank(n, st, other) && list_has(n, sl, st, agents, agent_bytecode_schema.BS_AGENT__NAME, other) && same_text(n, st, other, agent) {
+            return true;
+        }
+    }
+    false
+}
+
+// A u64 option that is `Some(0)`.
+fn some_zero(n: Slice<Value>, node: u64) -> bool {
+    n[node].kind == V_U64 && n[node].a == 0u64
+}
+
+fn validate_harnesses(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = gate(out, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES, 20u64, "provider harness metadata requires bytecode version 0.20 or later".as_slice());
+    let harnesses: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES);
+    let providers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS);
+    let features: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__FEATURES);
+    let secrets: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__SECRETS);
+    let types: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TYPES);
+    let mut link: u64 = n[harnesses].a;
+    while link != 0u64 {
+        let harness: u64 = link - 1u64;
+        link = n[harness].next;
+        let name: u64 = fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__NAME);
+        if seen_before(n, sl, st, harnesses, agent_bytecode_schema.BS_PROVIDER_HARNESS__NAME, harness, name) {
+            o = named(o, n, st, "duplicate provider harness ".as_slice(), name, "".as_slice());
+        }
+        if blank(n, st, name) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "name must not be empty".as_slice(), NONE);
+        }
+        let provider: u64 = fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__PROVIDER);
+        if blank(n, st, provider) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "provider must not be empty".as_slice(), NONE);
+        } else if !list_has(n, sl, st, providers, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME, provider) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "unknown provider `".as_slice(), provider);
+        }
+        let feature: u64 = fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__FEATURE);
+        if n[feature].kind == V_STRING && !is_empty(n, features) && !list_has(n, sl, st, features, agent_bytecode_schema.BS_FEATURE__NAME, feature) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "unknown feature `".as_slice(), feature);
+        }
+        let secret: u64 = fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__SECRET);
+        if n[secret].kind == V_STRING && !is_empty(n, secrets) && !list_has(n, sl, st, secrets, agent_bytecode_schema.BS_SECRET__NAME, secret) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "unknown secret `".as_slice(), secret);
+        }
+        let mode: u64 = fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__MODE);
+        if !one_of(n, st, mode, "dry_run simulated".as_slice()) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "invalid mode `".as_slice(), mode);
+        }
+        if !text_is(n, st, fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__NETWORK), "denied".as_slice()) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "network must be denied".as_slice(), NONE);
+        }
+        if !text_is(n, st, fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__SECRETS), "denied".as_slice()) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "secrets must be denied".as_slice(), NONE);
+        }
+        let filesystem: u64 = fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__FILESYSTEM);
+        if !one_of(n, st, filesystem, "none read_only".as_slice()) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "invalid filesystem `".as_slice(), filesystem);
+        }
+        if some_zero(n, fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__MAX_STEPS)) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "max_steps must be positive".as_slice(), NONE);
+        }
+        if some_zero(n, fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__TIMEOUT_MS)) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "timeout_ms must be positive".as_slice(), NONE);
+        }
+        let input: u64 = fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__INPUT_CONTRACT);
+        if n[input].kind == V_STRING && !list_has(n, sl, st, types, agent_bytecode_schema.BS_TYPE__NAME, input) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "unknown input_contract `".as_slice(), input);
+        }
+        let output: u64 = fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__OUTPUT_CONTRACT);
+        if n[output].kind == V_STRING && !list_has(n, sl, st, types, agent_bytecode_schema.BS_TYPE__NAME, output) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "unknown output_contract `".as_slice(), output);
+        }
+        if any_blank(n, st, fld(n, sl, harness, agent_bytecode_schema.BS_PROVIDER_HARNESS__ATTESTATIONS)) {
+            o = invalid(o, n, st, "provider harness".as_slice(), name, "attestation entries must not be empty".as_slice(), NONE);
+        }
+    }
+    o
+}
+
+fn any_blank(n: Slice<Value>, st: Slice<u8>, list: u64) -> bool {
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if blank(n, st, item) {
+            return true;
+        }
+    }
+    false
+}
+
+// The kind of the last provider contract named `name`, or NONE.
+fn provider_kind(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, providers: u64, name: u64) -> u64 {
+    let mut found: u64 = NONE;
+    let mut link: u64 = n[providers].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if same_text(n, st, fld(n, sl, item, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME), name) {
+            found = fld(n, sl, item, agent_bytecode_schema.BS_PROVIDER_CONTRACT__KIND);
+        }
+    }
+    found
+}
+
+fn validate_features(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = gate(out, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__FEATURES, 21u64, "feature flag metadata requires bytecode version 0.21".as_slice());
+    let features: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__FEATURES);
+    let providers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS);
+    let mut link: u64 = n[features].a;
+    while link != 0u64 {
+        let feature: u64 = link - 1u64;
+        link = n[feature].next;
+        let name: u64 = fld(n, sl, feature, agent_bytecode_schema.BS_FEATURE__NAME);
+        if seen_before(n, sl, st, features, agent_bytecode_schema.BS_FEATURE__NAME, feature, name) {
+            o = named(o, n, st, "duplicate feature ".as_slice(), name, "".as_slice());
+        }
+        if blank(n, st, name) {
+            o = invalid(o, n, st, "feature".as_slice(), name, "name must not be empty".as_slice(), NONE);
+        }
+        let status: u64 = fld(n, sl, feature, agent_bytecode_schema.BS_FEATURE__STATUS);
+        if !one_of(n, st, status, "experimental preview stable deprecated".as_slice()) {
+            o = invalid(o, n, st, "feature".as_slice(), name, "invalid status `".as_slice(), status);
+        }
+        let default: u64 = fld(n, sl, feature, agent_bytecode_schema.BS_FEATURE__DEFAULT);
+        if !one_of(n, st, default, "disabled enabled".as_slice()) {
+            o = invalid(o, n, st, "feature".as_slice(), name, "invalid default `".as_slice(), default);
+        }
+        let approval: bool = n[fld(n, sl, feature, agent_bytecode_schema.BS_FEATURE__REQUIRES_APPROVAL)].a == 1u64;
+        if one_of(n, st, status, "experimental preview".as_slice()) && !approval {
+            let mut reason: Buffer<u8> = bytes.append(Buffer::new(), "status `".as_slice());
+            reason = put_text(reason, n, st, status);
+            reason = put(reason, "` requires approval".as_slice());
+            o = invalid(o, n, st, "feature".as_slice(), name, reason.as_slice(), NONE);
+        }
+        let provider: u64 = fld(n, sl, feature, agent_bytecode_schema.BS_FEATURE__PROVIDER);
+        if n[provider].kind == V_STRING {
+            let provider_type: u64 = provider_kind(n, sl, st, providers, provider);
+            if provider_type != NONE && text_is(n, st, provider_type, "external".as_slice()) && !text_is(n, st, default, "disabled".as_slice()) {
+                let mut reason: Buffer<u8> = bytes.append(Buffer::new(), "feature linked to external provider `".as_slice());
+                reason = put_text(reason, n, st, provider);
+                reason = put(reason, "` must default to disabled".as_slice());
+                o = invalid(o, n, st, "feature".as_slice(), name, reason.as_slice(), NONE);
+            }
+        }
+    }
+    o
+}
+
+fn validate_secrets(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = gate(out, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__SECRETS, 21u64, "secret boundary metadata requires bytecode version 0.21".as_slice());
+    let secrets: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__SECRETS);
+    let features: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__FEATURES);
+    let mut link: u64 = n[secrets].a;
+    while link != 0u64 {
+        let secret: u64 = link - 1u64;
+        link = n[secret].next;
+        let name: u64 = fld(n, sl, secret, agent_bytecode_schema.BS_SECRET__NAME);
+        if seen_before(n, sl, st, secrets, agent_bytecode_schema.BS_SECRET__NAME, secret, name) {
+            o = named(o, n, st, "duplicate secret ".as_slice(), name, "".as_slice());
+        }
+        if blank(n, st, name) {
+            o = invalid(o, n, st, "secret".as_slice(), name, "name must not be empty".as_slice(), NONE);
+        }
+        if blank(n, st, fld(n, sl, secret, agent_bytecode_schema.BS_SECRET__HANDLE)) {
+            o = invalid(o, n, st, "secret".as_slice(), name, "handle must not be empty".as_slice(), NONE);
+        }
+        let scope: u64 = fld(n, sl, secret, agent_bytecode_schema.BS_SECRET__SCOPE);
+        if !one_of(n, st, scope, "provider adapter model tool runtime".as_slice()) {
+            o = invalid(o, n, st, "secret".as_slice(), name, "invalid scope `".as_slice(), scope);
+        }
+        if !text_is(n, st, fld(n, sl, secret, agent_bytecode_schema.BS_SECRET__ACCESS), "denied".as_slice()) {
+            o = invalid(o, n, st, "secret".as_slice(), name, "access must be denied".as_slice(), NONE);
+        }
+        if !text_is(n, st, fld(n, sl, secret, agent_bytecode_schema.BS_SECRET__SOURCE), "none".as_slice()) {
+            o = invalid(o, n, st, "secret".as_slice(), name, "source must be none".as_slice(), NONE);
+        }
+        let required_by: u64 = fld(n, sl, secret, agent_bytecode_schema.BS_SECRET__REQUIRED_BY);
+        if n[required_by].kind == V_STRING && !is_empty(n, features) && !list_has(n, sl, st, features, agent_bytecode_schema.BS_FEATURE__NAME, required_by) {
+            o = invalid(o, n, st, "secret".as_slice(), name, "unknown required_by feature `".as_slice(), required_by);
+        }
+    }
+    o
+}
+
+fn validate_adapters(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let adapters: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ADAPTERS);
+    let providers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS);
+    let features: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__FEATURES);
+    let secrets: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__SECRETS);
+    let harnesses: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES);
+    let mut link: u64 = n[adapters].a;
+    while link != 0u64 {
+        let adapter: u64 = link - 1u64;
+        link = n[adapter].next;
+        let name: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__NAME);
+        // A duplicate is reported and skipped; the set holds each name once.
+        if seen_before(n, sl, st, adapters, agent_bytecode_schema.BS_ADAPTER__NAME, adapter, name) {
+            o = named(o, n, st, "duplicate adapter ".as_slice(), name, "".as_slice());
+        } else {
+            let provider: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__PROVIDER);
+            if blank(n, st, provider) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "missing provider".as_slice(), NONE);
+            } else if !list_has(n, sl, st, providers, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME, provider) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "unknown provider `".as_slice(), provider);
+            }
+            let feature: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__FEATURE);
+            if n[feature].kind == V_STRING && !list_has(n, sl, st, features, agent_bytecode_schema.BS_FEATURE__NAME, feature) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "unknown feature `".as_slice(), feature);
+            }
+            let secret: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__SECRET);
+            if n[secret].kind == V_STRING && !list_has(n, sl, st, secrets, agent_bytecode_schema.BS_SECRET__NAME, secret) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "unknown secret `".as_slice(), secret);
+            }
+            let harness: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__HARNESS);
+            if n[harness].kind == V_STRING && !list_has(n, sl, st, harnesses, agent_bytecode_schema.BS_PROVIDER_HARNESS__NAME, harness) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "unknown harness `".as_slice(), harness);
+            }
+            let mode: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__MODE);
+            if blank(n, st, mode) || text_is(n, st, mode, "unknown".as_slice()) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "missing or invalid mode".as_slice(), NONE);
+            }
+            if !text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__EXECUTION), "disabled".as_slice()) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "execution must be disabled".as_slice(), NONE);
+            }
+            if !text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__NETWORK), "denied".as_slice()) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "network must be denied".as_slice(), NONE);
+            }
+            if !text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__SECRETS), "denied".as_slice()) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "secrets must be denied".as_slice(), NONE);
+            }
+            if !one_of(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__FILESYSTEM), "none read_only".as_slice()) {
+                o = invalid(o, n, st, "adapter".as_slice(), name, "filesystem must be none or read_only".as_slice(), NONE);
+            }
+            let mut item_link: u64 = n[fld(n, sl, adapter, agent_bytecode_schema.BS_ADAPTER__CONFORMANCE)].a;
+            while item_link != 0u64 {
+                let item: u64 = item_link - 1u64;
+                item_link = n[item].next;
+                if blank(n, st, item) {
+                    o = invalid(o, n, st, "adapter".as_slice(), name, "empty conformance item".as_slice(), NONE);
+                }
+            }
+            if n[harness].kind == V_STRING {
+                let found: u64 = find_named(n, sl, st, harnesses, agent_bytecode_schema.BS_PROVIDER_HARNESS__NAME, harness);
+                if found != NONE && !same_text(n, st, fld(n, sl, found, agent_bytecode_schema.BS_PROVIDER_HARNESS__PROVIDER), provider) {
+                    o = invalid(o, n, st, "adapter".as_slice(), name, "provider mismatch with harness".as_slice(), NONE);
+                }
+            }
+        }
+    }
+    o
 }

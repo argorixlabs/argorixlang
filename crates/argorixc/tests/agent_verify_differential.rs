@@ -23,7 +23,7 @@ use std::process::Command;
 use std::{env, fs};
 
 /// How many files the Argorix verifier decides as stage0 does today.
-const MATCHED_AT_LEAST: usize = 687;
+const MATCHED_AT_LEAST: usize = 703;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
