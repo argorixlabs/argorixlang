@@ -486,8 +486,9 @@ resuelve, fusiona y chequea los 50 paquetes del repositorio y 27 paquetes
 adversarios igual que `argorix_module`. ESP-018.D está EN_CURSO: el IR
 (`compiler/agent_ir.argx`, [IR](spec/language/ir.md)), con emisores generados
 desde `ir.rs`, es idéntico al de stage0 en los 557 programas y los 36 paquetes
-que chequean; siguen el bytecode y las decisiones del verificador, y luego
-ESP-018.E (matriz de compatibilidad).
+que chequean, y también el bytecode sin verificar
+([bytecode](spec/language/bytecode.md)); siguen las decisiones del
+verificador y luego ESP-018.E (matriz de compatibilidad).
 
 ### ESP-019 — VM y scheduler en Argorix
 

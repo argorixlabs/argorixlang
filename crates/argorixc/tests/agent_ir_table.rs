@@ -333,7 +333,12 @@ fn shape(expression: &str, binding: &str) -> Shape {
 
 /// `IrX{...}` as `IrX` and the literal's body.
 fn literal_of(body: &str) -> Option<(String, String)> {
-    if !body.starts_with("Ir") || !body.ends_with('}') {
+    literal_with(body, "Ir")
+}
+
+/// `<prefix>X{...}` as `<prefix>X` and the literal's body.
+fn literal_with(body: &str, prefix: &str) -> Option<(String, String)> {
+    if !body.starts_with(prefix) || !body.ends_with('}') {
         return None;
     }
     let brace = body.find('{')?;
@@ -424,75 +429,107 @@ impl Generator {
                 .iter()
                 .find(|(name, _)| *name == field.name)
                 .unwrap_or_else(|| panic!("`{ir}.{}` is not set", field.name));
-            let key = format!("\"{}\".as_slice()", field.key);
-            let constant =
-                |name: &str| format!("agent_schema.{prefix}_{}", name.to_ascii_uppercase());
-            match shape(expression, binding) {
-                Shape::Constant(text) => {
-                    let _ = writeln!(out, "    y = key(y, {key});");
-                    let _ = writeln!(out, "    y = text(y, \"{text}\".as_slice());");
+            let found = shape(expression, binding);
+            let nested = match &found {
+                Shape::List(_, _, inner, _) | Shape::Optional(_, _, inner, _) => {
+                    format!("IR_{}", upper_snake(inner.trim_start_matches("Ir")))
                 }
-                Shape::Empty => {
-                    assert!(field.skip_empty, "`{ir}.{}` is always empty", field.name);
-                    self.special(ir, &field.name, &mut out, &key);
-                }
-                Shape::Value(name) | Shape::Raw(name) | Shape::Name(name) => {
-                    let helper = match shape(expression, binding) {
-                        Shape::Value(_) => "value",
-                        Shape::Raw(_) => "scalar",
-                        _ => "name",
-                    };
-                    let _ = writeln!(out, "    y = key(y, {key});");
-                    let _ = writeln!(
-                        out,
-                        "    y = {helper}(y, sl, n, st, get(sl, n, node, {}));",
-                        constant(&name)
-                    );
-                }
-                Shape::OptionValue(name) | Shape::OptionName(name) => {
-                    let helper = if matches!(shape(expression, binding), Shape::OptionValue(_)) {
-                        "value"
-                    } else {
-                        "name"
-                    };
-                    let skip = if field.skip_none { "skip" } else { "null" };
-                    let _ = writeln!(
-                        out,
-                        "    y = optional_{helper}_{skip}(y, sl, n, st, {key}, get(sl, n, node, {}));",
-                        constant(&name)
-                    );
-                }
-                Shape::Values(name) => {
-                    let skip = if field.skip_empty { "_skip" } else { "" };
-                    let _ = writeln!(
-                        out,
-                        "    y = values{skip}(y, sl, n, st, {key}, get(sl, n, node, {}));",
-                        constant(&name)
-                    );
-                }
-                Shape::List(name, _, inner, _) => {
-                    let skip = if field.skip_empty { "_skip" } else { "" };
-                    let _ = writeln!(
-                        out,
-                        "    y = list{skip}(y, sl, n, st, {key}, get(sl, n, node, {}), IR_{});",
-                        constant(&name),
-                        upper_snake(inner.trim_start_matches("Ir"))
-                    );
-                }
-                Shape::Optional(name, _, inner, _) => {
-                    let skip = if field.skip_none { "skip" } else { "null" };
-                    let _ = writeln!(
-                        out,
-                        "    y = optional_{skip}(y, sl, n, st, {key}, get(sl, n, node, {}), IR_{});",
-                        constant(&name),
-                        upper_snake(inner.trim_start_matches("Ir"))
-                    );
-                }
-                Shape::Special => self.special(ir, &field.name, &mut out, &key),
-            }
+                _ => String::new(),
+            };
+            self.write_field(&mut out, ir, &field.name, found, field, &prefix, &nested);
         }
         out.push_str("    close(y, 125u8)\n}\n");
         out
+    }
+
+    /// The lines writing one field of IR shape `found`, under `field`'s key
+    /// and serde attributes; `nested` names the emitter of a list or option.
+    /// A special is the hand-written `special_<owner>_<name>`.
+    #[allow(clippy::too_many_arguments)]
+    fn write_field(
+        &mut self,
+        out: &mut String,
+        owner: &str,
+        name: &str,
+        found: Shape,
+        field: &IrField,
+        prefix: &str,
+        nested: &str,
+    ) {
+        let key = format!("\"{}\".as_slice()", field.key);
+        let constant = |name: &str| format!("agent_schema.{prefix}_{}", name.to_ascii_uppercase());
+        let skip_none = if field.skip_none { "skip" } else { "null" };
+        let skip_empty = if field.skip_empty { "_skip" } else { "" };
+        match found {
+            Shape::Constant(text) => {
+                let _ = writeln!(out, "    y = key(y, {key});");
+                let _ = writeln!(out, "    y = text(y, \"{text}\".as_slice());");
+            }
+            Shape::Empty => {
+                assert!(field.skip_empty, "`{owner}.{name}` is always empty");
+                self.special(owner, name, out, &key);
+            }
+            Shape::Value(ast) => {
+                let _ = writeln!(out, "    y = key(y, {key});");
+                let _ = writeln!(
+                    out,
+                    "    y = value(y, sl, n, st, get(sl, n, node, {}));",
+                    constant(&ast)
+                );
+            }
+            Shape::Raw(ast) => {
+                let _ = writeln!(out, "    y = key(y, {key});");
+                let _ = writeln!(
+                    out,
+                    "    y = scalar(y, sl, n, st, get(sl, n, node, {}));",
+                    constant(&ast)
+                );
+            }
+            Shape::Name(ast) => {
+                let _ = writeln!(out, "    y = key(y, {key});");
+                let _ = writeln!(
+                    out,
+                    "    y = name(y, sl, n, st, get(sl, n, node, {}));",
+                    constant(&ast)
+                );
+            }
+            Shape::OptionValue(ast) => {
+                let _ = writeln!(
+                    out,
+                    "    y = optional_value_{skip_none}(y, sl, n, st, {key}, get(sl, n, node, {}));",
+                    constant(&ast)
+                );
+            }
+            Shape::OptionName(ast) => {
+                let _ = writeln!(
+                    out,
+                    "    y = optional_name_{skip_none}(y, sl, n, st, {key}, get(sl, n, node, {}));",
+                    constant(&ast)
+                );
+            }
+            Shape::Values(ast) => {
+                let _ = writeln!(
+                    out,
+                    "    y = values{skip_empty}(y, sl, n, st, {key}, get(sl, n, node, {}));",
+                    constant(&ast)
+                );
+            }
+            Shape::List(ast, ..) => {
+                let _ = writeln!(
+                    out,
+                    "    y = list{skip_empty}(y, sl, n, st, {key}, get(sl, n, node, {}), {nested});",
+                    constant(&ast)
+                );
+            }
+            Shape::Optional(ast, ..) => {
+                let _ = writeln!(
+                    out,
+                    "    y = optional_{skip_none}(y, sl, n, st, {key}, get(sl, n, node, {}), {nested});",
+                    constant(&ast)
+                );
+            }
+            Shape::Special => self.special(owner, name, out, &key),
+        }
     }
 
     fn special(&mut self, ir: &str, field: &str, out: &mut String, key: &str) {
@@ -549,7 +586,8 @@ fn generate() -> (String, Vec<String>) {
             function_name(ir)
         );
     }
-    out.push_str("    state\n}\n");
+    // A bytecode type's emitter otherwise, since both share these helpers.
+    out.push_str("    emit_bytecode(state, sl, n, st, s, node)\n}\n");
     for (ir, ast, binding, body) in &literals {
         out.push('\n');
         out.push_str(&generator.emitter(ir, ast, binding, body));
@@ -589,6 +627,334 @@ fn the_generated_ir_emitters_are_what_stage0_lowers() {
         }
         panic!(
             "compiler/agent_ir.argx's generated IR emitters are stale; run with ARGORIX_BLESS=1"
+        );
+    }
+}
+
+// ------------------------------------------------------------------ bytecode
+
+const BC_BEGIN: &str =
+    "// ------------------------------------------------------------------ generated bytecode emitters\n";
+const BC_END: &str =
+    "// ------------------------------------------------------------------ end of generated bytecode emitters\n";
+
+/// The bytecode fields written by hand, as `BytecodeType.field`.
+const BC_SPECIAL: &[&str] = &[
+    "BytecodeProgram.source_digest",
+    "BytecodeProgram.enums",
+    "BytecodeProgram.instructions",
+];
+
+/// How one field of `lower_ir`'s `BytecodeProgram` literal is written.
+enum BcShape {
+    Constant(String),
+    Literal(String),
+    Null,
+    /// A copy of the IR field.
+    Copy(String),
+    /// The IR field's list or option, each element as a bytecode type.
+    CopyList(String, String, String, String),
+    CopyOptional(String, String, String, String),
+    Special,
+}
+
+fn bc_shape(expression: &str, binding: &str) -> BcShape {
+    if expression == "None" {
+        return BcShape::Null;
+    }
+    if expression == "true" || expression == "false" {
+        return BcShape::Literal(expression.to_string());
+    }
+    if let Some(rest) = expression.strip_prefix('"') {
+        let text = rest.split('"').next().unwrap().to_string();
+        let tail = &rest[text.len() + 1..];
+        if matches!(tail, ".into()" | ".to_owned()" | ".to_string()") {
+            return BcShape::Constant(text);
+        }
+    }
+    let Some(rest) = expression
+        .strip_prefix(binding)
+        .and_then(|rest| rest.strip_prefix('.'))
+    else {
+        return BcShape::Special;
+    };
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    let tail = &rest[name.len()..];
+    if tail.is_empty() || tail == ".clone()" {
+        return BcShape::Copy(name);
+    }
+    if let Some(closure) = tail
+        .strip_prefix(".iter().map(|")
+        .and_then(|value| value.strip_suffix(").collect()"))
+    {
+        let (variable, body) = closure.split_once('|').unwrap();
+        if let Some((bc, literal)) = literal_with(body, "Bytecode") {
+            return BcShape::CopyList(name, variable.to_string(), bc, literal);
+        }
+    }
+    if let Some(closure) = tail
+        .strip_prefix(".as_ref().map(|")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        let (variable, body) = closure.split_once('|').unwrap();
+        let body = body
+            .strip_prefix('{')
+            .and_then(|inner| inner.strip_suffix('}'))
+            .unwrap_or(body);
+        if let Some((bc, literal)) = literal_with(body, "Bytecode") {
+            return BcShape::CopyOptional(name, variable.to_string(), bc, literal);
+        }
+    }
+    BcShape::Special
+}
+
+fn bc_constant(bc: &str) -> String {
+    format!("BC_{}", upper_snake(bc.trim_start_matches("Bytecode")))
+}
+
+fn bc_function(bc: &str) -> String {
+    upper_snake(bc.trim_start_matches("Bytecode")).to_ascii_lowercase()
+}
+
+/// The pieces of a literal's body as `(field, expression)`; a shorthand
+/// field has an empty expression.
+fn fields_of(body: &str) -> Vec<(String, String)> {
+    split_top(body)
+        .into_iter()
+        .map(|piece| match piece.split_once(':') {
+            Some((name, expression)) => (name.to_string(), expression.to_string()),
+            None => (piece.clone(), String::new()),
+        })
+        .collect()
+}
+
+/// A bytecode literal to emit: its type, the IR type it lowers, its
+/// binding and its body.
+type BcLiteral = (String, String, String, String);
+
+impl Generator {
+    fn ir_literal(&self, ir: &str) -> (String, String, String) {
+        let (_, ast, binding, body) = self
+            .literals
+            .iter()
+            .find(|(name, ..)| name == ir)
+            .unwrap_or_else(|| panic!("no IR literal `{ir}`"));
+        (ast.clone(), binding.clone(), body.clone())
+    }
+
+    fn ir_shape(&self, ir: &str, field: &str) -> Shape {
+        let (_, binding, body) = self.ir_literal(ir);
+        let (_, expression) = fields_of(&body)
+            .into_iter()
+            .find(|(name, _)| name == field)
+            .unwrap_or_else(|| panic!("`{ir}.{field}` is not set"));
+        shape(&expression, &binding)
+    }
+
+    fn collect_bc(
+        &self,
+        found: &mut Vec<BcLiteral>,
+        bc: &str,
+        ir: &str,
+        binding: &str,
+        body: &str,
+    ) {
+        if found.iter().any(|(name, ..)| name == bc) {
+            return;
+        }
+        found.push((bc.into(), ir.into(), binding.into(), body.into()));
+        for (_, expression) in fields_of(body) {
+            if let BcShape::CopyList(field, variable, inner, literal)
+            | BcShape::CopyOptional(field, variable, inner, literal) =
+                bc_shape(&expression, binding)
+            {
+                match self.ir_shape(ir, &field) {
+                    Shape::List(_, _, ir_inner, _) | Shape::Optional(_, _, ir_inner, _) => {
+                        self.collect_bc(found, &inner, &ir_inner, &variable, &literal);
+                    }
+                    // Written by hand in the IR (a package's modules).
+                    Shape::Empty => {}
+                    _ => panic!("`{bc}.{field}` maps over an IR field that is no list or option"),
+                }
+            }
+        }
+    }
+
+    fn bc_emitter(
+        &mut self,
+        structs: &[(String, Vec<IrField>)],
+        bc: &str,
+        ir: &str,
+        binding: &str,
+        body: &str,
+    ) -> String {
+        let fields = &structs
+            .iter()
+            .find(|(name, _)| name == bc)
+            .unwrap_or_else(|| panic!("no bytecode struct `{bc}`"))
+            .1;
+        let values = fields_of(body);
+        let (ast, _, _) = self.ir_literal(ir);
+        let prefix = upper_snake(&ast);
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
+            "fn emit_bc_{}(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64) -> Pretty {{",
+            bc_function(bc)
+        );
+        out.push_str("    let mut y: Pretty = open(state, 123u8);\n");
+        for field in fields {
+            let (_, expression) = values
+                .iter()
+                .find(|(name, _)| *name == field.name)
+                .unwrap_or_else(|| panic!("`{bc}.{}` is not set", field.name));
+            let key = format!("\"{}\".as_slice()", field.key);
+            // The source digest is `None` here and set by `emit-bytecode`.
+            let listed = BC_SPECIAL.contains(&format!("{bc}.{}", field.name).as_str());
+            let found = if expression.is_empty() || listed {
+                BcShape::Special
+            } else {
+                bc_shape(expression, binding)
+            };
+            match found {
+                BcShape::Constant(text) => {
+                    let _ = writeln!(out, "    y = key(y, {key});");
+                    let _ = writeln!(out, "    y = text(y, \"{text}\".as_slice());");
+                }
+                BcShape::Literal(value) => {
+                    let _ = writeln!(out, "    y = key(y, {key});");
+                    let _ = writeln!(out, "    y = word(y, \"{value}\".as_slice());");
+                }
+                BcShape::Null => {
+                    if !field.skip_none {
+                        let _ = writeln!(out, "    y = key(y, {key});");
+                        out.push_str("    y = word(y, \"null\".as_slice());\n");
+                    }
+                }
+                BcShape::Copy(name) => {
+                    let ir_found = self.ir_shape(ir, &name);
+                    let nested = match &ir_found {
+                        Shape::List(_, _, inner, _) | Shape::Optional(_, _, inner, _) => {
+                            format!("IR_{}", upper_snake(inner.trim_start_matches("Ir")))
+                        }
+                        _ => String::new(),
+                    };
+                    self.write_field(&mut out, ir, &name, ir_found, field, &prefix, &nested);
+                }
+                BcShape::CopyList(name, _, inner, _) | BcShape::CopyOptional(name, _, inner, _) => {
+                    let ir_found = self.ir_shape(ir, &name);
+                    let nested = bc_constant(&inner);
+                    self.write_field(&mut out, ir, &name, ir_found, field, &prefix, &nested);
+                }
+                BcShape::Special => {
+                    self.specials.push(format!("{bc}.{}", field.name));
+                    let _ = writeln!(
+                        out,
+                        "    y = special_bc_{}_{}(y, sl, n, st, {key}, node);",
+                        bc_function(bc),
+                        field.name
+                    );
+                }
+            }
+        }
+        out.push_str("    close(y, 125u8)\n}\n");
+        out
+    }
+}
+
+/// The bytecode region, from `lower_ir`'s `BytecodeProgram` literal.
+fn generate_bytecode(generator: &mut Generator) -> String {
+    let lower = fs::read_to_string(root().join("crates/argorix_bytecode/src/lower.rs")).unwrap();
+    let start = lower.find("pub fn lower_ir").unwrap();
+    let literal = "\n    BytecodeProgram {";
+    let open = start + lower[start..].find(literal).unwrap() + literal.len() - 1;
+    let (body, _) = balanced(&lower, open);
+    let body = squeeze(&body);
+    let text = fs::read_to_string(root().join("crates/argorix_bytecode/src/bytecode.rs")).unwrap();
+    let structs = ir_structs(&text);
+    let mut found = Vec::new();
+    generator.collect_bc(&mut found, "BytecodeProgram", "IrProgram", "ir", &body);
+
+    let mut out = String::new();
+    out.push_str(BC_BEGIN);
+    out.push_str(
+        "// GENERATED by crates/argorixc/tests/agent_ir_table.rs from the bytecode types\n\
+         // and `lower_ir` of crates/argorix_bytecode/src, composed with the IR emitters\n\
+         // above. Do not edit by hand; ARGORIX_BLESS=1 regenerates it.\n\n",
+    );
+    for (index, (bc, ..)) in found.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "pub const {}: u64 = {}u64;",
+            bc_constant(bc),
+            1000 + index
+        );
+    }
+    out.push_str(
+        "\n// The emitter of bytecode type `s` over the tree node `node`.\n\
+         fn emit_bytecode(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, s: u64, node: u64) -> Pretty {\n",
+    );
+    for (bc, ..) in &found {
+        let _ = writeln!(
+            out,
+            "    if s == {} {{\n        return emit_bc_{}(state, sl, n, st, node);\n    }}",
+            bc_constant(bc),
+            bc_function(bc)
+        );
+    }
+    out.push_str("    state\n}\n");
+    for (bc, ir, binding, body) in &found {
+        out.push('\n');
+        out.push_str(&generator.bc_emitter(&structs, bc, ir, binding, body));
+    }
+    out.push_str(BC_END);
+    out
+}
+
+#[test]
+fn the_generated_bytecode_emitters_are_what_stage0_lowers() {
+    let text = fs::read_to_string(root().join("crates/argorix_ir/src/ir.rs")).unwrap();
+    let start = text.find("impl From<&Program> for IrProgram").unwrap();
+    let literal = "\n        Self {";
+    let open = start + text[start..].find(literal).unwrap() + literal.len() - 1;
+    let (body, _) = balanced(&text, open);
+    let mut generator = Generator {
+        ir: ir_structs(&text),
+        ast: ast_structs(),
+        literals: Vec::new(),
+        specials: Vec::new(),
+    };
+    generator.collect("IrProgram", "Program", "program", &squeeze(&body));
+    let region = generate_bytecode(&mut generator);
+    let unlisted: Vec<&String> = generator
+        .specials
+        .iter()
+        .filter(|name| name.starts_with("Bytecode") && !BC_SPECIAL.contains(&name.as_str()))
+        .collect();
+    assert!(
+        unlisted.is_empty(),
+        "bytecode fields of no known shape, to write by hand and list in BC_SPECIAL: {unlisted:?}"
+    );
+    let path = root().join("compiler/agent_ir.argx");
+    let text = fs::read_to_string(&path).unwrap();
+    let begin = text
+        .find(BC_BEGIN)
+        .expect("the bytecode region's first marker");
+    let end = text
+        .find(BC_END)
+        .expect("the bytecode region's last marker")
+        + BC_END.len();
+    if text[begin..end] != region {
+        if env::var_os("ARGORIX_BLESS").is_some() {
+            let updated = format!("{}{region}{}", &text[..begin], &text[end..]);
+            fs::write(&path, updated).unwrap();
+            return;
+        }
+        panic!(
+            "compiler/agent_ir.argx's generated bytecode emitters are stale; run with ARGORIX_BLESS=1"
         );
     }
 }

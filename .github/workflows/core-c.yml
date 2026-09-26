@@ -386,7 +386,7 @@ jobs:
           --bundle target/core-c/check-bundle
           --work-dir target/core-c/check
           --report target/core-c/report-check.json
-      - name: Run the agent-language lexer, parser, checker, package and IR fixtures (ESP-018)
+      - name: Run the agent-language lexer, parser, checker, package, IR and bytecode fixtures (ESP-018)
         run: >-
           ./target/debug/core-c-harness all
           --argorixc target/debug/argorixc

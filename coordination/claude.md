@@ -13,7 +13,8 @@
   graph (`compiler/agent_package.argx`), 79 packages, give stage0's dumps.
   D (lowering) is in progress: the IR of files (`compiler/agent_ir.argx`)
   and of packages (`compiler/agent_package.argx`) matches stage0 on all 557
-  programs and 36 packages that check; D.2, the bytecode, is next.
+  programs and 36 packages that check, and so does the bytecode (D.2); D.3,
+  the verifier's decisions, is next.
 - Started: 2026-09-26.
 - Ficha: `tasks/espada/ESP-018.md`; dump `spec/language/tokens.md`.
 - Paths: `compiler/agent_lexer.argx`, `compiler/unicode.argx` (generated),

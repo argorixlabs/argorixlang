@@ -13,7 +13,7 @@
 // The differential needs a Unix C toolchain; elsewhere this file is empty.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
-use argorix_module::{package_dump, package_ir_dump};
+use argorix_module::{package_bytecode_dump, package_dump, package_ir_dump};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
@@ -141,7 +141,7 @@ fn the_argorix_module_graph_matches_the_stage0_resolver_when_cc_is_available() {
         .arg("--package-root")
         .arg(&package)
         .arg("--read-budget")
-        .arg((2 * total + list.len() as u64).to_string())
+        .arg((4 * total + list.len() as u64).to_string())
         .arg("--build-root")
         .arg(&build)
         .args(["--write-budget", "400000000"])
@@ -162,6 +162,7 @@ fn the_argorix_module_graph_matches_the_stage0_resolver_when_cc_is_available() {
         for (suffix, expected) in [
             ("package", package_dump(&manifest)),
             ("package-ir", package_ir_dump(&manifest)),
+            ("package-bytecode", package_bytecode_dump(&manifest)),
         ] {
             if suffix == "package-ir" && expected.starts_with('{') {
                 lowered += 1;
@@ -176,10 +177,10 @@ fn the_argorix_module_graph_matches_the_stage0_resolver_when_cc_is_available() {
         }
     }
     eprintln!(
-        "agent packages: {} dumps match ({lowered} lowered to IR), {} differ, of {}",
-        2 * unique.len() - failed.len(),
+        "agent packages: {} dumps match ({lowered} lowered to IR and bytecode), {} differ, of {}",
+        3 * unique.len() - failed.len(),
         failed.len(),
-        2 * unique.len()
+        3 * unique.len()
     );
     assert!(
         failed.is_empty(),

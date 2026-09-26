@@ -73,6 +73,12 @@ enum Command {
     /// Print the IR of an agent-language package, or its diagnostics
     /// (spec/language/ir.md).
     AgentPackageIr { manifest: PathBuf },
+    /// Print the bytecode of an agent-language source file, unverified, or
+    /// its diagnostics (spec/language/bytecode.md).
+    AgentBytecode { file: PathBuf },
+    /// Print the bytecode of an agent-language package, unverified, or its
+    /// diagnostics (spec/language/bytecode.md).
+    AgentPackageBytecode { manifest: PathBuf },
     /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
     CoreAst { file: PathBuf },
     /// Print the checker diagnostics of one Core file, checked on its own.
@@ -245,6 +251,19 @@ fn run() -> Result<()> {
                 manifest
             };
             print!("{}", argorix_module::package_ir_dump(&manifest_path));
+        }
+        Command::AgentBytecode { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_module::agent_bytecode_dump(&source));
+        }
+        Command::AgentPackageBytecode { manifest } => {
+            let manifest_path = if manifest.is_dir() {
+                manifest.join("argorix.toml")
+            } else {
+                manifest
+            };
+            print!("{}", argorix_module::package_bytecode_dump(&manifest_path));
         }
         Command::CoreCheck { file } => {
             let compiled = compile_core(&file, cli.stdlib.as_deref(), &cli.modules)?;

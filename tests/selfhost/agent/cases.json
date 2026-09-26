@@ -2,7 +2,7 @@
   "schema_version": 1,
   "core_version": "0.1",
   "task": "ESP-018",
-  "purpose": "Fixtures of the agent-language lexer, parser, checker, module graph and IR in compiler/agent_lexer.argx, compiler/agent_parser.argx, compiler/agent_check.argx, compiler/agent_package.argx and compiler/agent_ir.argx. The differentials against stage0 over the whole corpus are crates/argorixc/tests/agent_lexer_differential.rs, agent_parser_differential.rs, agent_check_differential.rs, agent_package_differential.rs and agent_ir_differential.rs; these run them under gcc, clang and the sanitizers.",
+  "purpose": "Fixtures of the agent-language lexer, parser, checker, module graph, IR and bytecode in compiler/agent_lexer.argx, compiler/agent_parser.argx, compiler/agent_check.argx, compiler/agent_package.argx and compiler/agent_ir.argx (IR and bytecode). The differentials against stage0 over the whole corpus are crates/argorixc/tests/agent_lexer_differential.rs, agent_parser_differential.rs, agent_check_differential.rs, agent_package_differential.rs, agent_ir_differential.rs and agent_bytecode_differential.rs; these run them under gcc, clang and the sanitizers.",
   "cases": [
     {
       "id": "agent_lex_files",
@@ -70,7 +70,9 @@
           "dumps/0.package": "entry main\nmodule b.left src/b/left.argx\nmodule b.right src/b/right.argx\nmodule c.base src/c/base.argx\nmodule main src/main.argx\nimport b.left c.base\nimport b.right c.base\nimport main b.left\nimport main b.right\nok\n",
           "dumps/1.package": "error: cyclic import detected: a.one -> a.two -> a.three -> a.one\n",
           "dumps/0.package-ir": "{\n  \"ir_version\": \"1.0\",\n  \"language\": \"Argorix Lang\",\n  \"module\": \"main\",\n  \"modules\": [\n    {\n      \"name\": \"b.left\",\n      \"path\": \"src/b/left.argx\"\n    },\n    {\n      \"name\": \"b.right\",\n      \"path\": \"src/b/right.argx\"\n    },\n    {\n      \"name\": \"c.base\",\n      \"path\": \"src/c/base.argx\"\n    },\n    {\n      \"name\": \"main\",\n      \"path\": \"src/main.argx\"\n    }\n  ],\n  \"imports\": [\n    {\n      \"from\": \"b.left\",\n      \"to\": \"c.base\"\n    },\n    {\n      \"from\": \"b.right\",\n      \"to\": \"c.base\"\n    },\n    {\n      \"from\": \"main\",\n      \"to\": \"b.left\"\n    },\n    {\n      \"from\": \"main\",\n      \"to\": \"b.right\"\n    }\n  ],\n  \"providers\": [],\n  \"provider_harnesses\": [],\n  \"assertions\": [],\n  \"policies\": [],\n  \"failures\": [],\n  \"capabilities\": [],\n  \"enums\": [],\n  \"types\": [\n    {\n      \"name\": \"L\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"R\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"Q\",\n      \"fields\": []\n    }\n  ],\n  \"tools\": [],\n  \"models\": [],\n  \"agents\": [\n    {\n      \"name\": \"A\",\n      \"approval\": \"denied\",\n      \"receives\": [\n        {\n          \"message_type\": \"Q\",\n          \"from\": null\n        }\n      ],\n      \"sends\": [],\n      \"capabilities\": [],\n      \"tools\": [],\n      \"models\": [],\n      \"handlers\": []\n    }\n  ],\n  \"protocols\": []\n}\n",
-          "dumps/1.package-ir": "error: cyclic import detected: a.one -> a.two -> a.three -> a.one\n"
+          "dumps/1.package-ir": "error: cyclic import detected: a.one -> a.two -> a.three -> a.one\n",
+          "dumps/0.package-bytecode": "{\n  \"bytecode_version\": \"1.0\",\n  \"language\": \"Argorix Lang\",\n  \"module\": \"main\",\n  \"modules\": [\n    {\n      \"name\": \"b.left\",\n      \"path\": \"src/b/left.argx\"\n    },\n    {\n      \"name\": \"b.right\",\n      \"path\": \"src/b/right.argx\"\n    },\n    {\n      \"name\": \"c.base\",\n      \"path\": \"src/c/base.argx\"\n    },\n    {\n      \"name\": \"main\",\n      \"path\": \"src/main.argx\"\n    }\n  ],\n  \"imports\": [\n    {\n      \"from\": \"b.left\",\n      \"to\": \"c.base\"\n    },\n    {\n      \"from\": \"b.right\",\n      \"to\": \"c.base\"\n    },\n    {\n      \"from\": \"main\",\n      \"to\": \"b.left\"\n    },\n    {\n      \"from\": \"main\",\n      \"to\": \"b.right\"\n    }\n  ],\n  \"providers\": [],\n  \"provider_harnesses\": [],\n  \"assertions\": [],\n  \"policies\": [],\n  \"types\": [\n    {\n      \"name\": \"L\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"R\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"Q\",\n      \"fields\": []\n    }\n  ],\n  \"enums\": [],\n  \"failures\": [],\n  \"agents\": [\n    {\n      \"name\": \"A\",\n      \"approval\": \"denied\"\n    }\n  ],\n  \"capabilities\": [],\n  \"tools\": [],\n  \"models\": [],\n  \"instructions\": [\n    {\n      \"op\": \"DeclareAgent\",\n      \"name\": \"A\",\n      \"approval\": \"denied\"\n    },\n    {\n      \"op\": \"PolicyReport\"\n    },\n    {\n      \"op\": \"End\"\n    }\n  ]\n}\n",
+          "dumps/1.package-bytecode": "error: cyclic import detected: a.one -> a.two -> a.three -> a.one\n"
         }
       }
     },
@@ -88,6 +90,23 @@
         "expected_build": {
           "dumps/0.ir": "{\n  \"ir_version\": \"1.0\",\n  \"language\": \"Argorix Lang\",\n  \"module\": \"demo\",\n  \"providers\": [],\n  \"provider_harnesses\": [],\n  \"assertions\": [],\n  \"policies\": [],\n  \"failures\": [],\n  \"capabilities\": [],\n  \"enums\": [],\n  \"types\": [\n    {\n      \"name\": \"Q\",\n      \"fields\": []\n    }\n  ],\n  \"tools\": [],\n  \"models\": [],\n  \"agents\": [\n    {\n      \"name\": \"A\",\n      \"approval\": \"denied\",\n      \"receives\": [\n        {\n          \"message_type\": \"Q\",\n          \"from\": null\n        }\n      ],\n      \"sends\": [],\n      \"capabilities\": [],\n      \"tools\": [],\n      \"models\": [],\n      \"handlers\": [\n        {\n          \"message_type\": \"Q\",\n          \"binding\": \"q\",\n          \"instructions\": [\n            {\n              \"op\": \"trace\",\n              \"binding\": \"q\"\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"protocols\": []\n}\n",
           "dumps/1.ir": "2:20: unknown message type `Missing`; messages must reference a declared `type`\n"
+        }
+      }
+    },
+    {
+      "id": "agent_bytecode_files",
+      "file": "bytecode_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "ir_package",
+        "read_budget": 20000,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.bytecode": "{\n  \"source_digest\": \"sha256:8805293934639d934f3f915c55998c17d2eef16398a329e1df90040d4d107645\",\n  \"bytecode_version\": \"1.0\",\n  \"language\": \"Argorix Lang\",\n  \"module\": \"demo\",\n  \"providers\": [],\n  \"provider_harnesses\": [],\n  \"assertions\": [],\n  \"policies\": [],\n  \"types\": [\n    {\n      \"name\": \"Q\",\n      \"fields\": []\n    }\n  ],\n  \"enums\": [],\n  \"failures\": [],\n  \"agents\": [\n    {\n      \"name\": \"A\",\n      \"approval\": \"denied\"\n    }\n  ],\n  \"capabilities\": [],\n  \"tools\": [],\n  \"models\": [],\n  \"instructions\": [\n    {\n      \"op\": \"DeclareAgent\",\n      \"name\": \"A\",\n      \"approval\": \"denied\"\n    },\n    {\n      \"op\": \"DeclareHandler\",\n      \"agent\": \"A\",\n      \"message_type\": \"Q\",\n      \"binding\": \"q\"\n    },\n    {\n      \"op\": \"TraceValue\",\n      \"agent\": \"A\",\n      \"binding\": \"q\"\n    },\n    {\n      \"op\": \"EndHandler\"\n    },\n    {\n      \"op\": \"PolicyReport\"\n    },\n    {\n      \"op\": \"End\"\n    }\n  ]\n}\n",
+          "dumps/1.bytecode": "2:20: unknown message type `Missing`; messages must reference a declared `type`\n"
         }
       }
     }

@@ -149,6 +149,7 @@ dependencies = [
 name = "argorix_module"
 version = "1.0.0"
 dependencies = [
+ "argorix_bytecode",
  "argorix_ir",
  "argorix_parser",
  "argorix_semantics",

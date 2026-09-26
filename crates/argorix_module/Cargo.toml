@@ -9,5 +9,6 @@ publish = false
 argorix_parser.workspace = true
 argorix_semantics.workspace = true
 argorix_ir.workspace = true
+argorix_bytecode.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -3,6 +3,7 @@
 //! `compiler/agent_package.argx` must print for the same package.
 
 use crate::{merge_package, resolve_package};
+use argorix_bytecode::{lower_ir, source_digest};
 use argorix_ir::IrProgram;
 use argorix_parser::parser::{ast_dump, parse_source};
 use argorix_semantics::{agent_check_dump, check_program};
@@ -28,6 +29,46 @@ pub fn agent_ir_dump(source: &[u8]) -> String {
     }
     let ir = IrProgram::from(&program);
     let mut out = serde_json::to_string_pretty(&ir).expect("the IR serializes");
+    out.push('\n');
+    out
+}
+
+/// The canonical bytecode dump of one agent-language file (ESP-018.D.2,
+/// `spec/language/bytecode.md`): what `compiler/agent_ir.argx` must print.
+///
+/// - Source that does not parse or check gives the checker dump.
+/// - Otherwise the bytecode `emit-bytecode` lowers, with the source's
+///   digest, as pretty JSON and a line feed. It is not verified here: the
+///   verifier's decisions are a dump of their own.
+pub fn agent_bytecode_dump(source: &[u8]) -> String {
+    let Ok(text) = std::str::from_utf8(source) else {
+        return ast_dump(source);
+    };
+    let Ok(program) = parse_source(text) else {
+        return ast_dump(source);
+    };
+    if check_program(&program).is_err() {
+        return agent_check_dump(source);
+    }
+    let mut bytecode = lower_ir(&IrProgram::from(&program));
+    bytecode.source_digest = Some(source_digest(source));
+    let mut out = serde_json::to_string_pretty(&bytecode).expect("the bytecode serializes");
+    out.push('\n');
+    out
+}
+
+/// The canonical bytecode dump of a package (`spec/language/bytecode.md`):
+/// what `package_ir_dump` gives when there is no IR, otherwise the bytecode
+/// `emit-bytecode-package` lowers, unverified and with no source digest.
+pub fn package_bytecode_dump(manifest_path: &Path) -> String {
+    let ir = package_ir_dump(manifest_path);
+    if !ir.starts_with('{') {
+        return ir;
+    }
+    let package = resolve_package(manifest_path).expect("the package resolved");
+    let merged = merge_package(&package);
+    let bytecode = lower_ir(&crate::package_ir(&merged, &package.graph));
+    let mut out = serde_json::to_string_pretty(&bytecode).expect("the bytecode serializes");
     out.push('\n');
     out
 }

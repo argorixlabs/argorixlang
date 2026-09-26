@@ -52,6 +52,7 @@ struct Normal { ok: bool, path: Buffer<u8>, }
 // (`ir_dump`).
 const GRAPH: u64 = 0u64;
 const IR: u64 = 1u64;
+const BYTECODE: u64 = 2u64;
 
 pub fn dump(package: PackageRead, root: Slice<u8>) -> Buffer<u8> {
     load(package, root, GRAPH)
@@ -61,6 +62,12 @@ pub fn dump(package: PackageRead, root: Slice<u8>) -> Buffer<u8> {
 // diagnostics, or its IR with the modules and imports.
 pub fn ir_dump(package: PackageRead, root: Slice<u8>) -> Buffer<u8> {
     load(package, root, IR)
+}
+
+// The dump of `emit-bytecode-package`, unverified and with no source digest,
+// or what `ir_dump` gives when there is no IR.
+pub fn bytecode_dump(package: PackageRead, root: Slice<u8>) -> Buffer<u8> {
+    load(package, root, BYTECODE)
 }
 
 fn load(package: PackageRead, root: Slice<u8>, mode: u64) -> Buffer<u8> {
@@ -132,8 +139,8 @@ fn resolve_entry(package: PackageRead, root: Slice<u8>, path: Slice<u8>, source:
     if pk.failed {
         return error(pk.out.as_slice());
     }
-    if mode == IR {
-        return package_ir(pk.text.as_slice(), pk.modules.as_slice(), pk.edges.as_slice());
+    if mode != GRAPH {
+        return package_ir(pk.text.as_slice(), pk.modules.as_slice(), pk.edges.as_slice(), mode);
     }
     graph_dump(pk.text.as_slice(), pk.modules.as_slice(), pk.edges.as_slice())
 }
@@ -604,7 +611,7 @@ fn graph_dump(text: Slice<u8>, modules: Slice<Module>, edges: Slice<Edge>) -> Bu
 
 // stage0's `package_ir`: the merged program's IR with the modules by name
 // and the imports sorted, or its diagnostics when it does not check.
-fn package_ir(text: Slice<u8>, modules: Slice<Module>, edges: Slice<Edge>) -> Buffer<u8> {
+fn package_ir(text: Slice<u8>, modules: Slice<Module>, edges: Slice<Edge>, mode: u64) -> Buffer<u8> {
     let order: Buffer<u64> = modules_by_name(text, modules);
     let merge: Buffer<u64> = merge_order(order.as_slice());
     let tree: Tree = merged(text, modules, merge.as_slice());
@@ -634,6 +641,9 @@ fn package_ir(text: Slice<u8>, modules: Slice<Module>, edges: Slice<Edge>) -> Bu
             import_lines.push(10u8);
         }
         index += 1u64;
+    }
+    if mode == BYTECODE {
+        return agent_ir.program_bytecode(tree.slots.as_slice(), tree.nodes.as_slice(), tree.strings.as_slice(), tree.result, module_lines.as_slice(), import_lines.as_slice(), "".as_slice());
     }
     agent_ir.program_ir(tree.slots.as_slice(), tree.nodes.as_slice(), tree.strings.as_slice(), tree.result, module_lines.as_slice(), import_lines.as_slice())
 }
