@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_GOVERNANCE_PROFILES || field == agent_schema.PROGRAM_REGULATORY_MAPPINGS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -106,6 +106,8 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_mcp_bridge_contracts(sl, n, st, program, y);
     y = check_a2a_bridge_contracts(sl, n, st, program, y);
     y = check_atrust_evidence_maps(sl, n, st, program, y);
+    y = check_governance_profiles(sl, n, st, program, y);
+    y = check_regulatory_mappings(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -3304,4 +3306,244 @@ fn check_atrust_evidence_maps(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>
         y = requires(y, sl, n, st, map, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_CLAIMS, "atrust_evidence_map".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
     }
     y
+}
+
+// ------------------------------------------------------------------ governance
+
+// "<kind> `<name>` has invalid <field> `<word>`" when enum field `index` of
+// `node` is `Unknown`.
+fn invalid_variant(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, unknown: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    let spanned: u64 = get(sl, n, node, index);
+    let variant: u64 = value(sl, n, spanned);
+    if n[variant].a != unknown {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, spanned, kind, name, "has invalid ".as_slice());
+    y = put(y, field);
+    y = put(y, " `".as_slice());
+    y = raw(y, n, st, n[variant].b);
+    close(y)
+}
+
+// "<kind> `<name>` <field> must not be empty" for an empty string field.
+fn nonempty_text(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    if !empty(sl, n, spanned) {
+        return symbols;
+    }
+    let y: Symbols = say(symbols, sl, n, st, spanned, kind, name, field);
+    put(y, " must not be empty\n".as_slice())
+}
+
+// "<kind> `<name>` requires non-empty <field>", at the name, for an empty
+// list.
+fn nonempty_list(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    if first(sl, n, node, index) != 0u64 {
+        return symbols;
+    }
+    let y: Symbols = say(symbols, sl, n, st, name, kind, name, "requires non-empty ".as_slice());
+    let z: Symbols = put(y, field);
+    put(z, "\n".as_slice())
+}
+
+// "<kind> `<name>` <field> must not contain empty strings" at each empty,
+// untrimmed, entry.
+fn empty_strings(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, node, index);
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if empty(sl, n, item) {
+            y = say(y, sl, n, st, item, kind, name, field);
+            y = put(y, " must not contain empty strings\n".as_slice());
+        }
+    }
+    y
+}
+
+// stage0's `require_governance_denied_boundaries`: network, external
+// execution, secret and key material, execution and security claims, which
+// every governance declaration stores as consecutive fields from `network`.
+fn denied_boundaries(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, network: u64, kind: Slice<u8>, name: u64) -> Symbols {
+    let mut y: Symbols = requires(symbols, sl, n, st, node, network, kind, name, "network".as_slice(), "denied".as_slice());
+    y = requires(y, sl, n, st, node, network + 1u64, kind, name, "external_execution".as_slice(), "disabled".as_slice());
+    y = requires(y, sl, n, st, node, network + 2u64, kind, name, "secret_material".as_slice(), "denied".as_slice());
+    y = requires(y, sl, n, st, node, network + 3u64, kind, name, "key_material".as_slice(), "denied".as_slice());
+    y = requires(y, sl, n, st, node, network + 4u64, kind, name, "execution".as_slice(), "disabled".as_slice());
+    requires(y, sl, n, st, node, network + 5u64, kind, name, "security_claims".as_slice(), "none".as_slice())
+}
+
+fn check_governance_profiles(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_GOVERNANCE_PROFILES);
+    while link != 0u64 {
+        let p: u64 = link - 1u64;
+        link = n[p].next;
+        let name: u64 = get(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "governance_profile".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = invalid_variant(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_SCOPE, agent_schema.GOVERNANCE_SCOPE_UNKNOWN, "governance_profile".as_slice(), name, "scope".as_slice());
+        y = invalid_variant(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_LEVEL, agent_schema.GOVERNANCE_LEVEL_UNKNOWN, "governance_profile".as_slice(), name, "level".as_slice());
+        y = invalid_variant(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_DOMAIN, agent_schema.GOVERNANCE_DOMAIN_UNKNOWN, "governance_profile".as_slice(), name, "domain".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_OWNER), "governance_profile".as_slice(), name, "owner".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_JURISDICTION), "governance_profile".as_slice(), name, "jurisdiction".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_FRAMEWORK), "governance_profile".as_slice(), name, "framework".as_slice());
+        let evidence_map: u64 = get(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_EVIDENCE_MAP);
+        if find_named(sl, n, st, program, agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS, evidence_map) == NONE {
+            y = references_unknown(y, sl, n, st, "governance_profile".as_slice(), name, "evidence_map".as_slice(), evidence_map);
+        }
+        let trust_ledger: u64 = get(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_TRUST_LEDGER);
+        if find_named(sl, n, st, program, agent_schema.PROGRAM_TRUST_LEDGERS, trust_ledger) == NONE {
+            y = references_unknown(y, sl, n, st, "governance_profile".as_slice(), name, "trust_ledger".as_slice(), trust_ledger);
+        }
+        y = nonempty_list(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_POLICIES, "governance_profile".as_slice(), name, "policies".as_slice());
+        let mut policy_link: u64 = first(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_POLICIES);
+        while policy_link != 0u64 {
+            let policy: u64 = policy_link - 1u64;
+            policy_link = n[policy].next;
+            if empty(sl, n, policy) {
+                y = say(y, sl, n, st, policy, "governance_profile".as_slice(), name, "policies must not contain empty strings\n".as_slice());
+            } else if find_named(sl, n, st, program, agent_schema.PROGRAM_POLICIES, policy) == NONE {
+                y = references_unknown(y, sl, n, st, "governance_profile".as_slice(), name, "policy".as_slice(), policy);
+            }
+        }
+        y = nonempty_list(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_CONTROLS, "governance_profile".as_slice(), name, "controls".as_slice());
+        let mut ids: Buffer<u64> = Buffer::new();
+        let mut control_link: u64 = first(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_CONTROLS);
+        while control_link != 0u64 {
+            let control: u64 = control_link - 1u64;
+            control_link = n[control].next;
+            let id: u64 = get(sl, n, control, agent_schema.GOVERNANCE_CONTROL_DECL_ID);
+            if contains(sl, n, st, ids.as_slice(), id) {
+                y = say(y, sl, n, st, id, "governance_profile".as_slice(), name, "has duplicate control id `".as_slice());
+                y = text(y, sl, n, st, id);
+                y = close(y);
+            } else {
+                ids.push(id);
+            }
+            y = nonempty_text(y, sl, n, st, id, "governance_profile".as_slice(), name, "control id".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, control, agent_schema.GOVERNANCE_CONTROL_DECL_REQUIREMENT), "governance_profile".as_slice(), name, "control requirement".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, control, agent_schema.GOVERNANCE_CONTROL_DECL_EVIDENCE_REF), "governance_profile".as_slice(), name, "control evidence_ref".as_slice());
+            y = invalid_variant(y, sl, n, st, control, agent_schema.GOVERNANCE_CONTROL_DECL_CATEGORY, agent_schema.GOVERNANCE_CONTROL_CATEGORY_UNKNOWN, "governance_profile".as_slice(), name, "control category".as_slice());
+            y = invalid_variant(y, sl, n, st, control, agent_schema.GOVERNANCE_CONTROL_DECL_STATUS, agent_schema.GOVERNANCE_CONTROL_STATUS_UNKNOWN, "governance_profile".as_slice(), name, "control status".as_slice());
+        }
+        y = invalid_variant(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_RISK_LEVEL, agent_schema.GOVERNANCE_RISK_LEVEL_UNKNOWN, "governance_profile".as_slice(), name, "risk_level".as_slice());
+        y = invalid_variant(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_REVIEW_STATUS, agent_schema.GOVERNANCE_REVIEW_STATUS_UNKNOWN, "governance_profile".as_slice(), name, "review_status".as_slice());
+        y = invalid_variant(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_ASSURANCE, agent_schema.GOVERNANCE_ASSURANCE_UNKNOWN, "governance_profile".as_slice(), name, "assurance".as_slice());
+        y = denied_boundaries(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_NETWORK, "governance_profile".as_slice(), name);
+        y = nonempty_list(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_PURPOSE, "governance_profile".as_slice(), name, "purpose".as_slice());
+        y = empty_strings(y, sl, n, st, p, agent_schema.GOVERNANCE_PROFILE_DECL_PURPOSE, "governance_profile".as_slice(), name, "purpose".as_slice());
+        let notes: u64 = get(sl, n, p, agent_schema.GOVERNANCE_PROFILE_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "governance_profile".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+fn check_regulatory_mappings(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_REGULATORY_MAPPINGS);
+    while link != 0u64 {
+        let m: u64 = link - 1u64;
+        link = n[m].next;
+        let name: u64 = get(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "regulatory_mapping".as_slice());
+        } else {
+            names.push(name);
+        }
+        let profile_ref: u64 = get(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_GOVERNANCE_PROFILE);
+        let profile: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_GOVERNANCE_PROFILES, profile_ref);
+        if profile == NONE {
+            y = references_unknown(y, sl, n, st, "regulatory_mapping".as_slice(), name, "governance_profile".as_slice(), profile_ref);
+        }
+        let evidence_map: u64 = get(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_EVIDENCE_MAP);
+        if find_named(sl, n, st, program, agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS, evidence_map) == NONE {
+            y = references_unknown(y, sl, n, st, "regulatory_mapping".as_slice(), name, "evidence_map".as_slice(), evidence_map);
+        }
+        if profile != NONE {
+            let theirs: u64 = get(sl, n, profile, agent_schema.GOVERNANCE_PROFILE_DECL_EVIDENCE_MAP);
+            if !same(sl, n, st, evidence_map, theirs) {
+                y = say(y, sl, n, st, evidence_map, "regulatory_mapping".as_slice(), name, "evidence_map `".as_slice());
+                y = text(y, sl, n, st, evidence_map);
+                y = put(y, "` does not match governance_profile `".as_slice());
+                y = text(y, sl, n, st, get(sl, n, profile, agent_schema.GOVERNANCE_PROFILE_DECL_NAME));
+                y = put(y, "` evidence_map `".as_slice());
+                y = text(y, sl, n, st, theirs);
+                y = close(y);
+            }
+        }
+        y = nonempty_text(y, sl, n, st, get(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_JURISDICTION), "regulatory_mapping".as_slice(), name, "jurisdiction".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_FRAMEWORK), "regulatory_mapping".as_slice(), name, "framework".as_slice());
+        y = nonempty_list(y, sl, n, st, m, agent_schema.REGULATORY_MAPPING_DECL_OBLIGATIONS, "regulatory_mapping".as_slice(), name, "obligations".as_slice());
+        let mut ids: Buffer<u64> = Buffer::new();
+        let mut obligation_link: u64 = first(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_OBLIGATIONS);
+        while obligation_link != 0u64 {
+            let o: u64 = obligation_link - 1u64;
+            obligation_link = n[o].next;
+            let id: u64 = get(sl, n, o, agent_schema.REGULATORY_OBLIGATION_DECL_ID);
+            if contains(sl, n, st, ids.as_slice(), id) {
+                y = say(y, sl, n, st, id, "regulatory_mapping".as_slice(), name, "has duplicate obligation id `".as_slice());
+                y = text(y, sl, n, st, id);
+                y = close(y);
+            } else {
+                ids.push(id);
+            }
+            let control: u64 = get(sl, n, o, agent_schema.REGULATORY_OBLIGATION_DECL_CONTROL);
+            y = nonempty_text(y, sl, n, st, id, "regulatory_mapping".as_slice(), name, "obligation id".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, o, agent_schema.REGULATORY_OBLIGATION_DECL_SOURCE), "regulatory_mapping".as_slice(), name, "obligation source".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, o, agent_schema.REGULATORY_OBLIGATION_DECL_REQUIREMENT), "regulatory_mapping".as_slice(), name, "obligation requirement".as_slice());
+            y = nonempty_text(y, sl, n, st, control, "regulatory_mapping".as_slice(), name, "obligation control".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, o, agent_schema.REGULATORY_OBLIGATION_DECL_EVIDENCE_REF), "regulatory_mapping".as_slice(), name, "obligation evidence_ref".as_slice());
+            if !empty(sl, n, control) && !(profile != NONE && profile_control(sl, n, st, profile, control)) {
+                y = say(y, sl, n, st, control, "regulatory_mapping".as_slice(), name, "obligation `".as_slice());
+                y = text(y, sl, n, st, id);
+                y = put(y, "` references unknown control `".as_slice());
+                y = text(y, sl, n, st, control);
+                y = close(y);
+            }
+            y = invalid_variant(y, sl, n, st, o, agent_schema.REGULATORY_OBLIGATION_DECL_STATUS, agent_schema.REGULATORY_OBLIGATION_STATUS_UNKNOWN, "regulatory_mapping".as_slice(), name, "obligation status".as_slice());
+        }
+        y = invalid_variant(y, sl, n, st, m, agent_schema.REGULATORY_MAPPING_DECL_COVERAGE, agent_schema.REGULATORY_COVERAGE_UNKNOWN, "regulatory_mapping".as_slice(), name, "coverage".as_slice());
+        y = invalid_variant(y, sl, n, st, m, agent_schema.REGULATORY_MAPPING_DECL_ASSESSMENT, agent_schema.REGULATORY_ASSESSMENT_UNKNOWN, "regulatory_mapping".as_slice(), name, "assessment".as_slice());
+        let legal_claims: u64 = get(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_LEGAL_CLAIMS);
+        if !is(sl, n, st, legal_claims, "none".as_slice()) {
+            y = say(y, sl, n, st, legal_claims, "regulatory_mapping".as_slice(), name, "has invalid legal_claims `".as_slice());
+            y = text(y, sl, n, st, legal_claims);
+            y = close(y);
+        }
+        let certification: u64 = get(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_CERTIFICATION);
+        if !is(sl, n, st, certification, "none".as_slice()) {
+            y = say(y, sl, n, st, certification, "regulatory_mapping".as_slice(), name, "has invalid certification `".as_slice());
+            y = text(y, sl, n, st, certification);
+            y = close(y);
+        }
+        y = denied_boundaries(y, sl, n, st, m, agent_schema.REGULATORY_MAPPING_DECL_NETWORK, "regulatory_mapping".as_slice(), name);
+        y = nonempty_list(y, sl, n, st, m, agent_schema.REGULATORY_MAPPING_DECL_PURPOSE, "regulatory_mapping".as_slice(), name, "purpose".as_slice());
+        y = empty_strings(y, sl, n, st, m, agent_schema.REGULATORY_MAPPING_DECL_PURPOSE, "regulatory_mapping".as_slice(), name, "purpose".as_slice());
+        let notes: u64 = get(sl, n, m, agent_schema.REGULATORY_MAPPING_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "regulatory_mapping".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+// Whether governance profile `profile` has a control with id `control`.
+fn profile_control(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, profile: u64, control: u64) -> bool {
+    let mut link: u64 = first(sl, n, profile, agent_schema.GOVERNANCE_PROFILE_DECL_CONTROLS);
+    while link != 0u64 {
+        let c: u64 = link - 1u64;
+        link = n[c].next;
+        if same(sl, n, st, get(sl, n, c, agent_schema.GOVERNANCE_CONTROL_DECL_ID), control) {
+            return true;
+        }
+    }
+    false
 }
