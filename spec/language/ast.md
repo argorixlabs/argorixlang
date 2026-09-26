@@ -79,3 +79,4 @@ it instead of comparing it. Every program that is compared must match.
 | 2 | `policy`: `require` and `deny` rules, `on violation` | 496 of 1,394 |
 | 3 | `crypto`, `did_method`, and the keyed-block helpers (`set_block_field`, defaults) | 541 of 1,403 |
 | 4 | Generated from `parser.rs` by `crates/argorixc/tests/agent_blocks.rs`: `harness`, `adapter`, `adapter_profile`, `crypto`, `did_method`, the `atrust_*` declarations, `trust_ledger`, the MCP and A2A bridge contracts, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier` and `public_conformance_report`, with their nested lists | 738 of 1,403 |
+| 5 | `runtime_hardening_profile`, `threat_model`, `spec_freeze`, `release_candidate`, `runtime_execution_profile`, `sandboxed_provider_adapter`: keys checked after their value, and string objects | 762 of 1,403 |

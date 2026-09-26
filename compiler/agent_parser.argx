@@ -208,6 +208,12 @@ fn parse_declaration(s: Slice<u8>, t: Slice<AgentToken>, p: Tree, into: u64) -> 
     if into == agent_schema.PROGRAM_REGULATORY_MAPPINGS { return parse_regulatory_mapping(s, t, p); }
     if into == agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS { return parse_third_party_verifier(s, t, p); }
     if into == agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS { return parse_public_conformance_report(s, t, p); }
+    if into == agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES { return parse_runtime_hardening_profile(s, t, p); }
+    if into == agent_schema.PROGRAM_THREAT_MODELS { return parse_threat_model(s, t, p); }
+    if into == agent_schema.PROGRAM_SPEC_FREEZES { return parse_spec_freeze(s, t, p); }
+    if into == agent_schema.PROGRAM_RELEASE_CANDIDATES { return parse_release_candidate(s, t, p); }
+    if into == agent_schema.PROGRAM_RUNTIME_EXECUTION_PROFILES { return parse_runtime_execution_profile(s, t, p); }
+    if into == agent_schema.PROGRAM_SANDBOXED_PROVIDER_ADAPTERS { return parse_sandboxed_provider_adapter(s, t, p); }
     let mut q: Tree = p;
     q.unsupported = true;
     q
@@ -1414,6 +1420,690 @@ fn block_end(t: Slice<AgentToken>, parser: Tree, node: u64) -> Tree {
     let mut p: Tree = advance(t, parser);
     p.result = node;
     p
+}
+
+
+// ------------------------------------------------------------------ scalar keys and string objects
+
+// Some declarations keep a map of keys instead of one slot each: the key is
+// consumed, its value read, and only then is a second value refused, at the
+// token after it. `mode` says what the value is.
+const LATE_IDENT: u64 = 0u64;
+const LATE_STRING: u64 = 1u64;
+const LATE_ARRAY: u64 = 2u64;
+
+fn field_late(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, description: Slice<u8>, mode: u64) -> Tree {
+    let key: u64 = parser.current;
+    let mut p: Tree = advance(t, parser);
+    if mode == LATE_IDENT {
+        p = expect_identifier(s, t, p, description);
+    } else if mode == LATE_STRING {
+        p = expect_string(s, t, p, description);
+    } else {
+        p = parse_string_array(s, t, p, description);
+    }
+    if p.failed { return p; }
+    if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "duplicate ".as_slice());
+        message = bytes.append(message, block);
+        message = bytes.append(message, " field `".as_slice());
+        message = bytes.append(message, s.slice(text_start(t, key), text_end(t, key)));
+        message.push(96u8);
+        let at: u64 = p.current;
+        return fail_at(t, p, message, at);
+    }
+    agent_ast.set_last(p, node, field)
+}
+
+// `Spanned::new(false, span)`.
+fn default_false(parser: Tree, node: u64, field: u64, span_node: u64) -> Tree {
+    let mut p: Tree = parser;
+    if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
+        return p;
+    }
+    p = agent_ast.boolean(p, false);
+    let value: u64 = p.result;
+    p = agent_ast.spanned(p, value, span_node);
+    agent_ast.set_last(p, node, field)
+}
+
+// The index of `word` in `schema`, words separated by spaces, each marked
+// `+` (a string) or `-` (an identifier); or NO_KEY.
+const NO_KEY: u64 = 1000000u64;
+
+fn schema_key(schema: Slice<u8>, s: Slice<u8>, word_start: u64, word_end: u64) -> u64 {
+    let mut index: u64 = 0u64;
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= schema.length() {
+        if at == schema.length() || schema[at] == 32u8 {
+            if bytes.equal(schema.slice(start + 1u64, at), s.slice(word_start, word_end)) {
+                return index;
+            }
+            index += 1u64;
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    NO_KEY
+}
+
+// Whether key `index` of `schema` is a string.
+fn schema_quoted(schema: Slice<u8>, index: u64) -> bool {
+    let mut seen: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while seen < index {
+        if schema[at] == 32u8 {
+            seen += 1u64;
+        }
+        at += 1u64;
+    }
+    schema[at] == 43u8
+}
+
+// stage0's `parse_string_object`: `{ key value ... }` with the keys of
+// `schema`, each at most once, into an object of `struct_id` whose fields are
+// the keys in order. A key left out is an empty string spanned by the `{`.
+fn parse_string_object(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, kind: Slice<u8>, struct_id: u64, schema: Slice<u8>) -> Tree {
+    let open: u64 = parser.current;
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, struct_id);
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        if is_eof(t, p.current) {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unterminated ".as_slice());
+            message = bytes.append(message, kind);
+            let at: u64 = p.current;
+            return fail_at(t, p, message, at);
+        }
+        let at: u64 = p.current;
+        if peek_kind(t, at) != agent_lexer.IDENT {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected ".as_slice());
+            message = bytes.append(message, kind);
+            message = bytes.append(message, " field".as_slice());
+            return fail_at(t, p, message, at);
+        }
+        let index: u64 = schema_key(schema, s, t[at].start, t[at].end);
+        if index == NO_KEY {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unexpected ".as_slice());
+            message = bytes.append(message, kind);
+            message = bytes.append(message, " field `".as_slice());
+            message = bytes.append(message, s.slice(t[at].start, t[at].end));
+            message.push(96u8);
+            return fail_at(t, p, message, at);
+        }
+        let mode: u64 = if schema_quoted(schema, index) { LATE_STRING } else { LATE_IDENT };
+        p = field_late(s, t, p, node, index, kind, kind, mode);
+        if p.failed { return p; }
+    }
+    p = advance(t, p);
+    p = span_of(t, p, open);
+    let fallback: u64 = p.result;
+    let mut index: u64 = 0u64;
+    while index < agent_schema.field_count(struct_id) {
+        p = default_string(p, node, index, fallback);
+        index += 1u64;
+    }
+    p.result = node;
+    p
+}
+
+// `[ { ... }, { ... } ]` of string objects, commas optional.
+fn parse_object_list(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, kind: Slice<u8>, struct_id: u64, schema: Slice<u8>) -> Tree {
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACKET, "`[`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let values: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACKET {
+        p = parse_string_object(s, t, p, kind, struct_id, schema);
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, values, value);
+        if peek_kind(t, p.current) == agent_lexer.COMMA {
+            p = advance(t, p);
+        }
+    }
+    p = advance(t, p);
+    p.result = values;
+    p
+}
+
+// A key (`set_block_field`) whose value is a list of string objects.
+fn field_object_list(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>, kind: Slice<u8>, struct_id: u64, schema: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = parse_object_list(s, t, p, kind, struct_id, schema);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+fn parse_runtime_hardening_profile(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile name".as_slice(), agent_schema.RUNTIME_HARDENING_PROFILE_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated runtime_hardening_profile declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "deny_by_default".as_slice()) {
+            p = field_bool(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_DENY_BY_DEFAULT, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile deny_by_default".as_slice());
+        } else if peek_is(s, t, p.current, "protected_assets".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROTECTED_ASSETS, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile protected asset".as_slice());
+        } else if peek_is(s, t, p.current, "runtime_boundaries".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RUNTIME_BOUNDARIES, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile runtime boundary".as_slice());
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PURPOSE, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NOTES, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile notes".as_slice());
+        } else if peek_is(s, t, p.current, "scope".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SCOPE, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "mode".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_MODE, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "enforcement".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ENFORCEMENT, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "sandbox".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SANDBOX, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "provider_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROVIDER_EXECUTION, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "external_providers".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EXTERNAL_PROVIDERS, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NETWORK, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "tool_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_TOOL_EXECUTION, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "agent_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_AGENT_EXECUTION, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "filesystem_access".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_FILESYSTEM_ACCESS, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "env_access".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ENV_ACCESS, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SECRET_MATERIAL, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_KEY_MATERIAL, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "allowlist".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ALLOWLIST, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "approval".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_APPROVAL, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "audit_log".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_AUDIT_LOG, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "incident_response".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_INCIDENT_RESPONSE, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "evidence_map".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE_MAP, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "governance_profile".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_GOVERNANCE_PROFILE, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "public_conformance_report".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PUBLIC_CONFORMANCE_REPORT, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "residual_risk".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RESIDUAL_RISK, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "review_status".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_REVIEW_STATUS, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "assurance".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ASSURANCE, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SECURITY_CLAIMS, "runtime_hardening_profile".as_slice(), "runtime_hardening_profile field value".as_slice(), LATE_IDENT);
+        } else {
+            return block_unexpected(s, t, p, "runtime_hardening_profile".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_false(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_DENY_BY_DEFAULT, fallback);
+    p = default_array(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROTECTED_ASSETS);
+    p = default_array(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RUNTIME_BOUNDARIES);
+    p = default_array(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PURPOSE);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SCOPE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_MODE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ENFORCEMENT, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SANDBOX, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROVIDER_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EXTERNAL_PROVIDERS, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NETWORK, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_TOOL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_AGENT_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_FILESYSTEM_ACCESS, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ENV_ACCESS, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SECRET_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_KEY_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ALLOWLIST, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_APPROVAL, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_AUDIT_LOG, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_INCIDENT_RESPONSE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE_MAP, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_GOVERNANCE_PROFILE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PUBLIC_CONFORMANCE_REPORT, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RESIDUAL_RISK, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_REVIEW_STATUS, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ASSURANCE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SECURITY_CLAIMS, fallback);
+    block_end(t, p, node)
+}
+
+fn parse_threat_model(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "threat_model".as_slice(), "threat_model name".as_slice(), agent_schema.THREAT_MODEL_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated threat_model declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "assets".as_slice()) {
+            p = field_object_list(s, t, p, node, agent_schema.THREAT_MODEL_DECL_ASSETS, "threat_model".as_slice(), "threat asset".as_slice(), agent_schema.THREAT_ASSET_DECL, "+id -category +description -sensitivity +evidence_ref".as_slice());
+        } else if peek_is(s, t, p.current, "threats".as_slice()) {
+            p = field_object_list(s, t, p, node, agent_schema.THREAT_MODEL_DECL_THREATS, "threat_model".as_slice(), "threat".as_slice(), agent_schema.THREAT_DECL, "+id -category +target -impact +mitigation -status".as_slice());
+        } else if peek_is(s, t, p.current, "mitigations".as_slice()) {
+            p = field_object_list(s, t, p, node, agent_schema.THREAT_MODEL_DECL_MITIGATIONS, "threat_model".as_slice(), "threat mitigation".as_slice(), agent_schema.THREAT_MITIGATION_DECL, "+id -category +control_ref +evidence_ref -status".as_slice());
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.THREAT_MODEL_DECL_PURPOSE, "threat_model".as_slice(), "threat_model purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.THREAT_MODEL_DECL_NOTES, "threat_model".as_slice(), "threat_model notes".as_slice());
+        } else if peek_is(s, t, p.current, "hardening_profile".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_HARDENING_PROFILE, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "evidence_map".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_EVIDENCE_MAP, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "governance_profile".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_GOVERNANCE_PROFILE, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "public_conformance_report".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_PUBLIC_CONFORMANCE_REPORT, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "methodology".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_METHODOLOGY, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "scope".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_SCOPE, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "review_status".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_REVIEW_STATUS, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "residual_risk".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_RESIDUAL_RISK, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "risk_acceptance".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_RISK_ACCEPTANCE, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_NETWORK, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_EXTERNAL_EXECUTION, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "tool_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_TOOL_EXECUTION, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "agent_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_AGENT_EXECUTION, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_SECRET_MATERIAL, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_KEY_MATERIAL, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_EXECUTION, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.THREAT_MODEL_DECL_SECURITY_CLAIMS, "threat_model".as_slice(), "threat_model field value".as_slice(), LATE_IDENT);
+        } else {
+            return block_unexpected(s, t, p, "threat_model".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_array(p, node, agent_schema.THREAT_MODEL_DECL_ASSETS);
+    p = default_array(p, node, agent_schema.THREAT_MODEL_DECL_THREATS);
+    p = default_array(p, node, agent_schema.THREAT_MODEL_DECL_MITIGATIONS);
+    p = default_array(p, node, agent_schema.THREAT_MODEL_DECL_PURPOSE);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_HARDENING_PROFILE, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_EVIDENCE_MAP, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_GOVERNANCE_PROFILE, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_PUBLIC_CONFORMANCE_REPORT, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_METHODOLOGY, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_SCOPE, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_REVIEW_STATUS, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_RESIDUAL_RISK, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_RISK_ACCEPTANCE, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_NETWORK, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_EXTERNAL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_TOOL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_AGENT_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_SECRET_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_KEY_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.THREAT_MODEL_DECL_SECURITY_CLAIMS, fallback);
+    block_end(t, p, node)
+}
+
+fn parse_spec_freeze(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "spec_freeze".as_slice(), "spec_freeze name".as_slice(), agent_schema.SPEC_FREEZE_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated spec_freeze declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_NOTES, "spec_freeze".as_slice(), "spec_freeze notes".as_slice());
+        } else if peek_is(s, t, p.current, "frozen_features".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_FROZEN_FEATURES, "spec_freeze".as_slice(), "spec_freeze array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "compatible_versions".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_COMPATIBLE_VERSIONS, "spec_freeze".as_slice(), "spec_freeze array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "required_suites".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_REQUIRED_SUITES, "spec_freeze".as_slice(), "spec_freeze array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_PURPOSE, "spec_freeze".as_slice(), "spec_freeze array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "version".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_VERSION, "spec_freeze".as_slice(), "spec_freeze string value".as_slice(), LATE_STRING);
+        } else if peek_is(s, t, p.current, "target".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_TARGET, "spec_freeze".as_slice(), "spec_freeze string value".as_slice(), LATE_STRING);
+        } else if peek_is(s, t, p.current, "freeze_scope".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_FREEZE_SCOPE, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "compatibility".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_COMPATIBILITY, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "stability".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_STABILITY, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "evidence_bundle".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_EVIDENCE_BUNDLE, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_report".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_SECURITY_REPORT, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "conformance".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_CONFORMANCE, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "backward_compatibility".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_BACKWARD_COMPATIBILITY, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "runtime_status".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_RUNTIME_STATUS, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_NETWORK, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_EXTERNAL_EXECUTION, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "provider_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_PROVIDER_EXECUTION, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_SECRET_MATERIAL, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_KEY_MATERIAL, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "env_access".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_ENV_ACCESS, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "filesystem_access".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_FILESYSTEM_ACCESS, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "tool_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_TOOL_EXECUTION, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "agent_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_AGENT_EXECUTION, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_SECURITY_CLAIMS, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "legal_claims".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_LEGAL_CLAIMS, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "certification".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SPEC_FREEZE_DECL_CERTIFICATION, "spec_freeze".as_slice(), "spec_freeze field value".as_slice(), LATE_IDENT);
+        } else {
+            return block_unexpected(s, t, p, "spec_freeze".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_array(p, node, agent_schema.SPEC_FREEZE_DECL_FROZEN_FEATURES);
+    p = default_array(p, node, agent_schema.SPEC_FREEZE_DECL_COMPATIBLE_VERSIONS);
+    p = default_array(p, node, agent_schema.SPEC_FREEZE_DECL_REQUIRED_SUITES);
+    p = default_array(p, node, agent_schema.SPEC_FREEZE_DECL_PURPOSE);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_VERSION, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_TARGET, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_FREEZE_SCOPE, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_COMPATIBILITY, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_STABILITY, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_EVIDENCE_BUNDLE, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_SECURITY_REPORT, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_CONFORMANCE, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_BACKWARD_COMPATIBILITY, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_RUNTIME_STATUS, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_NETWORK, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_EXTERNAL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_PROVIDER_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_SECRET_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_KEY_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_ENV_ACCESS, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_FILESYSTEM_ACCESS, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_TOOL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_AGENT_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_SECURITY_CLAIMS, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_LEGAL_CLAIMS, fallback);
+    p = default_string(p, node, agent_schema.SPEC_FREEZE_DECL_CERTIFICATION, fallback);
+    block_end(t, p, node)
+}
+
+fn parse_release_candidate(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "release_candidate".as_slice(), "release_candidate name".as_slice(), agent_schema.RELEASE_CANDIDATE_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated release_candidate declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "compatibility_matrix".as_slice()) {
+            p = field_object_list(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_COMPATIBILITY_MATRIX, "release_candidate".as_slice(), "compatibility matrix entry".as_slice(), agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL, "+version -bytecode -evidence -conformance".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_NOTES, "release_candidate".as_slice(), "release_candidate notes".as_slice());
+        } else if peek_is(s, t, p.current, "required_artifacts".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_REQUIRED_ARTIFACTS, "release_candidate".as_slice(), "release_candidate array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "required_checks".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_REQUIRED_CHECKS, "release_candidate".as_slice(), "release_candidate array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "known_limitations".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_KNOWN_LIMITATIONS, "release_candidate".as_slice(), "release_candidate array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_PURPOSE, "release_candidate".as_slice(), "release_candidate array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "version".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_VERSION, "release_candidate".as_slice(), "release_candidate string value".as_slice(), LATE_STRING);
+        } else if peek_is(s, t, p.current, "base_version".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_BASE_VERSION, "release_candidate".as_slice(), "release_candidate string value".as_slice(), LATE_STRING);
+        } else if peek_is(s, t, p.current, "spec_freeze".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_SPEC_FREEZE, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "readiness".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_READINESS, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "runtime_status".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_RUNTIME_STATUS, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_NETWORK, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_EXTERNAL_EXECUTION, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "provider_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_PROVIDER_EXECUTION, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_SECRET_MATERIAL, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_KEY_MATERIAL, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "env_access".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_ENV_ACCESS, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "filesystem_access".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_FILESYSTEM_ACCESS, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "tool_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_TOOL_EXECUTION, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "agent_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_AGENT_EXECUTION, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_SECURITY_CLAIMS, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "legal_claims".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_LEGAL_CLAIMS, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "certification".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RELEASE_CANDIDATE_DECL_CERTIFICATION, "release_candidate".as_slice(), "release_candidate field value".as_slice(), LATE_IDENT);
+        } else {
+            return block_unexpected(s, t, p, "release_candidate".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_array(p, node, agent_schema.RELEASE_CANDIDATE_DECL_COMPATIBILITY_MATRIX);
+    p = default_array(p, node, agent_schema.RELEASE_CANDIDATE_DECL_REQUIRED_ARTIFACTS);
+    p = default_array(p, node, agent_schema.RELEASE_CANDIDATE_DECL_REQUIRED_CHECKS);
+    p = default_array(p, node, agent_schema.RELEASE_CANDIDATE_DECL_KNOWN_LIMITATIONS);
+    p = default_array(p, node, agent_schema.RELEASE_CANDIDATE_DECL_PURPOSE);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_VERSION, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_BASE_VERSION, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_SPEC_FREEZE, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_READINESS, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_RUNTIME_STATUS, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_NETWORK, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_EXTERNAL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_PROVIDER_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_SECRET_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_KEY_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_ENV_ACCESS, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_FILESYSTEM_ACCESS, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_TOOL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_AGENT_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_SECURITY_CLAIMS, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_LEGAL_CLAIMS, fallback);
+    p = default_string(p, node, agent_schema.RELEASE_CANDIDATE_DECL_CERTIFICATION, fallback);
+    block_end(t, p, node)
+}
+
+fn parse_runtime_execution_profile(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "runtime_execution_profile".as_slice(), "runtime_execution_profile name".as_slice(), agent_schema.RUNTIME_EXECUTION_PROFILE_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated runtime_execution_profile declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "fail_closed".as_slice()) {
+            p = field_bool(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_FAIL_CLOSED, "runtime_execution_profile".as_slice(), "runtime_execution_profile fail_closed value".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NOTES, "runtime_execution_profile".as_slice(), "runtime_execution_profile notes".as_slice());
+        } else if peek_is(s, t, p.current, "agents".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENTS, "runtime_execution_profile".as_slice(), "runtime_execution_profile array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "allowed_actions".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_ALLOWED_ACTIONS, "runtime_execution_profile".as_slice(), "runtime_execution_profile array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "denied_actions".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_DENIED_ACTIONS, "runtime_execution_profile".as_slice(), "runtime_execution_profile array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PURPOSE, "runtime_execution_profile".as_slice(), "runtime_execution_profile array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "mode".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_MODE, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "provider".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PROVIDER, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "hardening".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_HARDENING, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "threat_model".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_THREAT_MODEL, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "evidence_map".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE_MAP, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "governance_profile".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_GOVERNANCE_PROFILE, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NETWORK, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EXTERNAL_EXECUTION, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "tool_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_TOOL_EXECUTION, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "agent_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENT_EXECUTION, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "secrets".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECRETS, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_KEY_MATERIAL, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "audit".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AUDIT, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_report".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECURITY_REPORT, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECURITY_CLAIMS, "runtime_execution_profile".as_slice(), "runtime_execution_profile field value".as_slice(), LATE_IDENT);
+        } else {
+            return block_unexpected(s, t, p, "runtime_execution_profile".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_false(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_FAIL_CLOSED, fallback);
+    p = default_array(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENTS);
+    p = default_array(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_ALLOWED_ACTIONS);
+    p = default_array(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_DENIED_ACTIONS);
+    p = default_array(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PURPOSE);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_MODE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PROVIDER, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_HARDENING, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_THREAT_MODEL, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE_MAP, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_GOVERNANCE_PROFILE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NETWORK, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EXTERNAL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_TOOL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENT_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECRETS, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_KEY_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AUDIT, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECURITY_REPORT, fallback);
+    p = default_string(p, node, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECURITY_CLAIMS, fallback);
+    block_end(t, p, node)
+}
+
+fn parse_sandboxed_provider_adapter(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter name".as_slice(), agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated sandboxed_provider_adapter declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "fail_closed".as_slice()) {
+            p = field_bool(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_FAIL_CLOSED, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter fail_closed value".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NOTES, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter notes".as_slice());
+        } else if peek_is(s, t, p.current, "allowed_operations".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ALLOWED_OPERATIONS, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "denied_operations".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_DENIED_OPERATIONS, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PURPOSE, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter array value".as_slice(), LATE_ARRAY);
+        } else if peek_is(s, t, p.current, "endpoint_ref".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ENDPOINT_REF, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter reference".as_slice(), LATE_STRING);
+        } else if peek_is(s, t, p.current, "secret_ref".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECRET_REF, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter reference".as_slice(), LATE_STRING);
+        } else if peek_is(s, t, p.current, "provider".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PROVIDER, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "runtime".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_RUNTIME, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "adapter_kind".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ADAPTER_KIND, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "protocol".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PROTOCOL, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "request_policy".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_REQUEST_POLICY, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "response_policy".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_RESPONSE_POLICY, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NETWORK, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EXTERNAL_EXECUTION, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "tool_execution".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_TOOL_EXECUTION, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECRET_MATERIAL, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_KEY_MATERIAL, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "audit".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_AUDIT, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EVIDENCE, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_report".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_REPORT, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_late(s, t, p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_CLAIMS, "sandboxed_provider_adapter".as_slice(), "sandboxed_provider_adapter field value".as_slice(), LATE_IDENT);
+        } else {
+            return block_unexpected(s, t, p, "sandboxed_provider_adapter".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_false(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_FAIL_CLOSED, fallback);
+    p = default_array(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ALLOWED_OPERATIONS);
+    p = default_array(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_DENIED_OPERATIONS);
+    p = default_array(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PURPOSE);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ENDPOINT_REF, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECRET_REF, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PROVIDER, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_RUNTIME, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ADAPTER_KIND, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PROTOCOL, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_REQUEST_POLICY, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_RESPONSE_POLICY, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NETWORK, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EXTERNAL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_TOOL_EXECUTION, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECRET_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_KEY_MATERIAL, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_AUDIT, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EVIDENCE, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_REPORT, fallback);
+    p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_CLAIMS, fallback);
+    block_end(t, p, node)
 }
 
 // ------------------------------------------------------------------ generated keyed blocks
