@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) ESP-015 (PR #60) y ESP-016 (PR #61). ESP-017 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) ESP-015 (PR #60) y ESP-016 (PR #61). ESP-018 está EN_CURSO; ESP-017 y ESP-019 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -113,7 +113,7 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | HECHA |
 | ESP-016 | Backend nativo inicial | 015 | HECHA |
 | ESP-017 | Segundo destino y bootstrap nativo | 016 | PENDIENTE |
-| ESP-018 | Lenguaje de agentes y políticas migrado | 015 | PENDIENTE |
+| ESP-018 | Lenguaje de agentes y políticas migrado | 015 | EN_CURSO |
 | ESP-019 | VM y scheduler en Argorix | 018 | PENDIENTE |
 | ESP-020 | Evidencia, firma y paquetes en Argorix | 019 | PENDIENTE |
 | ESP-021 | Runtime externo gobernado | 019, 020 | PENDIENTE |
@@ -467,6 +467,13 @@ runtime:
 **Pasos:** migrar declaraciones y reglas inventariadas en ESP-001; cubrir protocolos, capabilities, módulos, typed messages, governance y versiones; implementar matriz de compatibilidad; corregir divergencias usando especificación y baseline. Reutilizar infraestructura Core sin habilitar efectos adicionales.
 **Entregables:** compilador Argorix del lenguaje completo y matriz funcional por feature/versión.
 **Aceptación:** todo elemento del inventario tiene implementación o incompatibilidad explícita aceptada dentro del alcance; corpus histórico aplicable pasa. DENY, REVIEW y UNKNOWN no se convierten en PASS por la migración.
+
+**Estado (2026-09-26):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-018.md)),
+dividida en cinco subtareas: lexer, parser y AST, chequeo semántico y módulos,
+lowering a IR y bytecode, y matriz de compatibilidad. ESP-018.A está hecha: el
+lexer del lenguaje de agentes en `compiler/agent_lexer.argx`, con los datos
+Unicode versionados de `compiler/unicode.argx`, coincide byte a byte con el
+lexer stage0 en 1.564 archivos ([volcado](spec/language/tokens.md)).
 
 ### ESP-019 — VM y scheduler en Argorix
 

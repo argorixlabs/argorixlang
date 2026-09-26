@@ -106,6 +106,12 @@
       "file": "tasks/espada/ESP-012.md",
       "evidence": "crates/argorixc/tests/check_differential.rs; tests/selfhost/check/cases.json",
       "scope": "Resolucion, tipos y modulos en Argorix; ESP-012.A (tipos y nombres, PR 55) y ESP-012.B (ownership y vistas) hechas en compiler/check.argx, iguales al checker stage0 en 141 archivos; falta ESP-012.C (linker)"
+    },
+    "ESP-018": {
+      "status": "EN_CURSO",
+      "file": "tasks/espada/ESP-018.md",
+      "evidence": "crates/argorixc/tests/agent_lexer_differential.rs; crates/argorixc/tests/unicode_tables.rs; tests/selfhost/agent/cases.json",
+      "scope": "Lenguaje de agentes migrado a Argorix; ESP-018.A (lexer y datos Unicode) hecha, igual al lexer stage0 en 1564 archivos; faltan parser, chequeo, lowering y matriz de compatibilidad"
     }
   },
   "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad. esp_progress se actualiza al reclamar o cerrar una tarea ESP; el estado operativo del día vive en WORKBOARD.md.",
