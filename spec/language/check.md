@@ -44,3 +44,4 @@ far the port has come.
 | 9 | A-Trust evidence maps | 1,135 of 1,430 |
 | 10 | Governance profiles and regulatory mappings | 1,185 of 1,430 |
 | 11 | Third-party verifiers and public conformance reports | 1,240 of 1,430 |
+| 12 | Runtime hardening profiles and threat models | 1,294 of 1,430 |

@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_GOVERNANCE_PROFILES || field == agent_schema.PROGRAM_REGULATORY_MAPPINGS || field == agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS || field == agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_GOVERNANCE_PROFILES || field == agent_schema.PROGRAM_REGULATORY_MAPPINGS || field == agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS || field == agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS || field == agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES || field == agent_schema.PROGRAM_THREAT_MODELS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -110,6 +110,8 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_regulatory_mappings(sl, n, st, program, y);
     y = check_third_party_verifiers(sl, n, st, program, y);
     y = check_public_conformance_reports(sl, n, st, program, y);
+    y = check_runtime_hardening_profiles(sl, n, st, program, y);
+    y = check_threat_models(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -3702,6 +3704,235 @@ fn check_public_conformance_reports(sl: Slice<u64>, n: Slice<AgentNode>, st: Sli
         let notes: u64 = get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NOTES);
         if notes != 0u64 {
             y = nonempty_text(y, sl, n, st, notes, "public_conformance_report".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+// ------------------------------------------------------------------ hardening and threat models
+
+// Whether a `Spanned<String>` is one of the space-separated `words`.
+fn one_of(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64, words: Slice<u8>) -> bool {
+    let string: u64 = value(sl, n, spanned);
+    let text_bytes: Slice<u8> = st.slice(n[string].a, n[string].b);
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= words.length() {
+        if at == words.length() || words[at] == 32u8 {
+            if bytes.equal(words.slice(start, at), text_bytes) {
+                return true;
+            }
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    false
+}
+
+// stage0's `require_allowed_value`: "<kind> `<name>` has invalid <field>
+// `<value>`" unless string field `index` of `node` is one of `words`.
+fn allowed(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>, words: Slice<u8>) -> Symbols {
+    let spanned: u64 = get(sl, n, node, index);
+    if one_of(sl, n, st, spanned, words) {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, spanned, kind, name, "has invalid ".as_slice());
+    y = put(y, field);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, spanned);
+    close(y)
+}
+
+// A reference that must name a declaration in list `list`.
+fn known_reference(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, node: u64, index: u64, list: u64, kind: Slice<u8>, name: u64, what: Slice<u8>) -> Symbols {
+    let reference: u64 = get(sl, n, node, index);
+    if find_named(sl, n, st, program, list, reference) != NONE {
+        return symbols;
+    }
+    references_unknown(symbols, sl, n, st, kind, name, what, reference)
+}
+
+fn check_runtime_hardening_profiles(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES);
+    while link != 0u64 {
+        let p: u64 = link - 1u64;
+        link = n[p].next;
+        let name: u64 = get(sl, n, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "runtime_hardening_profile".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SCOPE, "runtime_hardening_profile".as_slice(), name, "scope".as_slice(), "agent system package organization".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_MODE, "runtime_hardening_profile".as_slice(), name, "mode".as_slice(), "declared_only evidence_only".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ENFORCEMENT, "runtime_hardening_profile".as_slice(), name, "enforcement".as_slice(), "declared_only evidence_only".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SANDBOX, "runtime_hardening_profile".as_slice(), name, "sandbox".as_slice(), "required declared".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ALLOWLIST, "runtime_hardening_profile".as_slice(), name, "allowlist".as_slice(), "required declared".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_APPROVAL, "runtime_hardening_profile".as_slice(), name, "approval".as_slice(), "required declared".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_INCIDENT_RESPONSE, "runtime_hardening_profile".as_slice(), name, "incident_response".as_slice(), "declared required".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RESIDUAL_RISK, "runtime_hardening_profile".as_slice(), name, "residual_risk".as_slice(), "low moderate high critical unknown".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_REVIEW_STATUS, "runtime_hardening_profile".as_slice(), name, "review_status".as_slice(), "draft reviewed approved_internal deprecated".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ASSURANCE, "runtime_hardening_profile".as_slice(), name, "assurance".as_slice(), "declared_only evidence_mapped manually_reviewed".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROVIDER_EXECUTION, "runtime_hardening_profile".as_slice(), name, "provider_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EXTERNAL_PROVIDERS, "runtime_hardening_profile".as_slice(), name, "external_providers".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NETWORK, "runtime_hardening_profile".as_slice(), name, "network".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_TOOL_EXECUTION, "runtime_hardening_profile".as_slice(), name, "tool_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_AGENT_EXECUTION, "runtime_hardening_profile".as_slice(), name, "agent_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_FILESYSTEM_ACCESS, "runtime_hardening_profile".as_slice(), name, "filesystem_access".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_ENV_ACCESS, "runtime_hardening_profile".as_slice(), name, "env_access".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SECRET_MATERIAL, "runtime_hardening_profile".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_KEY_MATERIAL, "runtime_hardening_profile".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_AUDIT_LOG, "runtime_hardening_profile".as_slice(), name, "audit_log".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE, "runtime_hardening_profile".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_SECURITY_CLAIMS, "runtime_hardening_profile".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+        let deny_by_default: u64 = get(sl, n, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_DENY_BY_DEFAULT);
+        if n[value(sl, n, deny_by_default)].a == 0u64 {
+            y = say(y, sl, n, st, deny_by_default, "runtime_hardening_profile".as_slice(), name, "requires deny_by_default `true`\n".as_slice());
+        }
+        y = known_reference(y, sl, n, st, program, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE_MAP, agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS, "runtime_hardening_profile".as_slice(), name, "evidence_map".as_slice());
+        y = known_reference(y, sl, n, st, program, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_GOVERNANCE_PROFILE, agent_schema.PROGRAM_GOVERNANCE_PROFILES, "runtime_hardening_profile".as_slice(), name, "governance_profile".as_slice());
+        y = known_reference(y, sl, n, st, program, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PUBLIC_CONFORMANCE_REPORT, agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS, "runtime_hardening_profile".as_slice(), name, "public_conformance_report".as_slice());
+        y = nonempty_list(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROTECTED_ASSETS, "runtime_hardening_profile".as_slice(), name, "protected_assets".as_slice());
+        y = empty_strings(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PROTECTED_ASSETS, "runtime_hardening_profile".as_slice(), name, "protected_assets".as_slice());
+        y = nonempty_list(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RUNTIME_BOUNDARIES, "runtime_hardening_profile".as_slice(), name, "runtime_boundaries".as_slice());
+        y = empty_strings(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_RUNTIME_BOUNDARIES, "runtime_hardening_profile".as_slice(), name, "runtime_boundaries".as_slice());
+        y = nonempty_list(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PURPOSE, "runtime_hardening_profile".as_slice(), name, "purpose".as_slice());
+        y = empty_strings(y, sl, n, st, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PURPOSE, "runtime_hardening_profile".as_slice(), name, "purpose".as_slice());
+        let notes: u64 = get(sl, n, p, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "runtime_hardening_profile".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+// "threat_model `<name>` requires non-empty <field>" at 1:1, stage0's
+// placeholder span, when list `index` of `model` is empty.
+fn threat_list(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, model: u64, index: u64, name: u64, field: Slice<u8>) -> Symbols {
+    if first(sl, n, model, index) != 0u64 {
+        return symbols;
+    }
+    let mut y: Symbols = put(symbols, "1:1: threat_model `".as_slice());
+    y = text(y, sl, n, st, name);
+    y = put(y, "` requires non-empty ".as_slice());
+    y = put(y, field);
+    put(y, "\n".as_slice())
+}
+
+// "hardening/<field> mismatch" unless field `index` of the model matches
+// field `theirs` of its hardening profile.
+fn hardening_mismatch(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, model: u64, index: u64, profile: u64, theirs: u64, name: u64, field: Slice<u8>) -> Symbols {
+    let ours: u64 = get(sl, n, model, index);
+    if same(sl, n, st, ours, get(sl, n, profile, theirs)) {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, ours, "threat_model".as_slice(), name, "hardening/".as_slice());
+    y = put(y, field);
+    put(y, " mismatch\n".as_slice())
+}
+
+fn check_threat_models(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_THREAT_MODELS);
+    while link != 0u64 {
+        let m: u64 = link - 1u64;
+        link = n[m].next;
+        let name: u64 = get(sl, n, m, agent_schema.THREAT_MODEL_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "threat_model".as_slice());
+        } else {
+            names.push(name);
+        }
+        let profile_ref: u64 = get(sl, n, m, agent_schema.THREAT_MODEL_DECL_HARDENING_PROFILE);
+        let profile: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES, profile_ref);
+        if profile == NONE {
+            y = references_unknown(y, sl, n, st, "threat_model".as_slice(), name, "runtime_hardening_profile".as_slice(), profile_ref);
+        }
+        y = known_reference(y, sl, n, st, program, m, agent_schema.THREAT_MODEL_DECL_EVIDENCE_MAP, agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS, "threat_model".as_slice(), name, "evidence_map".as_slice());
+        y = known_reference(y, sl, n, st, program, m, agent_schema.THREAT_MODEL_DECL_GOVERNANCE_PROFILE, agent_schema.PROGRAM_GOVERNANCE_PROFILES, "threat_model".as_slice(), name, "governance_profile".as_slice());
+        y = known_reference(y, sl, n, st, program, m, agent_schema.THREAT_MODEL_DECL_PUBLIC_CONFORMANCE_REPORT, agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS, "threat_model".as_slice(), name, "public_conformance_report".as_slice());
+        if profile != NONE {
+            y = hardening_mismatch(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_EVIDENCE_MAP, profile, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_EVIDENCE_MAP, name, "evidence_map".as_slice());
+            y = hardening_mismatch(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_GOVERNANCE_PROFILE, profile, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_GOVERNANCE_PROFILE, name, "governance_profile".as_slice());
+            y = hardening_mismatch(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_PUBLIC_CONFORMANCE_REPORT, profile, agent_schema.RUNTIME_HARDENING_PROFILE_DECL_PUBLIC_CONFORMANCE_REPORT, name, "public_conformance_report".as_slice());
+        }
+        y = allowed(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_METHODOLOGY, "threat_model".as_slice(), name, "methodology".as_slice(), "declared structured internal_review".as_slice());
+        y = allowed(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_SCOPE, "threat_model".as_slice(), name, "scope".as_slice(), "agent system package organization".as_slice());
+        y = allowed(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_REVIEW_STATUS, "threat_model".as_slice(), name, "review_status".as_slice(), "draft reviewed approved_internal deprecated".as_slice());
+        y = allowed(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_RESIDUAL_RISK, "threat_model".as_slice(), name, "residual_risk".as_slice(), "low moderate high critical unknown".as_slice());
+        y = allowed(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_RISK_ACCEPTANCE, "threat_model".as_slice(), name, "risk_acceptance".as_slice(), "declared_only pending_review manually_reviewed".as_slice());
+        y = requires_text(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_NETWORK, "threat_model".as_slice(), name, "network".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_EXTERNAL_EXECUTION, "threat_model".as_slice(), name, "external_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_TOOL_EXECUTION, "threat_model".as_slice(), name, "tool_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_AGENT_EXECUTION, "threat_model".as_slice(), name, "agent_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_SECRET_MATERIAL, "threat_model".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_KEY_MATERIAL, "threat_model".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_EXECUTION, "threat_model".as_slice(), name, "execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_SECURITY_CLAIMS, "threat_model".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+
+        y = threat_list(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_ASSETS, name, "assets".as_slice());
+        let mut ids: Buffer<u64> = Buffer::new();
+        let mut item_link: u64 = first(sl, n, m, agent_schema.THREAT_MODEL_DECL_ASSETS);
+        while item_link != 0u64 {
+            let a: u64 = item_link - 1u64;
+            item_link = n[a].next;
+            let id: u64 = get(sl, n, a, agent_schema.THREAT_ASSET_DECL_ID);
+            if contains(sl, n, st, ids.as_slice(), id) {
+                y = duplicate(y, sl, n, st, id, "threat asset id".as_slice());
+            } else {
+                ids.push(id);
+            }
+            y = nonempty_text(y, sl, n, st, id, "threat_model".as_slice(), name, "id".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, a, agent_schema.THREAT_ASSET_DECL_DESCRIPTION), "threat_model".as_slice(), name, "description".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, a, agent_schema.THREAT_ASSET_DECL_EVIDENCE_REF), "threat_model".as_slice(), name, "evidence_ref".as_slice());
+            y = allowed(y, sl, n, st, a, agent_schema.THREAT_ASSET_DECL_CATEGORY, "threat_model".as_slice(), name, "asset category".as_slice(), "secret key identity credential handshake ledger bridge evidence policy runtime provider user_data custom".as_slice());
+            y = allowed(y, sl, n, st, a, agent_schema.THREAT_ASSET_DECL_SENSITIVITY, "threat_model".as_slice(), name, "asset sensitivity".as_slice(), "low moderate high critical unknown".as_slice());
+        }
+        y = threat_list(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_THREATS, name, "threats".as_slice());
+        let mut threat_ids: Buffer<u64> = Buffer::new();
+        item_link = first(sl, n, m, agent_schema.THREAT_MODEL_DECL_THREATS);
+        while item_link != 0u64 {
+            let t: u64 = item_link - 1u64;
+            item_link = n[t].next;
+            let id: u64 = get(sl, n, t, agent_schema.THREAT_DECL_ID);
+            if contains(sl, n, st, threat_ids.as_slice(), id) {
+                y = duplicate(y, sl, n, st, id, "threat id".as_slice());
+            } else {
+                threat_ids.push(id);
+            }
+            y = nonempty_text(y, sl, n, st, id, "threat_model".as_slice(), name, "id".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, t, agent_schema.THREAT_DECL_TARGET), "threat_model".as_slice(), name, "target".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, t, agent_schema.THREAT_DECL_MITIGATION), "threat_model".as_slice(), name, "mitigation".as_slice());
+            y = allowed(y, sl, n, st, t, agent_schema.THREAT_DECL_CATEGORY, "threat_model".as_slice(), name, "threat category".as_slice(), "prompt_injection secret_leakage tool_abuse network_exfiltration identity_spoofing credential_misuse handshake_replay bridge_misuse evidence_tampering policy_bypass provider_misuse runtime_escape supply_chain custom".as_slice());
+            y = allowed(y, sl, n, st, t, agent_schema.THREAT_DECL_IMPACT, "threat_model".as_slice(), name, "threat impact".as_slice(), "low moderate high critical unknown".as_slice());
+            y = allowed(y, sl, n, st, t, agent_schema.THREAT_DECL_STATUS, "threat_model".as_slice(), name, "threat status".as_slice(), "declared mitigated_declared pending_review accepted_risk not_applicable".as_slice());
+        }
+        y = threat_list(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_MITIGATIONS, name, "mitigations".as_slice());
+        let mut mitigation_ids: Buffer<u64> = Buffer::new();
+        item_link = first(sl, n, m, agent_schema.THREAT_MODEL_DECL_MITIGATIONS);
+        while item_link != 0u64 {
+            let g: u64 = item_link - 1u64;
+            item_link = n[g].next;
+            let id: u64 = get(sl, n, g, agent_schema.THREAT_MITIGATION_DECL_ID);
+            if contains(sl, n, st, mitigation_ids.as_slice(), id) {
+                y = duplicate(y, sl, n, st, id, "threat mitigation id".as_slice());
+            } else {
+                mitigation_ids.push(id);
+            }
+            y = nonempty_text(y, sl, n, st, id, "threat_model".as_slice(), name, "id".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, g, agent_schema.THREAT_MITIGATION_DECL_CONTROL_REF), "threat_model".as_slice(), name, "control_ref".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, g, agent_schema.THREAT_MITIGATION_DECL_EVIDENCE_REF), "threat_model".as_slice(), name, "evidence_ref".as_slice());
+            y = allowed(y, sl, n, st, g, agent_schema.THREAT_MITIGATION_DECL_CATEGORY, "threat_model".as_slice(), name, "mitigation category".as_slice(), "network_boundary secret_boundary key_boundary tool_boundary agent_boundary provider_boundary policy_enforcement audit_logging evidence_mapping sandboxing review_process custom".as_slice());
+            y = allowed(y, sl, n, st, g, agent_schema.THREAT_MITIGATION_DECL_STATUS, "threat_model".as_slice(), name, "mitigation status".as_slice(), "mapped declared pending_review not_applicable".as_slice());
+        }
+        y = nonempty_list(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_PURPOSE, "threat_model".as_slice(), name, "purpose".as_slice());
+        y = empty_strings(y, sl, n, st, m, agent_schema.THREAT_MODEL_DECL_PURPOSE, "threat_model".as_slice(), name, "purpose".as_slice());
+        let notes: u64 = get(sl, n, m, agent_schema.THREAT_MODEL_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "threat_model".as_slice(), name, "notes".as_slice());
         }
     }
     y
