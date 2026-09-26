@@ -1,0 +1,14 @@
+module demo
+policy Safe {
+  require no_unhandled_messages
+  deny external_execution
+  require atrust_boundaries_declared
+  require runtime_status completed
+  require runtime_status failed
+  deny something_new
+  on violation { action block trace required }
+}
+policy Soft { require all_tool_calls_traced on violation { action review } }
+policy Warn { on violation { action warn } }
+policy Odd { on violation { action escalate trace required } }
+policy Empty { }

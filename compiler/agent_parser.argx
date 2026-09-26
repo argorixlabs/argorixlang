@@ -18,6 +18,7 @@ import stdlib.bytes;
 import compiler.agent_lexer;
 import compiler.agent_ast;
 import compiler.agent_schema;
+import compiler.agent_words;
 
 pub const PARSED: u64 = 0u64;
 pub const FAILED: u64 = 1u64;
@@ -189,6 +190,7 @@ fn parse_declaration(s: Slice<u8>, t: Slice<AgentToken>, p: Tree, into: u64) -> 
     if into == agent_schema.PROGRAM_MODELS { return parse_model(s, t, p); }
     if into == agent_schema.PROGRAM_AGENTS { return parse_agent(s, t, p); }
     if into == agent_schema.PROGRAM_PROTOCOLS { return parse_protocol(s, t, p); }
+    if into == agent_schema.PROGRAM_POLICIES { return parse_policy(s, t, p); }
     let mut q: Tree = p;
     q.unsupported = true;
     q
@@ -1012,4 +1014,152 @@ fn ensure_not_eof(t: Slice<AgentToken>, parser: Tree, message: Slice<u8>) -> Tre
         return fail_at(t, p, bytes.copy(message), at);
     }
     p
+}
+
+// ------------------------------------------------------------------ policies
+
+fn parse_policy(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "policy".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "policy name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let rules: u64 = p.result;
+    let mut violation: u64 = 0u64;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated policy declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "require".as_slice()) || peek_is(s, t, p.current, "deny".as_slice()) {
+            p = match_keyword(s, t, p, "require".as_slice());
+            let require: bool = p.matched;
+            if !require {
+                p = expect_keyword(s, t, p, "deny".as_slice());
+                if p.failed { return p; }
+            }
+            p = parse_policy_rule(s, t, p);
+            if p.failed { return p; }
+            let rule: u64 = p.result;
+            let mut holder_struct: u64 = agent_schema.POLICY_RULE_DECL__DENY;
+            let mut holder_field: u64 = agent_schema.POLICY_RULE_DECL__DENY_RULE;
+            let mut which: u64 = agent_schema.POLICY_RULE_DECL_DENY;
+            if require {
+                holder_struct = agent_schema.POLICY_RULE_DECL__REQUIRE;
+                holder_field = agent_schema.POLICY_RULE_DECL__REQUIRE_RULE;
+                which = agent_schema.POLICY_RULE_DECL_REQUIRE;
+            }
+            p = agent_ast.object(p, holder_struct);
+            let holder: u64 = p.result;
+            p = agent_ast.set(p, holder, holder_field, rule);
+            p = agent_ast.variant(p, agent_schema.POLICY_RULE_DECL, which, holder);
+            let decl: u64 = p.result;
+            p = agent_ast.push(p, rules, decl);
+        } else if peek_is(s, t, p.current, "on".as_slice()) {
+            if violation != 0u64 {
+                let at: u64 = p.current;
+                return fail_at(t, p, bytes.copy("duplicate `on violation` block".as_slice()), at);
+            }
+            p = parse_policy_violation(s, t, p);
+            if p.failed { return p; }
+            violation = p.result;
+        } else if peek_kind(t, p.current) == agent_lexer.IDENT {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unexpected policy item `".as_slice());
+            message = bytes.append(message, s.slice(text_start(t, p.current), text_end(t, p.current)));
+            message.push(96u8);
+            let at: u64 = p.current;
+            return fail_at(t, p, message, at);
+        } else {
+            let at: u64 = p.current;
+            return fail_at(t, p, bytes.copy("expected `require`, `deny`, or `on violation`".as_slice()), at);
+        }
+    }
+    p = advance(t, p);
+    p = agent_ast.object(p, agent_schema.POLICY_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.POLICY_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.POLICY_DECL_RULES, rules);
+    p = agent_ast.set(p, node, agent_schema.POLICY_DECL_VIOLATION, violation);
+    p.result = node;
+    p
+}
+
+// A `Spanned<PolicyRule>`, spanned by the rule's name. `runtime_status`
+// takes an argument; a word stage0 does not know is `Unknown`.
+fn parse_policy_rule(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_identifier(s, t, parser, "policy rule".as_slice());
+    if p.failed { return p; }
+    let at: u64 = p.current - 1u64;
+    let word: Slice<u8> = s.slice(text_start(t, at), text_end(t, at));
+    let mut value: u64 = agent_words.words_parse_policy_rule__policy_rule(word);
+    let mut payload: u64 = 0u64;
+    if bytes.equal(word, "runtime_status".as_slice()) {
+        p = expect_identifier(s, t, p, "runtime status policy argument".as_slice());
+        if p.failed { return p; }
+        let argument: u64 = p.current - 1u64;
+        let argument_text: Slice<u8> = s.slice(text_start(t, argument), text_end(t, argument));
+        if bytes.equal(argument_text, "completed".as_slice()) {
+            value = agent_schema.POLICY_RULE_RUNTIME_STATUS_COMPLETED;
+        } else {
+            let mut unknown: Buffer<u8> = bytes.append(Buffer::new(), "runtime_status ".as_slice());
+            unknown = bytes.append(unknown, argument_text);
+            p = agent_ast.string(p, unknown.as_slice());
+            payload = p.result;
+            value = agent_schema.POLICY_RULE_UNKNOWN;
+        }
+    } else if value == agent_words.NO_VARIANT {
+        p = agent_ast.string(p, word);
+        payload = p.result;
+        value = agent_schema.POLICY_RULE_UNKNOWN;
+    }
+    p = agent_ast.variant(p, agent_schema.POLICY_RULE, value, payload);
+    spanned_last(t, p, at)
+}
+
+fn parse_policy_violation(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "on".as_slice());
+    if p.failed { return p; }
+    p = expect_keyword(s, t, p, "violation".as_slice());
+    if p.failed { return p; }
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = expect_keyword(s, t, p, "action".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "policy violation action".as_slice());
+    if p.failed { return p; }
+    let action_token: u64 = p.current - 1u64;
+    p = word_variant(s, t, p, action_token, agent_schema.POLICY_VIOLATION_ACTION, agent_words.words_parse_policy_violation__policy_violation_action(s.slice(text_start(t, action_token), text_end(t, action_token))), agent_schema.POLICY_VIOLATION_ACTION_UNKNOWN);
+    let action: u64 = p.result;
+    p = match_keyword(s, t, p, "trace".as_slice());
+    let trace_required: bool = p.matched;
+    if trace_required {
+        p = expect_keyword(s, t, p, "required".as_slice());
+        if p.failed { return p; }
+    }
+    p = expect_symbol(t, p, agent_lexer.RIGHT_BRACE, "`}`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.POLICY_VIOLATION_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.POLICY_VIOLATION_DECL_ACTION, action);
+    p = agent_ast.boolean(p, trace_required);
+    p = agent_ast.set_last(p, node, agent_schema.POLICY_VIOLATION_DECL_TRACE_REQUIRED);
+    p.result = node;
+    p
+}
+
+// `result`: a `Spanned` of enum `e`, spanned by the token at `at`: variant
+// `found` when a word table found one, otherwise `unknown` holding the
+// token's text.
+fn word_variant(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, at: u64, e: u64, found: u64, unknown: u64) -> Tree {
+    let mut p: Tree = parser;
+    let mut value: u64 = found;
+    let mut payload: u64 = 0u64;
+    if found == agent_words.NO_VARIANT {
+        p = agent_ast.string(p, s.slice(text_start(t, at), text_end(t, at)));
+        payload = p.result;
+        value = unknown;
+    }
+    p = agent_ast.variant(p, e, value, payload);
+    spanned_last(t, p, at)
 }

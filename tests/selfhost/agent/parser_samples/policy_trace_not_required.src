@@ -1,0 +1,2 @@
+module demo
+policy P { on violation { action block trace } }
