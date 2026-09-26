@@ -8,7 +8,9 @@
 - State: IN PROGRESS. A (the lexer) is in PR #64. B (the parser) is done on
   `claude/agent-parser-esp018b`, to open once #64 merges: every agent-language
   program of the repository, 1,342, and 81 samples parse to stage0's tree.
-  C (checks and modules) is next.
+  C (checks and modules) is in progress on the same branch: every check of
+  `checker.rs` is ported (`compiler/agent_check.argx`), and all 1,430
+  programs give stage0's diagnostics; the module graph is next.
 - Started: 2026-09-26.
 - Ficha: `tasks/espada/ESP-018.md`; dump `spec/language/tokens.md`.
 - Paths: `compiler/agent_lexer.argx`, `compiler/unicode.argx` (generated),

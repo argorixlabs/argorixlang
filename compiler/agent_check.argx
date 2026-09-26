@@ -7,9 +7,8 @@ module compiler.agent_check;
 // the canonical dump of spec/language/check.md: `ok`, or one line per
 // diagnostic.
 //
-// The checks are ported one group of declarations at a time. A program that
-// declares something whose checks are not ported yet dumps `unsupported`, so
-// the differential can tell a gap from a mismatch.
+// Every check of `check_program` with default options is ported, for every
+// declaration; the differential compares all of them with stage0.
 
 import stdlib.bytes;
 import compiler.agent_ast;
@@ -44,27 +43,11 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
         return agent_parser.dump(source);
     }
     let program: u64 = parsed.result;
-    if !ported(parsed.slots.as_slice(), parsed.nodes.as_slice(), program) {
-        return bytes.copy("unsupported\n".as_slice());
-    }
     let y: Symbols = check(parsed.slots.as_slice(), parsed.nodes.as_slice(), parsed.strings.as_slice(), program);
     if y.out.length() == 0u64 {
         return bytes.copy("ok\n".as_slice());
     }
     bytes.copy(y.out.as_slice())
-}
-
-// Whether every declaration of the program has its checks ported.
-fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
-    let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
-    while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_GOVERNANCE_PROFILES || field == agent_schema.PROGRAM_REGULATORY_MAPPINGS || field == agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS || field == agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS || field == agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES || field == agent_schema.PROGRAM_THREAT_MODELS || field == agent_schema.PROGRAM_SPEC_FREEZES || field == agent_schema.PROGRAM_RELEASE_CANDIDATES || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
-        if !core && n[get(sl, n, program, field)].a != 0u64 {
-            return false;
-        }
-        field += 1u64;
-    }
-    true
 }
 
 // ------------------------------------------------------------------ the checks
@@ -114,6 +97,8 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_threat_models(sl, n, st, program, y);
     y = check_spec_freezes(sl, n, st, program, y);
     y = check_release_candidates(sl, n, st, program, y);
+    y = check_runtime_execution_profiles(sl, n, st, program, y);
+    y = check_sandboxed_provider_adapters(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -4089,4 +4074,215 @@ fn check_release_candidates(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, 
         }
     }
     y
+}
+
+// ------------------------------------------------------------------ runtime execution and sandboxed adapters
+
+// Whether `provider` is a declared provider or `simulated`.
+fn known_provider(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, provider: u64) -> bool {
+    is(sl, n, st, provider, "simulated".as_slice()) || find_named(sl, n, st, program, agent_schema.PROGRAM_PROVIDERS, provider) != NONE
+}
+
+// "<kind> `<name>` has overlapping <left>/<right> value `<v>`" for each
+// entry of list `left` also in list `right`.
+fn disjoint(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, left: u64, right: u64, kind: Slice<u8>, name: u64, fields: Slice<u8>) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, node, left);
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if in_list(sl, n, st, node, right, item) {
+            y = say(y, sl, n, st, item, kind, name, "has overlapping ".as_slice());
+            y = put(y, fields);
+            y = put(y, " value `".as_slice());
+            y = text(y, sl, n, st, item);
+            y = close(y);
+        }
+    }
+    y
+}
+
+// stage0's `is_declared_reference`: `<prefix>:<NAME>` with `prefix` one of
+// the space-separated `prefixes` and a non-empty `[A-Za-z0-9_]` name.
+fn declared_reference(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64, prefixes: Slice<u8>) -> bool {
+    let string: u64 = value(sl, n, spanned);
+    let start: u64 = n[string].a;
+    let end: u64 = n[string].b;
+    let mut colon: u64 = start;
+    while colon < end && st[colon] != 58u8 {
+        colon += 1u64;
+    }
+    if colon == end || colon + 1u64 == end {
+        return false;
+    }
+    let prefix: Slice<u8> = st.slice(start, colon);
+    let mut found: bool = false;
+    let mut word_start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= prefixes.length() {
+        if at == prefixes.length() || prefixes[at] == 32u8 {
+            if bytes.equal(prefixes.slice(word_start, at), prefix) {
+                found = true;
+            }
+            word_start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    if !found {
+        return false;
+    }
+    let mut index: u64 = colon + 1u64;
+    while index < end {
+        let c: u8 = st[index];
+        let word: bool = c == 95u8 || (c >= 48u8 && c <= 57u8) || (c >= 65u8 && c <= 90u8) || (c >= 97u8 && c <= 122u8);
+        if !word {
+            return false;
+        }
+        index += 1u64;
+    }
+    true
+}
+
+fn check_runtime_execution_profiles(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_RUNTIME_EXECUTION_PROFILES);
+    while link != 0u64 {
+        let p: u64 = link - 1u64;
+        link = n[p].next;
+        let name: u64 = get(sl, n, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "runtime_execution_profile".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_MODE, "runtime_execution_profile".as_slice(), name, "mode".as_slice(), "dry_run simulated sandboxed_external".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NETWORK, "runtime_execution_profile".as_slice(), name, "network".as_slice(), "denied declared_only".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EXTERNAL_EXECUTION, "runtime_execution_profile".as_slice(), name, "external_execution".as_slice(), "disabled sandboxed".as_slice());
+        y = allowed(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECRETS, "runtime_execution_profile".as_slice(), name, "secrets".as_slice(), "denied env_reference_only".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_TOOL_EXECUTION, "runtime_execution_profile".as_slice(), name, "tool_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENT_EXECUTION, "runtime_execution_profile".as_slice(), name, "agent_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_KEY_MATERIAL, "runtime_execution_profile".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AUDIT, "runtime_execution_profile".as_slice(), name, "audit".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE, "runtime_execution_profile".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECURITY_REPORT, "runtime_execution_profile".as_slice(), name, "security_report".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_SECURITY_CLAIMS, "runtime_execution_profile".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+        let fail_closed: u64 = get(sl, n, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_FAIL_CLOSED);
+        if n[value(sl, n, fail_closed)].a == 0u64 {
+            y = say(y, sl, n, st, fail_closed, "runtime_execution_profile".as_slice(), name, "requires fail_closed `true`\n".as_slice());
+        }
+        y = string_list(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENTS, "runtime_execution_profile".as_slice(), name, "agents".as_slice());
+        let mut agent_link: u64 = first(sl, n, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_AGENTS);
+        while agent_link != 0u64 {
+            let agent: u64 = agent_link - 1u64;
+            agent_link = n[agent].next;
+            if find_named(sl, n, st, program, agent_schema.PROGRAM_AGENTS, agent) == NONE {
+                y = references_unknown(y, sl, n, st, "runtime_execution_profile".as_slice(), name, "agent".as_slice(), agent);
+            }
+        }
+        let provider: u64 = get(sl, n, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PROVIDER);
+        if !known_provider(sl, n, st, program, provider) {
+            y = references_unknown(y, sl, n, st, "runtime_execution_profile".as_slice(), name, "provider".as_slice(), provider);
+        }
+        y = known_reference(y, sl, n, st, program, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_HARDENING, agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES, "runtime_execution_profile".as_slice(), name, "runtime_hardening_profile".as_slice());
+        y = known_reference(y, sl, n, st, program, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_THREAT_MODEL, agent_schema.PROGRAM_THREAT_MODELS, "runtime_execution_profile".as_slice(), name, "threat_model".as_slice());
+        y = known_reference(y, sl, n, st, program, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE_MAP, agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS, "runtime_execution_profile".as_slice(), name, "evidence_map".as_slice());
+        let governance_ref: u64 = get(sl, n, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_GOVERNANCE_PROFILE);
+        let governance: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_GOVERNANCE_PROFILES, governance_ref);
+        if governance == NONE {
+            y = references_unknown(y, sl, n, st, "runtime_execution_profile".as_slice(), name, "governance_profile".as_slice(), governance_ref);
+        } else if !same(sl, n, st, get(sl, n, governance, agent_schema.GOVERNANCE_PROFILE_DECL_EVIDENCE_MAP), get(sl, n, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_EVIDENCE_MAP)) {
+            y = say(y, sl, n, st, governance_ref, "runtime_execution_profile".as_slice(), name, "governance/evidence_map mismatch\n".as_slice());
+        }
+        y = string_list(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_ALLOWED_ACTIONS, "runtime_execution_profile".as_slice(), name, "allowed_actions".as_slice());
+        y = string_list(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_DENIED_ACTIONS, "runtime_execution_profile".as_slice(), name, "denied_actions".as_slice());
+        y = disjoint(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_ALLOWED_ACTIONS, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_DENIED_ACTIONS, "runtime_execution_profile".as_slice(), name, "allowed_actions/denied_actions".as_slice());
+        y = string_list(y, sl, n, st, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PURPOSE, "runtime_execution_profile".as_slice(), name, "purpose".as_slice());
+        let notes: u64 = get(sl, n, p, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "runtime_execution_profile".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+fn check_sandboxed_provider_adapters(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_SANDBOXED_PROVIDER_ADAPTERS);
+    while link != 0u64 {
+        let a: u64 = link - 1u64;
+        link = n[a].next;
+        let name: u64 = get(sl, n, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "sandboxed_provider_adapter".as_slice());
+        } else {
+            names.push(name);
+        }
+        let provider: u64 = get(sl, n, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PROVIDER);
+        if !known_provider(sl, n, st, program, provider) {
+            y = references_unknown(y, sl, n, st, "sandboxed_provider_adapter".as_slice(), name, "provider".as_slice(), provider);
+        }
+        let runtime_ref: u64 = get(sl, n, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_RUNTIME);
+        let runtime: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_RUNTIME_EXECUTION_PROFILES, runtime_ref);
+        if runtime == NONE {
+            y = references_unknown(y, sl, n, st, "sandboxed_provider_adapter".as_slice(), name, "runtime_execution_profile".as_slice(), runtime_ref);
+        } else if !same(sl, n, st, get(sl, n, runtime, agent_schema.RUNTIME_EXECUTION_PROFILE_DECL_PROVIDER), provider) {
+            y = say(y, sl, n, st, provider, "sandboxed_provider_adapter".as_slice(), name, "provider/runtime mismatch\n".as_slice());
+        }
+        y = allowed(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ADAPTER_KIND, "sandboxed_provider_adapter".as_slice(), name, "adapter_kind".as_slice(), "llm embedding moderation custom".as_slice());
+        y = allowed(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PROTOCOL, "sandboxed_provider_adapter".as_slice(), name, "protocol".as_slice(), "https_declared local_declared".as_slice());
+        y = allowed(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_REQUEST_POLICY, "sandboxed_provider_adapter".as_slice(), name, "request_policy".as_slice(), "declared_only redacted_logged".as_slice());
+        y = allowed(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_RESPONSE_POLICY, "sandboxed_provider_adapter".as_slice(), name, "response_policy".as_slice(), "evidence_logged redacted_logged".as_slice());
+        y = allowed(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NETWORK, "sandboxed_provider_adapter".as_slice(), name, "network".as_slice(), "declared_only denied".as_slice());
+        y = allowed(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EXTERNAL_EXECUTION, "sandboxed_provider_adapter".as_slice(), name, "external_execution".as_slice(), "sandboxed disabled".as_slice());
+        y = allowed(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECRET_MATERIAL, "sandboxed_provider_adapter".as_slice(), name, "secret_material".as_slice(), "env_reference_only denied".as_slice());
+        y = requires_text(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_TOOL_EXECUTION, "sandboxed_provider_adapter".as_slice(), name, "tool_execution".as_slice(), "disabled".as_slice());
+        y = requires_text(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_KEY_MATERIAL, "sandboxed_provider_adapter".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires_text(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_AUDIT, "sandboxed_provider_adapter".as_slice(), name, "audit".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EVIDENCE, "sandboxed_provider_adapter".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_REPORT, "sandboxed_provider_adapter".as_slice(), name, "security_report".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_CLAIMS, "sandboxed_provider_adapter".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+        let fail_closed: u64 = get(sl, n, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_FAIL_CLOSED);
+        if n[value(sl, n, fail_closed)].a == 0u64 {
+            y = say(y, sl, n, st, fail_closed, "sandboxed_provider_adapter".as_slice(), name, "requires fail_closed `true`\n".as_slice());
+        }
+        let endpoint_ref: u64 = get(sl, n, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ENDPOINT_REF);
+        if !declared_reference(sl, n, st, endpoint_ref, "env config".as_slice()) {
+            y = say(y, sl, n, st, endpoint_ref, "sandboxed_provider_adapter".as_slice(), name, "endpoint_ref must use `env:<NAME>` or `config:<NAME>`\n".as_slice());
+        }
+        let secret_ref: u64 = get(sl, n, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECRET_REF);
+        let secret_string: u64 = value(sl, n, secret_ref);
+        let secret_text: Slice<u8> = st.slice(n[secret_string].a, n[secret_string].b);
+        if !declared_reference(sl, n, st, secret_ref, "env secret_boundary".as_slice()) {
+            y = say(y, sl, n, st, secret_ref, "sandboxed_provider_adapter".as_slice(), name, "secret_ref must use `env:<NAME>` or `secret_boundary:<NAME>`\n".as_slice());
+        } else if bytes.starts_with(secret_text, "secret_boundary:".as_slice()) && !secret_named(sl, n, st, program, n[secret_string].a + 16u64, n[secret_string].b) {
+            y = say(y, sl, n, st, secret_ref, "sandboxed_provider_adapter".as_slice(), name, "references unknown secret boundary `".as_slice());
+            y = put(y, st.slice(n[secret_string].a + 16u64, n[secret_string].b));
+            y = close(y);
+        }
+        y = string_list(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ALLOWED_OPERATIONS, "sandboxed_provider_adapter".as_slice(), name, "allowed_operations".as_slice());
+        y = string_list(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_DENIED_OPERATIONS, "sandboxed_provider_adapter".as_slice(), name, "denied_operations".as_slice());
+        y = disjoint(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_ALLOWED_OPERATIONS, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_DENIED_OPERATIONS, "sandboxed_provider_adapter".as_slice(), name, "allowed_operations/denied_operations".as_slice());
+        y = string_list(y, sl, n, st, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_PURPOSE, "sandboxed_provider_adapter".as_slice(), name, "purpose".as_slice());
+        let notes: u64 = get(sl, n, a, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "sandboxed_provider_adapter".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+// Whether a secret is named `st[start..end]`.
+fn secret_named(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, start: u64, end: u64) -> bool {
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_SECRETS);
+    while link != 0u64 {
+        let secret: u64 = link - 1u64;
+        link = n[secret].next;
+        let string: u64 = value(sl, n, get(sl, n, secret, agent_schema.SECRET_DECL_NAME));
+        if bytes.equal(st.slice(n[string].a, n[string].b), st.slice(start, end)) {
+            return true;
+        }
+    }
+    false
 }

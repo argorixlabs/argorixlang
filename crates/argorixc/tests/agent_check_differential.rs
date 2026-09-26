@@ -8,10 +8,9 @@
 //! checker diagnostics of `spec/language/check.md`, or `ok`. Each dump
 //! must equal, byte for byte, what stage0 produces (`argorixc agent-check`).
 //!
-//! The parser is ported one group of declarations at a time. A program that
-//! uses a declaration not ported yet dumps `unsupported`; it is counted, not
-//! compared. The test fails on any mismatch, and when fewer programs match
-//! than the port has reached (`MATCHED_AT_LEAST`).
+//! The checks were ported one group of declarations at a time; every one is
+//! ported now. The test fails on any mismatch, on any `unsupported` dump,
+//! and when fewer programs match than `MATCHED_AT_LEAST`.
 
 // The differential needs a Unix C toolchain; elsewhere this file is empty.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
@@ -21,9 +20,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
 
-/// How many samples the Argorix checker matches today. Raise it with each
-/// group of checks ported; C is done when every sample matches.
-const MATCHED_AT_LEAST: usize = 1344;
+/// How many samples the Argorix checker matches: all of them. Every check
+/// is ported, so none may dump `unsupported`.
+const MATCHED_AT_LEAST: usize = 1430;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -199,6 +198,10 @@ fn the_argorix_agent_checker_matches_the_stage0_checker_when_cc_is_available() {
             .cloned()
             .collect::<Vec<_>>()
             .join("\n")
+    );
+    assert_eq!(
+        unsupported, 0,
+        "every check is ported; none may be `unsupported`"
     );
     assert!(
         matched >= MATCHED_AT_LEAST,

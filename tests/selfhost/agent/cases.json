@@ -2,7 +2,7 @@
   "schema_version": 1,
   "core_version": "0.1",
   "task": "ESP-018",
-  "purpose": "Fixtures of the agent-language lexer and parser in compiler/agent_lexer.argx and compiler/agent_parser.argx. The differentials against stage0 over the whole corpus are crates/argorixc/tests/agent_lexer_differential.rs and agent_parser_differential.rs; these run them under gcc, clang and the sanitizers.",
+  "purpose": "Fixtures of the agent-language lexer, parser and checker in compiler/agent_lexer.argx, compiler/agent_parser.argx and compiler/agent_check.argx. The differentials against stage0 over the whole corpus are crates/argorixc/tests/agent_lexer_differential.rs, agent_parser_differential.rs and agent_check_differential.rs; these run them under gcc, clang and the sanitizers.",
   "cases": [
     {
       "id": "agent_lex_files",
@@ -35,6 +35,23 @@
         "expected_build": {
           "dumps/0.ast": "{\"module\":{\"value\":\"demo\",\"span\":{\"start\":7,\"end\":11,\"line\":1,\"column\":8}},\"imports\":[],\"providers\":[],\"harnesses\":[],\"features\":[],\"secrets\":[],\"adapters\":[],\"adapter_profiles\":[],\"cryptos\":[],\"crypto_boundaries\":[],\"did_methods\":[],\"atrust_boundaries\":[],\"atrust_identities\":[],\"atrust_credential_contracts\":[],\"atrust_handshakes\":[],\"trust_ledgers\":[],\"mcp_bridge_contracts\":[],\"a2a_bridge_contracts\":[],\"atrust_evidence_maps\":[],\"governance_profiles\":[],\"regulatory_mappings\":[],\"third_party_verifiers\":[],\"public_conformance_reports\":[],\"runtime_hardening_profiles\":[],\"threat_models\":[],\"spec_freezes\":[],\"release_candidates\":[],\"runtime_execution_profiles\":[],\"sandboxed_provider_adapters\":[],\"assertions\":[],\"policies\":[],\"failures\":[],\"capabilities\":[],\"enums\":[],\"types\":[],\"tools\":[],\"models\":[],\"agents\":[{\"name\":{\"value\":\"A\",\"span\":{\"start\":18,\"end\":19,\"line\":2,\"column\":7}},\"approval\":null,\"receives\":[{\"message_type\":{\"value\":\"Q\",\"span\":{\"start\":31,\"end\":32,\"line\":2,\"column\":20}},\"from\":null}],\"sends\":[],\"capabilities\":[],\"tools\":[],\"models\":[],\"handlers\":[]}],\"protocols\":[],\"passports\":[]}\n",
           "dumps/1.ast": "2:22: duplicate crypto field `kind`\n"
+        }
+      }
+    },
+    {
+      "id": "agent_check_files",
+      "file": "check_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "check_package",
+        "read_budget": 200,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.check": "ok\n",
+          "dumps/1.check": "4:10: passport `P` is missing required field `agent_name`\n4:10: passport `P` is missing required field `global_id`\n4:10: passport `P` is missing required field `identity`\n4:10: passport `P` is missing required field `provider`\n4:10: passport `P` is missing required field `version`\n4:10: passport `P` is missing required field `jurisdiction`\n4:10: passport `P` is missing required field `intent`\n4:10: passport `P` requires non-empty `data_residency`\n5:11: passport `P` references unknown agent `Ghost`\n6:13: passport `P` country `chile` must use a 2-letter ISO-like code\n7:16: passport `P` has invalid risk_level `extreme`; allowed: low, medium, high, critical\n"
         }
       }
     }

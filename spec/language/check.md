@@ -25,11 +25,12 @@ capabilities must be declared.
 
 ## Coverage
 
-The checks are ported one group of declarations at a time, in stage0's
-order. A program that declares something whose checks are not ported yet
-dumps `unsupported`, and the differential counts it instead of comparing it.
-Every program that is compared must match; `MATCHED_AT_LEAST` records how
-far the port has come.
+The checks were ported one group of declarations at a time, in stage0's
+order, each group raising `MATCHED_AT_LEAST`. Until the last group landed, a
+program declaring something whose checks were not ported yet dumped
+`unsupported`, and the differential counted it instead of comparing it.
+Every check is ported now: all 1,430 programs match, and the differential
+fails on any `unsupported` dump.
 
 | Group | Checks | Programs matched |
 | --- | --- | --- |
@@ -46,3 +47,7 @@ far the port has come.
 | 11 | Third-party verifiers and public conformance reports | 1,240 of 1,430 |
 | 12 | Runtime hardening profiles and threat models | 1,294 of 1,430 |
 | 13 | Spec freezes and release candidates | 1,344 of 1,430 |
+| 14 | Runtime execution profiles and sandboxed provider adapters | 1,430 of 1,430 |
+
+The checks work on one file. Resolving and merging a package of modules
+(`argorix_module`) is the other half of ESP-018.C.

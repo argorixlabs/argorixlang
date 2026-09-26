@@ -4,7 +4,7 @@ module selfhost_agent.check_files;
 // The Argorix agent-language checker (ESP-018.C) over real files, through the
 // compiler-host boundary.
 // `files.txt` in the package root lists one relative path per line. Each
-// file is read, lexed, and its canonical dump (spec/language/check.md) written
+// file is read, checked, and its canonical dump (spec/language/check.md) written
 // to `dumps/<n>.check` in the build root, where n counts from 0. The result
 // is the number of dumps written, or 1000000 plus the failure digest of the
 // first read or write that failed.

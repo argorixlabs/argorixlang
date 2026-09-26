@@ -1,0 +1,8 @@
+module demo
+type Q
+agent A { receives Q }
+passport P {
+    agent Ghost
+    country "chile"
+    risk_level "extreme"
+}
