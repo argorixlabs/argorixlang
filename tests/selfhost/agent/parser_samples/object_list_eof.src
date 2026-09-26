@@ -1,0 +1,2 @@
+module demo
+threat_model T { threats [ { id "a" }

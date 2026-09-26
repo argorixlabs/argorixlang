@@ -1,0 +1,2 @@
+module demo
+provider P { kind simulated enabled true dry_run_only true allowed_targets { a } allowed_targets { b } }

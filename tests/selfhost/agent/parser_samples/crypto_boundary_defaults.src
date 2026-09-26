@@ -1,0 +1,2 @@
+module demo
+crypto_boundary B { min_hash_bits 256 post_quantum_ready true }

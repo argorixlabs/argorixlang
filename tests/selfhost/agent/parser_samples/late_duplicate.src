@@ -1,0 +1,2 @@
+module demo
+threat_model T { scope agent scope system }

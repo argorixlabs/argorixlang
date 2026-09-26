@@ -1,0 +1,3 @@
+module demo
+feature F { status preview default enabled requires approval provider p purpose "x" }
+feature G { }

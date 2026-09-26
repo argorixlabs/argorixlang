@@ -21,9 +21,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
 
-/// How many samples the Argorix parser matches today. Raise it with each
-/// group of declarations ported; B is done when every sample matches.
-const MATCHED_AT_LEAST: usize = 762;
+/// How many samples the Argorix parser matches: all of them. Every
+/// declaration is ported, so none may dump `unsupported`.
+const MATCHED_AT_LEAST: usize = 1423;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -194,6 +194,10 @@ fn the_argorix_agent_parser_matches_the_stage0_parser_when_cc_is_available() {
             .cloned()
             .collect::<Vec<_>>()
             .join("\n")
+    );
+    assert_eq!(
+        unsupported, 0,
+        "every declaration is ported; none may be `unsupported`"
     );
     assert!(
         matched >= MATCHED_AT_LEAST,

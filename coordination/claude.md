@@ -5,8 +5,10 @@
 - Task: ESP-018 — the agent and policy language, migrated to Argorix, as
   subtasks A (lexer), B (parser and AST), C (checks and modules), D
   (lowering to IR and bytecode) and E (compatibility matrix).
-- State: IN PROGRESS. A is done on `claude/agent-lexer-esp018`: the lexer
-  matches stage0 on 1,564 files. B is next.
+- State: IN PROGRESS. A (the lexer) is in PR #64. B (the parser) is done on
+  `claude/agent-parser-esp018b`, to open once #64 merges: every agent-language
+  program of the repository, 1,342, and 81 samples parse to stage0's tree.
+  C (checks and modules) is next.
 - Started: 2026-09-26.
 - Ficha: `tasks/espada/ESP-018.md`; dump `spec/language/tokens.md`.
 - Paths: `compiler/agent_lexer.argx`, `compiler/unicode.argx` (generated),

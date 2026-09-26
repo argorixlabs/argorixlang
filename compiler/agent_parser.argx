@@ -193,6 +193,11 @@ fn parse_declaration(s: Slice<u8>, t: Slice<AgentToken>, p: Tree, into: u64) -> 
     if into == agent_schema.PROGRAM_POLICIES { return parse_policy(s, t, p); }
     if into == agent_schema.PROGRAM_CRYPTOS { return parse_crypto(s, t, p); }
     if into == agent_schema.PROGRAM_DID_METHODS { return parse_did_method(s, t, p); }
+    if into == agent_schema.PROGRAM_PROVIDERS { return parse_provider(s, t, p); }
+    if into == agent_schema.PROGRAM_FEATURES { return parse_feature(s, t, p); }
+    if into == agent_schema.PROGRAM_SECRETS { return parse_secret(s, t, p); }
+    if into == agent_schema.PROGRAM_CRYPTO_BOUNDARIES { return parse_crypto_boundary(s, t, p); }
+    if into == agent_schema.PROGRAM_PASSPORTS { return parse_passport(s, t, p); }
     if into == agent_schema.PROGRAM_HARNESSES { return parse_harness(s, t, p); }
     if into == agent_schema.PROGRAM_ADAPTERS { return parse_adapter(s, t, p); }
     if into == agent_schema.PROGRAM_ADAPTER_PROFILES { return parse_adapter_profile(s, t, p); }
@@ -2103,6 +2108,366 @@ fn parse_sandboxed_provider_adapter(s: Slice<u8>, t: Slice<AgentToken>, parser: 
     p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_EVIDENCE, fallback);
     p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_REPORT, fallback);
     p = default_string(p, node, agent_schema.SANDBOXED_PROVIDER_ADAPTER_DECL_SECURITY_CLAIMS, fallback);
+    block_end(t, p, node)
+}
+
+
+// ------------------------------------------------------------------ providers
+
+fn parse_provider(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "provider".as_slice(), "provider name".as_slice(), agent_schema.PROVIDER_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    p = expect_keyword(s, t, p, "kind".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "provider kind".as_slice());
+    if p.failed { return p; }
+    let kind_token: u64 = p.current - 1u64;
+    let kind: u64 = agent_words.words_parse_provider__provider_kind_decl(s.slice(text_start(t, kind_token), text_end(t, kind_token)));
+    if kind == agent_words.NO_VARIANT {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid provider kind `".as_slice());
+        message = bytes.append(message, s.slice(text_start(t, kind_token), text_end(t, kind_token)));
+        message = bytes.append(message, "`; expected `simulated` or `external`".as_slice());
+        return fail_at(t, p, message, kind_token);
+    }
+    p = agent_ast.variant(p, agent_schema.PROVIDER_KIND_DECL, kind, 0u64);
+    p = spanned_last(t, p, kind_token);
+    p = agent_ast.set_last(p, node, agent_schema.PROVIDER_DECL_KIND);
+    p = expect_keyword(s, t, p, "enabled".as_slice());
+    if p.failed { return p; }
+    p = expect_bool(s, t, p, "provider enabled value".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.set_last(p, node, agent_schema.PROVIDER_DECL_ENABLED);
+    p = expect_keyword(s, t, p, "dry_run_only".as_slice());
+    if p.failed { return p; }
+    p = expect_bool(s, t, p, "provider dry_run_only value".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.set_last(p, node, agent_schema.PROVIDER_DECL_DRY_RUN_ONLY);
+    let mut feature_flag: bool = false;
+    let mut approval: bool = false;
+    p = match_keyword(s, t, p, "requires".as_slice());
+    while p.matched {
+        p = expect_identifier(s, t, p, "provider requirement".as_slice());
+        if p.failed { return p; }
+        let at: u64 = p.current - 1u64;
+        let word: Slice<u8> = s.slice(text_start(t, at), text_end(t, at));
+        if bytes.equal(word, "feature_flag".as_slice()) && !feature_flag {
+            if approval {
+                return fail_at(t, p, bytes.copy("`requires feature_flag` must appear before `requires approval`".as_slice()), at);
+            }
+            feature_flag = true;
+        } else if bytes.equal(word, "approval".as_slice()) && !approval {
+            approval = true;
+        } else if bytes.equal(word, "feature_flag".as_slice()) || bytes.equal(word, "approval".as_slice()) {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "duplicate provider requirement `".as_slice());
+            message = bytes.append(message, word);
+            message.push(96u8);
+            return fail_at(t, p, message, at);
+        } else {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid provider requirement `".as_slice());
+            message = bytes.append(message, word);
+            message = bytes.append(message, "`; expected `feature_flag` or `approval`".as_slice());
+            return fail_at(t, p, message, at);
+        }
+        p = match_keyword(s, t, p, "requires".as_slice());
+    }
+    p = agent_ast.boolean(p, feature_flag);
+    p = agent_ast.set_last(p, node, agent_schema.PROVIDER_DECL_REQUIRES_FEATURE_FLAG);
+    p = agent_ast.boolean(p, approval);
+    p = agent_ast.set_last(p, node, agent_schema.PROVIDER_DECL_REQUIRES_EXPLICIT_APPROVAL);
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        let at: u64 = p.current;
+        if peek_is(s, t, at, "allowed_targets".as_slice()) {
+            if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, agent_schema.PROVIDER_DECL_ALLOWED_TARGETS) {
+                return fail_at(t, p, bytes.copy("duplicate `allowed_targets` block".as_slice()), at);
+            }
+            p = advance(t, p);
+            p = parse_identifier_block(s, t, p, "allowed target".as_slice());
+            if p.failed { return p; }
+            p = agent_ast.set_last(p, node, agent_schema.PROVIDER_DECL_ALLOWED_TARGETS);
+        } else if peek_is(s, t, at, "allowed_capabilities".as_slice()) {
+            if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, agent_schema.PROVIDER_DECL_ALLOWED_CAPABILITIES) {
+                return fail_at(t, p, bytes.copy("duplicate `allowed_capabilities` block".as_slice()), at);
+            }
+            p = advance(t, p);
+            p = parse_identifier_block(s, t, p, "allowed capability".as_slice());
+            if p.failed { return p; }
+            p = agent_ast.set_last(p, node, agent_schema.PROVIDER_DECL_ALLOWED_CAPABILITIES);
+        } else if peek_kind(t, at) == agent_lexer.IDENT {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unexpected provider item `".as_slice());
+            message = bytes.append(message, s.slice(text_start(t, at), text_end(t, at)));
+            message.push(96u8);
+            return fail_at(t, p, message, at);
+        } else {
+            return fail_at(t, p, bytes.copy("expected provider allowlist block".as_slice()), at);
+        }
+    }
+    p = default_array(p, node, agent_schema.PROVIDER_DECL_ALLOWED_TARGETS);
+    p = default_array(p, node, agent_schema.PROVIDER_DECL_ALLOWED_CAPABILITIES);
+    block_end(t, p, node)
+}
+
+
+// ------------------------------------------------------------------ features and secrets
+
+fn parse_feature(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "feature".as_slice(), "feature name".as_slice(), agent_schema.FEATURE_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    let mut requires_approval: bool = false;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated feature declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "provider".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.FEATURE_DECL_PROVIDER, "feature".as_slice(), "feature provider reference".as_slice());
+        } else if peek_is(s, t, p.current, "status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.FEATURE_DECL_STATUS, "feature".as_slice(), "feature status".as_slice(), agent_schema.FEATURE_STATUS, agent_words.T_PARSE_FEATURE__FEATURE_STATUS, agent_schema.FEATURE_STATUS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "default".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.FEATURE_DECL_DEFAULT, "feature".as_slice(), "feature default".as_slice(), agent_schema.FEATURE_DEFAULT, agent_words.T_PARSE_FEATURE__FEATURE_DEFAULT, agent_schema.FEATURE_DEFAULT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "requires".as_slice()) {
+            let at: u64 = p.current;
+            p = advance(t, p);
+            p = expect_keyword(s, t, p, "approval".as_slice());
+            if p.failed { return p; }
+            if requires_approval {
+                return fail_at(t, p, bytes.copy("duplicate feature field `requires approval`".as_slice()), at);
+            }
+            requires_approval = true;
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.FEATURE_DECL_PURPOSE, "feature".as_slice(), "feature purpose value".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "feature".as_slice(), "a".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_unknown(p, node, agent_schema.FEATURE_DECL_STATUS, agent_schema.FEATURE_STATUS, agent_schema.FEATURE_STATUS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.FEATURE_DECL_DEFAULT, agent_schema.FEATURE_DEFAULT, agent_schema.FEATURE_DEFAULT_UNKNOWN, fallback);
+    p = agent_ast.boolean(p, requires_approval);
+    p = agent_ast.set_last(p, node, agent_schema.FEATURE_DECL_REQUIRES_APPROVAL);
+    block_end(t, p, node)
+}
+
+// The keys a secret declaration must never hold: secret material.
+fn forbidden_secret_key(word: Slice<u8>) -> bool {
+    bytes.equal(word, "value".as_slice()) || bytes.equal(word, "secret_value".as_slice()) || bytes.equal(word, "token".as_slice()) || bytes.equal(word, "api_key_value".as_slice()) || bytes.equal(word, "raw".as_slice()) || bytes.equal(word, "plaintext".as_slice())
+}
+
+fn parse_secret(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "secret".as_slice(), "secret name".as_slice(), agent_schema.SECRET_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated secret declaration".as_slice());
+        if p.failed { return p; }
+        let at: u64 = p.current;
+        if peek_is(s, t, at, "handle".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.SECRET_DECL_HANDLE, "secret".as_slice(), "secret handle value".as_slice());
+        } else if peek_is(s, t, at, "provider".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.SECRET_DECL_PROVIDER, "secret".as_slice(), "secret provider reference".as_slice());
+        } else if peek_is(s, t, at, "required_by".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.SECRET_DECL_REQUIRED_BY, "secret".as_slice(), "secret required_by reference".as_slice());
+        } else if peek_is(s, t, at, "scope".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.SECRET_DECL_SCOPE, "secret".as_slice(), "secret scope".as_slice(), agent_schema.SECRET_SCOPE, agent_words.T_PARSE_SECRET__SECRET_SCOPE, agent_schema.SECRET_SCOPE_UNKNOWN);
+        } else if peek_is(s, t, at, "access".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.SECRET_DECL_ACCESS, "secret".as_slice(), "secret access".as_slice(), agent_schema.SECRET_ACCESS, agent_words.T_PARSE_SECRET__SECRET_ACCESS, agent_schema.SECRET_ACCESS_UNKNOWN);
+        } else if peek_is(s, t, at, "source".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.SECRET_DECL_SOURCE, "secret".as_slice(), "secret source".as_slice(), agent_schema.SECRET_SOURCE, agent_words.T_PARSE_SECRET__SECRET_SOURCE, agent_schema.SECRET_SOURCE_UNKNOWN);
+        } else if peek_kind(t, at) == agent_lexer.IDENT && forbidden_secret_key(s.slice(text_start(t, at), text_end(t, at))) {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "secret declarations must not contain secret material; field `".as_slice());
+            message = bytes.append(message, s.slice(text_start(t, at), text_end(t, at)));
+            message = bytes.append(message, "` is forbidden".as_slice());
+            return fail_at(t, p, message, at);
+        } else {
+            return block_unexpected(s, t, p, "secret".as_slice(), "a".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.SECRET_DECL_HANDLE, fallback);
+    p = default_unknown(p, node, agent_schema.SECRET_DECL_SCOPE, agent_schema.SECRET_SCOPE, agent_schema.SECRET_SCOPE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.SECRET_DECL_ACCESS, agent_schema.SECRET_ACCESS, agent_schema.SECRET_ACCESS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.SECRET_DECL_SOURCE, agent_schema.SECRET_SOURCE, agent_schema.SECRET_SOURCE_UNKNOWN, fallback);
+    block_end(t, p, node)
+}
+
+
+// ------------------------------------------------------------------ crypto boundaries
+
+// `Spanned::new("<text>".to_owned(), span)`.
+fn default_text(parser: Tree, node: u64, field: u64, text: Slice<u8>, span_node: u64) -> Tree {
+    let mut p: Tree = parser;
+    if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
+        return p;
+    }
+    p = agent_ast.string(p, text);
+    let value: u64 = p.result;
+    p = agent_ast.spanned(p, value, span_node);
+    agent_ast.set_last(p, node, field)
+}
+
+fn parse_crypto_boundary(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "crypto_boundary".as_slice(), "crypto boundary name".as_slice(), agent_schema.CRYPTO_BOUNDARY_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated crypto_boundary declaration".as_slice());
+        if p.failed { return p; }
+        let at: u64 = p.current;
+        if peek_is(s, t, at, "allowed_hashes".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_HASHES, "crypto_boundary".as_slice(), "crypto_boundary allowed_hashes".as_slice());
+        } else if peek_is(s, t, at, "allowed_signatures".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_SIGNATURES, "crypto_boundary".as_slice(), "crypto_boundary allowed_signatures".as_slice());
+        } else if peek_is(s, t, at, "allowed_kems".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_KEMS, "crypto_boundary".as_slice(), "crypto_boundary allowed_kems".as_slice());
+        } else if peek_is(s, t, at, "allowed_aeads".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_AEADS, "crypto_boundary".as_slice(), "crypto_boundary allowed_aeads".as_slice());
+        } else if peek_is(s, t, at, "legacy_allowed".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_LEGACY_ALLOWED, "crypto_boundary".as_slice(), "crypto_boundary legacy_allowed".as_slice());
+        } else if peek_is(s, t, at, "denied".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_DENIED, "crypto_boundary".as_slice(), "crypto_boundary denied".as_slice());
+        } else if peek_is(s, t, at, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_PURPOSE, "crypto_boundary".as_slice(), "crypto_boundary purpose".as_slice());
+        } else if peek_is(s, t, at, "min_hash_bits".as_slice()) {
+            p = field_integer(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_MIN_HASH_BITS, "crypto_boundary".as_slice(), "crypto_boundary min_hash_bits".as_slice());
+        } else if peek_is(s, t, at, "post_quantum_ready".as_slice()) {
+            p = field_bool(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_POST_QUANTUM_READY, "crypto_boundary".as_slice(), "crypto_boundary post_quantum_ready".as_slice());
+        } else if peek_is(s, t, at, "hybrid_allowed".as_slice()) {
+            p = field_bool(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_HYBRID_ALLOWED, "crypto_boundary".as_slice(), "crypto_boundary hybrid_allowed".as_slice());
+        } else if peek_is(s, t, at, "key_material".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_KEY_MATERIAL, "crypto_boundary".as_slice(), "crypto_boundary key_material".as_slice());
+        } else if peek_is(s, t, at, "secret_material".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_SECRET_MATERIAL, "crypto_boundary".as_slice(), "crypto_boundary secret_material".as_slice());
+        } else if peek_is(s, t, at, "execution".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.CRYPTO_BOUNDARY_DECL_EXECUTION, "crypto_boundary".as_slice(), "crypto_boundary execution".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "crypto_boundary".as_slice(), "a".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    p = default_array(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_HASHES);
+    p = default_array(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_SIGNATURES);
+    p = default_array(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_KEMS);
+    p = default_array(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_ALLOWED_AEADS);
+    p = default_array(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_LEGACY_ALLOWED);
+    p = default_array(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_DENIED);
+    p = default_array(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_PURPOSE);
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_text(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_KEY_MATERIAL, "denied".as_slice(), fallback);
+    p = default_text(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_SECRET_MATERIAL, "denied".as_slice(), fallback);
+    p = default_text(p, node, agent_schema.CRYPTO_BOUNDARY_DECL_EXECUTION, "disabled".as_slice(), fallback);
+    block_end(t, p, node)
+}
+
+
+// ------------------------------------------------------------------ passports
+
+fn parse_passport(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "passport".as_slice(), "passport name".as_slice(), agent_schema.PASSPORT_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated passport declaration".as_slice());
+        if p.failed { return p; }
+        let at: u64 = p.current;
+        if peek_is(s, t, at, "agent".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PASSPORT_DECL_AGENT, "passport".as_slice(), "passport agent reference".as_slice());
+        } else if peek_is(s, t, at, "agent_name".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_AGENT_NAME, "passport".as_slice(), "passport agent_name value".as_slice());
+        } else if peek_is(s, t, at, "global_id".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_GLOBAL_ID, "passport".as_slice(), "passport global_id value".as_slice());
+        } else if peek_is(s, t, at, "identity".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_IDENTITY, "passport".as_slice(), "passport identity value".as_slice());
+        } else if peek_is(s, t, at, "provider".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_PROVIDER, "passport".as_slice(), "passport provider value".as_slice());
+        } else if peek_is(s, t, at, "version".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_VERSION, "passport".as_slice(), "passport version value".as_slice());
+        } else if peek_is(s, t, at, "ans_name".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_ANS_NAME, "passport".as_slice(), "passport ans_name value".as_slice());
+        } else if peek_is(s, t, at, "country".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_COUNTRY, "passport".as_slice(), "passport country value".as_slice());
+        } else if peek_is(s, t, at, "jurisdiction".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_JURISDICTION, "passport".as_slice(), "passport jurisdiction value".as_slice());
+        } else if peek_is(s, t, at, "data_residency".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.PASSPORT_DECL_DATA_RESIDENCY, "passport".as_slice(), "data residency entry".as_slice());
+        } else if peek_is(s, t, at, "model".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_MODEL, "passport".as_slice(), "passport model value".as_slice());
+        } else if peek_is(s, t, at, "risk_level".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_RISK_LEVEL, "passport".as_slice(), "passport risk_level value".as_slice());
+        } else if peek_is(s, t, at, "data_scope".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.PASSPORT_DECL_DATA_SCOPE, "passport".as_slice(), "data scope entry".as_slice());
+        } else if peek_is(s, t, at, "intent".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_DECL_INTENT, "passport".as_slice(), "passport intent value".as_slice());
+        } else if peek_is(s, t, at, "intended_use".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.PASSPORT_DECL_INTENDED_USE, "passport".as_slice(), "intended use entry".as_slice());
+        } else if peek_is(s, t, at, "prohibited_use".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.PASSPORT_DECL_PROHIBITED_USE, "passport".as_slice(), "prohibited use entry".as_slice());
+        } else if peek_is(s, t, at, "attestations".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.PASSPORT_DECL_ATTESTATIONS, "passport".as_slice(), "attestation entry".as_slice());
+        } else if peek_is(s, t, at, "asn".as_slice()) {
+            if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, agent_schema.PASSPORT_DECL_ASN) {
+                return fail_at(t, p, bytes.copy("duplicate `asn` block in passport".as_slice()), at);
+            }
+            p = parse_passport_asn(s, t, p);
+            if p.failed { return p; }
+            p = agent_ast.set_last(p, node, agent_schema.PASSPORT_DECL_ASN);
+        } else {
+            return block_unexpected(s, t, p, "passport".as_slice(), "a".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_AGENT, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_AGENT_NAME, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_GLOBAL_ID, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_IDENTITY, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_PROVIDER, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_VERSION, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_COUNTRY, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_JURISDICTION, fallback);
+    p = default_array(p, node, agent_schema.PASSPORT_DECL_DATA_RESIDENCY);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_RISK_LEVEL, fallback);
+    p = default_array(p, node, agent_schema.PASSPORT_DECL_DATA_SCOPE);
+    p = default_string(p, node, agent_schema.PASSPORT_DECL_INTENT, fallback);
+    p = default_array(p, node, agent_schema.PASSPORT_DECL_INTENDED_USE);
+    p = default_array(p, node, agent_schema.PASSPORT_DECL_PROHIBITED_USE);
+    p = default_array(p, node, agent_schema.PASSPORT_DECL_ATTESTATIONS);
+    block_end(t, p, node)
+}
+
+// `asn { ... }`: its keys are refused as passport fields; a key left out is
+// an empty string spanned by the closing `}`.
+fn parse_passport_asn(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "asn".as_slice());
+    if p.failed { return p; }
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.PASSPORT_ASN_DECL);
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated asn block".as_slice());
+        if p.failed { return p; }
+        let at: u64 = p.current;
+        if peek_is(s, t, at, "registry".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_ASN_DECL_REGISTRY, "passport".as_slice(), "asn registry value".as_slice());
+        } else if peek_is(s, t, at, "number".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_ASN_DECL_NUMBER, "passport".as_slice(), "asn number value".as_slice());
+        } else if peek_is(s, t, at, "holder".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_ASN_DECL_HOLDER, "passport".as_slice(), "asn holder value".as_slice());
+        } else if peek_is(s, t, at, "country".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PASSPORT_ASN_DECL_COUNTRY, "passport".as_slice(), "asn country value".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "asn".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let close: u64 = p.current;
+    p = span_of(t, p, close);
+    let fallback: u64 = p.result;
+    p = default_string(p, node, agent_schema.PASSPORT_ASN_DECL_REGISTRY, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_ASN_DECL_NUMBER, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_ASN_DECL_HOLDER, fallback);
+    p = default_string(p, node, agent_schema.PASSPORT_ASN_DECL_COUNTRY, fallback);
     block_end(t, p, node)
 }
 

@@ -1,0 +1,2 @@
+module demo
+passport P { agent A asn { registry "r" } asn { number "1" } }

@@ -1,0 +1,2 @@
+module demo
+feature F { requires approval requires approval }

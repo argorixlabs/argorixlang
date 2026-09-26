@@ -1,0 +1,2 @@
+module demo
+threat_model T { assets [ { id "a" colour x } ] }

@@ -1,6 +1,6 @@
 # Agent-language syntax tree dump
 
-Status: ESP-018.B, in progress. The grammar is that of
+Status: ESP-018.B, done: every declaration is ported. The grammar is that of
 [`current-v1.md`](current-v1.md) and [`declarations.md`](declarations.md).
 Two parsers implement it:
 
@@ -68,10 +68,10 @@ silent divergence.
 
 ## Coverage
 
-The port goes one group of declarations at a time. A program that uses a
-declaration not ported yet dumps `unsupported`, and the differential counts
-it instead of comparing it. Every program that is compared must match.
-`MATCHED_AT_LEAST` in the test records how far the port has come.
+The port went one group of declarations at a time. A program that used a
+declaration not ported yet dumped `unsupported`, and the differential counted
+it instead of comparing it. Every declaration is ported now: the test
+requires every program to match and none to be `unsupported`.
 
 | Group | Declarations | Programs matched |
 | --- | --- | --- |
@@ -80,3 +80,4 @@ it instead of comparing it. Every program that is compared must match.
 | 3 | `crypto`, `did_method`, and the keyed-block helpers (`set_block_field`, defaults) | 541 of 1,403 |
 | 4 | Generated from `parser.rs` by `crates/argorixc/tests/agent_blocks.rs`: `harness`, `adapter`, `adapter_profile`, `crypto`, `did_method`, the `atrust_*` declarations, `trust_ledger`, the MCP and A2A bridge contracts, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier` and `public_conformance_report`, with their nested lists | 738 of 1,403 |
 | 5 | `runtime_hardening_profile`, `threat_model`, `spec_freeze`, `release_candidate`, `runtime_execution_profile`, `sandboxed_provider_adapter`: keys checked after their value, and string objects | 762 of 1,403 |
+| 6 | By hand: `provider`, `feature`, `secret`, `crypto_boundary`, `passport` and `asn` | 1,423 of 1,423: all 1,342 programs of the corpus and 81 samples |

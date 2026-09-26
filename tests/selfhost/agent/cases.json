@@ -2,7 +2,7 @@
   "schema_version": 1,
   "core_version": "0.1",
   "task": "ESP-018",
-  "purpose": "Fixtures of the agent-language lexer in compiler/agent_lexer.argx. The differential against the stage0 lexer over the whole corpus is crates/argorixc/tests/agent_lexer_differential.rs; these run it under gcc, clang and the sanitizers.",
+  "purpose": "Fixtures of the agent-language lexer and parser in compiler/agent_lexer.argx and compiler/agent_parser.argx. The differentials against stage0 over the whole corpus are crates/argorixc/tests/agent_lexer_differential.rs and agent_parser_differential.rs; these run them under gcc, clang and the sanitizers.",
   "cases": [
     {
       "id": "agent_lex_files",
@@ -18,6 +18,23 @@
         "expected_build": {
           "dumps/0.tokens": "1:1 0 5 Ident agent\n1:7 6 11 Ident Café\n1:12 12 13 LeftBrace\n2:3 16 24 Ident receives\n2:12 25 26 Ident M\n3:3 29 38 Ident max_steps\n3:13 39 41 Integer 10\n3:16 42 44 Arrow\n3:19 45 49 String \"ok\"\n4:1 50 51 RightBrace\n5:1 52 52 Eof\n",
           "dumps/1.tokens": "1:3: unterminated string literal\n2:3: integer literal exceeds u64 range\n2:24: unexpected character `!`\n"
+        }
+      }
+    },
+    {
+      "id": "agent_parse_files",
+      "file": "parse_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "parse_package",
+        "read_budget": 200,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.ast": "{\"module\":{\"value\":\"demo\",\"span\":{\"start\":7,\"end\":11,\"line\":1,\"column\":8}},\"imports\":[],\"providers\":[],\"harnesses\":[],\"features\":[],\"secrets\":[],\"adapters\":[],\"adapter_profiles\":[],\"cryptos\":[],\"crypto_boundaries\":[],\"did_methods\":[],\"atrust_boundaries\":[],\"atrust_identities\":[],\"atrust_credential_contracts\":[],\"atrust_handshakes\":[],\"trust_ledgers\":[],\"mcp_bridge_contracts\":[],\"a2a_bridge_contracts\":[],\"atrust_evidence_maps\":[],\"governance_profiles\":[],\"regulatory_mappings\":[],\"third_party_verifiers\":[],\"public_conformance_reports\":[],\"runtime_hardening_profiles\":[],\"threat_models\":[],\"spec_freezes\":[],\"release_candidates\":[],\"runtime_execution_profiles\":[],\"sandboxed_provider_adapters\":[],\"assertions\":[],\"policies\":[],\"failures\":[],\"capabilities\":[],\"enums\":[],\"types\":[],\"tools\":[],\"models\":[],\"agents\":[{\"name\":{\"value\":\"A\",\"span\":{\"start\":18,\"end\":19,\"line\":2,\"column\":7}},\"approval\":null,\"receives\":[{\"message_type\":{\"value\":\"Q\",\"span\":{\"start\":31,\"end\":32,\"line\":2,\"column\":20}},\"from\":null}],\"sends\":[],\"capabilities\":[],\"tools\":[],\"models\":[],\"handlers\":[]}],\"protocols\":[],\"passports\":[]}\n",
+          "dumps/1.ast": "2:22: duplicate crypto field `kind`\n"
         }
       }
     }

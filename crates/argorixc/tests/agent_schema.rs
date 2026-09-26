@@ -385,14 +385,17 @@ fn lower_snake(name: &str) -> String {
     upper_snake(name).to_ascii_lowercase()
 }
 
+/// A word table: the function, the enum, and its (word, variant) pairs.
+type WordTable = (String, String, Vec<(String, String)>);
+
 /// Every `"word" => Enum::Variant` arm of `parser.rs`, grouped by the
 /// function it is in and the enum it names, in source order.
-fn word_tables() -> Vec<(String, String, Vec<(String, String)>)> {
+fn word_tables() -> Vec<WordTable> {
     let text = fs::read_to_string(root().join("crates/argorix_parser/src/parser.rs")).unwrap();
     // Only the parser itself, not its tests.
     let text = text.split("#[cfg(test)]").next().unwrap();
     let bytes = text.as_bytes();
-    let mut tables: Vec<(String, String, Vec<(String, String)>)> = Vec::new();
+    let mut tables: Vec<WordTable> = Vec::new();
     let mut function = String::new();
     let mut at = 0;
     while at < bytes.len() {

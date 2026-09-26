@@ -470,10 +470,14 @@ runtime:
 
 **Estado (2026-09-26):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-018.md)),
 dividida en cinco subtareas: lexer, parser y AST, chequeo semántico y módulos,
-lowering a IR y bytecode, y matriz de compatibilidad. ESP-018.A está hecha: el
-lexer del lenguaje de agentes en `compiler/agent_lexer.argx`, con los datos
-Unicode versionados de `compiler/unicode.argx`, coincide byte a byte con el
-lexer stage0 en 1.564 archivos ([volcado](spec/language/tokens.md)).
+lowering a IR y bytecode, y matriz de compatibilidad. ESP-018.A y ESP-018.B están
+hechas: el lexer (`compiler/agent_lexer.argx`, con los datos Unicode
+versionados de `compiler/unicode.argx`) coincide con el lexer stage0 en 1.564
+archivos, y el parser (`compiler/agent_parser.argx`) produce el mismo árbol
+sintáctico que el parser stage0 en los 1.342 programas del corpus y 81
+muestras adversarias ([tokens](spec/language/tokens.md),
+[árbol](spec/language/ast.md)). El esquema del árbol, las tablas de palabras
+y 24 declaraciones se generan desde las fuentes de stage0 con tests en Rust.
 
 ### ESP-019 — VM y scheduler en Argorix
 

@@ -970,14 +970,3 @@ fn the_generated_keyed_blocks_are_what_the_parser_says() {
         "the generated keyed blocks of compiler/agent_parser.argx are stale; regenerate them with ARGORIX_BLESS=1"
     );
 }
-
-#[test]
-#[ignore]
-fn show_squeezed() {
-    let text = fs::read_to_string(root().join("crates/argorix_parser/src/parser.rs")).unwrap();
-    for (name, _, body) in functions(&text) {
-        if name == "parse_did_method" {
-            println!("{}", squeeze(&body));
-        }
-    }
-}
