@@ -1,0 +1,1562 @@
+core 0.1;
+module compiler.agent_verify;
+
+// The bytecode verifier's decisions on serialized bytecode, in Argorix
+// (ESP-018.D.3). A `.argbc.json` file is read as stage0's
+// `serde_json::from_str::<BytecodeProgram>` reads it, with the same errors at
+// the same positions, into a tree of values; the verifier then decides on the
+// tree (spec/language/verify.md).
+//
+// The reader ports serde_json 1.0.151 (de.rs, read.rs, error.rs) and serde's
+// derived and internally tagged deserialization, over the tables of
+// compiler.agent_bytecode_schema. What it does not reproduce dumps
+// `unsupported`: floating point values in messages, numbers past u64 or out
+// of f64's range, structs written as arrays, and non-ASCII text in a
+// message's `string "..."`.
+
+import stdlib.bytes;
+import stdlib.text;
+import stdlib.result;
+import compiler.agent_bytecode_schema;
+
+// A value of the tree. Objects keep their fields in slots
+// (`a` the first, `b` the struct); arrays and maps link their elements
+// through `next` (`a` the first + 1, `b` the last + 1); a map's elements are
+// entries (`a` the key string, `b` the value); strings are `a..b` of
+// `strings`; a variant has its index in `a` and its fields' object in `b`.
+struct Value { kind: u64, a: u64, b: u64, next: u64, }
+
+pub const V_NULL: u64 = 0u64;
+pub const V_OBJECT: u64 = 1u64;
+pub const V_ARRAY: u64 = 2u64;
+pub const V_STRING: u64 = 3u64;
+pub const V_BOOL: u64 = 4u64;
+pub const V_U64: u64 = 5u64;
+pub const V_I64: u64 = 6u64;
+pub const V_F64: u64 = 7u64;
+pub const V_VARIANT: u64 = 8u64;
+pub const V_MAP: u64 = 9u64;
+pub const V_ENTRY: u64 = 10u64;
+
+// The reader: where it is in the input, how deep it may still go, the first
+// error (its message, and its line and column, 0 until serde_json fixes the
+// position of a custom error), and the tree.
+struct Reader {
+    index: u64,
+    depth: u64,
+    failed: bool,
+    message: Buffer<u8>,
+    line: u64,
+    column: u64,
+    unsupported: bool,
+    nodes: Buffer<Value>,
+    slots: Buffer<u64>,
+    strings: Buffer<u8>,
+    result: u64,
+}
+
+const NONE: u64 = 1000000000u64;
+
+// ------------------------------------------------------------------ positions and errors
+
+// serde_json's `position_of_index`: the line, from 1, and the bytes since the
+// line began.
+fn at_index(s: Slice<u8>, reader: Reader, i: u64) -> Reader {
+    let mut r: Reader = reader;
+    let mut line: u64 = 1u64;
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at < i {
+        if s[at] == 10u8 {
+            line += 1u64;
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    r.line = line;
+    r.column = i - start;
+    r
+}
+
+fn set_message(reader: Reader, message: Slice<u8>) -> Reader {
+    let mut r: Reader = reader;
+    r.failed = true;
+    let mut index: u64 = 0u64;
+    while index < message.length() {
+        r.message.push(message[index]);
+        index += 1u64;
+    }
+    r
+}
+
+// `error`: at the current index.
+fn error(s: Slice<u8>, reader: Reader, message: Slice<u8>) -> Reader {
+    let i: u64 = reader.index;
+    at_index(s, set_message(reader, message), i)
+}
+
+// `peek_error`: one past the current index, at most the end.
+fn peek_error(s: Slice<u8>, reader: Reader, message: Slice<u8>) -> Reader {
+    let mut i: u64 = reader.index + 1u64;
+    if i > s.length() {
+        i = s.length();
+    }
+    at_index(s, set_message(reader, message), i)
+}
+
+// A custom error of serde: no position until `fix_position`.
+fn custom(reader: Reader, message: Slice<u8>) -> Reader {
+    let mut r: Reader = set_message(reader, message);
+    r.line = 0u64;
+    r
+}
+
+// `fix_position`: a custom error takes the current index.
+fn fix_position(s: Slice<u8>, reader: Reader) -> Reader {
+    if !reader.failed || reader.line != 0u64 {
+        return reader;
+    }
+    let i: u64 = reader.index;
+    at_index(s, reader, i)
+}
+
+fn unsupported(reader: Reader) -> Reader {
+    let mut r: Reader = reader;
+    r.unsupported = true;
+    r.failed = true;
+    r
+}
+
+// ------------------------------------------------------------------ the tree
+
+fn add(reader: Reader, kind: u64, a: u64, b: u64) -> Reader {
+    let mut r: Reader = reader;
+    r.result = r.nodes.length();
+    r.nodes.push(Value { kind: kind, a: a, b: b, next: 0u64 });
+    r
+}
+
+// `value` appended to array or map `node`.
+fn push(reader: Reader, node: u64, value: u64) -> Reader {
+    let mut r: Reader = reader;
+    let last: u64 = r.nodes[node].b;
+    if last == 0u64 {
+        r.nodes[node].a = value + 1u64;
+    } else {
+        r.nodes[last - 1u64].next = value + 1u64;
+    }
+    r.nodes[node].b = value + 1u64;
+    r
+}
+
+fn string_node(reader: Reader, text_bytes: Slice<u8>) -> Reader {
+    let mut r: Reader = reader;
+    let start: u64 = r.strings.length();
+    let mut index: u64 = 0u64;
+    while index < text_bytes.length() {
+        r.strings.push(text_bytes[index]);
+        index += 1u64;
+    }
+    let end: u64 = r.strings.length();
+    add(r, V_STRING, start, end)
+}
+
+// ------------------------------------------------------------------ bytes
+
+fn peek_is(s: Slice<u8>, index: u64, byte: u8) -> bool {
+    index < s.length() && s[index] == byte
+}
+
+// `parse_whitespace`: past spaces, line feeds, tabs and carriage returns.
+fn whitespace(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = reader;
+    while r.index < s.length() && (s[r.index] == 32u8 || s[r.index] == 10u8 || s[r.index] == 9u8 || s[r.index] == 13u8) {
+        r.index += 1u64;
+    }
+    r
+}
+
+// `parse_ident`: the rest of `null`, `true` or `false`.
+fn ident(s: Slice<u8>, reader: Reader, rest: Slice<u8>) -> Reader {
+    let mut r: Reader = reader;
+    let mut index: u64 = 0u64;
+    while index < rest.length() {
+        if r.index >= s.length() {
+            return error(s, r, "EOF while parsing a value".as_slice());
+        }
+        let next: u8 = s[r.index];
+        r.index += 1u64;
+        if next != rest[index] {
+            return error(s, r, "expected ident".as_slice());
+        }
+        index += 1u64;
+    }
+    r
+}
+
+// ------------------------------------------------------------------ strings
+
+// `decode_hex_escape`: four hex digits after `\u`, or NONE on an error.
+fn hex_escape(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = reader;
+    if s.length() - r.index < 4u64 {
+        r.index = s.length();
+        return error(s, r, "EOF while parsing a string".as_slice());
+    }
+    let mut value: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    let mut valid: bool = true;
+    while index < 4u64 {
+        let c: u8 = s[r.index + index];
+        let mut digit: u64 = 16u64;
+        if c >= 48u8 && c <= 57u8 {
+            digit = widen(c) - 48u64;
+        } else if c >= 65u8 && c <= 70u8 {
+            digit = widen(c) - 55u64;
+        } else if c >= 97u8 && c <= 102u8 {
+            digit = widen(c) - 87u64;
+        }
+        if digit == 16u64 {
+            valid = false;
+        }
+        value = value * 16u64 + digit;
+        index += 1u64;
+    }
+    r.index += 4u64;
+    if !valid {
+        return error(s, r, "invalid escape".as_slice());
+    }
+    r.result = value;
+    r
+}
+
+fn widen(byte: u8) -> u64 {
+    let mut value: u64 = 0u64;
+    let mut bit: u8 = 128u8;
+    let mut weight: u64 = 128u64;
+    while weight > 0u64 {
+        if byte & bit != 0u8 {
+            value += weight;
+        }
+        bit = bit / 2u8;
+        weight = weight / 2u64;
+    }
+    value
+}
+
+// The UTF-8 bytes of code point `n`.
+fn push_code_point(out: Buffer<u8>, n: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    if n < 128u64 {
+        o.push(narrow(n));
+    } else if n < 2048u64 {
+        o.push(narrow(192u64 + n / 64u64));
+        o.push(narrow(128u64 + n % 64u64));
+    } else if n < 65536u64 {
+        o.push(narrow(224u64 + n / 4096u64));
+        o.push(narrow(128u64 + (n / 64u64) % 64u64));
+        o.push(narrow(128u64 + n % 64u64));
+    } else {
+        o.push(narrow(240u64 + n / 262144u64));
+        o.push(narrow(128u64 + (n / 4096u64) % 64u64));
+        o.push(narrow(128u64 + (n / 64u64) % 64u64));
+        o.push(narrow(128u64 + n % 64u64));
+    }
+    o
+}
+
+fn narrow(value: u64) -> u8 {
+    let mut byte: u8 = 0u8;
+    let mut weight: u64 = 128u64;
+    let mut bit: u8 = 128u8;
+    while weight > 0u64 {
+        if value % (weight * 2u64) >= weight {
+            byte = byte + bit;
+        }
+        weight = weight / 2u64;
+        bit = bit / 2u8;
+    }
+    byte
+}
+
+// `parse_str` after the opening quote: the string's node, or an error.
+fn parse_string(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = reader;
+    let mut decoded: Buffer<u8> = Buffer::new();
+    loop {
+        while r.index < s.length() && s[r.index] != 34u8 && s[r.index] != 92u8 && s[r.index] >= 32u8 {
+            decoded.push(s[r.index]);
+            r.index += 1u64;
+        }
+        if r.index == s.length() {
+            return error(s, r, "EOF while parsing a string".as_slice());
+        }
+        let byte: u8 = s[r.index];
+        if byte == 34u8 {
+            r.index += 1u64;
+            return string_node(r, decoded.as_slice());
+        }
+        if byte != 92u8 {
+            r.index += 1u64;
+            return error(s, r, "control character (\\u0000-\\u001F) found while parsing a string".as_slice());
+        }
+        r.index += 1u64;
+        if r.index == s.length() {
+            return error(s, r, "EOF while parsing a string".as_slice());
+        }
+        let escape: u8 = s[r.index];
+        r.index += 1u64;
+        if escape == 34u8 || escape == 92u8 || escape == 47u8 {
+            decoded.push(escape);
+        } else if escape == 98u8 {
+            decoded.push(8u8);
+        } else if escape == 102u8 {
+            decoded.push(12u8);
+        } else if escape == 110u8 {
+            decoded.push(10u8);
+        } else if escape == 114u8 {
+            decoded.push(13u8);
+        } else if escape == 116u8 {
+            decoded.push(9u8);
+        } else if escape == 117u8 {
+            r = hex_escape(s, r);
+            if r.failed {
+                return r;
+            }
+            let n: u64 = r.result;
+            if n >= 56320u64 && n <= 57343u64 {
+                return error(s, r, "lone leading surrogate in hex escape".as_slice());
+            }
+            if n < 55296u64 || n > 56319u64 {
+                decoded = push_code_point(decoded, n);
+            } else {
+                if r.index == s.length() {
+                    return error(s, r, "EOF while parsing a string".as_slice());
+                }
+                let backslash: u8 = s[r.index];
+                r.index += 1u64;
+                if backslash != 92u8 {
+                    return error(s, r, "unexpected end of hex escape".as_slice());
+                }
+                if r.index == s.length() {
+                    return error(s, r, "EOF while parsing a string".as_slice());
+                }
+                let u: u8 = s[r.index];
+                r.index += 1u64;
+                if u != 117u8 {
+                    return error(s, r, "unexpected end of hex escape".as_slice());
+                }
+                r = hex_escape(s, r);
+                if r.failed {
+                    return r;
+                }
+                let n2: u64 = r.result;
+                if n2 < 56320u64 || n2 > 57343u64 {
+                    return error(s, r, "lone leading surrogate in hex escape".as_slice());
+                }
+                decoded = push_code_point(decoded, (n - 55296u64) * 1024u64 + (n2 - 56320u64) + 65536u64);
+            }
+        } else {
+            return error(s, r, "invalid escape".as_slice());
+        }
+    }
+    r
+}
+
+// `ignore_str` after the opening quote.
+fn ignore_string(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = reader;
+    loop {
+        while r.index < s.length() && s[r.index] != 34u8 && s[r.index] != 92u8 && s[r.index] >= 32u8 {
+            r.index += 1u64;
+        }
+        if r.index == s.length() {
+            return error(s, r, "EOF while parsing a string".as_slice());
+        }
+        let byte: u8 = s[r.index];
+        if byte == 34u8 {
+            r.index += 1u64;
+            return r;
+        }
+        if byte != 92u8 {
+            return error(s, r, "control character (\\u0000-\\u001F) found while parsing a string".as_slice());
+        }
+        r.index += 1u64;
+        if r.index == s.length() {
+            return error(s, r, "EOF while parsing a string".as_slice());
+        }
+        let escape: u8 = s[r.index];
+        r.index += 1u64;
+        if escape == 117u8 {
+            r = hex_escape(s, r);
+            if r.failed {
+                return r;
+            }
+        } else if !(escape == 34u8 || escape == 92u8 || escape == 47u8 || escape == 98u8 || escape == 102u8 || escape == 110u8 || escape == 114u8 || escape == 116u8) {
+            return error(s, r, "invalid escape".as_slice());
+        }
+    }
+    r
+}
+
+// ------------------------------------------------------------------ numbers
+
+// `parse_integer` after an optional `-`: a U64, I64 or F64 node. A number
+// serde_json turns into a float by overflowing u64, or that could be out of
+// f64's range, is `unsupported`.
+fn parse_integer(s: Slice<u8>, reader: Reader, positive: bool) -> Reader {
+    let mut r: Reader = reader;
+    if r.index >= s.length() {
+        return error(s, r, "EOF while parsing a value".as_slice());
+    }
+    let first: u8 = s[r.index];
+    r.index += 1u64;
+    let mut significand: u64 = 0u64;
+    let mut digits: u64 = 1u64;
+    let mut long: bool = false;
+    if first == 48u8 {
+        if r.index < s.length() && s[r.index] >= 48u8 && s[r.index] <= 57u8 {
+            return peek_error(s, r, "invalid number".as_slice());
+        }
+    } else if first >= 49u8 && first <= 57u8 {
+        significand = widen(first) - 48u64;
+        while r.index < s.length() && s[r.index] >= 48u8 && s[r.index] <= 57u8 {
+            let digit: u64 = widen(s[r.index]) - 48u64;
+            // Past u64, `parse_long_integer` reads the rest as a float.
+            if significand > 1844674407370955161u64 || (significand == 1844674407370955161u64 && digit > 5u64) {
+                long = true;
+            } else {
+                significand = significand * 10u64 + digit;
+            }
+            r.index += 1u64;
+            digits += 1u64;
+        }
+    } else {
+        return error(s, r, "invalid number".as_slice());
+    }
+    parse_number(s, r, positive, significand, digits, long)
+}
+
+fn parse_number(s: Slice<u8>, reader: Reader, positive: bool, significand: u64, digits: u64, long: bool) -> Reader {
+    let mut r: Reader = reader;
+    let mut exponent: u64 = 0u64;
+    let mut negative_exponent: bool = false;
+    let mut float: bool = long;
+    if peek_is(s, r.index, 46u8) {
+        float = true;
+        r.index += 1u64;
+        let mut after: u64 = 0u64;
+        while r.index < s.length() && s[r.index] >= 48u8 && s[r.index] <= 57u8 {
+            r.index += 1u64;
+            after += 1u64;
+        }
+        if after == 0u64 {
+            if r.index < s.length() {
+                return peek_error(s, r, "invalid number".as_slice());
+            }
+            return peek_error(s, r, "EOF while parsing a value".as_slice());
+        }
+    }
+    if peek_is(s, r.index, 101u8) || peek_is(s, r.index, 69u8) {
+        float = true;
+        r.index += 1u64;
+        if peek_is(s, r.index, 43u8) {
+            r.index += 1u64;
+        } else if peek_is(s, r.index, 45u8) {
+            r.index += 1u64;
+            negative_exponent = true;
+        }
+        if r.index >= s.length() {
+            return error(s, r, "EOF while parsing a value".as_slice());
+        }
+        let next: u8 = s[r.index];
+        r.index += 1u64;
+        if next < 48u8 || next > 57u8 {
+            return error(s, r, "invalid number".as_slice());
+        }
+        exponent = widen(next) - 48u64;
+        while r.index < s.length() && s[r.index] >= 48u8 && s[r.index] <= 57u8 {
+            if exponent > 100000u64 {
+                return unsupported(r);
+            }
+            exponent = exponent * 10u64 + widen(s[r.index]) - 48u64;
+            r.index += 1u64;
+        }
+    }
+    if float {
+        // Only a large positive exponent can overflow f64.
+        if significand != 0u64 && !negative_exponent && digits + exponent >= 300u64 {
+            return unsupported(r);
+        }
+        return add(r, V_F64, 0u64, 0u64);
+    }
+    if positive {
+        return add(r, V_U64, significand, 0u64);
+    }
+    if significand == 0u64 || significand > 9223372036854775808u64 {
+        // `-0` and what underflows i64 become floats.
+        return add(r, V_F64, 0u64, 0u64);
+    }
+    add(r, V_I64, significand, 0u64)
+}
+
+// `Unexpected` of a number node, as serde_json writes it.
+fn append_number(out: Buffer<u8>, value: Value) -> Buffer<u8> {
+    let mut o: Buffer<u8> = bytes.append(out, "integer `".as_slice());
+    if value.kind == V_I64 {
+        o.push(45u8);
+    }
+    o = bytes.append_decimal(o, value.a);
+    o.push(96u8);
+    o
+}
+
+// ------------------------------------------------------------------ serde's messages
+
+// A string as Rust's `{:?}` writes it; text past ASCII is `unsupported`
+// (Rust's printable and grapheme tables are not ported).
+fn append_debug(out: Buffer<u8>, value: Slice<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    o.push(34u8);
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        let c: u8 = value[index];
+        if c == 9u8 {
+            o = bytes.append(o, "\\t".as_slice());
+        } else if c == 10u8 {
+            o = bytes.append(o, "\\n".as_slice());
+        } else if c == 13u8 {
+            o = bytes.append(o, "\\r".as_slice());
+        } else if c == 0u8 {
+            o = bytes.append(o, "\\0".as_slice());
+        } else if c == 34u8 || c == 92u8 {
+            o.push(92u8);
+            o.push(c);
+        } else if c < 32u8 || c == 127u8 {
+            o = bytes.append(o, "\\u{".as_slice());
+            let code: u64 = widen(c);
+            if code >= 16u64 {
+                o.push(hex_digit(code / 16u64));
+            }
+            o.push(hex_digit(code % 16u64));
+            o.push(125u8);
+        } else {
+            o.push(c);
+        }
+        index += 1u64;
+    }
+    o.push(34u8);
+    o
+}
+
+fn hex_digit(value: u64) -> u8 {
+    if value < 10u64 {
+        return narrow(48u64 + value);
+    }
+    narrow(87u64 + value)
+}
+
+fn ascii(value: Slice<u8>) -> bool {
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        if value[index] >= 128u8 {
+            return false;
+        }
+        index += 1u64;
+    }
+    true
+}
+
+// "invalid type: <what node is>, expected <expected>", a custom error; a
+// float or a non-ASCII string is `unsupported`.
+fn invalid_type(reader: Reader, node: u64, expected: Slice<u8>) -> Reader {
+    let found: Value = reader.nodes[node];
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid type: ".as_slice());
+    if found.kind == V_NULL {
+        message = bytes.append(message, "null".as_slice());
+    } else if found.kind == V_BOOL {
+        if found.a == 1u64 {
+            message = bytes.append(message, "boolean `true`".as_slice());
+        } else {
+            message = bytes.append(message, "boolean `false`".as_slice());
+        }
+    } else if found.kind == V_U64 || found.kind == V_I64 {
+        message = append_number(message, found);
+    } else if found.kind == V_STRING {
+        let text_bytes: Buffer<u8> = copy_range(reader.strings.as_slice(), found.a, found.b);
+        if !ascii(text_bytes.as_slice()) {
+            return unsupported(reader);
+        }
+        message = bytes.append(message, "string ".as_slice());
+        message = append_debug(message, text_bytes.as_slice());
+    } else if found.kind == V_ARRAY {
+        message = bytes.append(message, "sequence".as_slice());
+    } else if found.kind == V_MAP {
+        message = bytes.append(message, "map".as_slice());
+    } else {
+        return unsupported(reader);
+    }
+    message = bytes.append(message, ", expected ".as_slice());
+    message = bytes.append(message, expected);
+    custom(reader, message.as_slice())
+}
+
+// `peek_invalid_type`: read the value that is not of the expected type, then
+// the custom error, positioned where the value ends.
+fn peek_invalid_type(s: Slice<u8>, reader: Reader, expected: Slice<u8>) -> Reader {
+    let mut r: Reader = reader;
+    let mut peek: u8 = 0u8;
+    if r.index < s.length() {
+        peek = s[r.index];
+    }
+    if peek == 110u8 {
+        r.index += 1u64;
+        r = ident(s, r, "ull".as_slice());
+        if r.failed {
+            return r;
+        }
+        r = add(r, V_NULL, 0u64, 0u64);
+    } else if peek == 116u8 {
+        r.index += 1u64;
+        r = ident(s, r, "rue".as_slice());
+        if r.failed {
+            return r;
+        }
+        r = add(r, V_BOOL, 1u64, 0u64);
+    } else if peek == 102u8 {
+        r.index += 1u64;
+        r = ident(s, r, "alse".as_slice());
+        if r.failed {
+            return r;
+        }
+        r = add(r, V_BOOL, 0u64, 0u64);
+    } else if peek == 45u8 {
+        r.index += 1u64;
+        r = parse_integer(s, r, false);
+        if r.failed {
+            return r;
+        }
+    } else if peek >= 48u8 && peek <= 57u8 {
+        r = parse_integer(s, r, true);
+        if r.failed {
+            return r;
+        }
+    } else if peek == 34u8 {
+        r.index += 1u64;
+        r = parse_string(s, r);
+        if r.failed {
+            return r;
+        }
+    } else if peek == 91u8 {
+        r = add(r, V_ARRAY, 0u64, 0u64);
+    } else if peek == 123u8 {
+        r = add(r, V_MAP, 0u64, 0u64);
+    } else {
+        return peek_error(s, r, "expected value".as_slice());
+    }
+    let node: u64 = r.result;
+    r = invalid_type(r, node, expected);
+    fix_position(s, r)
+}
+
+fn missing_field(reader: Reader, s: u64, i: u64) -> Reader {
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "missing field `".as_slice());
+    message = agent_bytecode_schema.append_field_key(message, s, i);
+    message.push(96u8);
+    custom(reader, message.as_slice())
+}
+
+fn duplicate_field(reader: Reader, key: Slice<u8>) -> Reader {
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "duplicate field `".as_slice());
+    message = bytes.append(message, key);
+    message.push(96u8);
+    custom(reader, message.as_slice())
+}
+
+// ------------------------------------------------------------------ structure
+
+// `end_seq`, when no error came before it; otherwise only its movement.
+fn end_seq(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    let failed: bool = r.failed;
+    if r.index >= s.length() {
+        if failed {
+            return r;
+        }
+        return peek_error(s, r, "EOF while parsing a list".as_slice());
+    }
+    let byte: u8 = s[r.index];
+    if byte == 93u8 {
+        r.index += 1u64;
+        return r;
+    }
+    if byte == 44u8 {
+        r.index += 1u64;
+        r = whitespace(s, r);
+        if failed {
+            return r;
+        }
+        if peek_is(s, r.index, 93u8) {
+            return peek_error(s, r, "trailing comma".as_slice());
+        }
+        return peek_error(s, r, "trailing characters".as_slice());
+    }
+    if failed {
+        return r;
+    }
+    peek_error(s, r, "trailing characters".as_slice())
+}
+
+// `end_map`, likewise.
+fn end_map(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index < s.length() && s[r.index] == 125u8 {
+        r.index += 1u64;
+        return r;
+    }
+    if r.failed {
+        return r;
+    }
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing an object".as_slice());
+    }
+    if s[r.index] == 44u8 {
+        return peek_error(s, r, "trailing comma".as_slice());
+    }
+    peek_error(s, r, "trailing characters".as_slice())
+}
+
+// `has_next_element`: whether the list goes on; `result` is 1 if it does.
+fn next_element(s: Slice<u8>, reader: Reader, first: bool) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    r.result = 0u64;
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a list".as_slice());
+    }
+    let byte: u8 = s[r.index];
+    if byte == 93u8 {
+        return r;
+    }
+    if first {
+        r.result = 1u64;
+        return r;
+    }
+    if byte != 44u8 {
+        return peek_error(s, r, "expected `,` or `]`".as_slice());
+    }
+    r.index += 1u64;
+    r = whitespace(s, r);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a value".as_slice());
+    }
+    if s[r.index] == 93u8 {
+        return peek_error(s, r, "trailing comma".as_slice());
+    }
+    r.result = 1u64;
+    r
+}
+
+// `has_next_key` and the key after it: `result` is the key's string node, or
+// NONE at the end of the object.
+fn next_key(s: Slice<u8>, reader: Reader, first: bool) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    r.result = NONE;
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing an object".as_slice());
+    }
+    let byte: u8 = s[r.index];
+    if byte == 125u8 {
+        return r;
+    }
+    if first {
+        if byte != 34u8 {
+            return peek_error(s, r, "key must be a string".as_slice());
+        }
+    } else {
+        if byte != 44u8 {
+            return peek_error(s, r, "expected `,` or `}`".as_slice());
+        }
+        r.index += 1u64;
+        r = whitespace(s, r);
+        if r.index >= s.length() {
+            return peek_error(s, r, "EOF while parsing a value".as_slice());
+        }
+        if s[r.index] == 125u8 {
+            return peek_error(s, r, "trailing comma".as_slice());
+        }
+        if s[r.index] != 34u8 {
+            return peek_error(s, r, "key must be a string".as_slice());
+        }
+    }
+    r.index += 1u64;
+    parse_string(s, r)
+}
+
+// `parse_object_colon`.
+fn colon(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing an object".as_slice());
+    }
+    if s[r.index] != 58u8 {
+        return peek_error(s, r, "expected `:`".as_slice());
+    }
+    r.index += 1u64;
+    r
+}
+
+// `check_recursion` on entering a list or an object.
+fn deeper(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = reader;
+    r.depth -= 1u64;
+    if r.depth == 0u64 {
+        return peek_error(s, r, "recursion limit exceeded".as_slice());
+    }
+    r
+}
+
+// `ignore_value`: a value skipped, as serde_json skips an unknown field's.
+fn ignore_value(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = reader;
+    let mut frames: Buffer<u8> = Buffer::new();
+    let mut enclosing: u8 = 0u8;
+    loop {
+        r = whitespace(s, r);
+        if r.index >= s.length() {
+            return peek_error(s, r, "EOF while parsing a value".as_slice());
+        }
+        let peek: u8 = s[r.index];
+        let mut frame: u8 = 0u8;
+        if peek == 110u8 {
+            r.index += 1u64;
+            r = ident(s, r, "ull".as_slice());
+        } else if peek == 116u8 {
+            r.index += 1u64;
+            r = ident(s, r, "rue".as_slice());
+        } else if peek == 102u8 {
+            r.index += 1u64;
+            r = ident(s, r, "alse".as_slice());
+        } else if peek == 45u8 {
+            r.index += 1u64;
+            r = ignore_integer(s, r);
+        } else if peek >= 48u8 && peek <= 57u8 {
+            r = ignore_integer(s, r);
+        } else if peek == 34u8 {
+            r.index += 1u64;
+            r = ignore_string(s, r);
+        } else if peek == 91u8 || peek == 123u8 {
+            if enclosing != 0u8 {
+                frames.push(enclosing);
+                enclosing = 0u8;
+            }
+            r.index += 1u64;
+            frame = peek;
+        } else {
+            return peek_error(s, r, "expected value".as_slice());
+        }
+        if r.failed {
+            return r;
+        }
+        let mut accept_comma: bool = false;
+        if frame == 0u8 {
+            if enclosing != 0u8 {
+                frame = enclosing;
+                enclosing = 0u8;
+                accept_comma = true;
+            } else if frames.length() > 0u64 {
+                frame = frames[frames.length() - 1u64];
+                frames = pop(frames);
+                accept_comma = true;
+            } else {
+                return r;
+            }
+        }
+        loop {
+            r = whitespace(s, r);
+            if r.index >= s.length() {
+                if frame == 91u8 {
+                    return peek_error(s, r, "EOF while parsing a list".as_slice());
+                }
+                return peek_error(s, r, "EOF while parsing an object".as_slice());
+            }
+            let next: u8 = s[r.index];
+            if next == 44u8 && accept_comma {
+                r.index += 1u64;
+                break;
+            }
+            let closes: bool = (next == 93u8 && frame == 91u8) || (next == 125u8 && frame == 123u8);
+            if !closes {
+                if accept_comma {
+                    if frame == 91u8 {
+                        return peek_error(s, r, "expected `,` or `]`".as_slice());
+                    }
+                    return peek_error(s, r, "expected `,` or `}`".as_slice());
+                }
+                break;
+            }
+            r.index += 1u64;
+            if frames.length() == 0u64 {
+                return r;
+            }
+            frame = frames[frames.length() - 1u64];
+            frames = pop(frames);
+            accept_comma = true;
+        }
+        if frame == 123u8 {
+            r = whitespace(s, r);
+            if r.index >= s.length() {
+                return peek_error(s, r, "EOF while parsing an object".as_slice());
+            }
+            if s[r.index] != 34u8 {
+                return peek_error(s, r, "key must be a string".as_slice());
+            }
+            r.index += 1u64;
+            r = ignore_string(s, r);
+            if r.failed {
+                return r;
+            }
+            r = whitespace(s, r);
+            if r.index >= s.length() {
+                return peek_error(s, r, "EOF while parsing an object".as_slice());
+            }
+            if s[r.index] != 58u8 {
+                return peek_error(s, r, "expected `:`".as_slice());
+            }
+            r.index += 1u64;
+        }
+        enclosing = frame;
+    }
+    r
+}
+
+// The buffer without its last byte.
+fn pop(frames: Buffer<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index + 1u64 < frames.length() {
+        out.push(frames[index]);
+        index += 1u64;
+    }
+    out
+}
+
+// `ignore_integer` and its decimal and exponent.
+fn ignore_integer(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = reader;
+    let mut first: u8 = 0u8;
+    if r.index < s.length() {
+        first = s[r.index];
+        r.index += 1u64;
+    }
+    if first == 48u8 {
+        if r.index < s.length() && s[r.index] >= 48u8 && s[r.index] <= 57u8 {
+            return peek_error(s, r, "invalid number".as_slice());
+        }
+    } else if first >= 49u8 && first <= 57u8 {
+        while r.index < s.length() && s[r.index] >= 48u8 && s[r.index] <= 57u8 {
+            r.index += 1u64;
+        }
+    } else {
+        return error(s, r, "invalid number".as_slice());
+    }
+    if peek_is(s, r.index, 46u8) {
+        r.index += 1u64;
+        let mut digit: bool = false;
+        while r.index < s.length() && s[r.index] >= 48u8 && s[r.index] <= 57u8 {
+            r.index += 1u64;
+            digit = true;
+        }
+        if !digit {
+            return peek_error(s, r, "invalid number".as_slice());
+        }
+    }
+    if peek_is(s, r.index, 101u8) || peek_is(s, r.index, 69u8) {
+        r.index += 1u64;
+        if peek_is(s, r.index, 43u8) || peek_is(s, r.index, 45u8) {
+            r.index += 1u64;
+        }
+        let mut next: u8 = 0u8;
+        if r.index < s.length() {
+            next = s[r.index];
+            r.index += 1u64;
+        }
+        if next < 48u8 || next > 57u8 {
+            return error(s, r, "invalid number".as_slice());
+        }
+        while r.index < s.length() && s[r.index] >= 48u8 && s[r.index] <= 57u8 {
+            r.index += 1u64;
+        }
+    }
+    r
+}
+
+// ------------------------------------------------------------------ typed values
+
+// The value of type `ty` (agent_bytecode_schema's `kind + 16 * struct`).
+const T_STRUCT: u64 = 10u64;
+const T_INSTRUCTION: u64 = 11u64;
+const T_U64: u64 = 12u64;
+
+fn deserialize(s: Slice<u8>, reader: Reader, ty: u64) -> Reader {
+    let kind: u64 = ty % 16u64;
+    let inner: u64 = ty / 16u64;
+    if kind == agent_bytecode_schema.T_STRING {
+        return de_str(s, reader, "a string".as_slice());
+    }
+    if kind == agent_bytecode_schema.T_BOOL {
+        return de_bool(s, reader);
+    }
+    if kind == T_U64 {
+        return de_u64(s, reader);
+    }
+    if kind == agent_bytecode_schema.T_STRINGS {
+        return de_seq(s, reader, agent_bytecode_schema.T_STRING);
+    }
+    if kind == agent_bytecode_schema.T_LIST {
+        return de_seq(s, reader, T_STRUCT + 16u64 * inner);
+    }
+    if kind == agent_bytecode_schema.T_INSTRUCTIONS {
+        return de_seq(s, reader, T_INSTRUCTION);
+    }
+    if kind == T_STRUCT {
+        return de_struct(s, reader, inner);
+    }
+    if kind == T_INSTRUCTION {
+        return de_instruction(s, reader);
+    }
+    // An option: `null`, or the value.
+    let mut r: Reader = whitespace(s, reader);
+    if peek_is(s, r.index, 110u8) {
+        r.index += 1u64;
+        r = ident(s, r, "ull".as_slice());
+        if r.failed {
+            return r;
+        }
+        return add(r, V_NULL, 0u64, 0u64);
+    }
+    if kind == agent_bytecode_schema.T_OPTION_STRING {
+        return de_str(s, r, "a string".as_slice());
+    }
+    if kind == agent_bytecode_schema.T_OPTION_BOOL {
+        return de_bool(s, r);
+    }
+    if kind == agent_bytecode_schema.T_OPTION_U64 {
+        return de_u64(s, r);
+    }
+    de_struct(s, r, inner)
+}
+
+fn de_str(s: Slice<u8>, reader: Reader, expected: Slice<u8>) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a value".as_slice());
+    }
+    if s[r.index] == 34u8 {
+        r.index += 1u64;
+        return parse_string(s, r);
+    }
+    peek_invalid_type(s, r, expected)
+}
+
+fn de_bool(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a value".as_slice());
+    }
+    if s[r.index] == 116u8 {
+        r.index += 1u64;
+        r = ident(s, r, "rue".as_slice());
+        if r.failed {
+            return r;
+        }
+        return add(r, V_BOOL, 1u64, 0u64);
+    }
+    if s[r.index] == 102u8 {
+        r.index += 1u64;
+        r = ident(s, r, "alse".as_slice());
+        if r.failed {
+            return r;
+        }
+        return add(r, V_BOOL, 0u64, 0u64);
+    }
+    peek_invalid_type(s, r, "a boolean".as_slice())
+}
+
+// `deserialize_number` with serde's u64 visitor.
+fn de_u64(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a value".as_slice());
+    }
+    let peek: u8 = s[r.index];
+    if peek == 45u8 {
+        r.index += 1u64;
+        r = parse_integer(s, r, false);
+    } else if peek >= 48u8 && peek <= 57u8 {
+        r = parse_integer(s, r, true);
+    } else {
+        return peek_invalid_type(s, r, "u64".as_slice());
+    }
+    if r.failed {
+        return r;
+    }
+    let found: Value = r.nodes[r.result];
+    if found.kind == V_U64 {
+        return r;
+    }
+    if found.kind == V_F64 {
+        return unsupported(r);
+    }
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid value: ".as_slice());
+    message = append_number(message, found);
+    message = bytes.append(message, ", expected u64".as_slice());
+    fix_position(s, custom(r, message.as_slice()))
+}
+
+// `deserialize_seq` with Vec's visitor: elements of type `element`.
+fn de_seq(s: Slice<u8>, reader: Reader, element: u64) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a value".as_slice());
+    }
+    if s[r.index] != 91u8 {
+        return peek_invalid_type(s, r, "a sequence".as_slice());
+    }
+    r = deeper(s, r);
+    if r.failed {
+        return r;
+    }
+    r.index += 1u64;
+    r = add(r, V_ARRAY, 0u64, 0u64);
+    let array: u64 = r.result;
+    let mut first: bool = true;
+    loop {
+        r = next_element(s, r, first);
+        if r.failed || r.result == 0u64 {
+            break;
+        }
+        first = false;
+        r = deserialize(s, r, element);
+        if r.failed {
+            break;
+        }
+        let item: u64 = r.result;
+        r = push(r, array, item);
+    }
+    r.depth += 1u64;
+    r = end_seq(s, r);
+    r.result = array;
+    fix_position(s, r)
+}
+
+// `deserialize_struct` with the derived visitor of struct `st`.
+fn de_struct(s: Slice<u8>, reader: Reader, st: u64) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a value".as_slice());
+    }
+    if s[r.index] == 91u8 {
+        return unsupported(r);
+    }
+    if s[r.index] != 123u8 {
+        let expected: Buffer<u8> = agent_bytecode_schema.append_struct_name(Buffer::new(), st);
+        return peek_invalid_type(s, r, expected.as_slice());
+    }
+    r = deeper(s, r);
+    if r.failed {
+        return r;
+    }
+    r.index += 1u64;
+    r = visit_struct(s, r, st);
+    let object: u64 = r.result;
+    r.depth += 1u64;
+    r = end_map(s, r);
+    r.result = object;
+    fix_position(s, r)
+}
+
+// The derived `visit_map`: each field once, unknown fields skipped, then the
+// missing ones in declaration order.
+fn visit_struct(s: Slice<u8>, reader: Reader, st: u64) -> Reader {
+    let mut r: Reader = reader;
+    let count: u64 = agent_bytecode_schema.field_count(st);
+    let slot: u64 = r.slots.length();
+    let mut index: u64 = 0u64;
+    while index < count {
+        r.slots.push(NONE);
+        index += 1u64;
+    }
+    r = add(r, V_OBJECT, slot, st);
+    let object: u64 = r.result;
+    let mut first: bool = true;
+    loop {
+        r = next_key(s, r, first);
+        if r.failed || r.result == NONE {
+            break;
+        }
+        first = false;
+        let key: Value = r.nodes[r.result];
+        let key_bytes: Buffer<u8> = copy_range(r.strings.as_slice(), key.a, key.b);
+        let field: u64 = agent_bytecode_schema.field_index(st, key_bytes.as_slice());
+        if field != NONE && r.slots[slot + field] != NONE {
+            r = duplicate_field(r, key_bytes.as_slice());
+            break;
+        }
+        r = colon(s, r);
+        if r.failed {
+            break;
+        }
+        if field == NONE {
+            r = ignore_value(s, r);
+        } else {
+            r = deserialize(s, r, agent_bytecode_schema.field_type(st, field));
+            if !r.failed {
+                r.slots[slot + field] = r.result;
+            }
+        }
+        if r.failed {
+            break;
+        }
+    }
+    if !r.failed {
+        r = fill_missing(r, slot, st);
+    }
+    r.result = object;
+    r
+}
+
+// Missing fields: an error for a required one, else its default.
+fn fill_missing(reader: Reader, slot: u64, st: u64) -> Reader {
+    let mut r: Reader = reader;
+    let count: u64 = agent_bytecode_schema.field_count(st);
+    let mut index: u64 = 0u64;
+    while index < count {
+        if r.slots[slot + index] == NONE {
+            let default: u64 = agent_bytecode_schema.field_default(st, index);
+            if default == agent_bytecode_schema.REQUIRED {
+                return missing_field(r, st, index);
+            }
+            let kind: u64 = agent_bytecode_schema.field_type(st, index) % 16u64;
+            if default == agent_bytecode_schema.DEFAULT_PROVIDER {
+                r = string_node(r, "simulated".as_slice());
+            } else if kind == agent_bytecode_schema.T_STRING {
+                r = string_node(r, "".as_slice());
+            } else if kind == agent_bytecode_schema.T_BOOL {
+                r = add(r, V_BOOL, 0u64, 0u64);
+            } else if kind == agent_bytecode_schema.T_STRINGS || kind == agent_bytecode_schema.T_LIST || kind == agent_bytecode_schema.T_INSTRUCTIONS {
+                r = add(r, V_ARRAY, 0u64, 0u64);
+            } else {
+                r = add(r, V_NULL, 0u64, 0u64);
+            }
+            let node: u64 = r.result;
+            r.slots[slot + index] = node;
+        }
+        index += 1u64;
+    }
+    r
+}
+
+// ------------------------------------------------------------------ instructions
+
+// An internally tagged `Instruction`: serde_json's `deserialize_any` with
+// serde's `TaggedContentVisitor`, then the variant from the buffered content.
+fn de_instruction(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a value".as_slice());
+    }
+    let peek: u8 = s[r.index];
+    if peek == 91u8 {
+        return unsupported(r);
+    }
+    if peek != 123u8 {
+        r = de_any(s, r);
+        if r.failed {
+            return r;
+        }
+        let node: u64 = r.result;
+        r = invalid_type(r, node, "internally tagged enum Instruction".as_slice());
+        return fix_position(s, r);
+    }
+    r = deeper(s, r);
+    if r.failed {
+        return r;
+    }
+    r.index += 1u64;
+    r = add(r, V_MAP, 0u64, 0u64);
+    let map: u64 = r.result;
+    let mut tag: u64 = NONE;
+    let mut first: bool = true;
+    loop {
+        r = next_key(s, r, first);
+        if r.failed || r.result == NONE {
+            break;
+        }
+        first = false;
+        let key_node: u64 = r.result;
+        let key: Value = r.nodes[key_node];
+        let is_tag: bool = range_is(r.strings.as_slice(), key.a, key.b, "op".as_slice());
+        if is_tag && tag != NONE {
+            r = duplicate_field(r, "op".as_slice());
+            break;
+        }
+        r = colon(s, r);
+        if r.failed {
+            break;
+        }
+        if is_tag {
+            r = de_str(s, r, "variant identifier".as_slice());
+            if r.failed {
+                break;
+            }
+            let name: Value = r.nodes[r.result];
+            let name_bytes: Buffer<u8> = copy_range(r.strings.as_slice(), name.a, name.b);
+            tag = agent_bytecode_schema.variant(name_bytes.as_slice());
+        } else {
+            r = de_any(s, r);
+            if r.failed {
+                break;
+            }
+            let value: u64 = r.result;
+            r = add(r, V_ENTRY, key_node, value);
+            let entry: u64 = r.result;
+            r = push(r, map, entry);
+        }
+    }
+    if !r.failed && tag == NONE {
+        r = custom(r, "missing field `op`".as_slice());
+    }
+    r.depth += 1u64;
+    r = end_map(s, r);
+    r = fix_position(s, r);
+    if r.failed {
+        return r;
+    }
+    decode_variant(r, tag, map)
+}
+
+// `deserialize_any` with serde's `ContentVisitor`: any value, kept as it is.
+fn de_any(s: Slice<u8>, reader: Reader) -> Reader {
+    let mut r: Reader = whitespace(s, reader);
+    if r.index >= s.length() {
+        return peek_error(s, r, "EOF while parsing a value".as_slice());
+    }
+    let peek: u8 = s[r.index];
+    if peek == 110u8 {
+        r.index += 1u64;
+        r = ident(s, r, "ull".as_slice());
+        if r.failed {
+            return r;
+        }
+        return add(r, V_NULL, 0u64, 0u64);
+    }
+    if peek == 116u8 || peek == 102u8 {
+        return de_bool(s, r);
+    }
+    if peek == 45u8 {
+        r.index += 1u64;
+        return parse_integer(s, r, false);
+    }
+    if peek >= 48u8 && peek <= 57u8 {
+        return parse_integer(s, r, true);
+    }
+    if peek == 34u8 {
+        r.index += 1u64;
+        return parse_string(s, r);
+    }
+    if peek == 91u8 {
+        r = deeper(s, r);
+        if r.failed {
+            return r;
+        }
+        r.index += 1u64;
+        r = add(r, V_ARRAY, 0u64, 0u64);
+        let array: u64 = r.result;
+        let mut first: bool = true;
+        loop {
+            r = next_element(s, r, first);
+            if r.failed || r.result == 0u64 {
+                break;
+            }
+            first = false;
+            r = de_any(s, r);
+            if r.failed {
+                break;
+            }
+            let item: u64 = r.result;
+            r = push(r, array, item);
+        }
+        r.depth += 1u64;
+        r = end_seq(s, r);
+        r.result = array;
+        return fix_position(s, r);
+    }
+    if peek == 123u8 {
+        r = deeper(s, r);
+        if r.failed {
+            return r;
+        }
+        r.index += 1u64;
+        r = add(r, V_MAP, 0u64, 0u64);
+        let map: u64 = r.result;
+        let mut first: bool = true;
+        loop {
+            r = next_key(s, r, first);
+            if r.failed || r.result == NONE {
+                break;
+            }
+            first = false;
+            let key: u64 = r.result;
+            r = colon(s, r);
+            if r.failed {
+                break;
+            }
+            r = de_any(s, r);
+            if r.failed {
+                break;
+            }
+            let value: u64 = r.result;
+            r = add(r, V_ENTRY, key, value);
+            let entry: u64 = r.result;
+            r = push(r, map, entry);
+        }
+        r.depth += 1u64;
+        r = end_map(s, r);
+        r.result = map;
+        return fix_position(s, r);
+    }
+    peek_error(s, r, "expected value".as_slice())
+}
+
+// The variant `tag` from its buffered fields: serde's derived visitor over
+// a `ContentDeserializer`. Its errors have no position yet.
+fn decode_variant(reader: Reader, tag: u64, map: u64) -> Reader {
+    let mut r: Reader = reader;
+    let st: u64 = agent_bytecode_schema.variant_struct(tag);
+    if st == NONE {
+        return add(r, V_VARIANT, tag, 0u64);
+    }
+    let count: u64 = agent_bytecode_schema.field_count(st);
+    let slot: u64 = r.slots.length();
+    let mut index: u64 = 0u64;
+    while index < count {
+        r.slots.push(NONE);
+        index += 1u64;
+    }
+    r = add(r, V_OBJECT, slot, st);
+    let object: u64 = r.result;
+    let mut link: u64 = r.nodes[map].a;
+    while link != 0u64 {
+        let entry: Value = r.nodes[link - 1u64];
+        link = entry.next;
+        let key: Value = r.nodes[entry.a];
+        let key_bytes: Buffer<u8> = copy_range(r.strings.as_slice(), key.a, key.b);
+        let field: u64 = agent_bytecode_schema.field_index(st, key_bytes.as_slice());
+        if field != NONE {
+            if r.slots[slot + field] != NONE {
+                return duplicate_field(r, key_bytes.as_slice());
+            }
+            r = content_value(r, agent_bytecode_schema.field_type(st, field), entry.b);
+            if r.failed {
+                return r;
+            }
+            r.slots[slot + field] = entry.b;
+        }
+    }
+    r = fill_missing(r, slot, st);
+    if r.failed {
+        return r;
+    }
+    add(r, V_VARIANT, tag, object)
+}
+
+// Whether buffered `node` has type `ty`, else serde's error.
+fn content_value(reader: Reader, ty: u64, node: u64) -> Reader {
+    let kind: u64 = ty % 16u64;
+    let found: Value = reader.nodes[node];
+    if kind == agent_bytecode_schema.T_OPTION_STRING && found.kind == V_NULL {
+        return reader;
+    }
+    if kind == agent_bytecode_schema.T_STRING || kind == agent_bytecode_schema.T_OPTION_STRING {
+        if found.kind == V_STRING {
+            return reader;
+        }
+        return invalid_type(reader, node, "a string".as_slice());
+    }
+    if kind == agent_bytecode_schema.T_BOOL {
+        if found.kind == V_BOOL {
+            return reader;
+        }
+        return invalid_type(reader, node, "a boolean".as_slice());
+    }
+    if found.kind != V_ARRAY {
+        return invalid_type(reader, node, "a sequence".as_slice());
+    }
+    let mut r: Reader = reader;
+    let mut link: u64 = found.a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = r.nodes[item].next;
+        r = content_value(r, agent_bytecode_schema.T_STRING, item);
+        if r.failed {
+            return r;
+        }
+    }
+    r
+}
+
+// ------------------------------------------------------------------ the dump
+
+// The dump of spec/language/verify.md for the bytes of a `.argbc.json` file.
+pub fn dump(source: Slice<u8>) -> Buffer<u8> {
+    if !text.is_valid(source) {
+        return bytes.copy("invalid bytecode: not UTF-8\n".as_slice());
+    }
+    let mut r: Reader = Reader {
+        index: 0u64,
+        depth: 128u64,
+        failed: false,
+        message: Buffer::new(),
+        line: 0u64,
+        column: 0u64,
+        unsupported: false,
+        nodes: Buffer::new(),
+        slots: Buffer::new(),
+        strings: Buffer::new(),
+        result: 0u64,
+    };
+    r = de_struct(source, r, agent_bytecode_schema.BS_PROGRAM);
+    if !r.failed {
+        r = whitespace(source, r);
+        if r.index < source.length() {
+            r = peek_error(source, r, "trailing characters".as_slice());
+        }
+    }
+    if r.unsupported {
+        return bytes.copy("unsupported\n".as_slice());
+    }
+    if r.failed {
+        let mut out: Buffer<u8> = bytes.append(Buffer::new(), "invalid bytecode JSON: ".as_slice());
+        out = bytes.append(out, r.message.as_slice());
+        if r.line != 0u64 {
+            out = bytes.append(out, " at line ".as_slice());
+            out = bytes.append_decimal(out, r.line);
+            out = bytes.append(out, " column ".as_slice());
+            out = bytes.append_decimal(out, r.column);
+        }
+        out.push(10u8);
+        return out;
+    }
+    // The verifier's checks are not ported yet.
+    bytes.copy("unsupported\n".as_slice())
+}
+
+// Bytes `a..b` of `strings`, copied.
+fn copy_range(strings: Slice<u8>, a: u64, b: u64) -> Buffer<u8> {
+    bytes.copy(strings.slice(a, b))
+}
+
+// Whether bytes `a..b` of `strings` are `word`.
+fn range_is(strings: Slice<u8>, a: u64, b: u64, word: Slice<u8>) -> bool {
+    bytes.equal(strings.slice(a, b), word)
+}

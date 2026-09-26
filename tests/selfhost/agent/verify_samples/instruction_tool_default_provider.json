@@ -1,0 +1,1 @@
+{"bytecode_version":"1.0","language":"L","module":"m","agents":[],"capabilities":[],"instructions":[{"op":"DeclareTool","name":"t","capability":"c","input":"I","output":"O"},{"op":"End"}]}

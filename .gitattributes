@@ -21,3 +21,4 @@ tests/selfhost/agent/check_package/** -text
 tests/selfhost/agent/package_samples/** -text
 tests/selfhost/agent/package_package/** -text
 tests/selfhost/agent/ir_package/** -text
+tests/selfhost/agent/verify_samples/** -text
