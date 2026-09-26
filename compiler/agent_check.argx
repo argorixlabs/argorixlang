@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -95,6 +95,7 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_features(sl, n, st, program, y);
     y = check_secrets(sl, n, st, program, y);
     y = check_adapters(sl, n, st, program, y);
+    y = check_adapter_profiles(sl, n, st, program, y);
     y = check_cryptos(sl, n, st, program, y);
     y = check_did_methods(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
@@ -1902,4 +1903,190 @@ fn adapter_mismatch(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: S
     y = put(y, field);
     y = text(y, sl, n, st, theirs);
     close(y)
+}
+
+// ------------------------------------------------------------------ adapter profiles
+
+fn check_adapter_profiles(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_ADAPTER_PROFILES);
+    while link != 0u64 {
+        let profile: u64 = link - 1u64;
+        link = n[profile].next;
+        let name: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "adapter_profile".as_slice());
+        } else {
+            names.push(name);
+        }
+        let adapter: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_ADAPTER);
+        if blank(sl, n, st, adapter) {
+            y = say(y, sl, n, st, adapter, "adapter_profile".as_slice(), name, "is missing required field `adapter`\n".as_slice());
+        } else if !contains(sl, n, st, y.adapters.as_slice(), adapter) {
+            y = say(y, sl, n, st, adapter, "adapter_profile".as_slice(), name, "references unknown adapter `".as_slice());
+            y = text(y, sl, n, st, adapter);
+            y = close(y);
+        }
+        let provider: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_PROVIDER);
+        if blank(sl, n, st, provider) {
+            y = say(y, sl, n, st, provider, "adapter_profile".as_slice(), name, "is missing required field `provider`\n".as_slice());
+        } else if !contains(sl, n, st, y.providers.as_slice(), provider) {
+            y = say(y, sl, n, st, provider, "adapter_profile".as_slice(), name, "references unknown provider `".as_slice());
+            y = text(y, sl, n, st, provider);
+            y = close(y);
+        }
+        let vendor: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_VENDOR);
+        if blank(sl, n, st, vendor) {
+            y = say(y, sl, n, st, vendor, "adapter_profile".as_slice(), name, "is missing required field `vendor`\n".as_slice());
+        }
+        y = required_enum(y, sl, n, st, "adapter_profile".as_slice(), name, "family".as_slice(), get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_FAMILY), agent_schema.ADAPTER_PROFILE_FAMILY_UNKNOWN, "".as_slice());
+        y = required_enum(y, sl, n, st, "adapter_profile".as_slice(), name, "api_style".as_slice(), get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_API_STYLE), agent_schema.ADAPTER_PROFILE_API_STYLE_UNKNOWN, "".as_slice());
+        y = required_enum(y, sl, n, st, "adapter_profile".as_slice(), name, "auth".as_slice(), get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_AUTH), agent_schema.ADAPTER_PROFILE_AUTH_UNKNOWN, "".as_slice());
+        y = required_enum(y, sl, n, st, "adapter_profile".as_slice(), name, "execution".as_slice(), get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_EXECUTION), agent_schema.ADAPTER_PROFILE_EXECUTION_UNKNOWN, "".as_slice());
+        y = required_enum(y, sl, n, st, "adapter_profile".as_slice(), name, "network".as_slice(), get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_NETWORK), agent_schema.ADAPTER_PROFILE_NETWORK_UNKNOWN, "".as_slice());
+        y = required_enum(y, sl, n, st, "adapter_profile".as_slice(), name, "secrets".as_slice(), get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_SECRETS), agent_schema.ADAPTER_PROFILE_SECRETS_UNKNOWN, "".as_slice());
+        let request: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_REQUEST_CONTRACT);
+        if request != 0u64 && !field_type(sl, n, st, y.types.as_slice(), y.enums.as_slice(), request) {
+            y = say(y, sl, n, st, request, "adapter_profile".as_slice(), name, "request_contract references unknown type `".as_slice());
+            y = text(y, sl, n, st, request);
+            y = close(y);
+        }
+        let response: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_RESPONSE_CONTRACT);
+        if response != 0u64 && !field_type(sl, n, st, y.types.as_slice(), y.enums.as_slice(), response) {
+            y = say(y, sl, n, st, response, "adapter_profile".as_slice(), name, "response_contract references unknown type `".as_slice());
+            y = text(y, sl, n, st, response);
+            y = close(y);
+        }
+        let mut item_link: u64 = first(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_CAPABILITIES);
+        while item_link != 0u64 {
+            let item: u64 = item_link - 1u64;
+            item_link = n[item].next;
+            if blank(sl, n, st, item) {
+                y = say(y, sl, n, st, item, "adapter_profile".as_slice(), name, "has empty capability\n".as_slice());
+            }
+        }
+        item_link = first(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_REQUIRED_CONFORMANCE);
+        while item_link != 0u64 {
+            let item: u64 = item_link - 1u64;
+            item_link = n[item].next;
+            if blank(sl, n, st, item) {
+                y = say(y, sl, n, st, item, "adapter_profile".as_slice(), name, "has empty required_conformance item\n".as_slice());
+            }
+        }
+    }
+    // Links and coherence.
+    link = first(sl, n, program, agent_schema.PROGRAM_ADAPTER_PROFILES);
+    while link != 0u64 {
+        let profile: u64 = link - 1u64;
+        link = n[profile].next;
+        let name: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_NAME);
+        let adapter: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_ADAPTER);
+        let provider: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_PROVIDER);
+        let declared: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_ADAPTERS, adapter);
+        if declared != NONE {
+            let theirs: u64 = get(sl, n, declared, agent_schema.ADAPTER_DECL_PROVIDER);
+            if !same(sl, n, st, theirs, provider) {
+                y = say(y, sl, n, st, adapter, "adapter_profile".as_slice(), name, "provider `".as_slice());
+                y = text(y, sl, n, st, provider);
+                y = put(y, "` does not match adapter `".as_slice());
+                y = text(y, sl, n, st, adapter);
+                y = put(y, "` provider `".as_slice());
+                y = text(y, sl, n, st, theirs);
+                y = close(y);
+            }
+        }
+        let auth: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_AUTH);
+        if variant_is(sl, n, auth, agent_schema.ADAPTER_PROFILE_AUTH_SECRET_BOUNDARY) && declared != NONE && get(sl, n, declared, agent_schema.ADAPTER_DECL_SECRET) == 0u64 {
+            y = say(y, sl, n, st, auth, "adapter_profile".as_slice(), name, "uses auth secret_boundary but linked adapter has no secret boundary\n".as_slice());
+        }
+    }
+    // External providers' boundaries.
+    link = first(sl, n, program, agent_schema.PROGRAM_ADAPTER_PROFILES);
+    while link != 0u64 {
+        let profile: u64 = link - 1u64;
+        link = n[profile].next;
+        let provider: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_PROVIDER);
+        let declared_provider: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_PROVIDERS, provider);
+        if declared_provider == NONE || !variant_is(sl, n, get(sl, n, declared_provider, agent_schema.PROVIDER_DECL_KIND), agent_schema.PROVIDER_KIND_DECL_EXTERNAL) {
+            continue;
+        }
+        let name: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_NAME);
+        let adapter: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_ADAPTER);
+        let declared: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_ADAPTERS, adapter);
+        if declared == NONE {
+            continue;
+        }
+        let feature: u64 = get(sl, n, declared, agent_schema.ADAPTER_DECL_FEATURE);
+        let secret: u64 = get(sl, n, declared, agent_schema.ADAPTER_DECL_SECRET);
+        let harness: u64 = get(sl, n, declared, agent_schema.ADAPTER_DECL_HARNESS);
+        if feature == 0u64 {
+            y = say(y, sl, n, st, adapter, "adapter_profile".as_slice(), name, "for external provider requires linked adapter to declare feature\n".as_slice());
+        }
+        if secret == 0u64 {
+            y = say(y, sl, n, st, adapter, "adapter_profile".as_slice(), name, "for external provider requires linked adapter to declare secret\n".as_slice());
+        }
+        if harness == 0u64 {
+            y = say(y, sl, n, st, adapter, "adapter_profile".as_slice(), name, "for external provider requires linked adapter to declare harness\n".as_slice());
+        }
+        if feature != 0u64 {
+            let feature_decl: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_FEATURES, feature);
+            if feature_decl != NONE {
+                let default: u64 = get(sl, n, feature_decl, agent_schema.FEATURE_DECL_DEFAULT);
+                if variant_is(sl, n, default, agent_schema.FEATURE_DEFAULT_ENABLED) {
+                    y = say(y, sl, n, st, default, "adapter_profile".as_slice(), name, "requires feature `".as_slice());
+                    y = text(y, sl, n, st, feature);
+                    y = put(y, "` default disabled for external provider\n".as_slice());
+                }
+                if n[get(sl, n, feature_decl, agent_schema.FEATURE_DECL_REQUIRES_APPROVAL)].a == 0u64 {
+                    y = say(y, sl, n, st, get(sl, n, feature_decl, 0u64), "adapter_profile".as_slice(), name, "requires feature `".as_slice());
+                    y = text(y, sl, n, st, feature);
+                    y = put(y, "` to require approval\n".as_slice());
+                }
+            }
+        }
+        if secret != 0u64 {
+            let secret_decl: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_SECRETS, secret);
+            if secret_decl != NONE {
+                let access: u64 = get(sl, n, secret_decl, agent_schema.SECRET_DECL_ACCESS);
+                if !variant_is(sl, n, access, agent_schema.SECRET_ACCESS_DENIED) {
+                    y = say(y, sl, n, st, access, "adapter_profile".as_slice(), name, "requires secret access denied\n".as_slice());
+                }
+                let source: u64 = get(sl, n, secret_decl, agent_schema.SECRET_DECL_SOURCE);
+                if !variant_is(sl, n, source, agent_schema.SECRET_SOURCE_NONE) {
+                    y = say(y, sl, n, st, source, "adapter_profile".as_slice(), name, "requires secret source none\n".as_slice());
+                }
+            }
+        }
+        if harness != 0u64 {
+            let harness_decl: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_HARNESSES, harness);
+            if harness_decl != NONE {
+                let network: u64 = get(sl, n, harness_decl, agent_schema.PROVIDER_HARNESS_DECL_NETWORK);
+                if !variant_is(sl, n, network, agent_schema.HARNESS_NETWORK_DENIED) {
+                    y = say(y, sl, n, st, network, "adapter_profile".as_slice(), name, "requires harness network denied\n".as_slice());
+                }
+                let secrets: u64 = get(sl, n, harness_decl, agent_schema.PROVIDER_HARNESS_DECL_SECRETS);
+                if !variant_is(sl, n, secrets, agent_schema.HARNESS_SECRETS_DENIED) {
+                    y = say(y, sl, n, st, secrets, "adapter_profile".as_slice(), name, "requires harness secrets denied\n".as_slice());
+                }
+            }
+        }
+    }
+    // Vendors' families.
+    link = first(sl, n, program, agent_schema.PROGRAM_ADAPTER_PROFILES);
+    while link != 0u64 {
+        let profile: u64 = link - 1u64;
+        link = n[profile].next;
+        let name: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_NAME);
+        let vendor: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_VENDOR);
+        let family: u64 = get(sl, n, profile, agent_schema.ADAPTER_PROFILE_DECL_FAMILY);
+        let llm_or_custom: bool = variant_is(sl, n, family, agent_schema.ADAPTER_PROFILE_FAMILY_LLM) || variant_is(sl, n, family, agent_schema.ADAPTER_PROFILE_FAMILY_CUSTOM);
+        if is(sl, n, st, vendor, "openai".as_slice()) && !llm_or_custom {
+            y = say(y, sl, n, st, family, "adapter_profile".as_slice(), name, "for vendor openai should use family llm (or custom)\n".as_slice());
+        }
+        if is(sl, n, st, vendor, "anthropic".as_slice()) && !llm_or_custom {
+            y = say(y, sl, n, st, family, "adapter_profile".as_slice(), name, "for vendor anthropic should use family llm (or custom)\n".as_slice());
+        }
+    }
+    y
 }

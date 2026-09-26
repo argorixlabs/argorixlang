@@ -36,3 +36,4 @@ far the port has come.
 | 1 | Symbols; assertions, policies and failures; tools and models; message types; agents, their capabilities and handlers; protocols | 533 of 1,430 |
 | 2 | Provider contracts, features, secrets, cryptos, crypto boundaries (no checks), DID methods, and every duplicate `collect_symbols` reports | 737 of 1,430 |
 | 3 | Harnesses and adapters | 782 of 1,430 |
+| 4 | Adapter profiles | 789 of 1,430 |
