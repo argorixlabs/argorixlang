@@ -40,3 +40,4 @@ far the port has come.
 | 5 | Passports, including `asn` registry, number and country | 846 of 1,430 |
 | 6 | A-Trust boundaries, identities, credential contracts and handshakes | 976 of 1,430 |
 | 7 | Trust ledgers and their hash chains | 1,025 of 1,430 |
+| 8 | MCP and A2A bridge contracts | 1,083 of 1,430 |

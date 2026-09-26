@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -103,6 +103,8 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_atrust_credential_contracts(sl, n, st, program, y);
     y = check_atrust_handshakes(sl, n, st, program, y);
     y = check_trust_ledgers(sl, n, st, program, y);
+    y = check_mcp_bridge_contracts(sl, n, st, program, y);
+    y = check_a2a_bridge_contracts(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -2857,4 +2859,276 @@ fn check_ledger_entry(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, progra
 fn ledger_entry(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64, name: u64, id: u64) -> Symbols {
     let y: Symbols = say(symbols, sl, n, st, spanned, "trust_ledger".as_slice(), name, "entry `".as_slice());
     text(y, sl, n, st, id)
+}
+
+// ------------------------------------------------------------------ bridge contracts
+
+// "<kind> `<name>` references unknown <what> `<reference>`".
+fn references_unknown(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, kind: Slice<u8>, name: u64, what: Slice<u8>, reference: u64) -> Symbols {
+    let mut y: Symbols = say(symbols, sl, n, st, reference, kind, name, "references unknown ".as_slice());
+    y = put(y, what);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, reference);
+    close(y)
+}
+
+// "<kind> `<name>` <label> must not contain empty strings" at each blank
+// entry of list `index` of `node`.
+fn blank_strings(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, label: Slice<u8>) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, node, index);
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if blank(sl, n, st, item) {
+            y = say(y, sl, n, st, item, kind, name, label);
+            y = put(y, " must not contain empty strings\n".as_slice());
+        }
+    }
+    y
+}
+
+// "<kind> `<name>` notes must not be empty" when optional `notes` is blank.
+fn blank_notes(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64) -> Symbols {
+    let notes: u64 = get(sl, n, node, index);
+    if notes == 0u64 || !blank(sl, n, st, notes) {
+        return symbols;
+    }
+    say(symbols, sl, n, st, notes, kind, name, "notes must not be empty\n".as_slice())
+}
+
+// "<kind> `<name>` requires <field> `<one>`, `<two>`, or `<three>`" unless
+// enum field `index` of `node` is one of them.
+fn requires_three(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>, one: Slice<u8>, two: Slice<u8>, three: Slice<u8>) -> Symbols {
+    let spanned: u64 = get(sl, n, node, index);
+    if named(sl, n, st, spanned, one) || named(sl, n, st, spanned, two) || named(sl, n, st, spanned, three) {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, spanned, kind, name, "requires ".as_slice());
+    y = put(y, field);
+    y = put(y, " `".as_slice());
+    y = put(y, one);
+    y = put(y, "`, `".as_slice());
+    y = put(y, two);
+    y = put(y, "`, or `".as_slice());
+    y = put(y, three);
+    close(y)
+}
+
+// "<kind> `<name>` <what> `<reference>` is not bound to agent `<agent>`".
+fn not_bound(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, kind: Slice<u8>, name: u64, what: Slice<u8>, reference: u64, agent: u64) -> Symbols {
+    let mut y: Symbols = say(symbols, sl, n, st, reference, kind, name, what);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, reference);
+    y = put(y, "` is not bound to agent `".as_slice());
+    y = text(y, sl, n, st, agent);
+    close(y)
+}
+
+// A bridge's passport reference: declared, and for `agent`.
+fn passport_binding(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, kind: Slice<u8>, name: u64, reference: u64, agent: u64) -> Symbols {
+    if empty(sl, n, reference) {
+        return symbols;
+    }
+    let passport: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_PASSPORTS, reference);
+    if passport == NONE {
+        return references_unknown(symbols, sl, n, st, kind, name, "passport".as_slice(), reference);
+    }
+    if !empty(sl, n, agent) && !same(sl, n, st, get(sl, n, passport, agent_schema.PASSPORT_DECL_AGENT), agent) {
+        return not_bound(symbols, sl, n, st, kind, name, "passport".as_slice(), reference, agent);
+    }
+    symbols
+}
+
+// A bridge's identity reference: declared, for `agent`, in `boundary`.
+fn identity_binding(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, kind: Slice<u8>, name: u64, reference: u64, agent: u64, boundary: u64) -> Symbols {
+    if empty(sl, n, reference) {
+        return symbols;
+    }
+    let identity: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_ATRUST_IDENTITIES, reference);
+    if identity == NONE {
+        return references_unknown(symbols, sl, n, st, kind, name, "identity".as_slice(), reference);
+    }
+    let mut y: Symbols = symbols;
+    if !empty(sl, n, agent) && !same(sl, n, st, get(sl, n, identity, agent_schema.A_TRUST_IDENTITY_DECL_SUBJECT), agent) {
+        y = not_bound(y, sl, n, st, kind, name, "identity".as_slice(), reference, agent);
+    }
+    let identity_boundary: u64 = get(sl, n, identity, agent_schema.A_TRUST_IDENTITY_DECL_BOUNDARY);
+    if !empty(sl, n, boundary) && !same(sl, n, st, identity_boundary, boundary) {
+        y = say(y, sl, n, st, reference, kind, name, "identity boundary `".as_slice());
+        y = text(y, sl, n, st, identity_boundary);
+        y = put(y, "` does not match boundary `".as_slice());
+        y = text(y, sl, n, st, boundary);
+        y = close(y);
+    }
+    y
+}
+
+fn check_mcp_bridge_contracts(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS);
+    while link != 0u64 {
+        let c: u64 = link - 1u64;
+        link = n[c].next;
+        let name: u64 = get(sl, n, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "mcp_bridge_contract".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = required_string(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AGENT, "mcp_bridge_contract".as_slice(), name, "agent".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PASSPORT, "mcp_bridge_contract".as_slice(), name, "passport".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_IDENTITY, "mcp_bridge_contract".as_slice(), name, "identity".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_BOUNDARY, "mcp_bridge_contract".as_slice(), name, "boundary".as_slice());
+        y = required_list(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PURPOSE, "mcp_bridge_contract".as_slice(), name, "purpose".as_slice());
+        y = blank_strings(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PURPOSE, "mcp_bridge_contract".as_slice(), name, "purpose".as_slice());
+        y = blank_strings(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TOOLS, "mcp_bridge_contract".as_slice(), name, "tools".as_slice());
+        y = blank_strings(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_RESOURCES, "mcp_bridge_contract".as_slice(), name, "resources".as_slice());
+        y = blank_strings(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PROMPTS, "mcp_bridge_contract".as_slice(), name, "prompts".as_slice());
+        y = blank_notes(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NOTES, "mcp_bridge_contract".as_slice(), name);
+        y = requires_either(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TRANSPORT, "mcp_bridge_contract".as_slice(), name, "transport".as_slice(), "declared_only".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PROTOCOL, "mcp_bridge_contract".as_slice(), name, "protocol".as_slice(), "mcp".as_slice());
+        y = requires_three(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_DIRECTION, "mcp_bridge_contract".as_slice(), name, "direction".as_slice(), "inbound".as_slice(), "outbound".as_slice(), "bidirectional".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NETWORK, "mcp_bridge_contract".as_slice(), name, "network".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_EXTERNAL_EXECUTION, "mcp_bridge_contract".as_slice(), name, "external_execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TOOL_EXECUTION, "mcp_bridge_contract".as_slice(), name, "tool_execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_SECRET_MATERIAL, "mcp_bridge_contract".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_KEY_MATERIAL, "mcp_bridge_contract".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires_either(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AUTHENTICATION, "mcp_bridge_contract".as_slice(), name, "authentication".as_slice(), "none".as_slice(), "declared_only".as_slice());
+        y = requires_either(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AUTHORIZATION, "mcp_bridge_contract".as_slice(), name, "authorization".as_slice(), "policy_bound".as_slice(), "declared_only".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_EVIDENCE, "mcp_bridge_contract".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_SECURITY_CLAIMS, "mcp_bridge_contract".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+        let agent: u64 = get(sl, n, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AGENT);
+        let boundary: u64 = get(sl, n, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_BOUNDARY);
+        if !empty(sl, n, agent) && !contains(sl, n, st, y.agents.as_slice(), agent) {
+            y = references_unknown(y, sl, n, st, "mcp_bridge_contract".as_slice(), name, "agent".as_slice(), agent);
+        }
+        if !empty(sl, n, boundary) && !contains(sl, n, st, y.atrust_boundaries.as_slice(), boundary) {
+            y = references_unknown(y, sl, n, st, "mcp_bridge_contract".as_slice(), name, "atrust_boundary".as_slice(), boundary);
+        }
+        y = passport_binding(y, sl, n, st, program, "mcp_bridge_contract".as_slice(), name, get(sl, n, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PASSPORT), agent);
+        y = identity_binding(y, sl, n, st, program, "mcp_bridge_contract".as_slice(), name, get(sl, n, c, agent_schema.MCP_BRIDGE_CONTRACT_DECL_IDENTITY), agent, boundary);
+    }
+    y
+}
+
+fn check_a2a_bridge_contracts(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS);
+    while link != 0u64 {
+        let c: u64 = link - 1u64;
+        link = n[c].next;
+        let name: u64 = get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "a2a_bridge_contract".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR, "a2a_bridge_contract".as_slice(), name, "initiator".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER, "a2a_bridge_contract".as_slice(), name, "responder".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_PASSPORT, "a2a_bridge_contract".as_slice(), name, "initiator_passport".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_PASSPORT, "a2a_bridge_contract".as_slice(), name, "responder_passport".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_IDENTITY, "a2a_bridge_contract".as_slice(), name, "initiator_identity".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_IDENTITY, "a2a_bridge_contract".as_slice(), name, "responder_identity".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_HANDSHAKE, "a2a_bridge_contract".as_slice(), name, "handshake".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRUST_LEDGER, "a2a_bridge_contract".as_slice(), name, "trust_ledger".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_BOUNDARY, "a2a_bridge_contract".as_slice(), name, "boundary".as_slice());
+        y = required_list(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_MESSAGE_CONTRACTS, "a2a_bridge_contract".as_slice(), name, "message_contracts".as_slice());
+        y = required_list(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PURPOSE, "a2a_bridge_contract".as_slice(), name, "purpose".as_slice());
+        y = blank_strings(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PURPOSE, "a2a_bridge_contract".as_slice(), name, "purpose".as_slice());
+        y = blank_strings(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_CAPABILITIES, "a2a_bridge_contract".as_slice(), name, "capabilities".as_slice());
+        y = blank_notes(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NOTES, "a2a_bridge_contract".as_slice(), name);
+        y = requires(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PROTOCOL, "a2a_bridge_contract".as_slice(), name, "protocol".as_slice(), "a2a".as_slice());
+        y = requires_either(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRANSPORT, "a2a_bridge_contract".as_slice(), name, "transport".as_slice(), "declared_only".as_slice(), "disabled".as_slice());
+        y = requires_three(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_DIRECTION, "a2a_bridge_contract".as_slice(), name, "direction".as_slice(), "inbound".as_slice(), "outbound".as_slice(), "bidirectional".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NETWORK, "a2a_bridge_contract".as_slice(), name, "network".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_EXTERNAL_EXECUTION, "a2a_bridge_contract".as_slice(), name, "external_execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AGENT_EXECUTION, "a2a_bridge_contract".as_slice(), name, "agent_execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_SECRET_MATERIAL, "a2a_bridge_contract".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_KEY_MATERIAL, "a2a_bridge_contract".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires_either(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AUTHENTICATION, "a2a_bridge_contract".as_slice(), name, "authentication".as_slice(), "none".as_slice(), "declared_only".as_slice());
+        y = requires_either(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AUTHORIZATION, "a2a_bridge_contract".as_slice(), name, "authorization".as_slice(), "policy_bound".as_slice(), "declared_only".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_EVIDENCE, "a2a_bridge_contract".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_SECURITY_CLAIMS, "a2a_bridge_contract".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+
+        let initiator: u64 = get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR);
+        let responder: u64 = get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER);
+        let boundary: u64 = get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_BOUNDARY);
+        if !empty(sl, n, initiator) && !contains(sl, n, st, y.agents.as_slice(), initiator) {
+            y = references_unknown(y, sl, n, st, "a2a_bridge_contract".as_slice(), name, "initiator agent".as_slice(), initiator);
+        }
+        if !empty(sl, n, responder) && !contains(sl, n, st, y.agents.as_slice(), responder) {
+            y = references_unknown(y, sl, n, st, "a2a_bridge_contract".as_slice(), name, "responder agent".as_slice(), responder);
+        }
+        if !empty(sl, n, initiator) && same(sl, n, st, initiator, responder) {
+            y = say(y, sl, n, st, responder, "a2a_bridge_contract".as_slice(), name, "initiator and responder must be distinct\n".as_slice());
+        }
+        if !empty(sl, n, boundary) && !contains(sl, n, st, y.atrust_boundaries.as_slice(), boundary) {
+            y = references_unknown(y, sl, n, st, "a2a_bridge_contract".as_slice(), name, "atrust_boundary".as_slice(), boundary);
+        }
+        y = passport_binding(y, sl, n, st, program, "a2a_bridge_contract".as_slice(), name, get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_PASSPORT), initiator);
+        y = passport_binding(y, sl, n, st, program, "a2a_bridge_contract".as_slice(), name, get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_PASSPORT), responder);
+        y = identity_binding(y, sl, n, st, program, "a2a_bridge_contract".as_slice(), name, get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_IDENTITY), initiator, boundary);
+        y = identity_binding(y, sl, n, st, program, "a2a_bridge_contract".as_slice(), name, get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_IDENTITY), responder, boundary);
+
+        let handshake_ref: u64 = get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_HANDSHAKE);
+        if !empty(sl, n, handshake_ref) {
+            let handshake: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_ATRUST_HANDSHAKES, handshake_ref);
+            if handshake == NONE {
+                y = references_unknown(y, sl, n, st, "a2a_bridge_contract".as_slice(), name, "handshake".as_slice(), handshake_ref);
+            } else {
+                let theirs_initiator: u64 = get(sl, n, handshake, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR);
+                let theirs_responder: u64 = get(sl, n, handshake, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER);
+                let pair: bool = (same(sl, n, st, theirs_initiator, initiator) && same(sl, n, st, theirs_responder, responder)) || (same(sl, n, st, theirs_initiator, responder) && same(sl, n, st, theirs_responder, initiator));
+                if !empty(sl, n, initiator) && !empty(sl, n, responder) && !pair {
+                    y = say(y, sl, n, st, handshake_ref, "a2a_bridge_contract".as_slice(), name, "handshake `".as_slice());
+                    y = text(y, sl, n, st, handshake_ref);
+                    y = put(y, "` does not bind initiator `".as_slice());
+                    y = text(y, sl, n, st, initiator);
+                    y = put(y, "` and responder `".as_slice());
+                    y = text(y, sl, n, st, responder);
+                    y = close(y);
+                }
+            }
+        }
+        let ledger_ref: u64 = get(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRUST_LEDGER);
+        if !empty(sl, n, ledger_ref) {
+            let ledger: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_TRUST_LEDGERS, ledger_ref);
+            if ledger == NONE {
+                y = references_unknown(y, sl, n, st, "a2a_bridge_contract".as_slice(), name, "trust_ledger".as_slice(), ledger_ref);
+            } else if !empty(sl, n, handshake_ref) && !ledger_has_handshake(sl, n, st, ledger, handshake_ref) {
+                y = say(y, sl, n, st, ledger_ref, "a2a_bridge_contract".as_slice(), name, "trust_ledger `".as_slice());
+                y = text(y, sl, n, st, ledger_ref);
+                y = put(y, "` does not contain a handshake entry for `".as_slice());
+                y = text(y, sl, n, st, handshake_ref);
+                y = close(y);
+            }
+        }
+        let mut message_link: u64 = first(sl, n, c, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_MESSAGE_CONTRACTS);
+        while message_link != 0u64 {
+            let m: u64 = message_link - 1u64;
+            message_link = n[m].next;
+            if blank(sl, n, st, m) {
+                y = say(y, sl, n, st, m, "a2a_bridge_contract".as_slice(), name, "message_contracts must not contain empty strings\n".as_slice());
+            } else if !contains(sl, n, st, y.types.as_slice(), m) {
+                y = references_unknown(y, sl, n, st, "a2a_bridge_contract".as_slice(), name, "message_contract".as_slice(), m);
+            }
+        }
+    }
+    y
+}
+
+// Whether `ledger` has a `handshake` entry whose subject is `handshake`.
+fn ledger_has_handshake(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, ledger: u64, handshake: u64) -> bool {
+    let mut link: u64 = first(sl, n, ledger, agent_schema.TRUST_LEDGER_DECL_ENTRIES);
+    while link != 0u64 {
+        let e: u64 = link - 1u64;
+        link = n[e].next;
+        if named(sl, n, st, get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_KIND), "handshake".as_slice()) && same(sl, n, st, get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_SUBJECT), handshake) {
+            return true;
+        }
+    }
+    false
 }
