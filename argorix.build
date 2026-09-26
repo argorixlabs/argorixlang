@@ -6,6 +6,7 @@ module compiler/agent_ast.argx
 module compiler/agent_lexer.argx
 module compiler/agent_parser.argx
 module compiler/agent_schema.argx
+module compiler/agent_words.argx
 module compiler/ast.argx
 module compiler/c_emit.argx
 module compiler/check.argx
