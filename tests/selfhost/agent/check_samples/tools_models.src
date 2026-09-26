@@ -1,0 +1,6 @@
+module demo
+type Q
+tool Web { provider web capability net.read input Q output R }
+tool Local { capability c.read input Missing output Q }
+model Chat { provider openai capability nope input Q output Q }
+capability c.read { level safe }

@@ -1,0 +1,1017 @@
+core 0.1;
+module compiler.agent_check;
+
+// The agent-language checker, in Argorix (ESP-018.C). It ports
+// crates/argorix_semantics/src/checker.rs over the syntax tree of
+// `compiler.agent_parser`, check by check and in stage0's order, and prints
+// the canonical dump of spec/language/check.md: `ok`, or one line per
+// diagnostic.
+//
+// The checks are ported one group of declarations at a time. A program that
+// declares something whose checks are not ported yet dumps `unsupported`, so
+// the differential can tell a gap from a mismatch.
+
+import stdlib.bytes;
+import compiler.agent_ast;
+import compiler.agent_schema;
+import compiler.agent_parser;
+
+// The symbols stage0 collects: the names of each kind, as `Spanned<String>`
+// nodes, and each capability's level (the last one declared wins).
+struct Symbols {
+    types: Buffer<u64>,
+    enums: Buffer<u64>,
+    agents: Buffer<u64>,
+    tools: Buffer<u64>,
+    models: Buffer<u64>,
+    capabilities: Buffer<u64>,
+    levels: Buffer<u64>,
+    out: Buffer<u8>,
+}
+
+pub fn dump(source: Slice<u8>) -> Buffer<u8> {
+    let parsed: Tree = agent_parser.parse(source);
+    if parsed.failed || parsed.unsupported {
+        return agent_parser.dump(source);
+    }
+    let program: u64 = parsed.result;
+    if !ported(parsed.slots.as_slice(), parsed.nodes.as_slice(), program) {
+        return bytes.copy("unsupported\n".as_slice());
+    }
+    let y: Symbols = check(parsed.slots.as_slice(), parsed.nodes.as_slice(), parsed.strings.as_slice(), program);
+    if y.out.length() == 0u64 {
+        return bytes.copy("ok\n".as_slice());
+    }
+    bytes.copy(y.out.as_slice())
+}
+
+// Whether every declaration of the program has its checks ported.
+fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
+    let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
+    while field < agent_schema.field_count(agent_schema.PROGRAM) {
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        if !core && n[get(sl, n, program, field)].a != 0u64 {
+            return false;
+        }
+        field += 1u64;
+    }
+    true
+}
+
+// ------------------------------------------------------------------ the checks
+
+fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Symbols {
+    let mut y: Symbols = Symbols {
+        types: Buffer::new(),
+        enums: Buffer::new(),
+        agents: Buffer::new(),
+        tools: Buffer::new(),
+        models: Buffer::new(),
+        capabilities: Buffer::new(),
+        levels: Buffer::new(),
+        out: Buffer::new(),
+    };
+    y = collect_symbols(sl, n, st, program, y);
+    y = check_policies(sl, n, st, program, y);
+    y = check_tools(sl, n, st, program, y);
+    y = check_models(sl, n, st, program, y);
+    y = check_types(sl, n, st, program, y);
+    y = check_agents(sl, n, st, program, y);
+    check_protocols(sl, n, st, program, y)
+}
+
+fn collect_symbols(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_TYPES);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, agent_schema.TYPE_DECL_NAME);
+        if contains(sl, n, st, y.types.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "type".as_slice());
+        } else {
+            y.types.push(name);
+        }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_ENUMS);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, agent_schema.ENUM_DECL_NAME);
+        if contains(sl, n, st, y.enums.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "enum".as_slice());
+        } else {
+            y.enums.push(name);
+        }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_AGENTS);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, agent_schema.AGENT_DECL_NAME);
+        if contains(sl, n, st, y.agents.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "agent".as_slice());
+        } else {
+            y.agents.push(name);
+        }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_TOOLS);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, agent_schema.TOOL_DECL_NAME);
+        if contains(sl, n, st, y.tools.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "tool".as_slice());
+        } else {
+            y.tools.push(name);
+        }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_MODELS);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, agent_schema.MODEL_DECL_NAME);
+        if contains(sl, n, st, y.models.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "model".as_slice());
+        } else {
+            y.models.push(name);
+        }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_CAPABILITIES);
+    while link != 0u64 {
+        let capability: u64 = link - 1u64;
+        let name: u64 = get(sl, n, capability, agent_schema.CAPABILITY_DECL_NAME);
+        let level: u64 = n[value(sl, n, get(sl, n, capability, agent_schema.CAPABILITY_DECL_LEVEL))].a;
+        let known: u64 = index_of(sl, n, st, y.capabilities.as_slice(), name);
+        if known == NONE {
+            y.capabilities.push(name);
+            y.levels.push(level);
+        } else {
+            y.levels[known] = level;
+            y = at(y, sl, n, name);
+            y = put(y, "duplicate capability `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = close(y);
+        }
+        link = n[capability].next;
+    }
+    y
+}
+
+fn check_policies(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_ASSERTIONS);
+    while link != 0u64 {
+        let assertion: u64 = link - 1u64;
+        let name: u64 = get(sl, n, assertion, agent_schema.ASSERTION_DECL_NAME);
+        if !(is(sl, n, st, name, "no_unhandled_messages".as_slice()) || is(sl, n, st, name, "all_tool_calls_traced".as_slice()) || is(sl, n, st, name, "all_model_calls_traced".as_slice()) || is(sl, n, st, name, "all_intrinsics_traced".as_slice()) || is(sl, n, st, name, "halt_requires_trace".as_slice()) || is(sl, n, st, name, "runtime_status".as_slice())) {
+            y = at(y, sl, n, name);
+            y = put(y, "unknown policy assertion `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = close(y);
+        }
+        let argument: u64 = get(sl, n, assertion, agent_schema.ASSERTION_DECL_ARGUMENT);
+        if is(sl, n, st, name, "runtime_status".as_slice()) && (argument == 0u64 || !is(sl, n, st, argument, "completed".as_slice())) {
+            y = at(y, sl, n, name);
+            y = put(y, "`runtime_status` assertion requires argument `completed`\n".as_slice());
+        }
+        link = n[assertion].next;
+    }
+    let mut policy_names: Buffer<u64> = Buffer::new();
+    link = first(sl, n, program, agent_schema.PROGRAM_POLICIES);
+    while link != 0u64 {
+        let policy: u64 = link - 1u64;
+        let name: u64 = get(sl, n, policy, agent_schema.POLICY_DECL_NAME);
+        if contains(sl, n, st, policy_names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "policy".as_slice());
+        } else {
+            policy_names.push(name);
+        }
+        let mut required: Buffer<u64> = Buffer::new();
+        let mut denied: Buffer<u64> = Buffer::new();
+        let mut rule_link: u64 = first(sl, n, policy, agent_schema.POLICY_DECL_RULES);
+        while rule_link != 0u64 {
+            let declaration: u64 = rule_link - 1u64;
+            rule_link = n[declaration].next;
+            let require: bool = n[declaration].a == agent_schema.POLICY_RULE_DECL_REQUIRE;
+            // Require { rule } and Deny { rule } hold the rule in field 0.
+            let rule: u64 = get(sl, n, n[declaration].b, 0u64);
+            let variant: u64 = value(sl, n, rule);
+            let which: u64 = n[variant].a;
+            if which == agent_schema.POLICY_RULE_UNKNOWN {
+                y = at(y, sl, n, rule);
+                y = put(y, "unknown policy rule `".as_slice());
+                y = raw(y, n, st, n[variant].b);
+                y = close(y);
+                continue;
+            }
+            let mut repeated: bool = false;
+            let mut contradicted: bool = false;
+            if require {
+                repeated = has(required.as_slice(), which);
+                contradicted = has(denied.as_slice(), which);
+                if !repeated {
+                    required.push(which);
+                }
+            } else {
+                repeated = has(denied.as_slice(), which);
+                contradicted = has(required.as_slice(), which);
+                if !repeated {
+                    denied.push(which);
+                }
+            }
+            if repeated {
+                y = at(y, sl, n, rule);
+                y = put(y, "duplicate ".as_slice());
+                if require {
+                    y = put(y, "require".as_slice());
+                } else {
+                    y = put(y, "deny".as_slice());
+                }
+                y = put(y, " rule `".as_slice());
+                y = source_name(y, agent_schema.POLICY_RULE, which);
+                y = put(y, "` in policy `".as_slice());
+                y = text(y, sl, n, st, name);
+                y = close(y);
+            }
+            if contradicted {
+                y = at(y, sl, n, rule);
+                y = put(y, "contradictory policy rule `".as_slice());
+                y = source_name(y, agent_schema.POLICY_RULE, which);
+                y = put(y, "` in policy `".as_slice());
+                y = text(y, sl, n, st, name);
+                y = close(y);
+            }
+        }
+        let violation: u64 = get(sl, n, policy, agent_schema.POLICY_DECL_VIOLATION);
+        if violation != 0u64 {
+            let action: u64 = get(sl, n, violation, agent_schema.POLICY_VIOLATION_DECL_ACTION);
+            let variant: u64 = value(sl, n, action);
+            if n[variant].a == agent_schema.POLICY_VIOLATION_ACTION_UNKNOWN {
+                y = at(y, sl, n, action);
+                y = put(y, "invalid policy violation action `".as_slice());
+                y = raw(y, n, st, n[variant].b);
+                y = close(y);
+            }
+        }
+        link = n[policy].next;
+    }
+    let mut failures: Buffer<u64> = Buffer::new();
+    link = first(sl, n, program, agent_schema.PROGRAM_FAILURES);
+    while link != 0u64 {
+        let failure: u64 = link - 1u64;
+        let name: u64 = get(sl, n, failure, agent_schema.FAILURE_DECL_NAME);
+        if contains(sl, n, st, failures.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "failure".as_slice());
+        } else {
+            failures.push(name);
+        }
+        let action: u64 = get(sl, n, failure, agent_schema.FAILURE_DECL_ACTION);
+        if !(is(sl, n, st, action, "block".as_slice()) || is(sl, n, st, action, "review".as_slice()) || is(sl, n, st, action, "halt".as_slice())) {
+            y = at(y, sl, n, action);
+            y = put(y, "invalid failure action `".as_slice());
+            y = text(y, sl, n, st, action);
+            y = close(y);
+        }
+        if n[get(sl, n, failure, agent_schema.FAILURE_DECL_TRACE_REQUIRED)].a == 0u64 {
+            y = at(y, sl, n, name);
+            y = put(y, "failure `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` requires `trace required`\n".as_slice());
+        }
+        link = n[failure].next;
+    }
+    y
+}
+
+fn check_tools(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_TOOLS);
+    while link != 0u64 {
+        let tool: u64 = link - 1u64;
+        let name: u64 = get(sl, n, tool, agent_schema.TOOL_DECL_NAME);
+        let provider: u64 = get(sl, n, tool, agent_schema.TOOL_DECL_PROVIDER);
+        if provider != 0u64 && !is(sl, n, st, provider, "simulated".as_slice()) {
+            y = unsupported_provider(y, sl, n, st, "tool `".as_slice(), name, provider);
+        }
+        let capability: u64 = get(sl, n, tool, agent_schema.TOOL_DECL_CAPABILITY);
+        if !contains(sl, n, st, y.capabilities.as_slice(), capability) {
+            y = unknown_capability(y, sl, n, st, "tool `".as_slice(), name, capability);
+        }
+        y = require_message_type(y, sl, n, st, get(sl, n, tool, agent_schema.TOOL_DECL_INPUT));
+        y = require_message_type(y, sl, n, st, get(sl, n, tool, agent_schema.TOOL_DECL_OUTPUT));
+        link = n[tool].next;
+    }
+    y
+}
+
+fn check_models(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_MODELS);
+    while link != 0u64 {
+        let model: u64 = link - 1u64;
+        let name: u64 = get(sl, n, model, agent_schema.MODEL_DECL_NAME);
+        let provider: u64 = get(sl, n, model, agent_schema.MODEL_DECL_PROVIDER);
+        if !is(sl, n, st, provider, "simulated".as_slice()) {
+            y = unsupported_provider(y, sl, n, st, "model `".as_slice(), name, provider);
+        }
+        let capability: u64 = get(sl, n, model, agent_schema.MODEL_DECL_CAPABILITY);
+        if !contains(sl, n, st, y.capabilities.as_slice(), capability) {
+            y = unknown_capability(y, sl, n, st, "model `".as_slice(), name, capability);
+        }
+        y = require_message_type(y, sl, n, st, get(sl, n, model, agent_schema.MODEL_DECL_INPUT));
+        y = require_message_type(y, sl, n, st, get(sl, n, model, agent_schema.MODEL_DECL_OUTPUT));
+        link = n[model].next;
+    }
+    y
+}
+
+fn unsupported_provider(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, kind: Slice<u8>, name: u64, provider: u64) -> Symbols {
+    let mut y: Symbols = at(symbols, sl, n, provider);
+    y = put(y, kind);
+    y = text(y, sl, n, st, name);
+    y = put(y, "` uses unsupported provider `".as_slice());
+    y = text(y, sl, n, st, provider);
+    put(y, "`; only `simulated` is allowed\n".as_slice())
+}
+
+fn unknown_capability(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, kind: Slice<u8>, name: u64, capability: u64) -> Symbols {
+    let mut y: Symbols = at(symbols, sl, n, capability);
+    y = put(y, kind);
+    y = text(y, sl, n, st, name);
+    y = put(y, "` references unknown capability `".as_slice());
+    y = text(y, sl, n, st, capability);
+    close(y)
+}
+
+fn check_types(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_TYPES);
+    while link != 0u64 {
+        let type_decl: u64 = link - 1u64;
+        let mut field_names: Buffer<u64> = Buffer::new();
+        let mut field_link: u64 = first(sl, n, type_decl, agent_schema.TYPE_DECL_FIELDS);
+        while field_link != 0u64 {
+            let field: u64 = field_link - 1u64;
+            let name: u64 = get(sl, n, field, agent_schema.FIELD_DECL_NAME);
+            if contains(sl, n, st, field_names.as_slice(), name) {
+                y = duplicate(y, sl, n, st, name, "field".as_slice());
+            } else {
+                field_names.push(name);
+            }
+            let field_type: u64 = get(sl, n, field, agent_schema.FIELD_DECL_FIELD_TYPE);
+            let variant: u64 = value(sl, n, field_type);
+            if n[variant].a == agent_schema.MESSAGE_FIELD_TYPE_UNKNOWN {
+                let word: u64 = n[variant].b;
+                if !(contains_raw(sl, n, st, y.types.as_slice(), word) || contains_raw(sl, n, st, y.enums.as_slice(), word) || raw_is(n, st, word, "string".as_slice()) || raw_is(n, st, word, "bool".as_slice()) || raw_is(n, st, word, "int".as_slice()) || raw_is(n, st, word, "float".as_slice())) {
+                    y = at(y, sl, n, field_type);
+                    y = put(y, "unknown message field type `".as_slice());
+                    y = raw(y, n, st, word);
+                    y = close(y);
+                }
+            }
+            field_link = n[field].next;
+        }
+        link = n[type_decl].next;
+    }
+    y
+}
+
+fn check_agents(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_AGENTS);
+    while link != 0u64 {
+        let agent: u64 = link - 1u64;
+        let mut receive_link: u64 = first(sl, n, agent, agent_schema.AGENT_DECL_RECEIVES);
+        while receive_link != 0u64 {
+            let receive: u64 = receive_link - 1u64;
+            y = require_message_type(y, sl, n, st, get(sl, n, receive, agent_schema.RECEIVE_DECL_MESSAGE_TYPE));
+            let from: u64 = get(sl, n, receive, agent_schema.RECEIVE_DECL_FROM);
+            if from != 0u64 && !participant(sl, n, st, y.agents.as_slice(), from) {
+                y = unknown_role(y, sl, n, st, "receive source".as_slice(), from);
+            }
+            receive_link = n[receive].next;
+        }
+        let mut send_link: u64 = first(sl, n, agent, agent_schema.AGENT_DECL_SENDS);
+        while send_link != 0u64 {
+            let send: u64 = send_link - 1u64;
+            y = require_message_type(y, sl, n, st, get(sl, n, send, agent_schema.SEND_DECL_MESSAGE_TYPE));
+            let to: u64 = get(sl, n, send, agent_schema.SEND_DECL_TO);
+            if !participant(sl, n, st, y.agents.as_slice(), to) {
+                y = unknown_role(y, sl, n, st, "send destination".as_slice(), to);
+            }
+            send_link = n[send].next;
+        }
+        y = check_agent_capabilities(sl, n, st, agent, y);
+        y = check_handlers(sl, n, st, program, agent, y);
+        link = n[agent].next;
+    }
+    y
+}
+
+// Whether the agent's `security { approval granted }` is there.
+fn approved(sl: Slice<u64>, n: Slice<AgentNode>, agent: u64) -> bool {
+    let approval: u64 = get(sl, n, agent, agent_schema.AGENT_DECL_APPROVAL);
+    approval != 0u64 && n[value(sl, n, approval)].a == agent_schema.APPROVAL_GRANTED
+}
+
+fn restricted(level: u64) -> bool {
+    level == agent_schema.CAPABILITY_LEVEL_RESTRICTED || level == agent_schema.CAPABILITY_LEVEL_DANGEROUS
+}
+
+fn check_agent_capabilities(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, agent: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let name: u64 = get(sl, n, agent, agent_schema.AGENT_DECL_NAME);
+    let mut link: u64 = first(sl, n, agent, agent_schema.AGENT_DECL_CAPABILITIES);
+    while link != 0u64 {
+        let capability: u64 = link - 1u64;
+        link = n[capability].next;
+        let known: u64 = index_of(sl, n, st, y.capabilities.as_slice(), capability);
+        if known == NONE {
+            y = at(y, sl, n, capability);
+            y = put(y, "Unknown capability ".as_slice());
+            y = text(y, sl, n, st, capability);
+            y = put(y, " used by agent ".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, ".\n".as_slice());
+            continue;
+        }
+        let level: u64 = y.levels[known];
+        if restricted(level) && !approved(sl, n, agent) {
+            y = at(y, sl, n, capability);
+            y = put(y, "Agent ".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, " uses ".as_slice());
+            y = source_name(y, agent_schema.CAPABILITY_LEVEL, level);
+            y = put(y, " capability ".as_slice());
+            y = text(y, sl, n, st, capability);
+            y = put(y, " without approval.\n".as_slice());
+        }
+    }
+    y
+}
+
+fn check_handlers(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, agent: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let name: u64 = get(sl, n, agent, agent_schema.AGENT_DECL_NAME);
+    let mut link: u64 = first(sl, n, agent, agent_schema.AGENT_DECL_TOOLS);
+    while link != 0u64 {
+        let tool: u64 = link - 1u64;
+        if !contains(sl, n, st, y.tools.as_slice(), tool) {
+            y = agent_references(y, sl, n, st, name, "tool".as_slice(), tool);
+        }
+        link = n[tool].next;
+    }
+    link = first(sl, n, agent, agent_schema.AGENT_DECL_MODELS);
+    while link != 0u64 {
+        let model: u64 = link - 1u64;
+        if !contains(sl, n, st, y.models.as_slice(), model) {
+            y = agent_references(y, sl, n, st, name, "model".as_slice(), model);
+        }
+        link = n[model].next;
+    }
+    let mut handled: Buffer<u64> = Buffer::new();
+    link = first(sl, n, agent, agent_schema.AGENT_DECL_HANDLERS);
+    while link != 0u64 {
+        let handler: u64 = link - 1u64;
+        link = n[handler].next;
+        let message_type: u64 = get(sl, n, handler, agent_schema.HANDLER_DECL_MESSAGE_TYPE);
+        let binding: u64 = get(sl, n, handler, agent_schema.HANDLER_DECL_BINDING);
+        y = require_message_type(y, sl, n, st, message_type);
+        if contains(sl, n, st, handled.as_slice(), message_type) {
+            y = at(y, sl, n, message_type);
+            y = put(y, "agent `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` has duplicate handlers for `".as_slice());
+            y = text(y, sl, n, st, message_type);
+            y = close(y);
+        } else {
+            handled.push(message_type);
+        }
+        if !receives(sl, n, st, agent, message_type) {
+            y = at(y, sl, n, message_type);
+            y = put(y, "handler `on ".as_slice());
+            y = text(y, sl, n, st, message_type);
+            y = put(y, "` in agent `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` requires `receives ".as_slice());
+            y = text(y, sl, n, st, message_type);
+            y = close(y);
+        }
+        let mut instruction_link: u64 = first(sl, n, handler, agent_schema.HANDLER_DECL_INSTRUCTIONS);
+        while instruction_link != 0u64 {
+            let instruction: u64 = instruction_link - 1u64;
+            instruction_link = n[instruction].next;
+            y = check_instruction(sl, n, st, program, agent, handler, n[instruction].a, n[instruction].b, y);
+        }
+    }
+    y
+}
+
+fn check_instruction(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, agent: u64, handler: u64, which: u64, holder: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let name: u64 = get(sl, n, agent, agent_schema.AGENT_DECL_NAME);
+    let handler_type: u64 = get(sl, n, handler, agent_schema.HANDLER_DECL_MESSAGE_TYPE);
+    let handler_binding: u64 = get(sl, n, handler, agent_schema.HANDLER_DECL_BINDING);
+    if which == agent_schema.HANDLER_INSTRUCTION_EMIT {
+        let message_type: u64 = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__EMIT_MESSAGE_TYPE);
+        let to: u64 = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__EMIT_TO);
+        y = require_message_type(y, sl, n, st, message_type);
+        if !participant(sl, n, st, y.agents.as_slice(), to) {
+            y = unknown_role(y, sl, n, st, "emit destination".as_slice(), to);
+        }
+        if !sends(sl, n, st, agent, message_type, to) {
+            y = at(y, sl, n, message_type);
+            y = put(y, "handler emit in agent `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` requires `sends ".as_slice());
+            y = text(y, sl, n, st, message_type);
+            y = put(y, " to ".as_slice());
+            y = text(y, sl, n, st, to);
+            y = close(y);
+        }
+        return y;
+    }
+    if which == agent_schema.HANDLER_INSTRUCTION_TRACE {
+        let binding: u64 = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__TRACE_BINDING);
+        if !same(sl, n, st, binding, handler_binding) {
+            y = mismatched_binding(y, sl, n, st, "trace binding `".as_slice(), binding, handler_binding);
+        }
+        return y;
+    }
+    if which == agent_schema.HANDLER_INSTRUCTION_HALT {
+        if !has_capability(sl, n, st, agent, "runtime.halt".as_slice()) {
+            y = at_span(y, sl, n, get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__HALT_SPAN));
+            y = put(y, "agent `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` uses `halt` without capability `runtime.halt`\n".as_slice());
+        }
+        return y;
+    }
+    if which == agent_schema.HANDLER_INSTRUCTION_INTRINSIC_CALL {
+        let intrinsic: u64 = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__INTRINSIC_CALL_NAME);
+        let argument: u64 = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__INTRINSIC_CALL_ARGUMENT);
+        let facu: bool = is(sl, n, st, intrinsic, "facu".as_slice());
+        if !(facu || is(sl, n, st, intrinsic, "marron".as_slice())) {
+            y = at(y, sl, n, intrinsic);
+            y = put(y, "unknown runtime intrinsic `".as_slice());
+            y = text(y, sl, n, st, intrinsic);
+            y = close(y);
+            return y;
+        }
+        if !same(sl, n, st, argument, handler_binding) {
+            y = at(y, sl, n, argument);
+            y = put(y, "intrinsic `".as_slice());
+            y = text(y, sl, n, st, intrinsic);
+            y = put(y, "` argument `".as_slice());
+            y = text(y, sl, n, st, argument);
+            y = put(y, "` does not match handler binding `".as_slice());
+            y = text(y, sl, n, st, handler_binding);
+            y = close(y);
+        }
+        let mut missing: bool = false;
+        if facu {
+            missing = !has_capability(sl, n, st, agent, "state.write".as_slice());
+        } else {
+            missing = !has_capability(sl, n, st, agent, "runtime.guard".as_slice());
+        }
+        if missing {
+            y = at(y, sl, n, intrinsic);
+            y = put(y, "agent `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` uses `".as_slice());
+            y = text(y, sl, n, st, intrinsic);
+            y = put(y, "` without capability `".as_slice());
+            if facu {
+                y = put(y, "state.write".as_slice());
+            } else {
+                y = put(y, "runtime.guard".as_slice());
+            }
+            y = close(y);
+        }
+        return y;
+    }
+    // A tool call or a model call: the same checks with other words.
+    let tool_call: bool = which == agent_schema.HANDLER_INSTRUCTION_CALL_TOOL;
+    let mut target: u64 = 0u64;
+    let mut binding: u64 = 0u64;
+    let mut list: u64 = agent_schema.PROGRAM_MODELS;
+    if tool_call {
+        target = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__CALL_TOOL_TOOL);
+        binding = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__CALL_TOOL_BINDING);
+        list = agent_schema.PROGRAM_TOOLS;
+    } else {
+        target = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__ASK_MODEL_MODEL);
+        binding = get(sl, n, holder, agent_schema.HANDLER_INSTRUCTION__ASK_MODEL_BINDING);
+    }
+    // Tools and models both hold their name, capability and input in the
+    // same fields.
+    let declaration: u64 = find_named(sl, n, st, program, list, target);
+    if declaration == NONE {
+        y = at(y, sl, n, target);
+        if tool_call {
+            y = put(y, "unknown tool `".as_slice());
+        } else {
+            y = put(y, "unknown model `".as_slice());
+        }
+        y = text(y, sl, n, st, target);
+        y = close(y);
+        return y;
+    }
+    let mut declared: bool = false;
+    if tool_call {
+        declared = in_list(sl, n, st, agent, agent_schema.AGENT_DECL_TOOLS, target);
+    } else {
+        declared = in_list(sl, n, st, agent, agent_schema.AGENT_DECL_MODELS, target);
+    }
+    if !declared {
+        y = at(y, sl, n, target);
+        y = put(y, "agent `".as_slice());
+        y = text(y, sl, n, st, name);
+        if tool_call {
+            y = put(y, "` calls tool `".as_slice());
+        } else {
+            y = put(y, "` asks model `".as_slice());
+        }
+        y = text(y, sl, n, st, target);
+        if tool_call {
+            y = put(y, "` without declaring it in `tools`\n".as_slice());
+        } else {
+            y = put(y, "` without declaring it in `models`\n".as_slice());
+        }
+    }
+    if !same(sl, n, st, binding, handler_binding) {
+        if tool_call {
+            y = mismatched_binding(y, sl, n, st, "tool call binding `".as_slice(), binding, handler_binding);
+        } else {
+            y = mismatched_binding(y, sl, n, st, "model call binding `".as_slice(), binding, handler_binding);
+        }
+    }
+    let input: u64 = get(sl, n, declaration, agent_schema.TOOL_DECL_INPUT);
+    if !same(sl, n, st, input, handler_type) {
+        y = at(y, sl, n, target);
+        if tool_call {
+            y = put(y, "tool `".as_slice());
+        } else {
+            y = put(y, "model `".as_slice());
+        }
+        y = text(y, sl, n, st, target);
+        y = put(y, "` expects `".as_slice());
+        y = text(y, sl, n, st, input);
+        y = put(y, "` but handler receives `".as_slice());
+        y = text(y, sl, n, st, handler_type);
+        y = close(y);
+    }
+    let capability: u64 = get(sl, n, declaration, agent_schema.TOOL_DECL_CAPABILITY);
+    if !in_list(sl, n, st, agent, agent_schema.AGENT_DECL_CAPABILITIES, capability) {
+        y = at(y, sl, n, target);
+        y = put(y, "agent `".as_slice());
+        y = text(y, sl, n, st, name);
+        if tool_call {
+            y = put(y, "` calls tool `".as_slice());
+        } else {
+            y = put(y, "` asks model `".as_slice());
+        }
+        y = text(y, sl, n, st, target);
+        y = put(y, "` without capability `".as_slice());
+        y = text(y, sl, n, st, capability);
+        y = close(y);
+    } else {
+        let known: u64 = index_of(sl, n, st, y.capabilities.as_slice(), capability);
+        if known != NONE && restricted(y.levels[known]) && !approved(sl, n, agent) {
+            y = at(y, sl, n, target);
+            y = put(y, "agent `".as_slice());
+            y = text(y, sl, n, st, name);
+            if tool_call {
+                y = put(y, "` calls restricted tool `".as_slice());
+            } else {
+                y = put(y, "` asks restricted model `".as_slice());
+            }
+            y = text(y, sl, n, st, target);
+            y = put(y, "` without approval\n".as_slice());
+        }
+    }
+    y
+}
+
+fn check_protocols(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_PROTOCOLS);
+    while link != 0u64 {
+        let protocol: u64 = link - 1u64;
+        link = n[protocol].next;
+        let mut step_link: u64 = first(sl, n, protocol, agent_schema.PROTOCOL_DECL_STEPS);
+        while step_link != 0u64 {
+            let step: u64 = step_link - 1u64;
+            step_link = n[step].next;
+            let from: u64 = get(sl, n, step, agent_schema.PROTOCOL_STEP_FROM);
+            let to: u64 = get(sl, n, step, agent_schema.PROTOCOL_STEP_TO);
+            let act: u64 = get(sl, n, step, agent_schema.PROTOCOL_STEP_ACT);
+            let message_type: u64 = get(sl, n, step, agent_schema.PROTOCOL_STEP_MESSAGE_TYPE);
+            if !participant(sl, n, st, y.agents.as_slice(), from) {
+                y = unknown_role(y, sl, n, st, "protocol participant".as_slice(), from);
+            }
+            if !participant(sl, n, st, y.agents.as_slice(), to) {
+                y = unknown_role(y, sl, n, st, "protocol participant".as_slice(), to);
+            }
+            y = require_message_type(y, sl, n, st, message_type);
+            if !(is(sl, n, st, act, "tell".as_slice()) || is(sl, n, st, act, "ask".as_slice()) || is(sl, n, st, act, "propose".as_slice()) || is(sl, n, st, act, "commit".as_slice()) || is(sl, n, st, act, "reject".as_slice()) || is(sl, n, st, act, "verify".as_slice()) || is(sl, n, st, act, "delegate".as_slice()) || is(sl, n, st, act, "observe".as_slice()) || is(sl, n, st, act, "handoff".as_slice())) {
+                y = at(y, sl, n, act);
+                y = put(y, "unsupported communicative act `".as_slice());
+                y = text(y, sl, n, st, act);
+                y = put(y, "`; allowed acts: tell, ask, propose, commit, reject, verify, delegate, observe, handoff\n".as_slice());
+            }
+            if contains(sl, n, st, y.agents.as_slice(), from) {
+                let sender: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_AGENTS, from);
+                if !sends(sl, n, st, sender, message_type, to) {
+                    y = at(y, sl, n, from);
+                    y = put(y, "Protocol step requires agent ".as_slice());
+                    y = text(y, sl, n, st, from);
+                    y = put(y, " to declare `sends ".as_slice());
+                    y = text(y, sl, n, st, message_type);
+                    y = put(y, " to ".as_slice());
+                    y = text(y, sl, n, st, to);
+                    y = put(y, "`.\n".as_slice());
+                }
+            }
+            if contains(sl, n, st, y.agents.as_slice(), to) {
+                let receiver: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_AGENTS, to);
+                if !receives_from(sl, n, st, receiver, message_type, from) {
+                    y = at(y, sl, n, to);
+                    y = put(y, "Protocol step requires agent ".as_slice());
+                    y = text(y, sl, n, st, to);
+                    y = put(y, " to declare `receives ".as_slice());
+                    y = text(y, sl, n, st, message_type);
+                    y = put(y, " from ".as_slice());
+                    y = text(y, sl, n, st, from);
+                    y = put(y, "`.\n".as_slice());
+                }
+            }
+        }
+    }
+    y
+}
+
+// ------------------------------------------------------------------ lookups
+
+const NONE: u64 = 1000000000u64;
+
+fn get(sl: Slice<u64>, n: Slice<AgentNode>, node: u64, field: u64) -> u64 {
+    agent_ast.get(sl, n, node, field)
+}
+
+// The first link of the array in field `field` of `node`.
+fn first(sl: Slice<u64>, n: Slice<AgentNode>, node: u64, field: u64) -> u64 {
+    n[get(sl, n, node, field)].a
+}
+
+// The value of a `Spanned`.
+fn value(sl: Slice<u64>, n: Slice<AgentNode>, spanned: u64) -> u64 {
+    get(sl, n, spanned, agent_schema.SPANNED_VALUE)
+}
+
+// Whether two `Spanned<String>` hold the same text.
+fn same(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, left: u64, right: u64) -> bool {
+    let a: u64 = value(sl, n, left);
+    let b: u64 = value(sl, n, right);
+    bytes.equal(st.slice(n[a].a, n[a].b), st.slice(n[b].a, n[b].b))
+}
+
+// Whether a `Spanned<String>` holds `word`.
+fn is(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64, word: Slice<u8>) -> bool {
+    let a: u64 = value(sl, n, spanned);
+    bytes.equal(st.slice(n[a].a, n[a].b), word)
+}
+
+// Whether a string node holds `word`.
+fn raw_is(n: Slice<AgentNode>, st: Slice<u8>, string: u64, word: Slice<u8>) -> bool {
+    bytes.equal(st.slice(n[string].a, n[string].b), word)
+}
+
+// The position in `names` of a `Spanned<String>` with the same text, or NONE.
+fn index_of(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, names: Slice<u64>, spanned: u64) -> u64 {
+    let mut index: u64 = 0u64;
+    while index < names.length() {
+        if same(sl, n, st, names[index], spanned) {
+            return index;
+        }
+        index += 1u64;
+    }
+    NONE
+}
+
+fn contains(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, names: Slice<u64>, spanned: u64) -> bool {
+    index_of(sl, n, st, names, spanned) != NONE
+}
+
+// Whether `names` holds the text of string node `string`.
+fn contains_raw(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, names: Slice<u64>, string: u64) -> bool {
+    let mut index: u64 = 0u64;
+    while index < names.length() {
+        let a: u64 = value(sl, n, names[index]);
+        if bytes.equal(st.slice(n[a].a, n[a].b), st.slice(n[string].a, n[string].b)) {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
+}
+
+fn has(values: Slice<u64>, wanted: u64) -> bool {
+    let mut index: u64 = 0u64;
+    while index < values.length() {
+        if values[index] == wanted {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
+}
+
+// An agent, or one of stage0's external entities.
+fn participant(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, agents: Slice<u64>, name: u64) -> bool {
+    contains(sl, n, st, agents, name) || is(sl, n, st, name, "User".as_slice()) || is(sl, n, st, name, "System".as_slice()) || is(sl, n, st, name, "Runtime".as_slice()) || is(sl, n, st, name, "Memory".as_slice()) || is(sl, n, st, name, "Tool".as_slice())
+}
+
+// The first declaration in array `list` of the program whose name (field 0)
+// is `name`, or NONE.
+fn find_named(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, list: u64, name: u64) -> u64 {
+    let mut link: u64 = first(sl, n, program, list);
+    while link != 0u64 {
+        if same(sl, n, st, get(sl, n, link - 1u64, 0u64), name) {
+            return link - 1u64;
+        }
+        link = n[link - 1u64].next;
+    }
+    NONE
+}
+
+// Whether array `field` of `node`, of `Spanned<String>`, holds `name`.
+fn in_list(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, field: u64, name: u64) -> bool {
+    let mut link: u64 = first(sl, n, node, field);
+    while link != 0u64 {
+        if same(sl, n, st, link - 1u64, name) {
+            return true;
+        }
+        link = n[link - 1u64].next;
+    }
+    false
+}
+
+fn has_capability(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, agent: u64, word: Slice<u8>) -> bool {
+    let mut link: u64 = first(sl, n, agent, agent_schema.AGENT_DECL_CAPABILITIES);
+    while link != 0u64 {
+        if is(sl, n, st, link - 1u64, word) {
+            return true;
+        }
+        link = n[link - 1u64].next;
+    }
+    false
+}
+
+// Whether the agent declares `receives <message_type>`.
+fn receives(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, agent: u64, message_type: u64) -> bool {
+    let mut link: u64 = first(sl, n, agent, agent_schema.AGENT_DECL_RECEIVES);
+    while link != 0u64 {
+        if same(sl, n, st, get(sl, n, link - 1u64, agent_schema.RECEIVE_DECL_MESSAGE_TYPE), message_type) {
+            return true;
+        }
+        link = n[link - 1u64].next;
+    }
+    false
+}
+
+// Whether the agent declares `receives <message_type>`, from `from` or from
+// anyone.
+fn receives_from(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, agent: u64, message_type: u64, from: u64) -> bool {
+    let mut link: u64 = first(sl, n, agent, agent_schema.AGENT_DECL_RECEIVES);
+    while link != 0u64 {
+        let receive: u64 = link - 1u64;
+        let declared_from: u64 = get(sl, n, receive, agent_schema.RECEIVE_DECL_FROM);
+        if same(sl, n, st, get(sl, n, receive, agent_schema.RECEIVE_DECL_MESSAGE_TYPE), message_type) && (declared_from == 0u64 || same(sl, n, st, declared_from, from)) {
+            return true;
+        }
+        link = n[receive].next;
+    }
+    false
+}
+
+// Whether the agent declares `sends <message_type> to <to>`.
+fn sends(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, agent: u64, message_type: u64, to: u64) -> bool {
+    let mut link: u64 = first(sl, n, agent, agent_schema.AGENT_DECL_SENDS);
+    while link != 0u64 {
+        let send: u64 = link - 1u64;
+        if same(sl, n, st, get(sl, n, send, agent_schema.SEND_DECL_MESSAGE_TYPE), message_type) && same(sl, n, st, get(sl, n, send, agent_schema.SEND_DECL_TO), to) {
+            return true;
+        }
+        link = n[send].next;
+    }
+    false
+}
+
+// ------------------------------------------------------------------ messages
+
+// The diagnostics are written into `out` of the symbols, which Core moves as
+// one value: each helper takes it and gives it back.
+
+fn put(symbols: Symbols, text_bytes: Slice<u8>) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut index: u64 = 0u64;
+    while index < text_bytes.length() {
+        y.out.push(text_bytes[index]);
+        index += 1u64;
+    }
+    y
+}
+
+fn decimal(symbols: Symbols, number: u64) -> Symbols {
+    let digits: Buffer<u8> = bytes.append_decimal(Buffer::new(), number);
+    put(symbols, digits.as_slice())
+}
+
+// The word stage0 writes for a variant.
+fn source_name(symbols: Symbols, e: u64, v: u64) -> Symbols {
+    let word: Buffer<u8> = agent_schema.append_source_name(Buffer::new(), e, v);
+    put(symbols, word.as_slice())
+}
+
+// `line:column: ` of a `Spanned`.
+fn at(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, spanned: u64) -> Symbols {
+    at_span(symbols, sl, n, get(sl, n, spanned, agent_schema.SPANNED_SPAN))
+}
+
+// `line:column: ` of a `Span`.
+fn at_span(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, span: u64) -> Symbols {
+    let mut y: Symbols = decimal(symbols, n[get(sl, n, span, agent_schema.SPAN_LINE)].a);
+    y.out.push(58u8);
+    y = decimal(y, n[get(sl, n, span, agent_schema.SPAN_COLUMN)].a);
+    put(y, ": ".as_slice())
+}
+
+// The text of a `Spanned<String>`.
+fn text(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64) -> Symbols {
+    let a: u64 = value(sl, n, spanned);
+    put(symbols, st.slice(n[a].a, n[a].b))
+}
+
+// The text of a string node.
+fn raw(symbols: Symbols, n: Slice<AgentNode>, st: Slice<u8>, string: u64) -> Symbols {
+    put(symbols, st.slice(n[string].a, n[string].b))
+}
+
+// "`" and the end of the line.
+fn close(symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    y.out.push(96u8);
+    y.out.push(10u8);
+    y
+}
+
+// "duplicate <kind> `<name>`".
+fn duplicate(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, name: u64, kind: Slice<u8>) -> Symbols {
+    let mut y: Symbols = at(symbols, sl, n, name);
+    y = put(y, "duplicate ".as_slice());
+    y = put(y, kind);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, name);
+    close(y)
+}
+
+// "unknown message type `<name>`; messages must reference a declared `type`"
+// when the type is not declared.
+fn require_message_type(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, message_type: u64) -> Symbols {
+    if contains(sl, n, st, symbols.types.as_slice(), message_type) {
+        return symbols;
+    }
+    let mut y: Symbols = at(symbols, sl, n, message_type);
+    y = put(y, "unknown message type `".as_slice());
+    y = text(y, sl, n, st, message_type);
+    put(y, "`; messages must reference a declared `type`\n".as_slice())
+}
+
+// "unknown <role> `<name>`".
+fn unknown_role(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, role: Slice<u8>, name: u64) -> Symbols {
+    let mut y: Symbols = at(symbols, sl, n, name);
+    y = put(y, "unknown ".as_slice());
+    y = put(y, role);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, name);
+    close(y)
+}
+
+// "agent `<agent>` references unknown <kind> `<name>`".
+fn agent_references(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, agent: u64, kind: Slice<u8>, name: u64) -> Symbols {
+    let mut y: Symbols = at(symbols, sl, n, name);
+    y = put(y, "agent `".as_slice());
+    y = text(y, sl, n, st, agent);
+    y = put(y, "` references unknown ".as_slice());
+    y = put(y, kind);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, name);
+    close(y)
+}
+
+// "<what>`<binding>` does not match handler binding `<handler>`".
+fn mismatched_binding(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, what: Slice<u8>, binding: u64, handler: u64) -> Symbols {
+    let mut y: Symbols = at(symbols, sl, n, binding);
+    y = put(y, what);
+    y = text(y, sl, n, st, binding);
+    y = put(y, "` does not match handler binding `".as_slice());
+    y = text(y, sl, n, st, handler);
+    close(y)
+}

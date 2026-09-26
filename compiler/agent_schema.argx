@@ -3453,3 +3453,678 @@ pub fn append_variant(out: Buffer<u8>, e: u64, v: u64) -> Buffer<u8> {
     }
     out
 }
+
+// The word stage0 writes for variant `v` of enum `e` (`source_name` or
+// `as_str` in ast.rs). A variant with a value (`Unknown`) writes its value,
+// which the caller appends; this appends nothing for it.
+pub fn append_source_name(out: Buffer<u8>, e: u64, v: u64) -> Buffer<u8> {
+    if e == 0u64 {
+        if v == 0u64 { return bytes.append(out, "simulated".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "external".as_slice()); }
+    }
+    if e == 1u64 {
+        if v == 0u64 { return bytes.append(out, "dry_run".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "simulated".as_slice()); }
+    }
+    if e == 2u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 3u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 4u64 {
+        if v == 0u64 { return bytes.append(out, "none".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "read_only".as_slice()); }
+    }
+    if e == 5u64 {
+        if v == 0u64 { return bytes.append(out, "experimental".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "preview".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "stable".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "deprecated".as_slice()); }
+    }
+    if e == 6u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "enabled".as_slice()); }
+    }
+    if e == 7u64 {
+        if v == 0u64 { return bytes.append(out, "provider".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "adapter".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "model".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "tool".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "runtime".as_slice()); }
+    }
+    if e == 8u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 9u64 {
+        if v == 0u64 { return bytes.append(out, "none".as_slice()); }
+    }
+    if e == 10u64 {
+        if v == 0u64 { return bytes.append(out, "llm".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "tool".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "bridge".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "registry".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "identity".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "payment".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "storage".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 11u64 {
+        if v == 0u64 { return bytes.append(out, "experimental".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "preview".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "stable".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "deprecated".as_slice()); }
+    }
+    if e == 12u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+    }
+    if e == 13u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 14u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 15u64 {
+        if v == 0u64 { return bytes.append(out, "none".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "read_only".as_slice()); }
+    }
+    if e == 16u64 {
+        if v == 0u64 { return bytes.append(out, "llm".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "tool".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "bridge".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "registry".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "identity".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "payment".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "storage".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 17u64 {
+        if v == 0u64 { return bytes.append(out, "responses".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "messages".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "chat".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "completion".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "tool_call".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "mcp".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "a2a".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "rest".as_slice()); }
+        if v == 8u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 18u64 {
+        if v == 0u64 { return bytes.append(out, "none".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "secret_boundary".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "did".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "credential".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 19u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+    }
+    if e == 20u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 21u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 22u64 {
+        if v == 0u64 { return bytes.append(out, "hash".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "signature".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "kem".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "aead".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "mac".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "kdf".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "commitment".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "randomness".as_slice()); }
+        if v == 8u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 23u64 {
+        if v == 0u64 { return bytes.append(out, "allowed".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "legacy".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "deprecated".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "denied".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "experimental".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "post_quantum_candidate".as_slice()); }
+    }
+    if e == 24u64 {
+        if v == 0u64 { return bytes.append(out, "classical".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "post_quantum".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "hybrid".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "unknown".as_slice()); }
+    }
+    if e == 26u64 {
+        if v == 0u64 { return bytes.append(out, "no_unhandled_messages".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "all_tool_calls_traced".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "all_model_calls_traced".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "all_intrinsics_traced".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "all_provider_calls_traced".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "halt_requires_trace".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "runtime_status completed".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "provider_contracts_declared".as_slice()); }
+        if v == 8u64 { return bytes.append(out, "provider_allowlists_valid".as_slice()); }
+        if v == 9u64 { return bytes.append(out, "external_execution".as_slice()); }
+        if v == 10u64 { return bytes.append(out, "evidence_bundle_verified".as_slice()); }
+        if v == 11u64 { return bytes.append(out, "security_report_generated".as_slice()); }
+        if v == 12u64 { return bytes.append(out, "agent_passport_declared".as_slice()); }
+        if v == 13u64 { return bytes.append(out, "agent_passport_attested".as_slice()); }
+        if v == 14u64 { return bytes.append(out, "agent_data_residency_declared".as_slice()); }
+        if v == 15u64 { return bytes.append(out, "agent_identity_declared".as_slice()); }
+        if v == 16u64 { return bytes.append(out, "provider_harness_declared".as_slice()); }
+        if v == 17u64 { return bytes.append(out, "provider_harness_sandboxed".as_slice()); }
+        if v == 18u64 { return bytes.append(out, "provider_network_denied".as_slice()); }
+        if v == 19u64 { return bytes.append(out, "provider_secrets_denied".as_slice()); }
+        if v == 20u64 { return bytes.append(out, "provider_filesystem_restricted".as_slice()); }
+        if v == 21u64 { return bytes.append(out, "external_provider_harnessed".as_slice()); }
+        if v == 22u64 { return bytes.append(out, "feature_flags_declared".as_slice()); }
+        if v == 23u64 { return bytes.append(out, "features_default_disabled".as_slice()); }
+        if v == 24u64 { return bytes.append(out, "experimental_features_require_approval".as_slice()); }
+        if v == 25u64 { return bytes.append(out, "secret_boundaries_declared".as_slice()); }
+        if v == 26u64 { return bytes.append(out, "secret_access_denied".as_slice()); }
+        if v == 27u64 { return bytes.append(out, "secret_values_absent".as_slice()); }
+        if v == 28u64 { return bytes.append(out, "external_provider_feature_gated".as_slice()); }
+        if v == 30u64 { return bytes.append(out, "adapters_declared".as_slice()); }
+        if v == 31u64 { return bytes.append(out, "adapters_execution_disabled".as_slice()); }
+        if v == 32u64 { return bytes.append(out, "adapters_network_denied".as_slice()); }
+        if v == 33u64 { return bytes.append(out, "adapters_secrets_denied".as_slice()); }
+        if v == 34u64 { return bytes.append(out, "adapters_provider_harnessed".as_slice()); }
+        if v == 35u64 { return bytes.append(out, "adapters_feature_gated".as_slice()); }
+        if v == 36u64 { return bytes.append(out, "adapters_secret_boundaried".as_slice()); }
+        if v == 37u64 { return bytes.append(out, "adapters_conformance_declared".as_slice()); }
+        if v == 38u64 { return bytes.append(out, "adapters_evidence_required".as_slice()); }
+        if v == 39u64 { return bytes.append(out, "adapter_profiles_declared".as_slice()); }
+        if v == 40u64 { return bytes.append(out, "adapter_profiles_execution_disabled".as_slice()); }
+        if v == 41u64 { return bytes.append(out, "adapter_profiles_network_denied".as_slice()); }
+        if v == 42u64 { return bytes.append(out, "adapter_profiles_secrets_denied".as_slice()); }
+        if v == 43u64 { return bytes.append(out, "adapter_profiles_linked".as_slice()); }
+        if v == 44u64 { return bytes.append(out, "adapter_profiles_conformance_declared".as_slice()); }
+        if v == 45u64 { return bytes.append(out, "vendor_profiles_declared".as_slice()); }
+        if v == 46u64 { return bytes.append(out, "crypto_primitives_declared".as_slice()); }
+        if v == 47u64 { return bytes.append(out, "crypto_primitives_allowed".as_slice()); }
+        if v == 48u64 { return bytes.append(out, "crypto_denied_not_used".as_slice()); }
+        if v == 49u64 { return bytes.append(out, "crypto_post_quantum_candidates_declared".as_slice()); }
+        if v == 50u64 { return bytes.append(out, "crypto_key_material_absent".as_slice()); }
+        if v == 51u64 { return bytes.append(out, "crypto_secret_material_absent".as_slice()); }
+        if v == 52u64 { return bytes.append(out, "crypto_execution_absent".as_slice()); }
+        if v == 53u64 { return bytes.append(out, "crypto_boundaries_declared".as_slice()); }
+        if v == 54u64 { return bytes.append(out, "post_quantum_readiness_declared".as_slice()); }
+        if v == 55u64 { return bytes.append(out, "atrust_boundaries_declared".as_slice()); }
+        if v == 56u64 { return bytes.append(out, "atrust_did_methods_declared".as_slice()); }
+        if v == 57u64 { return bytes.append(out, "atrust_did_method_allowed".as_slice()); }
+        if v == 58u64 { return bytes.append(out, "atrust_identity_format_declared".as_slice()); }
+        if v == 59u64 { return bytes.append(out, "atrust_credential_mode_declared".as_slice()); }
+        if v == 60u64 { return bytes.append(out, "atrust_handshake_disabled".as_slice()); }
+        if v == 61u64 { return bytes.append(out, "atrust_resolution_disabled".as_slice()); }
+        if v == 62u64 { return bytes.append(out, "atrust_key_material_denied".as_slice()); }
+        if v == 63u64 { return bytes.append(out, "atrust_secret_material_denied".as_slice()); }
+        if v == 64u64 { return bytes.append(out, "atrust_execution_disabled".as_slice()); }
+        if v == 65u64 { return bytes.append(out, "atrust_post_quantum_readiness_declared".as_slice()); }
+        if v == 66u64 { return bytes.append(out, "atrust_security_claims_none".as_slice()); }
+        if v == 67u64 { return bytes.append(out, "atrust_identity_declared".as_slice()); }
+        if v == 68u64 { return bytes.append(out, "atrust_identity_subject_valid".as_slice()); }
+        if v == 69u64 { return bytes.append(out, "atrust_identity_did_method_valid".as_slice()); }
+        if v == 70u64 { return bytes.append(out, "atrust_identity_boundary_valid".as_slice()); }
+        if v == 71u64 { return bytes.append(out, "atrust_identity_status_active".as_slice()); }
+        if v == 72u64 { return bytes.append(out, "atrust_identity_validation_dry_run".as_slice()); }
+        if v == 73u64 { return bytes.append(out, "atrust_identity_resolution_disabled".as_slice()); }
+        if v == 74u64 { return bytes.append(out, "atrust_identity_key_material_denied".as_slice()); }
+        if v == 75u64 { return bytes.append(out, "atrust_identity_secret_material_denied".as_slice()); }
+        if v == 76u64 { return bytes.append(out, "atrust_identity_execution_disabled".as_slice()); }
+        if v == 77u64 { return bytes.append(out, "atrust_identity_evidence_required".as_slice()); }
+        if v == 78u64 { return bytes.append(out, "atrust_identity_security_claims_absent".as_slice()); }
+        if v == 79u64 { return bytes.append(out, "atrust_identity_passport_consistent".as_slice()); }
+        if v == 80u64 { return bytes.append(out, "atrust_credential_contract_declared".as_slice()); }
+        if v == 81u64 { return bytes.append(out, "atrust_credential_issuer_did_declared".as_slice()); }
+        if v == 82u64 { return bytes.append(out, "atrust_credential_holder_did_declared".as_slice()); }
+        if v == 83u64 { return bytes.append(out, "atrust_credential_type_declared".as_slice()); }
+        if v == 84u64 { return bytes.append(out, "atrust_credential_schema_declared".as_slice()); }
+        if v == 85u64 { return bytes.append(out, "atrust_credential_claims_declared".as_slice()); }
+        if v == 87u64 { return bytes.append(out, "atrust_credential_presentation_disabled".as_slice()); }
+        if v == 88u64 { return bytes.append(out, "atrust_credential_resolution_disabled".as_slice()); }
+        if v == 89u64 { return bytes.append(out, "atrust_credential_key_material_denied".as_slice()); }
+        if v == 91u64 { return bytes.append(out, "atrust_credential_execution_disabled".as_slice()); }
+        if v == 92u64 { return bytes.append(out, "atrust_credential_evidence_required".as_slice()); }
+        if v == 94u64 { return bytes.append(out, "atrust_handshake_declared".as_slice()); }
+        if v == 96u64 { return bytes.append(out, "atrust_handshake_identities_valid".as_slice()); }
+        if v == 98u64 { return bytes.append(out, "atrust_handshake_boundary_method_valid".as_slice()); }
+        if v == 99u64 { return bytes.append(out, "atrust_handshake_mode_dry_run".as_slice()); }
+        if v == 100u64 { return bytes.append(out, "atrust_handshake_direction_valid".as_slice()); }
+        if v == 102u64 { return bytes.append(out, "atrust_handshake_response_declared_only".as_slice()); }
+        if v == 105u64 { return bytes.append(out, "atrust_handshake_resolution_disabled".as_slice()); }
+        if v == 106u64 { return bytes.append(out, "atrust_handshake_network_denied".as_slice()); }
+        if v == 107u64 { return bytes.append(out, "atrust_handshake_key_material_denied".as_slice()); }
+        if v == 108u64 { return bytes.append(out, "atrust_handshake_secret_material_denied".as_slice()); }
+        if v == 109u64 { return bytes.append(out, "atrust_handshake_execution_disabled".as_slice()); }
+        if v == 110u64 { return bytes.append(out, "atrust_handshake_evidence_required".as_slice()); }
+        if v == 111u64 { return bytes.append(out, "atrust_handshake_security_claims_absent".as_slice()); }
+        if v == 112u64 { return bytes.append(out, "trust_ledgers_declared".as_slice()); }
+        if v == 113u64 { return bytes.append(out, "trust_ledger_hash_algorithm_declared".as_slice()); }
+        if v == 114u64 { return bytes.append(out, "trust_ledger_chain_valid".as_slice()); }
+        if v == 115u64 { return bytes.append(out, "trust_ledger_entries_bound".as_slice()); }
+        if v == 116u64 { return bytes.append(out, "trust_ledger_append_only".as_slice()); }
+        if v == 117u64 { return bytes.append(out, "trust_ledger_network_denied".as_slice()); }
+        if v == 118u64 { return bytes.append(out, "trust_ledger_key_material_denied".as_slice()); }
+        if v == 119u64 { return bytes.append(out, "trust_ledger_secret_material_denied".as_slice()); }
+        if v == 120u64 { return bytes.append(out, "trust_ledger_execution_disabled".as_slice()); }
+        if v == 121u64 { return bytes.append(out, "trust_ledger_evidence_required".as_slice()); }
+        if v == 122u64 { return bytes.append(out, "trust_ledger_security_claims_absent".as_slice()); }
+        if v == 123u64 { return bytes.append(out, "trust_ledger_blockchain_absent".as_slice()); }
+        if v == 124u64 { return bytes.append(out, "trust_ledger_signature_absent".as_slice()); }
+        if v == 125u64 { return bytes.append(out, "mcp_bridge_contracts_declared".as_slice()); }
+        if v == 126u64 { return bytes.append(out, "mcp_bridge_agents_bound".as_slice()); }
+        if v == 127u64 { return bytes.append(out, "mcp_bridge_passports_bound".as_slice()); }
+        if v == 128u64 { return bytes.append(out, "mcp_bridge_identities_bound".as_slice()); }
+        if v == 129u64 { return bytes.append(out, "mcp_bridge_boundaries_bound".as_slice()); }
+        if v == 130u64 { return bytes.append(out, "mcp_bridge_network_denied".as_slice()); }
+        if v == 131u64 { return bytes.append(out, "mcp_bridge_external_execution_disabled".as_slice()); }
+        if v == 132u64 { return bytes.append(out, "mcp_bridge_tool_execution_disabled".as_slice()); }
+        if v == 133u64 { return bytes.append(out, "mcp_bridge_secret_material_denied".as_slice()); }
+        if v == 134u64 { return bytes.append(out, "mcp_bridge_key_material_denied".as_slice()); }
+        if v == 135u64 { return bytes.append(out, "mcp_bridge_authentication_non_secret".as_slice()); }
+        if v == 136u64 { return bytes.append(out, "mcp_bridge_security_claims_absent".as_slice()); }
+        if v == 137u64 { return bytes.append(out, "a2a_bridge_contracts_declared".as_slice()); }
+        if v == 138u64 { return bytes.append(out, "a2a_bridge_agents_bound".as_slice()); }
+        if v == 139u64 { return bytes.append(out, "a2a_bridge_passports_bound".as_slice()); }
+        if v == 140u64 { return bytes.append(out, "a2a_bridge_identities_bound".as_slice()); }
+        if v == 141u64 { return bytes.append(out, "a2a_bridge_handshakes_bound".as_slice()); }
+        if v == 142u64 { return bytes.append(out, "a2a_bridge_trust_ledgers_bound".as_slice()); }
+        if v == 143u64 { return bytes.append(out, "a2a_bridge_message_contracts_bound".as_slice()); }
+        if v == 144u64 { return bytes.append(out, "a2a_bridge_network_denied".as_slice()); }
+        if v == 145u64 { return bytes.append(out, "a2a_bridge_external_execution_disabled".as_slice()); }
+        if v == 146u64 { return bytes.append(out, "a2a_bridge_agent_execution_disabled".as_slice()); }
+        if v == 147u64 { return bytes.append(out, "a2a_bridge_secret_material_denied".as_slice()); }
+        if v == 148u64 { return bytes.append(out, "a2a_bridge_key_material_denied".as_slice()); }
+        if v == 149u64 { return bytes.append(out, "a2a_bridge_authentication_non_secret".as_slice()); }
+        if v == 150u64 { return bytes.append(out, "a2a_bridge_security_claims_absent".as_slice()); }
+        if v == 151u64 { return bytes.append(out, "atrust_evidence_maps_declared".as_slice()); }
+        if v == 152u64 { return bytes.append(out, "atrust_evidence_map_agents_bound".as_slice()); }
+        if v == 153u64 { return bytes.append(out, "atrust_evidence_map_passports_bound".as_slice()); }
+        if v == 154u64 { return bytes.append(out, "atrust_evidence_map_identities_bound".as_slice()); }
+        if v == 155u64 { return bytes.append(out, "atrust_evidence_map_credentials_bound".as_slice()); }
+        if v == 156u64 { return bytes.append(out, "atrust_evidence_map_handshakes_bound".as_slice()); }
+        if v == 157u64 { return bytes.append(out, "atrust_evidence_map_ledgers_bound".as_slice()); }
+        if v == 158u64 { return bytes.append(out, "atrust_evidence_map_bridges_bound".as_slice()); }
+        if v == 159u64 { return bytes.append(out, "atrust_evidence_map_policies_bound".as_slice()); }
+        if v == 160u64 { return bytes.append(out, "atrust_evidence_map_coverage_required".as_slice()); }
+        if v == 162u64 { return bytes.append(out, "atrust_evidence_map_resolution_disabled".as_slice()); }
+        if v == 163u64 { return bytes.append(out, "atrust_evidence_map_network_denied".as_slice()); }
+        if v == 166u64 { return bytes.append(out, "atrust_evidence_map_key_material_denied".as_slice()); }
+        if v == 167u64 { return bytes.append(out, "atrust_evidence_map_execution_disabled".as_slice()); }
+        if v == 169u64 { return bytes.append(out, "governance_profiles_declared".as_slice()); }
+        if v == 170u64 { return bytes.append(out, "governance_profiles_evidence_bound".as_slice()); }
+        if v == 171u64 { return bytes.append(out, "governance_profiles_controls_mapped".as_slice()); }
+        if v == 172u64 { return bytes.append(out, "governance_profiles_runtime_disabled".as_slice()); }
+        if v == 175u64 { return bytes.append(out, "regulatory_mappings_declared".as_slice()); }
+        if v == 176u64 { return bytes.append(out, "regulatory_mappings_profiles_bound".as_slice()); }
+        if v == 177u64 { return bytes.append(out, "regulatory_mappings_obligations_mapped".as_slice()); }
+        if v == 178u64 { return bytes.append(out, "regulatory_mappings_controls_bound".as_slice()); }
+        if v == 179u64 { return bytes.append(out, "regulatory_mappings_legal_claims_absent".as_slice()); }
+        if v == 181u64 { return bytes.append(out, "regulatory_mappings_runtime_disabled".as_slice()); }
+        if v == 183u64 { return bytes.append(out, "third_party_verifiers_declared".as_slice()); }
+        if v == 184u64 { return bytes.append(out, "third_party_verifiers_identity_declared".as_slice()); }
+        if v == 185u64 { return bytes.append(out, "third_party_verifiers_scope_bounded".as_slice()); }
+        if v == 186u64 { return bytes.append(out, "third_party_verifiers_runtime_disabled".as_slice()); }
+        if v == 190u64 { return bytes.append(out, "public_conformance_reports_declared".as_slice()); }
+        if v == 196u64 { return bytes.append(out, "public_conformance_reports_replayable".as_slice()); }
+        if v == 201u64 { return bytes.append(out, "runtime_hardening_profiles_declared".as_slice()); }
+        if v == 202u64 { return bytes.append(out, "runtime_hardening_evidence_bound".as_slice()); }
+        if v == 203u64 { return bytes.append(out, "runtime_hardening_deny_by_default".as_slice()); }
+        if v == 204u64 { return bytes.append(out, "runtime_hardening_sandbox_required".as_slice()); }
+        if v == 205u64 { return bytes.append(out, "runtime_hardening_network_denied".as_slice()); }
+        if v == 209u64 { return bytes.append(out, "runtime_hardening_filesystem_denied".as_slice()); }
+        if v == 210u64 { return bytes.append(out, "runtime_hardening_env_denied".as_slice()); }
+        if v == 212u64 { return bytes.append(out, "runtime_hardening_key_material_denied".as_slice()); }
+        if v == 213u64 { return bytes.append(out, "runtime_hardening_audit_log_required".as_slice()); }
+        if v == 215u64 { return bytes.append(out, "threat_models_declared".as_slice()); }
+        if v == 216u64 { return bytes.append(out, "threat_models_hardening_bound".as_slice()); }
+        if v == 217u64 { return bytes.append(out, "threat_models_assets_mapped".as_slice()); }
+        if v == 218u64 { return bytes.append(out, "threat_models_threats_mapped".as_slice()); }
+        if v == 219u64 { return bytes.append(out, "threat_models_mitigations_mapped".as_slice()); }
+        if v == 220u64 { return bytes.append(out, "threat_models_runtime_disabled".as_slice()); }
+        if v == 221u64 { return bytes.append(out, "threat_models_network_denied".as_slice()); }
+        if v == 222u64 { return bytes.append(out, "threat_models_secret_material_denied".as_slice()); }
+        if v == 223u64 { return bytes.append(out, "threat_models_key_material_denied".as_slice()); }
+        if v == 224u64 { return bytes.append(out, "threat_models_execution_disabled".as_slice()); }
+        if v == 225u64 { return bytes.append(out, "threat_models_security_claims_absent".as_slice()); }
+        if v == 226u64 { return bytes.append(out, "spec_freezes_declared".as_slice()); }
+        if v == 227u64 { return bytes.append(out, "spec_freeze_versions_pinned".as_slice()); }
+        if v == 228u64 { return bytes.append(out, "spec_freeze_features_declared".as_slice()); }
+        if v == 229u64 { return bytes.append(out, "spec_freeze_compatibility_declared".as_slice()); }
+        if v == 230u64 { return bytes.append(out, "spec_freeze_required_suites_declared".as_slice()); }
+        if v == 231u64 { return bytes.append(out, "spec_freeze_runtime_disabled".as_slice()); }
+        if v == 232u64 { return bytes.append(out, "spec_freeze_network_denied".as_slice()); }
+        if v == 233u64 { return bytes.append(out, "spec_freeze_external_execution_disabled".as_slice()); }
+        if v == 234u64 { return bytes.append(out, "spec_freeze_provider_execution_disabled".as_slice()); }
+        if v == 235u64 { return bytes.append(out, "spec_freeze_secret_material_denied".as_slice()); }
+        if v == 236u64 { return bytes.append(out, "spec_freeze_key_material_denied".as_slice()); }
+        if v == 237u64 { return bytes.append(out, "spec_freeze_env_denied".as_slice()); }
+        if v == 238u64 { return bytes.append(out, "spec_freeze_filesystem_denied".as_slice()); }
+        if v == 239u64 { return bytes.append(out, "spec_freeze_security_claims_absent".as_slice()); }
+        if v == 240u64 { return bytes.append(out, "spec_freeze_legal_claims_absent".as_slice()); }
+        if v == 241u64 { return bytes.append(out, "spec_freeze_certification_absent".as_slice()); }
+        if v == 242u64 { return bytes.append(out, "release_candidates_declared".as_slice()); }
+        if v == 243u64 { return bytes.append(out, "release_candidates_spec_freeze_bound".as_slice()); }
+        if v == 244u64 { return bytes.append(out, "release_candidates_artifacts_declared".as_slice()); }
+        if v == 245u64 { return bytes.append(out, "release_candidates_checks_declared".as_slice()); }
+        if v == 247u64 { return bytes.append(out, "release_candidates_limitations_declared".as_slice()); }
+        if v == 248u64 { return bytes.append(out, "release_candidates_runtime_disabled".as_slice()); }
+        if v == 249u64 { return bytes.append(out, "release_candidates_network_denied".as_slice()); }
+        if v == 253u64 { return bytes.append(out, "release_candidates_key_material_denied".as_slice()); }
+        if v == 254u64 { return bytes.append(out, "release_candidates_env_denied".as_slice()); }
+        if v == 255u64 { return bytes.append(out, "release_candidates_filesystem_denied".as_slice()); }
+        if v == 257u64 { return bytes.append(out, "release_candidates_legal_claims_absent".as_slice()); }
+        if v == 258u64 { return bytes.append(out, "release_candidates_certification_absent".as_slice()); }
+        if v == 259u64 { return bytes.append(out, "runtime_execution_profiles_declared".as_slice()); }
+        if v == 260u64 { return bytes.append(out, "runtime_profiles_agents_bound".as_slice()); }
+        if v == 261u64 { return bytes.append(out, "runtime_profiles_provider_bound".as_slice()); }
+        if v == 262u64 { return bytes.append(out, "runtime_profiles_hardening_bound".as_slice()); }
+        if v == 263u64 { return bytes.append(out, "runtime_profiles_evidence_bound".as_slice()); }
+        if v == 264u64 { return bytes.append(out, "runtime_profiles_governance_bound".as_slice()); }
+        if v == 265u64 { return bytes.append(out, "runtime_profiles_fail_closed".as_slice()); }
+        if v == 269u64 { return bytes.append(out, "runtime_profiles_secret_refs_only".as_slice()); }
+        if v == 270u64 { return bytes.append(out, "runtime_profiles_security_claims_absent".as_slice()); }
+        if v == 271u64 { return bytes.append(out, "sandboxed_provider_adapters_declared".as_slice()); }
+        if v == 279u64 { return bytes.append(out, "sandboxed_provider_adapters_fail_closed".as_slice()); }
+    }
+    if e == 27u64 {
+        if v == 0u64 { return bytes.append(out, "block".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "review".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "warn".as_slice()); }
+    }
+    if e == 28u64 {
+        if v == 0u64 { return bytes.append(out, "safe".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "restricted".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "dangerous".as_slice()); }
+    }
+    if e == 29u64 {
+        if v == 0u64 { return bytes.append(out, "granted".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 30u64 {
+        if v == 0u64 { return bytes.append(out, "string".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "bool".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "int".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "float".as_slice()); }
+    }
+    if e == 32u64 {
+        if v == 0u64 { return bytes.append(out, "experimental".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "preview".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "stable".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "deprecated".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 33u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "embedded".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "local".as_slice()); }
+    }
+    if e == 34u64 {
+        if v == 0u64 { return bytes.append(out, "none".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "local".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "embedded".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 35u64 {
+        if v == 0u64 { return bytes.append(out, "did".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "opaque".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 36u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 37u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 38u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "embedded".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "local".as_slice()); }
+    }
+    if e == 39u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 40u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+    }
+    if e == 41u64 {
+        if v == 0u64 { return bytes.append(out, "required".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "optional".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "not_required".as_slice()); }
+    }
+    if e == 42u64 {
+        if v == 0u64 { return bytes.append(out, "none".as_slice()); }
+    }
+    if e == 43u64 {
+        if v == 0u64 { return bytes.append(out, "active".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "suspended".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "revoked".as_slice()); }
+    }
+    if e == 44u64 {
+        if v == 0u64 { return bytes.append(out, "dry_run".as_slice()); }
+    }
+    if e == 45u64 {
+        if v == 0u64 { return bytes.append(out, "required".as_slice()); }
+    }
+    if e == 46u64 {
+        if v == 0u64 { return bytes.append(out, "declared".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "active".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "suspended".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "revoked".as_slice()); }
+    }
+    if e == 47u64 {
+        if v == 0u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 48u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 49u64 {
+        if v == 0u64 { return bytes.append(out, "dry_run".as_slice()); }
+    }
+    if e == 50u64 {
+        if v == 0u64 { return bytes.append(out, "one_way".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "mutual".as_slice()); }
+    }
+    if e == 51u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 52u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 53u64 {
+        if v == 0u64 { return bytes.append(out, "metadata_only".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "evidence_only".as_slice()); }
+    }
+    if e == 54u64 {
+        if v == 0u64 { return bytes.append(out, "disabled".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 55u64 {
+        if v == 0u64 { return bytes.append(out, "denied".as_slice()); }
+    }
+    if e == 56u64 {
+        if v == 0u64 { return bytes.append(out, "local".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "package".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "bundle".as_slice()); }
+    }
+    if e == 57u64 {
+        if v == 0u64 { return bytes.append(out, "dry_run".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 58u64 {
+        if v == 0u64 { return bytes.append(out, "append_only".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 59u64 {
+        if v == 0u64 { return bytes.append(out, "identity".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "credential".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "handshake".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "evidence".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "policy".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 60u64 {
+        if v == 0u64 { return bytes.append(out, "required".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "complete".as_slice()); }
+    }
+    if e == 61u64 {
+        if v == 0u64 { return bytes.append(out, "declared_only".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "evidence_only".as_slice()); }
+    }
+    if e == 62u64 {
+        if v == 0u64 { return bytes.append(out, "agent".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "system".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "package".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "organization".as_slice()); }
+    }
+    if e == 63u64 {
+        if v == 0u64 { return bytes.append(out, "baseline".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "audit".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "regulated".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "experimental".as_slice()); }
+    }
+    if e == 64u64 {
+        if v == 0u64 { return bytes.append(out, "ai_agent".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "security".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "compliance".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "privacy".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "safety".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 65u64 {
+        if v == 0u64 { return bytes.append(out, "low".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "moderate".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "high".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "critical".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "unknown".as_slice()); }
+    }
+    if e == 66u64 {
+        if v == 0u64 { return bytes.append(out, "draft".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "reviewed".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "approved_internal".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "deprecated".as_slice()); }
+    }
+    if e == 67u64 {
+        if v == 0u64 { return bytes.append(out, "declared_only".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "evidence_mapped".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "manually_reviewed".as_slice()); }
+    }
+    if e == 68u64 {
+        if v == 0u64 { return bytes.append(out, "identity".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "credential".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "handshake".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "ledger".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "bridge".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "evidence".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "runtime_boundary".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "policy".as_slice()); }
+        if v == 8u64 { return bytes.append(out, "security".as_slice()); }
+        if v == 9u64 { return bytes.append(out, "privacy".as_slice()); }
+        if v == 10u64 { return bytes.append(out, "safety".as_slice()); }
+        if v == 11u64 { return bytes.append(out, "compliance".as_slice()); }
+        if v == 12u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 69u64 {
+        if v == 0u64 { return bytes.append(out, "mapped".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "pending_review".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "not_applicable".as_slice()); }
+    }
+    if e == 70u64 {
+        if v == 0u64 { return bytes.append(out, "mapped".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "partial".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "pending_review".as_slice()); }
+    }
+    if e == 71u64 {
+        if v == 0u64 { return bytes.append(out, "declared_only".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "evidence_mapped".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "manual_review_required".as_slice()); }
+    }
+    if e == 72u64 {
+        if v == 0u64 { return bytes.append(out, "mapped".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "pending_review".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "gap".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "not_applicable".as_slice()); }
+    }
+    if e == 73u64 {
+        if v == 0u64 { return bytes.append(out, "internal".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "community".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "academic".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "vendor".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "independent_lab".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 74u64 {
+        if v == 0u64 { return bytes.append(out, "declared".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "self_attested".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "independent_declared".as_slice()); }
+    }
+    if e == 75u64 {
+        if v == 0u64 { return bytes.append(out, "declared_only".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "document_only".as_slice()); }
+    }
+    if e == 76u64 {
+        if v == 0u64 { return bytes.append(out, "reproducible_artifacts".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "document_review".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "conformance_replay".as_slice()); }
+    }
+    if e == 77u64 {
+        if v == 0u64 { return bytes.append(out, "passed".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "failed".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "pending_review".as_slice()); }
+    }
+    if e == 78u64 {
+        if v == 0u64 { return bytes.append(out, "declared".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "replayable_locally".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "document_only".as_slice()); }
+    }
+    if e == 79u64 {
+        if v == 0u64 { return bytes.append(out, "draft".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "reviewed".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "published".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "deprecated".as_slice()); }
+    }
+    if e == 80u64 {
+        if v == 0u64 { return bytes.append(out, "conformance".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "evidence".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "security_report".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "governance".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "regulatory_mapping".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "bytecode".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "source".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "policy".as_slice()); }
+        if v == 8u64 { return bytes.append(out, "runtime_boundary".as_slice()); }
+        if v == 9u64 { return bytes.append(out, "custom".as_slice()); }
+    }
+    if e == 81u64 {
+        if v == 0u64 { return bytes.append(out, "mapped".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "pending_review".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "not_applicable".as_slice()); }
+    }
+    if e == 82u64 {
+        if v == 0u64 { return bytes.append(out, "declared_only".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "disabled".as_slice()); }
+    }
+    if e == 83u64 {
+        if v == 0u64 { return bytes.append(out, "mcp".as_slice()); }
+    }
+    if e == 84u64 {
+        if v == 0u64 { return bytes.append(out, "a2a".as_slice()); }
+    }
+    if e == 85u64 {
+        if v == 0u64 { return bytes.append(out, "inbound".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "outbound".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "bidirectional".as_slice()); }
+    }
+    if e == 86u64 {
+        if v == 0u64 { return bytes.append(out, "none".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    if e == 87u64 {
+        if v == 0u64 { return bytes.append(out, "policy_bound".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "declared_only".as_slice()); }
+    }
+    out
+}

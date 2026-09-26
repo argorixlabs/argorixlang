@@ -1,0 +1,58 @@
+core 0.1;
+module selfhost_agent.check_files;
+
+// The Argorix agent-language checker (ESP-018.C) over real files, through the
+// compiler-host boundary.
+// `files.txt` in the package root lists one relative path per line. Each
+// file is read, lexed, and its canonical dump (spec/language/check.md) written
+// to `dumps/<n>.check` in the build root, where n counts from 0. The result
+// is the number of dumps written, or 1000000 plus the failure digest of the
+// first read or write that failed.
+
+import stdlib.compiler_host;
+import stdlib.result;
+import stdlib.bytes;
+import compiler.agent_check;
+
+pub fn argorix_main(package: PackageRead, build: BuildWrite) -> u64 {
+    match compiler_host.read(package, "files.txt".as_slice()) {
+        BytesResult::Ok { value } => lex_each(package, build, value.as_slice()),
+        BytesResult::Err { failure } => 1000000u64 + result.failure_digest(failure),
+    }
+}
+
+fn lex_each(package: PackageRead, build: BuildWrite, list: Slice<u8>) -> u64 {
+    let mut written: u64 = 0u64;
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= list.length() {
+        if at == list.length() || list[at] == 10u8 {
+            if at > start {
+                let outcome: u64 = lex_one(package, build, list.slice(start, at), written);
+                if outcome != 0u64 {
+                    return outcome;
+                }
+                written += 1u64;
+            }
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    written
+}
+
+// 0 when the dump was written.
+fn lex_one(package: PackageRead, build: BuildWrite, file: Slice<u8>, number: u64) -> u64 {
+    let mut name: Buffer<u8> = bytes.append(Buffer::new(), "dumps/".as_slice());
+    name = bytes.append_decimal(name, number);
+    name = bytes.append(name, ".check".as_slice());
+    match compiler_host.read(package, file) {
+        BytesResult::Ok { value } => write_dump(build, name.as_slice(), value.as_slice()),
+        BytesResult::Err { failure } => 1000000u64 + result.failure_digest(failure),
+    }
+}
+
+fn write_dump(build: BuildWrite, name: Slice<u8>, source: Slice<u8>) -> u64 {
+    let printed: Buffer<u8> = agent_check.dump(source);
+    result.checked_digest(compiler_host.write(build, name, printed.as_slice()))
+}

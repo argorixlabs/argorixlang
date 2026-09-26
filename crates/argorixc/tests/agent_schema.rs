@@ -336,7 +336,89 @@ pub const FIELDS: u64 = 2u64;
         out.push_str("    }\n");
     }
     out.push_str("    out\n}\n");
+    // The words stage0 prints for each variant: `source_name` or `as_str` in
+    // ast.rs, or the words of a `source_enum!`.
+    let names = source_names();
+    out.push_str("\n// The word stage0 writes for variant `v` of enum `e` (`source_name` or\n// `as_str` in ast.rs). A variant with a value (`Unknown`) writes its value,\n// which the caller appends; this appends nothing for it.\npub fn append_source_name(out: Buffer<u8>, e: u64, v: u64) -> Buffer<u8> {\n");
+    for (number, item) in enums.iter().enumerate() {
+        let Some((_, words)) = names.iter().find(|(name, _)| *name == item.name) else {
+            continue;
+        };
+        let _ = writeln!(out, "    if e == {number}u64 {{");
+        for (variant, word) in words {
+            let index = item
+                .variants
+                .iter()
+                .position(|candidate| candidate.name == *variant)
+                .unwrap_or_else(|| {
+                    panic!("`{}::{variant}` has a word but is no variant", item.name)
+                });
+            let _ = writeln!(
+                out,
+                "        if v == {index}u64 {{ return bytes.append(out, \"{word}\".as_slice()); }}"
+            );
+        }
+        out.push_str("    }\n");
+    }
+    out.push_str("    out\n}\n");
     out
+}
+
+/// Each enum's (variant, word) pairs: the arms `Self::Variant => "word"` of
+/// its `source_name` or `as_str` in ast.rs, and the words of `source_enum!`.
+fn source_names() -> Vec<(String, Vec<(String, String)>)> {
+    let text = fs::read_to_string(root().join("crates/argorix_parser/src/ast.rs")).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    let mut found: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index];
+        if let Some(rest) = line.strip_prefix("source_enum!(") {
+            let name = rest.trim_end_matches(" {").to_string();
+            let mut words = Vec::new();
+            index += 1;
+            while lines[index] != "});" {
+                let (variant, word) = lines[index].trim().split_once(" => ").unwrap();
+                words.push((
+                    variant.to_string(),
+                    word.trim_end_matches(',').trim_matches('"').to_string(),
+                ));
+                index += 1;
+            }
+            found.push((name, words));
+        } else if let Some(rest) = line.strip_prefix("impl ") {
+            let name = rest.trim_end_matches(" {").to_string();
+            let mut in_names = false;
+            let mut words = Vec::new();
+            index += 1;
+            while lines[index] != "}" {
+                let body = lines[index].trim();
+                if body.starts_with("pub fn source_name(")
+                    || body.starts_with("pub const fn as_str(")
+                    || body.starts_with("pub fn as_str(")
+                {
+                    in_names = true;
+                } else if body.starts_with("pub fn ") || body.starts_with("pub const fn ") {
+                    in_names = false;
+                } else if in_names {
+                    if let Some(rest) = body.strip_prefix("Self::") {
+                        if let Some((variant, word)) = rest.split_once(" => \"") {
+                            if !variant.contains('(') {
+                                let word = word.trim_end_matches(',').trim_end_matches('"');
+                                words.push((variant.trim().to_string(), word.to_string()));
+                            }
+                        }
+                    }
+                }
+                index += 1;
+            }
+            if !words.is_empty() {
+                found.push((name, words));
+            }
+        }
+        index += 1;
+    }
+    found
 }
 
 #[test]

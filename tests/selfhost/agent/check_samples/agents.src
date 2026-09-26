@@ -1,0 +1,36 @@
+module demo
+type Q
+type R
+capability safe.read { level safe }
+capability admin { level restricted }
+capability boom { level dangerous }
+capability runtime.halt { level safe }
+capability state.write { level safe }
+capability runtime.guard { level safe }
+tool Search { capability admin input Q output R }
+tool Other { capability safe.read input R output R }
+model Chat { provider simulated capability boom input Q output R }
+agent Open {
+  receives Q from User
+  receives Q from Ghost
+  receives Missing
+  sends R to B
+  sends R to Nobody
+  sends Missing to User
+  capabilities { safe.read admin boom nope }
+  tools { Search Other Unknown }
+  models { Chat Ghost }
+  on Q as q { emit R to B emit R to Nowhere emit Missing to User trace x trace q halt facu(q) marron(z) other(q) call Search with q call Other with x call Nope with q ask Chat with z ask Nope with q }
+  on Q as again { }
+  on R as r { }
+  on Missing as m { }
+}
+agent B {
+  security { approval granted }
+  receives R from Open
+  capabilities { admin boom runtime.halt state.write runtime.guard }
+  tools { Search }
+  models { Chat }
+  on R as r { call Search with r ask Chat with r halt facu(r) marron(r) }
+}
+agent C { security { approval denied } capabilities { admin } }

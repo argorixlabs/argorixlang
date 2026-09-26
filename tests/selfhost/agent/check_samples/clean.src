@@ -1,0 +1,9 @@
+module demo
+type Q
+capability c.read { level safe }
+tool T { provider simulated capability c.read input Q output Q }
+agent A { receives Q capabilities { c.read } tools { T } on Q as q { call T with q trace q } }
+protocol P { User -> A: tell Q }
+policy Safe { require no_unhandled_messages on violation { action block trace required } }
+failure F { action block trace required }
+assert runtime_status completed

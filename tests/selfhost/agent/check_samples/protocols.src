@@ -1,0 +1,14 @@
+module demo
+type Q
+type R
+agent A { receives R from B sends Q to B }
+agent B { receives Q sends R to A }
+protocol P {
+  A -> B: tell Q
+  B -> A: ask R
+  A -> B: shout Q
+  B -> A: tell Q
+  User -> A: tell R
+  Ghost -> Nobody: tell Missing
+  A -> User: inform Q
+}

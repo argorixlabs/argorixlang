@@ -16,3 +16,4 @@ tests/selfhost/agent/samples/** -text
 tests/selfhost/agent/package/** -text
 tests/selfhost/agent/parser_samples/** -text
 tests/selfhost/agent/parse_package/** -text
+tests/selfhost/agent/check_samples/** -text
