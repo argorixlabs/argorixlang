@@ -23,7 +23,7 @@ use std::{env, fs};
 
 /// How many samples the Argorix checker matches today. Raise it with each
 /// group of checks ported; C is done when every sample matches.
-const MATCHED_AT_LEAST: usize = 533;
+const MATCHED_AT_LEAST: usize = 737;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

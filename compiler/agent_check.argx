@@ -24,6 +24,15 @@ struct Symbols {
     agents: Buffer<u64>,
     tools: Buffer<u64>,
     models: Buffer<u64>,
+    providers: Buffer<u64>,
+    features: Buffer<u64>,
+    secrets: Buffer<u64>,
+    adapters: Buffer<u64>,
+    adapter_profiles: Buffer<u64>,
+    cryptos: Buffer<u64>,
+    did_methods: Buffer<u64>,
+    atrust_boundaries: Buffer<u64>,
+    atrust_identities: Buffer<u64>,
     capabilities: Buffer<u64>,
     levels: Buffer<u64>,
     out: Buffer<u8>,
@@ -49,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -67,11 +76,25 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
         agents: Buffer::new(),
         tools: Buffer::new(),
         models: Buffer::new(),
+        providers: Buffer::new(),
+        features: Buffer::new(),
+        secrets: Buffer::new(),
+        adapters: Buffer::new(),
+        adapter_profiles: Buffer::new(),
+        cryptos: Buffer::new(),
+        did_methods: Buffer::new(),
+        atrust_boundaries: Buffer::new(),
+        atrust_identities: Buffer::new(),
         capabilities: Buffer::new(),
         levels: Buffer::new(),
         out: Buffer::new(),
     };
     y = collect_symbols(sl, n, st, program, y);
+    y = check_provider_contracts(sl, n, st, program, y);
+    y = check_features(sl, n, st, program, y);
+    y = check_secrets(sl, n, st, program, y);
+    y = check_cryptos(sl, n, st, program, y);
+    y = check_did_methods(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
     y = check_models(sl, n, st, program, y);
@@ -82,7 +105,12 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
 
 fn collect_symbols(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
     let mut y: Symbols = symbols;
-    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_TYPES);
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_PROVIDERS);
+    while link != 0u64 {
+        y.providers.push(get(sl, n, link - 1u64, 0u64));
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_TYPES);
     while link != 0u64 {
         let name: u64 = get(sl, n, link - 1u64, agent_schema.TYPE_DECL_NAME);
         if contains(sl, n, st, y.types.as_slice(), name) {
@@ -132,6 +160,7 @@ fn collect_symbols(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: 
         }
         link = n[link - 1u64].next;
     }
+    y = collect_more(sl, n, st, program, y);
     link = first(sl, n, program, agent_schema.PROGRAM_CAPABILITIES);
     while link != 0u64 {
         let capability: u64 = link - 1u64;
@@ -1014,4 +1043,485 @@ fn mismatched_binding(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st:
     y = put(y, "` does not match handler binding `".as_slice());
     y = text(y, sl, n, st, handler);
     close(y)
+}
+
+// ------------------------------------------------------------------ providers, features, secrets, crypto, DIDs
+
+// The duplicates stage0 reports after tools and models, before capabilities:
+// features, secrets, adapters, adapter profiles, cryptos, DID methods, trust
+// boundaries and identities.
+fn collect_more(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_FEATURES);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, 0u64);
+        if contains(sl, n, st, y.features.as_slice(), name) { y = duplicate(y, sl, n, st, name, "feature".as_slice()); } else { y.features.push(name); }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_SECRETS);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, 0u64);
+        if contains(sl, n, st, y.secrets.as_slice(), name) { y = duplicate(y, sl, n, st, name, "secret".as_slice()); } else { y.secrets.push(name); }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_ADAPTERS);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, 0u64);
+        if contains(sl, n, st, y.adapters.as_slice(), name) { y = duplicate(y, sl, n, st, name, "adapter".as_slice()); } else { y.adapters.push(name); }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_ADAPTER_PROFILES);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, 0u64);
+        if contains(sl, n, st, y.adapter_profiles.as_slice(), name) { y = duplicate(y, sl, n, st, name, "adapter_profile".as_slice()); } else { y.adapter_profiles.push(name); }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_CRYPTOS);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, 0u64);
+        if contains(sl, n, st, y.cryptos.as_slice(), name) { y = duplicate(y, sl, n, st, name, "crypto".as_slice()); } else { y.cryptos.push(name); }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_DID_METHODS);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, 0u64);
+        if contains(sl, n, st, y.did_methods.as_slice(), name) { y = duplicate(y, sl, n, st, name, "did_method".as_slice()); } else { y.did_methods.push(name); }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_ATRUST_BOUNDARIES);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, 0u64);
+        if contains(sl, n, st, y.atrust_boundaries.as_slice(), name) { y = duplicate(y, sl, n, st, name, "atrust_boundary".as_slice()); } else { y.atrust_boundaries.push(name); }
+        link = n[link - 1u64].next;
+    }
+    link = first(sl, n, program, agent_schema.PROGRAM_ATRUST_IDENTITIES);
+    while link != 0u64 {
+        let name: u64 = get(sl, n, link - 1u64, 0u64);
+        if contains(sl, n, st, y.atrust_identities.as_slice(), name) { y = duplicate(y, sl, n, st, name, "atrust_identity".as_slice()); } else { y.atrust_identities.push(name); }
+        link = n[link - 1u64].next;
+    }
+    y
+}
+
+fn check_provider_contracts(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_PROVIDERS);
+    while link != 0u64 {
+        let provider: u64 = link - 1u64;
+        link = n[provider].next;
+        let name: u64 = get(sl, n, provider, agent_schema.PROVIDER_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "provider".as_slice());
+        } else {
+            names.push(name);
+        }
+        if is(sl, n, st, name, "simulated".as_slice()) {
+            y = at(y, sl, n, name);
+            y = put(y, "`simulated` is the reserved executable provider and must not be declared as a provider contract\n".as_slice());
+        }
+        let kind: u64 = get(sl, n, provider, agent_schema.PROVIDER_DECL_KIND);
+        if n[value(sl, n, kind)].a != agent_schema.PROVIDER_KIND_DECL_EXTERNAL {
+            y = at(y, sl, n, kind);
+            y = put(y, "provider contract `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` must use kind `external` in v0.15\n".as_slice());
+        }
+        let enabled: u64 = get(sl, n, provider, agent_schema.PROVIDER_DECL_ENABLED);
+        if n[value(sl, n, enabled)].a == 1u64 {
+            y = at(y, sl, n, enabled);
+            y = put(y, "external provider contract `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` must be disabled\n".as_slice());
+        }
+        let dry_run_only: u64 = get(sl, n, provider, agent_schema.PROVIDER_DECL_DRY_RUN_ONLY);
+        if n[value(sl, n, dry_run_only)].a == 0u64 {
+            y = at(y, sl, n, dry_run_only);
+            y = put(y, "external provider contract `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` requires `dry_run_only true`\n".as_slice());
+        }
+        if n[get(sl, n, provider, agent_schema.PROVIDER_DECL_REQUIRES_FEATURE_FLAG)].a == 0u64 {
+            y = at(y, sl, n, name);
+            y = put(y, "external provider contract `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` requires `requires feature_flag`\n".as_slice());
+        }
+        if n[get(sl, n, provider, agent_schema.PROVIDER_DECL_REQUIRES_EXPLICIT_APPROVAL)].a == 0u64 {
+            y = at(y, sl, n, name);
+            y = put(y, "external provider contract `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` requires `requires approval`\n".as_slice());
+        }
+        let allowed_capabilities: u64 = get(sl, n, provider, agent_schema.PROVIDER_DECL_ALLOWED_CAPABILITIES);
+        let mut targets: Buffer<u64> = Buffer::new();
+        let mut target_link: u64 = first(sl, n, provider, agent_schema.PROVIDER_DECL_ALLOWED_TARGETS);
+        while target_link != 0u64 {
+            let target: u64 = target_link - 1u64;
+            target_link = n[target].next;
+            if contains(sl, n, st, targets.as_slice(), target) {
+                y = at(y, sl, n, target);
+                y = put(y, "duplicate allowed target `".as_slice());
+                y = text(y, sl, n, st, target);
+                y = close(y);
+                continue;
+            }
+            targets.push(target);
+            let tool: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_TOOLS, target);
+            let model: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_MODELS, target);
+            let mut capability: u64 = NONE;
+            if tool == NONE && model == NONE {
+                y = at(y, sl, n, target);
+                y = put(y, "unknown allowlist target `".as_slice());
+                y = text(y, sl, n, st, target);
+                y = close(y);
+            } else if tool != NONE && model != NONE {
+                y = at(y, sl, n, target);
+                y = put(y, "ambiguous allowlist target `".as_slice());
+                y = text(y, sl, n, st, target);
+                y = close(y);
+            } else if tool != NONE {
+                capability = get(sl, n, tool, agent_schema.TOOL_DECL_CAPABILITY);
+            } else {
+                capability = get(sl, n, model, agent_schema.MODEL_DECL_CAPABILITY);
+            }
+            if capability != NONE && n[allowed_capabilities].a != 0u64 && !in_list(sl, n, st, provider, agent_schema.PROVIDER_DECL_ALLOWED_CAPABILITIES, capability) {
+                y = at(y, sl, n, target);
+                y = put(y, "allowlist target `".as_slice());
+                y = text(y, sl, n, st, target);
+                y = put(y, "` requires capability `".as_slice());
+                y = text(y, sl, n, st, capability);
+                y = close(y);
+            }
+        }
+        let mut capabilities: Buffer<u64> = Buffer::new();
+        let mut capability_link: u64 = n[allowed_capabilities].a;
+        while capability_link != 0u64 {
+            let capability: u64 = capability_link - 1u64;
+            capability_link = n[capability].next;
+            if contains(sl, n, st, capabilities.as_slice(), capability) {
+                y = at(y, sl, n, capability);
+                y = put(y, "duplicate allowed capability `".as_slice());
+                y = text(y, sl, n, st, capability);
+                y = close(y);
+            } else {
+                capabilities.push(capability);
+            }
+            if !contains(sl, n, st, y.capabilities.as_slice(), capability) {
+                y = at(y, sl, n, capability);
+                y = put(y, "unknown allowlist capability `".as_slice());
+                y = text(y, sl, n, st, capability);
+                y = close(y);
+            }
+        }
+    }
+    y
+}
+
+// An enum field whose `Unknown` variant (`unknown`) holds the word: empty,
+// "<kind> `<name>` is missing required field `<field>`"; otherwise
+// "<kind> `<name>` has invalid <field> `<word>`<tail>".
+fn required_enum(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, kind: Slice<u8>, name: u64, field: Slice<u8>, spanned: u64, unknown: u64, tail: Slice<u8>) -> Symbols {
+    let variant: u64 = value(sl, n, spanned);
+    if n[variant].a != unknown {
+        return symbols;
+    }
+    let word: u64 = n[variant].b;
+    let mut y: Symbols = at(symbols, sl, n, spanned);
+    y = put(y, kind);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, name);
+    if n[word].b == n[word].a {
+        y = put(y, "` is missing required field `".as_slice());
+        y = put(y, field);
+        return close(y);
+    }
+    y = put(y, "` has invalid ".as_slice());
+    y = put(y, field);
+    y = put(y, " `".as_slice());
+    y = raw(y, n, st, word);
+    y = put(y, "`".as_slice());
+    y = put(y, tail);
+    put(y, "\n".as_slice())
+}
+
+fn check_features(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_FEATURES);
+    while link != 0u64 {
+        let feature: u64 = link - 1u64;
+        link = n[feature].next;
+        let name: u64 = get(sl, n, feature, agent_schema.FEATURE_DECL_NAME);
+        let provider: u64 = get(sl, n, feature, agent_schema.FEATURE_DECL_PROVIDER);
+        if provider != 0u64 && !contains(sl, n, st, y.providers.as_slice(), provider) {
+            y = at(y, sl, n, provider);
+            y = put(y, "feature `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` references unknown provider `".as_slice());
+            y = text(y, sl, n, st, provider);
+            y = close(y);
+        }
+        let status: u64 = get(sl, n, feature, agent_schema.FEATURE_DECL_STATUS);
+        y = required_enum(y, sl, n, st, "feature".as_slice(), name, "status".as_slice(), status, agent_schema.FEATURE_STATUS_UNKNOWN, "".as_slice());
+        let default: u64 = get(sl, n, feature, agent_schema.FEATURE_DECL_DEFAULT);
+        y = required_enum(y, sl, n, st, "feature".as_slice(), name, "default".as_slice(), default, agent_schema.FEATURE_DEFAULT_UNKNOWN, "".as_slice());
+        let purpose: u64 = get(sl, n, feature, agent_schema.FEATURE_DECL_PURPOSE);
+        if purpose != 0u64 && blank(sl, n, st, purpose) {
+            y = at(y, sl, n, purpose);
+            y = put(y, "feature `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` purpose must not be empty\n".as_slice());
+        }
+        let status_value: u64 = n[value(sl, n, status)].a;
+        let gated: bool = status_value == agent_schema.FEATURE_STATUS_EXPERIMENTAL || status_value == agent_schema.FEATURE_STATUS_PREVIEW;
+        if gated && n[get(sl, n, feature, agent_schema.FEATURE_DECL_REQUIRES_APPROVAL)].a == 0u64 {
+            y = at(y, sl, n, status);
+            y = put(y, "feature `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` is `".as_slice());
+            y = source_name(y, agent_schema.FEATURE_STATUS, status_value);
+            y = put(y, "` and requires `requires approval`\n".as_slice());
+        }
+        if provider != 0u64 && external_provider(sl, n, st, program, provider) && n[value(sl, n, default)].a != agent_schema.FEATURE_DEFAULT_DISABLED {
+            y = at(y, sl, n, default);
+            y = put(y, "feature `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` is linked to external provider `".as_slice());
+            y = text(y, sl, n, st, provider);
+            y = put(y, "` and must default to disabled\n".as_slice());
+        }
+    }
+    y
+}
+
+// Whether some provider named `name` is of kind `external`.
+fn external_provider(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, name: u64) -> bool {
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_PROVIDERS);
+    while link != 0u64 {
+        let provider: u64 = link - 1u64;
+        if same(sl, n, st, get(sl, n, provider, agent_schema.PROVIDER_DECL_NAME), name) && n[value(sl, n, get(sl, n, provider, agent_schema.PROVIDER_DECL_KIND))].a == agent_schema.PROVIDER_KIND_DECL_EXTERNAL {
+            return true;
+        }
+        link = n[provider].next;
+    }
+    false
+}
+
+fn check_secrets(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_SECRETS);
+    while link != 0u64 {
+        let secret: u64 = link - 1u64;
+        link = n[secret].next;
+        let name: u64 = get(sl, n, secret, agent_schema.SECRET_DECL_NAME);
+        let handle: u64 = get(sl, n, secret, agent_schema.SECRET_DECL_HANDLE);
+        if blank(sl, n, st, handle) {
+            y = at(y, sl, n, handle);
+            y = put(y, "secret `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` is missing required field `handle`\n".as_slice());
+        }
+        let provider: u64 = get(sl, n, secret, agent_schema.SECRET_DECL_PROVIDER);
+        if provider != 0u64 && !contains(sl, n, st, y.providers.as_slice(), provider) {
+            y = at(y, sl, n, provider);
+            y = put(y, "secret `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` references unknown provider `".as_slice());
+            y = text(y, sl, n, st, provider);
+            y = close(y);
+        }
+        let required_by: u64 = get(sl, n, secret, agent_schema.SECRET_DECL_REQUIRED_BY);
+        if required_by != 0u64 && !contains(sl, n, st, y.features.as_slice(), required_by) {
+            y = at(y, sl, n, required_by);
+            y = put(y, "secret `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` required_by references unknown feature `".as_slice());
+            y = text(y, sl, n, st, required_by);
+            y = close(y);
+        }
+        y = required_enum(y, sl, n, st, "secret".as_slice(), name, "scope".as_slice(), get(sl, n, secret, agent_schema.SECRET_DECL_SCOPE), agent_schema.SECRET_SCOPE_UNKNOWN, "".as_slice());
+        y = required_enum(y, sl, n, st, "secret".as_slice(), name, "access".as_slice(), get(sl, n, secret, agent_schema.SECRET_DECL_ACCESS), agent_schema.SECRET_ACCESS_UNKNOWN, "; only `denied` is allowed in v0.21".as_slice());
+        y = required_enum(y, sl, n, st, "secret".as_slice(), name, "source".as_slice(), get(sl, n, secret, agent_schema.SECRET_DECL_SOURCE), agent_schema.SECRET_SOURCE_UNKNOWN, "; only `none` is allowed in v0.21".as_slice());
+        if provider != 0u64 && required_by != 0u64 {
+            let feature: u64 = find_named(sl, n, st, program, agent_schema.PROGRAM_FEATURES, required_by);
+            if feature != NONE {
+                let feature_provider: u64 = get(sl, n, feature, agent_schema.FEATURE_DECL_PROVIDER);
+                if feature_provider != 0u64 && !same(sl, n, st, feature_provider, provider) {
+                    y = at(y, sl, n, provider);
+                    y = put(y, "secret `".as_slice());
+                    y = text(y, sl, n, st, name);
+                    y = put(y, "` provider `".as_slice());
+                    y = text(y, sl, n, st, provider);
+                    y = put(y, "` does not match feature `".as_slice());
+                    y = text(y, sl, n, st, get(sl, n, feature, agent_schema.FEATURE_DECL_NAME));
+                    y = put(y, "` provider `".as_slice());
+                    y = text(y, sl, n, st, feature_provider);
+                    y = close(y);
+                }
+            }
+        }
+    }
+    y
+}
+
+fn check_cryptos(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_CRYPTOS);
+    while link != 0u64 {
+        let crypto: u64 = link - 1u64;
+        link = n[crypto].next;
+        let name: u64 = get(sl, n, crypto, agent_schema.CRYPTO_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "crypto".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = required_enum(y, sl, n, st, "crypto".as_slice(), name, "kind".as_slice(), get(sl, n, crypto, agent_schema.CRYPTO_DECL_KIND), agent_schema.CRYPTO_KIND_UNKNOWN, "".as_slice());
+        y = required_enum(y, sl, n, st, "crypto".as_slice(), name, "status".as_slice(), get(sl, n, crypto, agent_schema.CRYPTO_DECL_STATUS), agent_schema.CRYPTO_STATUS_UNKNOWN, "".as_slice());
+        y = required_enum(y, sl, n, st, "crypto".as_slice(), name, "strength".as_slice(), get(sl, n, crypto, agent_schema.CRYPTO_DECL_STRENGTH), agent_schema.CRYPTO_STRENGTH_UNKNOWN_VALUE, "".as_slice());
+        let purpose: u64 = first(sl, n, crypto, agent_schema.CRYPTO_DECL_PURPOSE);
+        if purpose == 0u64 {
+            y = at(y, sl, n, name);
+            y = put(y, "crypto `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` is missing required field `purpose`\n".as_slice());
+        } else {
+            let mut item_link: u64 = purpose;
+            while item_link != 0u64 {
+                let item: u64 = item_link - 1u64;
+                item_link = n[item].next;
+                if blank(sl, n, st, item) {
+                    y = at(y, sl, n, item);
+                    y = put(y, "crypto `".as_slice());
+                    y = text(y, sl, n, st, name);
+                    y = put(y, "` has empty purpose item\n".as_slice());
+                }
+            }
+        }
+        let output_bits: u64 = get(sl, n, crypto, agent_schema.CRYPTO_DECL_OUTPUT_BITS);
+        if output_bits != 0u64 && n[value(sl, n, output_bits)].a == 0u64 {
+            y = at(y, sl, n, output_bits);
+            y = put(y, "crypto `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` has invalid output_bits 0\n".as_slice());
+        }
+        let min_key_bits: u64 = get(sl, n, crypto, agent_schema.CRYPTO_DECL_MIN_KEY_BITS);
+        if min_key_bits != 0u64 && n[value(sl, n, min_key_bits)].a == 0u64 {
+            y = at(y, sl, n, min_key_bits);
+            y = put(y, "crypto `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` has invalid min_key_bits 0\n".as_slice());
+        }
+        let notes: u64 = get(sl, n, crypto, agent_schema.CRYPTO_DECL_NOTES);
+        if notes != 0u64 && blank(sl, n, st, notes) {
+            y = at(y, sl, n, notes);
+            y = put(y, "crypto `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` has empty notes\n".as_slice());
+        }
+    }
+    y
+}
+
+fn check_did_methods(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_DID_METHODS);
+    while link != 0u64 {
+        let method: u64 = link - 1u64;
+        link = n[method].next;
+        let name: u64 = get(sl, n, method, agent_schema.DID_METHOD_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "did_method".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = missing_unknown(y, sl, n, st, name, "status".as_slice(), get(sl, n, method, agent_schema.DID_METHOD_DECL_STATUS), agent_schema.DID_METHOD_STATUS_UNKNOWN);
+        let resolution: u64 = get(sl, n, method, agent_schema.DID_METHOD_DECL_RESOLUTION);
+        y = missing_unknown(y, sl, n, st, name, "resolution".as_slice(), resolution, agent_schema.DID_RESOLUTION_MODE_UNKNOWN);
+        y = missing_unknown(y, sl, n, st, name, "ledger".as_slice(), get(sl, n, method, agent_schema.DID_METHOD_DECL_LEDGER), agent_schema.DID_LEDGER_MODE_UNKNOWN);
+        let boundary: u64 = get(sl, n, method, agent_schema.DID_METHOD_DECL_CRYPTO_BOUNDARY);
+        if is(sl, n, st, boundary, "".as_slice()) {
+            y = at(y, sl, n, boundary);
+            y = put(y, "did_method `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` is missing required field `crypto_boundary`\n".as_slice());
+        }
+        let purpose: u64 = first(sl, n, method, agent_schema.DID_METHOD_DECL_PURPOSE);
+        if purpose == 0u64 {
+            y = at(y, sl, n, name);
+            y = put(y, "did_method `".as_slice());
+            y = text(y, sl, n, st, name);
+            y = put(y, "` is missing required field `purpose`\n".as_slice());
+        }
+        let mut item_link: u64 = purpose;
+        while item_link != 0u64 {
+            let item: u64 = item_link - 1u64;
+            item_link = n[item].next;
+            if blank(sl, n, st, item) {
+                y = at(y, sl, n, item);
+                y = put(y, "purpose entries must be non-empty\n".as_slice());
+            }
+        }
+        let mode: u64 = value(sl, n, resolution);
+        if n[mode].a == agent_schema.DID_RESOLUTION_MODE_UNKNOWN && (raw_is(n, st, n[mode].b, "remote".as_slice()) || raw_is(n, st, n[mode].b, "network".as_slice()) || raw_is(n, st, n[mode].b, "live".as_slice()) || raw_is(n, st, n[mode].b, "distributed".as_slice())) {
+            y = at(y, sl, n, resolution);
+            y = put(y, "resolution `remote`/`network`/`live`/`distributed` not permitted in v0.26\n".as_slice());
+        }
+    }
+    y
+}
+
+// "did_method `<name>` is missing required field `<field>`" when the field is
+// an empty `Unknown`.
+fn missing_unknown(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, name: u64, field: Slice<u8>, spanned: u64, unknown: u64) -> Symbols {
+    let variant: u64 = value(sl, n, spanned);
+    if n[variant].a != unknown || n[n[variant].b].b != n[n[variant].b].a {
+        return symbols;
+    }
+    let mut y: Symbols = at(symbols, sl, n, spanned);
+    y = put(y, "did_method `".as_slice());
+    y = text(y, sl, n, st, name);
+    y = put(y, "` is missing required field `".as_slice());
+    y = put(y, field);
+    close(y)
+}
+
+// Whether a `Spanned<String>` is empty once Unicode white space is trimmed,
+// as Rust's `str::trim` trims it.
+fn blank(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64) -> bool {
+    let string: u64 = value(sl, n, spanned);
+    let mut at_byte: u64 = n[string].a;
+    let end: u64 = n[string].b;
+    while at_byte < end {
+        let lead: u8 = st[at_byte];
+        if lead < 128u8 {
+            if !(lead == 32u8 || (lead >= 9u8 && lead <= 13u8)) {
+                return false;
+            }
+            at_byte += 1u64;
+        } else if lead < 224u8 {
+            // U+0085 and U+00A0.
+            let next: u8 = st[at_byte + 1u64];
+            if !(lead == 194u8 && (next == 133u8 || next == 160u8)) {
+                return false;
+            }
+            at_byte += 2u64;
+        } else if lead < 240u8 {
+            let second: u8 = st[at_byte + 1u64];
+            let third: u8 = st[at_byte + 2u64];
+            // U+1680; U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F; U+3000.
+            let ogham: bool = lead == 225u8 && second == 154u8 && third == 128u8;
+            let general: bool = lead == 226u8 && ((second == 128u8 && (third <= 138u8 || third == 168u8 || third == 169u8 || third == 175u8)) || (second == 129u8 && third == 159u8));
+            let ideographic: bool = lead == 227u8 && second == 128u8 && third == 128u8;
+            if !(ogham || general || ideographic) {
+                return false;
+            }
+            at_byte += 3u64;
+        } else {
+            return false;
+        }
+    }
+    true
 }
