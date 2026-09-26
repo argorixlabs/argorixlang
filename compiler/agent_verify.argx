@@ -18,6 +18,7 @@ import stdlib.bytes;
 import stdlib.text;
 import stdlib.result;
 import compiler.agent_bytecode_schema;
+import compiler.agent_check;
 
 // A value of the tree. Objects keep their fields in slots
 // (`a` the first, `b` the struct); arrays and maps link their elements
@@ -1526,6 +1527,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
         result: 0u64,
     };
     r = de_struct(source, r, agent_bytecode_schema.BS_PROGRAM);
+    let program: u64 = r.result;
     if !r.failed {
         r = whitespace(source, r);
         if r.index < source.length() {
@@ -1547,8 +1549,20 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
         out.push(10u8);
         return out;
     }
-    // The verifier's checks are not ported yet.
-    bytes.copy("unsupported\n".as_slice())
+    decide(r.nodes.as_slice(), r.slots.as_slice(), r.strings.as_slice(), program)
+}
+
+// `ok`, or the verifier's errors; `unsupported` for metadata whose checks
+// are not ported yet.
+fn decide(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, program: u64) -> Buffer<u8> {
+    if unported(n, sl, program) {
+        return bytes.copy("unsupported\n".as_slice());
+    }
+    let out: Buffer<u8> = verify(n, sl, st, program);
+    if out.length() == 0u64 {
+        return bytes.copy("ok\n".as_slice());
+    }
+    out
 }
 
 // Bytes `a..b` of `strings`, copied.
@@ -1559,4 +1573,633 @@ fn copy_range(strings: Slice<u8>, a: u64, b: u64) -> Buffer<u8> {
 // Whether bytes `a..b` of `strings` are `word`.
 fn range_is(strings: Slice<u8>, a: u64, b: u64, word: Slice<u8>) -> bool {
     bytes.equal(strings.slice(a, b), word)
+}
+
+// ------------------------------------------------------------------ the verifier
+
+// The tree as the verifier reads it: `n` the values, `sl` the slots, `st`
+// the strings.
+
+fn fld(n: Slice<Value>, sl: Slice<u64>, object: u64, field: u64) -> u64 {
+    sl[n[object].a + field]
+}
+
+fn text_is(n: Slice<Value>, st: Slice<u8>, node: u64, word: Slice<u8>) -> bool {
+    bytes.equal(st.slice(n[node].a, n[node].b), word)
+}
+
+fn same_text(n: Slice<Value>, st: Slice<u8>, left: u64, right: u64) -> bool {
+    bytes.equal(st.slice(n[left].a, n[left].b), st.slice(n[right].a, n[right].b))
+}
+
+// `trim().is_empty()`, Unicode white space as Rust trims it.
+fn blank(n: Slice<Value>, st: Slice<u8>, node: u64) -> bool {
+    agent_check.trim_start(st, n[node].a, n[node].b) == n[node].b
+}
+
+fn is_empty(n: Slice<Value>, list: u64) -> bool {
+    n[list].a == 0u64
+}
+
+// Whether list `list` has an element whose text (field `field` of it, or
+// the element itself when `field` is NONE) equals node `wanted`.
+fn list_has(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, list: u64, field: u64, wanted: u64) -> bool {
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        let mut value: u64 = item;
+        if field != NONE {
+            value = fld(n, sl, item, field);
+        }
+        if same_text(n, st, value, wanted) {
+            return true;
+        }
+    }
+    false
+}
+
+// Whether list `list` has, before element `before`, one whose text equals
+// that of node `wanted`: a `HashSet::insert` that fails.
+fn seen_before(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, list: u64, field: u64, before: u64, wanted: u64) -> bool {
+    let mut link: u64 = n[list].a;
+    while link != 0u64 && link - 1u64 != before {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        let mut value: u64 = item;
+        if field != NONE {
+            value = fld(n, sl, item, field);
+        }
+        if same_text(n, st, value, wanted) {
+            return true;
+        }
+    }
+    false
+}
+
+fn put(out: Buffer<u8>, value: Slice<u8>) -> Buffer<u8> {
+    bytes.append(out, value)
+}
+
+fn put_text(out: Buffer<u8>, n: Slice<Value>, st: Slice<u8>, node: u64) -> Buffer<u8> {
+    bytes.append(out, st.slice(n[node].a, n[node].b))
+}
+
+fn line(out: Buffer<u8>, value: Slice<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = bytes.append(out, value);
+    o.push(10u8);
+    o
+}
+
+// "<head>`<text>`<tail>" and a line feed.
+fn named(out: Buffer<u8>, n: Slice<Value>, st: Slice<u8>, head: Slice<u8>, node: u64, tail: Slice<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = bytes.append(out, head);
+    o.push(96u8);
+    o = put_text(o, n, st, node);
+    o.push(96u8);
+    o = bytes.append(o, tail);
+    o.push(10u8);
+    o
+}
+
+// "invalid <kind> `<name>`: <reason><text>`" when `node` is not NONE,
+// else "...: <reason>".
+fn invalid(out: Buffer<u8>, n: Slice<Value>, st: Slice<u8>, kind: Slice<u8>, name: u64, reason: Slice<u8>, node: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = bytes.append(out, "invalid ".as_slice());
+    o = bytes.append(o, kind);
+    o = bytes.append(o, " `".as_slice());
+    o = put_text(o, n, st, name);
+    o = bytes.append(o, "`: ".as_slice());
+    o = bytes.append(o, reason);
+    if node != NONE {
+        o = put_text(o, n, st, node);
+        o.push(96u8);
+    }
+    o.push(10u8);
+    o
+}
+
+// The versions `verify_bytecode` supports, in order; NONE for another.
+fn version_rank(n: Slice<Value>, st: Slice<u8>, version: u64) -> u64 {
+    let v: Slice<u8> = st.slice(n[version].a, n[version].b);
+    if bytes.equal(v, "0.3".as_slice()) { return 3u64; }
+    if bytes.equal(v, "0.5".as_slice()) { return 5u64; }
+    let mut minor: u64 = 6u64;
+    while minor <= 36u64 {
+        let mut word: Buffer<u8> = bytes.append(Buffer::new(), "0.".as_slice());
+        word = bytes.append_decimal(word, minor);
+        if bytes.equal(v, word.as_slice()) {
+            return minor;
+        }
+        minor += 1u64;
+    }
+    if bytes.equal(v, "1.0".as_slice()) { return 100u64; }
+    NONE
+}
+
+// Whether the version is at least 0.<minor> (1.0 for 100).
+fn at_least(rank: u64, minor: u64) -> bool {
+    rank != NONE && rank >= minor
+}
+
+pub fn verify(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    let version: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION);
+    let rank: u64 = version_rank(n, st, version);
+    if blank(n, st, version) {
+        out = line(out, "bytecode_version is required".as_slice());
+    } else if rank == NONE {
+        out = named(out, n, st, "unsupported bytecode version ".as_slice(), version, "".as_slice());
+    }
+    let agents: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__AGENTS);
+    if is_empty(n, agents) {
+        out = line(out, "bytecode must declare at least one agent".as_slice());
+    }
+    let providers: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS);
+    if !at_least(rank, 11u64) && !is_empty(n, providers) {
+        out = line(out, "provider contracts require bytecode version 0.11 through 0.15".as_slice());
+    }
+    let modules: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__MODULES);
+    let imports: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__IMPORTS);
+    if (!is_empty(n, modules) || !is_empty(n, imports)) && !at_least(rank, 16u64) {
+        out = line(out, "module metadata requires bytecode version 0.16".as_slice());
+    }
+    let mut link: u64 = n[imports].a;
+    while link != 0u64 {
+        let import: u64 = link - 1u64;
+        link = n[import].next;
+        let from: u64 = fld(n, sl, import, agent_bytecode_schema.BS_MODULE_IMPORT__FROM);
+        let to: u64 = fld(n, sl, import, agent_bytecode_schema.BS_MODULE_IMPORT__TO);
+        if !list_has(n, sl, st, modules, agent_bytecode_schema.BS_MODULE__NAME, from) {
+            out = named(out, n, st, "module import edge references unknown module ".as_slice(), from, "".as_slice());
+        }
+        if !list_has(n, sl, st, modules, agent_bytecode_schema.BS_MODULE__NAME, to) {
+            out = named(out, n, st, "module import edge references unknown module ".as_slice(), to, "".as_slice());
+        }
+    }
+    let policies: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__POLICIES);
+    if !is_empty(n, policies) && !at_least(rank, 17u64) {
+        out = line(out, "policy metadata requires bytecode version 0.17".as_slice());
+    }
+    out = validate_policies(out, n, sl, st, policies);
+    out = validate_message_contracts(out, n, sl, st, p, rank);
+    verify_rest(out, n, sl, st, p, rank)
+}
+
+fn validate_policies(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, policies: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let mut link: u64 = n[policies].a;
+    while link != 0u64 {
+        let policy: u64 = link - 1u64;
+        link = n[policy].next;
+        let name: u64 = fld(n, sl, policy, agent_bytecode_schema.BS_POLICY__NAME);
+        if blank(n, st, name) {
+            o = invalid(o, n, st, "policy".as_slice(), name, "name must not be empty".as_slice(), NONE);
+        } else if seen_named(n, sl, st, policies, agent_bytecode_schema.BS_POLICY__NAME, policy, name) {
+            o = named(o, n, st, "duplicate policy ".as_slice(), name, "".as_slice());
+        }
+        let mut required: Buffer<u64> = Buffer::new();
+        let mut denied: Buffer<u64> = Buffer::new();
+        let mut rule_link: u64 = n[fld(n, sl, policy, agent_bytecode_schema.BS_POLICY__RULES)].a;
+        while rule_link != 0u64 {
+            let rule: u64 = rule_link - 1u64;
+            rule_link = n[rule].next;
+            let effect: u64 = fld(n, sl, rule, agent_bytecode_schema.BS_POLICY_RULE__EFFECT);
+            let word: u64 = fld(n, sl, rule, agent_bytecode_schema.BS_POLICY_RULE__RULE);
+            let require: bool = text_is(n, st, effect, "require".as_slice());
+            if !require && !text_is(n, st, effect, "deny".as_slice()) {
+                o = invalid(o, n, st, "policy".as_slice(), name, "unknown effect `".as_slice(), effect);
+            } else if !agent_bytecode_schema.known_rule(st.slice(n[word].a, n[word].b)) {
+                o = invalid(o, n, st, "policy".as_slice(), name, "unknown rule `".as_slice(), word);
+            } else {
+                let mut current_has: bool = in_nodes(n, st, required.as_slice(), word);
+                let mut opposite_has: bool = in_nodes(n, st, denied.as_slice(), word);
+                if require {
+                    required.push(word);
+                } else {
+                    current_has = in_nodes(n, st, denied.as_slice(), word);
+                    opposite_has = in_nodes(n, st, required.as_slice(), word);
+                    denied.push(word);
+                }
+                if current_has {
+                    let mut reason: Buffer<u8> = bytes.append(Buffer::new(), "duplicate ".as_slice());
+                    reason = put_text(reason, n, st, effect);
+                    reason = bytes.append(reason, " rule `".as_slice());
+                    o = invalid(o, n, st, "policy".as_slice(), name, reason.as_slice(), word);
+                }
+                if opposite_has {
+                    o = invalid(o, n, st, "policy".as_slice(), name, "contradictory rule `".as_slice(), word);
+                }
+            }
+        }
+        let violation: u64 = fld(n, sl, policy, agent_bytecode_schema.BS_POLICY__ON_VIOLATION);
+        if n[violation].kind == V_OBJECT {
+            let action: u64 = fld(n, sl, violation, agent_bytecode_schema.BS_POLICY_VIOLATION__ACTION);
+            if !(text_is(n, st, action, "block".as_slice()) || text_is(n, st, action, "review".as_slice()) || text_is(n, st, action, "warn".as_slice())) {
+                o = invalid(o, n, st, "policy".as_slice(), name, "unknown action `".as_slice(), action);
+            }
+        }
+    }
+    o
+}
+
+// A `HashSet` of names that only takes the non-blank ones: whether an
+// earlier element with a non-blank name has this one.
+fn seen_named(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, list: u64, field: u64, before: u64, name: u64) -> bool {
+    let mut link: u64 = n[list].a;
+    while link != 0u64 && link - 1u64 != before {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        let other: u64 = fld(n, sl, item, field);
+        if !blank(n, st, other) && same_text(n, st, other, name) {
+            return true;
+        }
+    }
+    false
+}
+
+fn in_nodes(n: Slice<Value>, st: Slice<u8>, nodes: Slice<u64>, wanted: u64) -> bool {
+    let mut index: u64 = 0u64;
+    while index < nodes.length() {
+        if same_text(n, st, nodes[index], wanted) {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
+}
+
+// Whether `name` is a declared type or enum.
+fn declared_type(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, name: u64) -> bool {
+    list_has(n, sl, st, fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TYPES), agent_bytecode_schema.BS_TYPE__NAME, name) || list_has(n, sl, st, fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ENUMS), NONE, name)
+}
+
+fn validate_message_contracts(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let types: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TYPES);
+    let enums: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ENUMS);
+    if (!is_empty(n, types) || !is_empty(n, enums)) && !at_least(rank, 18u64) {
+        o = line(o, "message contracts require bytecode version 0.18".as_slice());
+    }
+    let mut link: u64 = n[types].a;
+    while link != 0u64 {
+        let contract: u64 = link - 1u64;
+        link = n[contract].next;
+        let name: u64 = fld(n, sl, contract, agent_bytecode_schema.BS_TYPE__NAME);
+        if seen_before(n, sl, st, types, agent_bytecode_schema.BS_TYPE__NAME, contract, name) {
+            o = invalid(o, n, st, "message contract".as_slice(), name, "duplicate type name".as_slice(), NONE);
+        }
+        let fields: u64 = fld(n, sl, contract, agent_bytecode_schema.BS_TYPE__FIELDS);
+        let mut field_link: u64 = n[fields].a;
+        while field_link != 0u64 {
+            let field: u64 = field_link - 1u64;
+            field_link = n[field].next;
+            let field_name: u64 = fld(n, sl, field, agent_bytecode_schema.BS_TYPE_FIELD__NAME);
+            if seen_before(n, sl, st, fields, agent_bytecode_schema.BS_TYPE_FIELD__NAME, field, field_name) {
+                o = invalid(o, n, st, "message contract".as_slice(), name, "duplicate field `".as_slice(), field_name);
+            }
+            let field_type: u64 = fld(n, sl, field, agent_bytecode_schema.BS_TYPE_FIELD__FIELD_TYPE);
+            let primitive: bool = text_is(n, st, field_type, "string".as_slice()) || text_is(n, st, field_type, "bool".as_slice()) || text_is(n, st, field_type, "int".as_slice()) || text_is(n, st, field_type, "float".as_slice());
+            if !primitive && !declared_type(n, sl, st, p, field_type) {
+                o = invalid(o, n, st, "message contract".as_slice(), name, "unknown field type `".as_slice(), field_type);
+            }
+        }
+    }
+    o
+}
+
+// `invalid_contract_reason`.
+fn contract_reason(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, contract: u64) -> Buffer<u8> {
+    let name: u64 = fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME);
+    let kind: u64 = fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__KIND);
+    let flag: bool = n[fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__ENABLED)].a == 1u64;
+    let dry: bool = n[fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__DRY_RUN_ONLY)].a == 1u64;
+    let feature: bool = n[fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__REQUIRES_FEATURE_FLAG)].a == 1u64;
+    let approval: bool = n[fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__REQUIRES_EXPLICIT_APPROVAL)].a == 1u64;
+    if blank(n, st, name) {
+        return invalid(out, n, st, "provider contract".as_slice(), name, "name must not be empty".as_slice(), NONE);
+    }
+    if text_is(n, st, name, "simulated".as_slice()) {
+        return invalid(out, n, st, "provider contract".as_slice(), name, "`simulated` is reserved for the executable provider".as_slice(), NONE);
+    }
+    if !text_is(n, st, kind, "external".as_slice()) {
+        return invalid(out, n, st, "provider contract".as_slice(), name, "kind must be external".as_slice(), NONE);
+    }
+    if flag {
+        return invalid(out, n, st, "provider contract".as_slice(), name, "external contracts must be disabled".as_slice(), NONE);
+    }
+    if !dry {
+        return invalid(out, n, st, "provider contract".as_slice(), name, "external contracts must be dry-run-only".as_slice(), NONE);
+    }
+    if !feature {
+        return invalid(out, n, st, "provider contract".as_slice(), name, "external contracts require a feature flag".as_slice(), NONE);
+    }
+    if !approval {
+        return invalid(out, n, st, "provider contract".as_slice(), name, "external contracts require explicit approval".as_slice(), NONE);
+    }
+    out
+}
+
+// The main body after the metadata validators: providers, tools, models,
+// allowlists, and the instructions.
+fn verify_rest(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let providers: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS);
+    let capabilities: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__CAPABILITIES);
+    let tools: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TOOLS);
+    let models: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__MODELS);
+    let agents: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__AGENTS);
+    let mut link: u64 = n[providers].a;
+    while link != 0u64 {
+        let contract: u64 = link - 1u64;
+        link = n[contract].next;
+        let name: u64 = fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME);
+        if seen_before(n, sl, st, providers, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME, contract, name) {
+            o = named(o, n, st, "duplicate provider contract ".as_slice(), name, "".as_slice());
+        }
+        o = contract_reason(o, n, sl, st, contract);
+    }
+    let typed: bool = at_least(rank, 18u64);
+    link = n[tools].a;
+    while link != 0u64 {
+        let tool: u64 = link - 1u64;
+        link = n[tool].next;
+        let name: u64 = fld(n, sl, tool, agent_bytecode_schema.BS_TOOL__NAME);
+        let provider: u64 = fld(n, sl, tool, agent_bytecode_schema.BS_TOOL__PROVIDER);
+        let capability: u64 = fld(n, sl, tool, agent_bytecode_schema.BS_TOOL__CAPABILITY);
+        if !text_is(n, st, provider, "simulated".as_slice()) {
+            o = named(o, n, st, "unsupported tool provider ".as_slice(), provider, "".as_slice());
+        }
+        if !list_has(n, sl, st, capabilities, agent_bytecode_schema.BS_CAPABILITY__NAME, capability) {
+            o = put(o, "bytecode tool `".as_slice());
+            o = put_text(o, n, st, name);
+            o = named(o, n, st, "` references unknown capability ".as_slice(), capability, "".as_slice());
+        }
+        if typed {
+            o = payload_type(o, n, sl, st, p, "bytecode tool `".as_slice(), name, "input".as_slice(), fld(n, sl, tool, agent_bytecode_schema.BS_TOOL__INPUT));
+            o = payload_type(o, n, sl, st, p, "bytecode tool `".as_slice(), name, "output".as_slice(), fld(n, sl, tool, agent_bytecode_schema.BS_TOOL__OUTPUT));
+        }
+    }
+    link = n[models].a;
+    while link != 0u64 {
+        let model: u64 = link - 1u64;
+        link = n[model].next;
+        let name: u64 = fld(n, sl, model, agent_bytecode_schema.BS_MODEL__NAME);
+        let provider: u64 = fld(n, sl, model, agent_bytecode_schema.BS_MODEL__PROVIDER);
+        let capability: u64 = fld(n, sl, model, agent_bytecode_schema.BS_MODEL__CAPABILITY);
+        if !text_is(n, st, provider, "simulated".as_slice()) {
+            o = named(o, n, st, "unsupported model provider ".as_slice(), provider, "".as_slice());
+        }
+        if !list_has(n, sl, st, capabilities, agent_bytecode_schema.BS_CAPABILITY__NAME, capability) {
+            o = named(o, n, st, "bytecode model ".as_slice(), name, " is not declared or has invalid capability".as_slice());
+        }
+        if typed {
+            o = payload_type(o, n, sl, st, p, "bytecode model `".as_slice(), name, "input".as_slice(), fld(n, sl, model, agent_bytecode_schema.BS_MODEL__INPUT));
+            o = payload_type(o, n, sl, st, p, "bytecode model `".as_slice(), name, "output".as_slice(), fld(n, sl, model, agent_bytecode_schema.BS_MODEL__OUTPUT));
+        }
+    }
+    o = allowlists(o, n, sl, st, p, rank);
+    if !contracts_declared(n, sl, st, p) {
+        o = line(o, "provider contract declarations do not match the top-level providers collection".as_slice());
+    }
+    let instructions: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS);
+    let mut protocol_or_message: bool = false;
+    let mut last: u64 = NONE;
+    link = n[instructions].a;
+    while link != 0u64 {
+        let instruction: u64 = link - 1u64;
+        link = n[instruction].next;
+        last = instruction;
+        let op: u64 = n[instruction].a;
+        let fields: u64 = n[instruction].b;
+        if op == agent_bytecode_schema.OP_DECLARE_PROTOCOL {
+            protocol_or_message = true;
+        } else if op == agent_bytecode_schema.OP_DECLARE_HANDLER {
+            protocol_or_message = true;
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_bytecode_schema.BS_OP_DECLARE_HANDLER__AGENT), "handler instruction references unknown agent ".as_slice());
+        } else if op == agent_bytecode_schema.OP_SEND_MESSAGE {
+            protocol_or_message = true;
+            let from: u64 = fld(n, sl, fields, agent_bytecode_schema.BS_OP_SEND_MESSAGE__FROM);
+            let to: u64 = fld(n, sl, fields, agent_bytecode_schema.BS_OP_SEND_MESSAGE__TO);
+            if blank(n, st, from) {
+                o = line(o, "SendMessage field `from` must not be empty".as_slice());
+            }
+            if blank(n, st, to) {
+                o = line(o, "SendMessage field `to` must not be empty".as_slice());
+            }
+            if blank(n, st, fld(n, sl, fields, agent_bytecode_schema.BS_OP_SEND_MESSAGE__ACT)) {
+                o = line(o, "SendMessage field `act` must not be empty".as_slice());
+            }
+            if blank(n, st, fld(n, sl, fields, agent_bytecode_schema.BS_OP_SEND_MESSAGE__MESSAGE_TYPE)) {
+                o = line(o, "SendMessage field `message_type` must not be empty".as_slice());
+            }
+            if !list_has(n, sl, st, agents, agent_bytecode_schema.BS_AGENT__NAME, from) && !external_entity(n, st, from) {
+                o = named(o, n, st, "unknown sender ".as_slice(), from, " in SendMessage instruction".as_slice());
+            }
+            if !list_has(n, sl, st, agents, agent_bytecode_schema.BS_AGENT__NAME, to) && !external_entity(n, st, to) {
+                o = named(o, n, st, "unknown receiver ".as_slice(), to, " in SendMessage instruction".as_slice());
+            }
+        } else if op == agent_bytecode_schema.OP_REQUIRE_APPROVAL {
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_bytecode_schema.BS_OP_REQUIRE_APPROVAL__AGENT), "RequireApproval references unknown agent ".as_slice());
+        } else if op == agent_bytecode_schema.OP_REQUIRE_CAPABILITY {
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_bytecode_schema.BS_OP_REQUIRE_CAPABILITY__AGENT), "RequireCapability references unknown agent ".as_slice());
+        } else if op == agent_bytecode_schema.OP_AUTHORIZE_TOOL || op == agent_bytecode_schema.OP_CALL_TOOL {
+            let mut agent_field: u64 = agent_bytecode_schema.BS_OP_AUTHORIZE_TOOL__AGENT;
+            let mut tool_field: u64 = agent_bytecode_schema.BS_OP_AUTHORIZE_TOOL__TOOL;
+            if op == agent_bytecode_schema.OP_CALL_TOOL {
+                agent_field = agent_bytecode_schema.BS_OP_CALL_TOOL__AGENT;
+                tool_field = agent_bytecode_schema.BS_OP_CALL_TOOL__TOOL;
+            }
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_field), "handler instruction references unknown agent ".as_slice());
+            let tool: u64 = fld(n, sl, fields, tool_field);
+            if !list_has(n, sl, st, tools, agent_bytecode_schema.BS_TOOL__NAME, tool) {
+                o = named(o, n, st, "bytecode tool ".as_slice(), tool, " is not declared".as_slice());
+            }
+        } else if op == agent_bytecode_schema.OP_AUTHORIZE_MODEL || op == agent_bytecode_schema.OP_ASK_MODEL {
+            let mut agent_field: u64 = agent_bytecode_schema.BS_OP_AUTHORIZE_MODEL__AGENT;
+            let mut model_field: u64 = agent_bytecode_schema.BS_OP_AUTHORIZE_MODEL__MODEL;
+            if op == agent_bytecode_schema.OP_ASK_MODEL {
+                agent_field = agent_bytecode_schema.BS_OP_ASK_MODEL__AGENT;
+                model_field = agent_bytecode_schema.BS_OP_ASK_MODEL__MODEL;
+            }
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_field), "handler instruction references unknown agent ".as_slice());
+            let model: u64 = fld(n, sl, fields, model_field);
+            if !list_has(n, sl, st, models, agent_bytecode_schema.BS_MODEL__NAME, model) {
+                o = named(o, n, st, "bytecode model ".as_slice(), model, " is not declared or has invalid capability".as_slice());
+            }
+        } else if op == agent_bytecode_schema.OP_EMIT_MESSAGE {
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_bytecode_schema.BS_OP_EMIT_MESSAGE__AGENT), "handler instruction references unknown agent ".as_slice());
+        } else if op == agent_bytecode_schema.OP_TRACE_VALUE {
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_bytecode_schema.BS_OP_TRACE_VALUE__AGENT), "handler instruction references unknown agent ".as_slice());
+        } else if op == agent_bytecode_schema.OP_HANDLER_HALT {
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_bytecode_schema.BS_OP_HANDLER_HALT__AGENT), "handler instruction references unknown agent ".as_slice());
+        } else if op == agent_bytecode_schema.OP_INVOKE_INTRINSIC {
+            o = known_agent(o, n, sl, st, agents, fld(n, sl, fields, agent_bytecode_schema.BS_OP_INVOKE_INTRINSIC__AGENT), "handler instruction references unknown agent ".as_slice());
+        } else if op == agent_bytecode_schema.OP_UNKNOWN {
+            o = line(o, "bytecode contains an unknown instruction".as_slice());
+        }
+    }
+    if !protocol_or_message {
+        o = line(o, "bytecode must declare at least one protocol, handler, or SendMessage instruction".as_slice());
+    }
+    if last == NONE || n[last].a != agent_bytecode_schema.OP_END {
+        o = line(o, "bytecode must terminate with an End instruction".as_slice());
+    }
+    o
+}
+
+fn external_entity(n: Slice<Value>, st: Slice<u8>, node: u64) -> bool {
+    text_is(n, st, node, "User".as_slice()) || text_is(n, st, node, "System".as_slice()) || text_is(n, st, node, "Runtime".as_slice()) || text_is(n, st, node, "Memory".as_slice()) || text_is(n, st, node, "Tool".as_slice())
+}
+
+fn known_agent(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, agents: u64, agent: u64, head: Slice<u8>) -> Buffer<u8> {
+    if list_has(n, sl, st, agents, agent_bytecode_schema.BS_AGENT__NAME, agent) {
+        return out;
+    }
+    named(out, n, st, head, agent, "".as_slice())
+}
+
+// "<head><name>` declares unknown <slot> type `<type>`" unless declared.
+fn payload_type(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, head: Slice<u8>, name: u64, slot: Slice<u8>, type_name: u64) -> Buffer<u8> {
+    if declared_type(n, sl, st, p, type_name) {
+        return out;
+    }
+    let mut o: Buffer<u8> = put(out, head);
+    o = put_text(o, n, st, name);
+    o = put(o, "` declares unknown ".as_slice());
+    o = put(o, slot);
+    o = named(o, n, st, " type ".as_slice(), type_name, "".as_slice());
+    o
+}
+
+// `validate_contract_allowlists`.
+fn allowlists(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, rank: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let capabilities: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__CAPABILITIES);
+    let tools: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TOOLS);
+    let models: u64 = fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__MODELS);
+    let mut link: u64 = n[fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS)].a;
+    while link != 0u64 {
+        let contract: u64 = link - 1u64;
+        link = n[contract].next;
+        let name: u64 = fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME);
+        let targets: u64 = fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__ALLOWED_TARGETS);
+        let allowed: u64 = fld(n, sl, contract, agent_bytecode_schema.BS_PROVIDER_CONTRACT__ALLOWED_CAPABILITIES);
+        if rank == 11u64 && (!is_empty(n, targets) || !is_empty(n, allowed)) {
+            o = invalid(o, n, st, "provider contract".as_slice(), name, "Bytecode 0.11 provider allowlists must be empty".as_slice(), NONE);
+        } else if rank != NONE && rank >= 12u64 && rank <= 21u64 {
+            let mut target_link: u64 = n[targets].a;
+            while target_link != 0u64 {
+                let target: u64 = target_link - 1u64;
+                target_link = n[target].next;
+                if seen_before(n, sl, st, targets, NONE, target, target) {
+                    o = invalid(o, n, st, "provider contract".as_slice(), name, "duplicate allowed target `".as_slice(), target);
+                } else {
+                    let tool: u64 = find_named(n, sl, st, tools, agent_bytecode_schema.BS_TOOL__NAME, target);
+                    let model: u64 = find_named(n, sl, st, models, agent_bytecode_schema.BS_MODEL__NAME, target);
+                    let mut required: u64 = NONE;
+                    if tool == NONE && model == NONE {
+                        o = invalid(o, n, st, "provider contract".as_slice(), name, "unknown allowlist target `".as_slice(), target);
+                    } else if tool != NONE && model != NONE {
+                        o = invalid(o, n, st, "provider contract".as_slice(), name, "ambiguous allowlist target `".as_slice(), target);
+                    } else if tool != NONE {
+                        required = fld(n, sl, tool, agent_bytecode_schema.BS_TOOL__CAPABILITY);
+                    } else {
+                        required = fld(n, sl, model, agent_bytecode_schema.BS_MODEL__CAPABILITY);
+                    }
+                    if required != NONE && !is_empty(n, allowed) && !list_has(n, sl, st, allowed, NONE, required) {
+                        let mut reason: Buffer<u8> = bytes.append(Buffer::new(), "allowlist target `".as_slice());
+                        reason = put_text(reason, n, st, target);
+                        reason = put(reason, "` requires capability `".as_slice());
+                        o = invalid(o, n, st, "provider contract".as_slice(), name, reason.as_slice(), required);
+                    }
+                }
+            }
+            let mut capability_link: u64 = n[allowed].a;
+            while capability_link != 0u64 {
+                let capability: u64 = capability_link - 1u64;
+                capability_link = n[capability].next;
+                if seen_before(n, sl, st, allowed, NONE, capability, capability) {
+                    o = invalid(o, n, st, "provider contract".as_slice(), name, "duplicate allowed capability `".as_slice(), capability);
+                }
+                if !list_has(n, sl, st, capabilities, agent_bytecode_schema.BS_CAPABILITY__NAME, capability) {
+                    o = invalid(o, n, st, "provider contract".as_slice(), name, "unknown allowlist capability `".as_slice(), capability);
+                }
+            }
+        }
+    }
+    o
+}
+
+fn find_named(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, list: u64, field: u64, name: u64) -> u64 {
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if same_text(n, st, fld(n, sl, item, field), name) {
+            return item;
+        }
+    }
+    NONE
+}
+
+// Whether the `DeclareProviderContract` instructions are the providers, in
+// order and field by field.
+fn contracts_declared(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> bool {
+    let mut provider_link: u64 = n[fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS)].a;
+    let mut link: u64 = n[fld(n, sl, p, agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS)].a;
+    while link != 0u64 {
+        let instruction: u64 = link - 1u64;
+        link = n[instruction].next;
+        if n[instruction].a == agent_bytecode_schema.OP_DECLARE_PROVIDER_CONTRACT {
+            if provider_link == 0u64 {
+                return false;
+            }
+            let provider: u64 = provider_link - 1u64;
+            provider_link = n[provider].next;
+            let declared: u64 = n[instruction].b;
+            let mut field: u64 = 0u64;
+            while field < 8u64 {
+                if !same_value(n, sl, st, fld(n, sl, declared, field), fld(n, sl, provider, field)) {
+                    return false;
+                }
+                field += 1u64;
+            }
+        }
+    }
+    provider_link == 0u64
+}
+
+// Equal strings, booleans or lists of strings.
+fn same_value(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, left: u64, right: u64) -> bool {
+    if n[left].kind == V_STRING {
+        return same_text(n, st, left, right);
+    }
+    if n[left].kind == V_BOOL {
+        return n[left].a == n[right].a;
+    }
+    let mut a: u64 = n[left].a;
+    let mut b: u64 = n[right].a;
+    while a != 0u64 && b != 0u64 {
+        if !same_text(n, st, a - 1u64, b - 1u64) {
+            return false;
+        }
+        a = n[a - 1u64].next;
+        b = n[b - 1u64].next;
+    }
+    a == 0u64 && b == 0u64
+}
+
+// Whether the program has metadata whose validators are not ported yet.
+fn unported(n: Slice<Value>, sl: Slice<u64>, p: u64) -> bool {
+    let mut field: u64 = 0u64;
+    while field < agent_bytecode_schema.field_count(agent_bytecode_schema.BS_PROGRAM) {
+        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS;
+        let value: u64 = fld(n, sl, p, field);
+        if !ported && n[value].kind == V_ARRAY && n[value].a != 0u64 {
+            return true;
+        }
+        field += 1u64;
+    }
+    false
 }

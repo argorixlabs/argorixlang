@@ -354,6 +354,25 @@ fn module() -> String {
         }
     }
     out.push_str("    NONE\n}\n");
+
+    // `validate_policies`' RULES.
+    let text = fs::read_to_string(root().join("crates/argorix_bytecode/src/bytecode.rs")).unwrap();
+    let start = text.find("const RULES: &[&str] = &[").unwrap();
+    let end = start + text[start..].find("];").unwrap();
+    out.push_str(
+        "\n// Whether `word` is a rule `validate_policies` knows.\n\
+         pub fn known_rule(word: Slice<u8>) -> bool {\n",
+    );
+    for line in text[start..end].lines().skip(1) {
+        let rule = line.trim().trim_end_matches(',').trim_matches('"');
+        if !rule.is_empty() {
+            let _ = writeln!(
+                out,
+                "    if bytes.equal(word, \"{rule}\".as_slice()) {{ return true; }}"
+            );
+        }
+    }
+    out.push_str("    false\n}\n");
     out
 }
 
