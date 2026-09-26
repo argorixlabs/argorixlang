@@ -2,7 +2,10 @@ argorix-build 1
 # The stage1 compiler: its root, then every module of compiler/ and stdlib/,
 # the locked set stage0 sees with `--stdlib stdlib` for a root in compiler/.
 root compiler/main.argx
+module compiler/agent_ast.argx
 module compiler/agent_lexer.argx
+module compiler/agent_parser.argx
+module compiler/agent_schema.argx
 module compiler/ast.argx
 module compiler/c_emit.argx
 module compiler/check.argx

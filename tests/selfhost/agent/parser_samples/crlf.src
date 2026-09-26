@@ -1,0 +1,3 @@
+module demo
+type A
+enum B { X }

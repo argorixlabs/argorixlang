@@ -1,0 +1,3 @@
+module demo
+assert no_unhandled_messages
+assert runtime_status completed

@@ -1,0 +1,2 @@
+module demo
+agent A { security { approval denied } security { approval granted } }

@@ -1,0 +1,307 @@
+core 0.1;
+module compiler.agent_ast;
+
+// The agent-language syntax tree, in Argorix (ESP-018.B). The stage0 tree is
+// a set of Rust structs and enums (crates/argorix_parser/src/ast.rs); here
+// every node is generic and `compiler.agent_schema` says what it is:
+//
+// - an object is an instance of a schema struct, with one slot per field in
+//   serde's order, each holding a node or 0 for `null`;
+// - an array is a list of nodes, linked through `next`;
+// - a string's bytes live in `strings`;
+// - an integer, a bool, and a variant of a schema enum, whose payload is a
+//   value or an object of the variant's fields.
+//
+// `write` prints a node as serde_json writes the stage0 tree, compact
+// (spec/language/ast.md). Node 0 is `null`.
+
+import stdlib.bytes;
+import compiler.agent_schema;
+
+const N_NULL: u64 = 0u64;
+const N_OBJECT: u64 = 1u64;
+const N_ARRAY: u64 = 2u64;
+const N_STRING: u64 = 3u64;
+const N_INTEGER: u64 = 4u64;
+const N_BOOL: u64 = 5u64;
+const N_VARIANT: u64 = 6u64;
+
+// `kind`, then by kind:
+// - an object: its struct in `schema`, its first slot in `a`;
+// - an array: its first and last element, plus one, in `a` and `b`;
+// - a string: its bytes' range in `a` and `b`;
+// - an integer or a bool: its value in `a`;
+// - a variant: its enum in `schema`, the variant in `a`, the payload in `b`.
+// `next` links an array's elements, plus one.
+pub struct AgentNode { kind: u64, schema: u64, a: u64, b: u64, next: u64, }
+
+// The tree, and the state of the parser that builds it, which Core moves as
+// one value: `result` is the node the last call made; `current` the next
+// token; `matched` whether the last optional keyword was there. The first
+// error sets `failed`, its message, line and column; a declaration not
+// ported yet sets `unsupported`.
+pub struct Tree {
+    nodes: Buffer<AgentNode>,
+    slots: Buffer<u64>,
+    strings: Buffer<u8>,
+    result: u64,
+    current: u64,
+    matched: bool,
+    failed: bool,
+    unsupported: bool,
+    message: Buffer<u8>,
+    line: u64,
+    column: u64,
+}
+
+pub fn empty() -> Tree {
+    let mut nodes: Buffer<AgentNode> = Buffer::new();
+    nodes.push(AgentNode { kind: N_NULL, schema: 0u64, a: 0u64, b: 0u64, next: 0u64 });
+    Tree {
+        nodes: nodes,
+        slots: Buffer::new(),
+        strings: Buffer::new(),
+        result: 0u64,
+        current: 0u64,
+        matched: false,
+        failed: false,
+        unsupported: false,
+        message: Buffer::new(),
+        line: 0u64,
+        column: 0u64,
+    }
+}
+
+fn add(tree: Tree, kind: u64, schema: u64, a: u64, b: u64) -> Tree {
+    let mut t: Tree = tree;
+    t.result = t.nodes.length();
+    t.nodes.push(AgentNode { kind: kind, schema: schema, a: a, b: b, next: 0u64 });
+    t
+}
+
+// An object of struct `s`, every field `null`.
+pub fn object(tree: Tree, s: u64) -> Tree {
+    let mut t: Tree = tree;
+    let first: u64 = t.slots.length();
+    let count: u64 = agent_schema.field_count(s);
+    let mut index: u64 = 0u64;
+    while index < count {
+        t.slots.push(0u64);
+        index += 1u64;
+    }
+    add(t, N_OBJECT, s, first, 0u64)
+}
+
+// Field `field` of object `node` holds `value`.
+pub fn set(tree: Tree, node: u64, field: u64, value: u64) -> Tree {
+    let mut t: Tree = tree;
+    let slot: u64 = t.nodes[node].a + field;
+    t.slots[slot] = value;
+    t
+}
+
+// Field `field` of object `node` holds the node the last call made.
+pub fn set_last(tree: Tree, node: u64, field: u64) -> Tree {
+    let value: u64 = tree.result;
+    set(tree, node, field, value)
+}
+
+// What field `field` of object `node` holds.
+pub fn get(t: Slice<u64>, nodes: Slice<AgentNode>, node: u64, field: u64) -> u64 {
+    t[nodes[node].a + field]
+}
+
+pub fn array(tree: Tree) -> Tree {
+    add(tree, N_ARRAY, 0u64, 0u64, 0u64)
+}
+
+// `value` appended to array `node`.
+pub fn push(tree: Tree, node: u64, value: u64) -> Tree {
+    let mut t: Tree = tree;
+    let last: u64 = t.nodes[node].b;
+    if last == 0u64 {
+        t.nodes[node].a = value + 1u64;
+    } else {
+        t.nodes[last - 1u64].next = value + 1u64;
+    }
+    t.nodes[node].b = value + 1u64;
+    t
+}
+
+// The number of elements of array `node`.
+pub fn length(nodes: Slice<AgentNode>, node: u64) -> u64 {
+    let mut count: u64 = 0u64;
+    let mut link: u64 = nodes[node].a;
+    while link != 0u64 {
+        count += 1u64;
+        link = nodes[link - 1u64].next;
+    }
+    count
+}
+
+pub fn string(tree: Tree, text: Slice<u8>) -> Tree {
+    let mut t: Tree = tree;
+    let start: u64 = t.strings.length();
+    let mut index: u64 = 0u64;
+    while index < text.length() {
+        t.strings.push(text[index]);
+        index += 1u64;
+    }
+    let end: u64 = t.strings.length();
+    add(t, N_STRING, 0u64, start, end)
+}
+
+pub fn integer(tree: Tree, value: u64) -> Tree {
+    add(tree, N_INTEGER, 0u64, value, 0u64)
+}
+
+pub fn boolean(tree: Tree, value: bool) -> Tree {
+    add(tree, N_BOOL, 0u64, if value { 1u64 } else { 0u64 }, 0u64)
+}
+
+// Variant `v` of enum `e`, with `payload` (0 for a unit variant).
+pub fn variant(tree: Tree, e: u64, v: u64, payload: u64) -> Tree {
+    add(tree, N_VARIANT, e, v, payload)
+}
+
+// A `Span`.
+pub fn span(tree: Tree, start: u64, end: u64, line: u64, column: u64) -> Tree {
+    let mut t: Tree = object(tree, agent_schema.SPAN);
+    let node: u64 = t.result;
+    t = integer(t, start);
+    t = set_last(t, node, agent_schema.SPAN_START);
+    t = integer(t, end);
+    t = set_last(t, node, agent_schema.SPAN_END);
+    t = integer(t, line);
+    t = set_last(t, node, agent_schema.SPAN_LINE);
+    t = integer(t, column);
+    t = set_last(t, node, agent_schema.SPAN_COLUMN);
+    t.result = node;
+    t
+}
+
+// A `Spanned` of `value` and the span `span`.
+pub fn spanned(tree: Tree, value: u64, span_node: u64) -> Tree {
+    let mut t: Tree = object(tree, agent_schema.SPANNED);
+    let node: u64 = t.result;
+    t = set(t, node, agent_schema.SPANNED_VALUE, value);
+    t = set(t, node, agent_schema.SPANNED_SPAN, span_node);
+    t.result = node;
+    t
+}
+
+// ------------------------------------------------------------------ writing
+
+// `node` as compact JSON, as serde_json writes the stage0 tree.
+pub fn write(out: Buffer<u8>, nodes: Slice<AgentNode>, slots: Slice<u64>, strings: Slice<u8>, node: u64) -> Buffer<u8> {
+    let mut written: Buffer<u8> = out;
+    let found: AgentNode = nodes[node];
+    if found.kind == N_NULL {
+        return bytes.append(written, "null".as_slice());
+    }
+    if found.kind == N_INTEGER {
+        return bytes.append_decimal(written, found.a);
+    }
+    if found.kind == N_BOOL {
+        if found.a == 1u64 {
+            return bytes.append(written, "true".as_slice());
+        }
+        return bytes.append(written, "false".as_slice());
+    }
+    if found.kind == N_STRING {
+        return append_string(written, strings, found.a, found.b);
+    }
+    if found.kind == N_ARRAY {
+        written.push(91u8);
+        let mut link: u64 = found.a;
+        let mut first: bool = true;
+        while link != 0u64 {
+            if !first {
+                written.push(44u8);
+            }
+            first = false;
+            written = write(written, nodes, slots, strings, link - 1u64);
+            link = nodes[link - 1u64].next;
+        }
+        written.push(93u8);
+        return written;
+    }
+    if found.kind == N_OBJECT {
+        return write_fields(written, nodes, slots, strings, found.schema, found.a);
+    }
+    // A variant: its name, or an object of its name and payload.
+    let shape: u64 = agent_schema.variant_shape(found.schema, found.a);
+    if shape == agent_schema.UNIT {
+        return agent_schema.append_variant(written, found.schema, found.a);
+    }
+    written.push(123u8);
+    written = agent_schema.append_variant(written, found.schema, found.a);
+    written.push(58u8);
+    written = write(written, nodes, slots, strings, found.b);
+    written.push(125u8);
+    written
+}
+
+fn write_fields(out: Buffer<u8>, nodes: Slice<AgentNode>, slots: Slice<u64>, strings: Slice<u8>, s: u64, first: u64) -> Buffer<u8> {
+    let mut written: Buffer<u8> = out;
+    written.push(123u8);
+    let count: u64 = agent_schema.field_count(s);
+    let mut index: u64 = 0u64;
+    while index < count {
+        if index > 0u64 {
+            written.push(44u8);
+        }
+        written = agent_schema.append_field(written, s, index);
+        written.push(58u8);
+        written = write(written, nodes, slots, strings, slots[first + index]);
+        index += 1u64;
+    }
+    written.push(125u8);
+    written
+}
+
+// A JSON string, escaped as serde_json escapes it: `"` and `\`, the short
+// forms of backspace, tab, line feed, form feed and carriage return, other
+// control characters as `\u00xx` in lowercase hex, everything else as is.
+fn append_string(out: Buffer<u8>, strings: Slice<u8>, start: u64, end: u64) -> Buffer<u8> {
+    let mut written: Buffer<u8> = out;
+    written.push(34u8);
+    let mut at: u64 = start;
+    while at < end {
+        let byte: u8 = strings[at];
+        if byte == 34u8 {
+            written.push(92u8);
+            written.push(34u8);
+        } else if byte == 92u8 {
+            written.push(92u8);
+            written.push(92u8);
+        } else if byte == 8u8 {
+            written = bytes.append(written, "\\b".as_slice());
+        } else if byte == 9u8 {
+            written = bytes.append(written, "\\t".as_slice());
+        } else if byte == 10u8 {
+            written = bytes.append(written, "\\n".as_slice());
+        } else if byte == 12u8 {
+            written = bytes.append(written, "\\f".as_slice());
+        } else if byte == 13u8 {
+            written = bytes.append(written, "\\r".as_slice());
+        } else if byte < 32u8 {
+            written = bytes.append(written, "\\u00".as_slice());
+            written.push(hex(byte / 16u8));
+            written.push(hex(byte % 16u8));
+        } else {
+            written.push(byte);
+        }
+        at += 1u64;
+    }
+    written.push(34u8);
+    written
+}
+
+fn hex(digit: u8) -> u8 {
+    if digit < 10u8 {
+        48u8 + digit
+    } else {
+        87u8 + digit
+    }
+}

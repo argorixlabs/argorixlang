@@ -1,0 +1,2 @@
+module demo
+capability a { level safe requires trace }

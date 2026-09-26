@@ -1,0 +1,2 @@
+module demo
+tool Search { capability net.read input Q }

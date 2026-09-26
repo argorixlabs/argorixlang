@@ -1,0 +1,3 @@
+module demo
+type Empty
+type Msg { text: string ok: bool n: int x: float blob: bytes }

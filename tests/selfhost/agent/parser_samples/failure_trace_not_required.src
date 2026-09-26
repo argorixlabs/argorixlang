@@ -1,0 +1,2 @@
+module demo
+failure Crash { action halt trace optional }

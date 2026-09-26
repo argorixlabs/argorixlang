@@ -1,0 +1,4 @@
+module demo
+tool Search { provider web capability net.read input Q output R }
+tool Local { capability fs.read input Q output R }
+model Chat { provider llm capability model.call input Q output R }

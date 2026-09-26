@@ -1,0 +1,1015 @@
+core 0.1;
+module compiler.agent_parser;
+
+// The agent-language parser, in Argorix (ESP-018.B). It ports
+// crates/argorix_parser/src/parser.rs function by function and builds the
+// same syntax tree (`compiler.agent_ast`, shaped by `compiler.agent_schema`):
+//
+// - the source is lexed first (`compiler.agent_lexer`); lexical errors are
+//   the result;
+// - the parser stops at its first error, with the same message and span as
+//   stage0;
+// - a declaration this port does not cover yet stops it too, as
+//   UNSUPPORTED, so the differential can tell a gap from a mismatch.
+//
+// `dump` prints the canonical dump of spec/language/ast.md.
+
+import stdlib.bytes;
+import compiler.agent_lexer;
+import compiler.agent_ast;
+import compiler.agent_schema;
+
+pub const PARSED: u64 = 0u64;
+pub const FAILED: u64 = 1u64;
+pub const UNSUPPORTED: u64 = 2u64;
+
+// The syntax tree of `source`. It is `failed` when the source does not lex
+// (with no message: the lexer's diagnostics are the result) or does not
+// parse, and `unsupported` when it uses a declaration not ported yet;
+// otherwise `result` is the program.
+pub fn parse(source: Slice<u8>) -> Tree {
+    let lexed: AgentLexed = agent_lexer.lex(source);
+    let mut p: Tree = agent_ast.empty();
+    if lexed.errors.length() > 0u64 {
+        p.failed = true;
+        return p;
+    }
+    parse_program(source, lexed.tokens.as_slice(), p)
+}
+
+// PARSED, FAILED or UNSUPPORTED.
+pub fn status(unsupported: bool, failed: bool) -> u64 {
+    if unsupported {
+        return UNSUPPORTED;
+    }
+    if failed {
+        return FAILED;
+    }
+    PARSED
+}
+
+// The canonical dump: the lexer's diagnostics, the parser's first error, or
+// the tree as one line of JSON. An unsupported program is `unsupported`.
+pub fn dump(source: Slice<u8>) -> Buffer<u8> {
+    let lexed: AgentLexed = agent_lexer.lex(source);
+    if lexed.errors.length() > 0u64 {
+        return agent_lexer.dump(source);
+    }
+    let parsed: Tree = parse(source);
+    let mut out: Buffer<u8> = Buffer::new();
+    if parsed.unsupported {
+        return bytes.append(out, "unsupported\n".as_slice());
+    }
+    if parsed.failed {
+        out = bytes.append_decimal(out, parsed.line);
+        out.push(58u8);
+        out = bytes.append_decimal(out, parsed.column);
+        out = bytes.append(out, ": ".as_slice());
+        out = bytes.append(out, parsed.message.as_slice());
+        out.push(10u8);
+        return out;
+    }
+    out = agent_ast.write(out, parsed.nodes.as_slice(), parsed.slots.as_slice(), parsed.strings.as_slice(), parsed.result);
+    out.push(10u8);
+    out
+}
+
+// ------------------------------------------------------------------ program
+
+fn parse_program(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "module".as_slice());
+    if p.failed {
+        return p;
+    }
+    p = expect_identifier(s, t, p, "module name".as_slice());
+    if p.failed {
+        return p;
+    }
+    let module: u64 = p.result;
+    let module_token: u64 = p.current - 1u64;
+    if !valid_module_name(s.slice(text_start(t, module_token), text_end(t, module_token))) {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid module name `".as_slice());
+        message = bytes.append(message, s.slice(text_start(t, module_token), text_end(t, module_token)));
+        message = bytes.append(message, "`; module names use dotted identifiers like `agents.research`".as_slice());
+        return fail_at(t, p, message, module_token);
+    }
+    p = agent_ast.object(p, agent_schema.PROGRAM);
+    let program: u64 = p.result;
+    p = agent_ast.set(p, program, agent_schema.PROGRAM_MODULE, module);
+    let mut field: u64 = agent_schema.PROGRAM_IMPORTS;
+    while field < agent_schema.field_count(agent_schema.PROGRAM) {
+        p = agent_ast.array(p);
+        p = agent_ast.set_last(p, program, field);
+        field += 1u64;
+    }
+    while !is_eof(t, p.current) {
+        let into: u64 = declaration_field(s, t, p.current);
+        if into == UNKNOWN_DECLARATION {
+            if peek_kind(t, p.current) == agent_lexer.IDENT {
+                let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unexpected top-level declaration `".as_slice());
+                message = bytes.append(message, s.slice(text_start(t, p.current), text_end(t, p.current)));
+                message.push(96u8);
+                let at: u64 = p.current;
+                return fail_at(t, p, message, at);
+            }
+            let at: u64 = p.current;
+            return fail_at(t, p, bytes.copy("expected `import`, `provider`, `harness`, `feature`, `secret`, `adapter`, `adapter_profile`, `crypto`, `did_method`, `atrust_boundary`, `atrust_identity`, `atrust_credential_contract`, `atrust_handshake`, `trust_ledger`, `mcp_bridge_contract`, `a2a_bridge_contract`, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier`, `public_conformance_report`, `runtime_hardening_profile`, `threat_model`, `spec_freeze`, `release_candidate`, `runtime_execution_profile`, `sandboxed_provider_adapter`, `assert`, `policy`, `failure`, `capability`, `enum`, `type`, `tool`, `model`, `agent`, `protocol`, or `passport`".as_slice()), at);
+        }
+        p = parse_declaration(s, t, p, into);
+        if p.failed || p.unsupported {
+            return p;
+        }
+        let list: u64 = agent_ast.get(p.slots.as_slice(), p.nodes.as_slice(), program, into);
+        let value: u64 = p.result;
+        p = agent_ast.push(p, list, value);
+    }
+    p.result = program;
+    p
+}
+
+const UNKNOWN_DECLARATION: u64 = 1000u64;
+
+// The field of `Program` the declaration at `at` goes into, by its keyword.
+fn declaration_field(s: Slice<u8>, tokens: Slice<AgentToken>, at: u64) -> u64 {
+    if tokens[at].kind != agent_lexer.IDENT {
+        return UNKNOWN_DECLARATION;
+    }
+    let word: Slice<u8> = s.slice(tokens[at].start, tokens[at].end);
+    if bytes.equal(word, "import".as_slice()) { return agent_schema.PROGRAM_IMPORTS; }
+    if bytes.equal(word, "provider".as_slice()) { return agent_schema.PROGRAM_PROVIDERS; }
+    if bytes.equal(word, "harness".as_slice()) { return agent_schema.PROGRAM_HARNESSES; }
+    if bytes.equal(word, "feature".as_slice()) { return agent_schema.PROGRAM_FEATURES; }
+    if bytes.equal(word, "secret".as_slice()) { return agent_schema.PROGRAM_SECRETS; }
+    if bytes.equal(word, "adapter".as_slice()) { return agent_schema.PROGRAM_ADAPTERS; }
+    if bytes.equal(word, "adapter_profile".as_slice()) { return agent_schema.PROGRAM_ADAPTER_PROFILES; }
+    if bytes.equal(word, "crypto_boundary".as_slice()) { return agent_schema.PROGRAM_CRYPTO_BOUNDARIES; }
+    if bytes.equal(word, "crypto".as_slice()) { return agent_schema.PROGRAM_CRYPTOS; }
+    if bytes.equal(word, "did_method".as_slice()) { return agent_schema.PROGRAM_DID_METHODS; }
+    if bytes.equal(word, "atrust_boundary".as_slice()) { return agent_schema.PROGRAM_ATRUST_BOUNDARIES; }
+    if bytes.equal(word, "atrust_identity".as_slice()) { return agent_schema.PROGRAM_ATRUST_IDENTITIES; }
+    if bytes.equal(word, "atrust_credential_contract".as_slice()) { return agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS; }
+    if bytes.equal(word, "atrust_handshake".as_slice()) { return agent_schema.PROGRAM_ATRUST_HANDSHAKES; }
+    if bytes.equal(word, "trust_ledger".as_slice()) { return agent_schema.PROGRAM_TRUST_LEDGERS; }
+    if bytes.equal(word, "mcp_bridge_contract".as_slice()) { return agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS; }
+    if bytes.equal(word, "a2a_bridge_contract".as_slice()) { return agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS; }
+    if bytes.equal(word, "atrust_evidence_map".as_slice()) { return agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS; }
+    if bytes.equal(word, "governance_profile".as_slice()) { return agent_schema.PROGRAM_GOVERNANCE_PROFILES; }
+    if bytes.equal(word, "regulatory_mapping".as_slice()) { return agent_schema.PROGRAM_REGULATORY_MAPPINGS; }
+    if bytes.equal(word, "third_party_verifier".as_slice()) { return agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS; }
+    if bytes.equal(word, "public_conformance_report".as_slice()) { return agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS; }
+    if bytes.equal(word, "runtime_hardening_profile".as_slice()) { return agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES; }
+    if bytes.equal(word, "threat_model".as_slice()) { return agent_schema.PROGRAM_THREAT_MODELS; }
+    if bytes.equal(word, "spec_freeze".as_slice()) { return agent_schema.PROGRAM_SPEC_FREEZES; }
+    if bytes.equal(word, "release_candidate".as_slice()) { return agent_schema.PROGRAM_RELEASE_CANDIDATES; }
+    if bytes.equal(word, "runtime_execution_profile".as_slice()) { return agent_schema.PROGRAM_RUNTIME_EXECUTION_PROFILES; }
+    if bytes.equal(word, "sandboxed_provider_adapter".as_slice()) { return agent_schema.PROGRAM_SANDBOXED_PROVIDER_ADAPTERS; }
+    if bytes.equal(word, "capability".as_slice()) { return agent_schema.PROGRAM_CAPABILITIES; }
+    if bytes.equal(word, "assert".as_slice()) { return agent_schema.PROGRAM_ASSERTIONS; }
+    if bytes.equal(word, "policy".as_slice()) { return agent_schema.PROGRAM_POLICIES; }
+    if bytes.equal(word, "failure".as_slice()) { return agent_schema.PROGRAM_FAILURES; }
+    if bytes.equal(word, "enum".as_slice()) { return agent_schema.PROGRAM_ENUMS; }
+    if bytes.equal(word, "type".as_slice()) { return agent_schema.PROGRAM_TYPES; }
+    if bytes.equal(word, "tool".as_slice()) { return agent_schema.PROGRAM_TOOLS; }
+    if bytes.equal(word, "model".as_slice()) { return agent_schema.PROGRAM_MODELS; }
+    if bytes.equal(word, "agent".as_slice()) { return agent_schema.PROGRAM_AGENTS; }
+    if bytes.equal(word, "protocol".as_slice()) { return agent_schema.PROGRAM_PROTOCOLS; }
+    if bytes.equal(word, "passport".as_slice()) { return agent_schema.PROGRAM_PASSPORTS; }
+    UNKNOWN_DECLARATION
+}
+
+// The declaration that goes into field `into` of `Program`.
+fn parse_declaration(s: Slice<u8>, t: Slice<AgentToken>, p: Tree, into: u64) -> Tree {
+    if into == agent_schema.PROGRAM_IMPORTS { return parse_import(s, t, p); }
+    if into == agent_schema.PROGRAM_ASSERTIONS { return parse_assertion(s, t, p); }
+    if into == agent_schema.PROGRAM_FAILURES { return parse_failure(s, t, p); }
+    if into == agent_schema.PROGRAM_CAPABILITIES { return parse_capability(s, t, p); }
+    if into == agent_schema.PROGRAM_ENUMS { return parse_enum(s, t, p); }
+    if into == agent_schema.PROGRAM_TYPES { return parse_type(s, t, p); }
+    if into == agent_schema.PROGRAM_TOOLS { return parse_tool(s, t, p); }
+    if into == agent_schema.PROGRAM_MODELS { return parse_model(s, t, p); }
+    if into == agent_schema.PROGRAM_AGENTS { return parse_agent(s, t, p); }
+    if into == agent_schema.PROGRAM_PROTOCOLS { return parse_protocol(s, t, p); }
+    let mut q: Tree = p;
+    q.unsupported = true;
+    q
+}
+
+// `[a-zA-Z_][a-zA-Z0-9_]*`, joined by dots.
+fn valid_module_name(name: Slice<u8>) -> bool {
+    if name.length() == 0u64 {
+        return false;
+    }
+    let mut segment_start: bool = true;
+    let mut index: u64 = 0u64;
+    while index < name.length() {
+        let byte: u8 = name[index];
+        if byte == 46u8 {
+            if segment_start {
+                return false;
+            }
+            segment_start = true;
+        } else if segment_start {
+            if !(byte == 95u8 || is_letter(byte)) {
+                return false;
+            }
+            segment_start = false;
+        } else if !(byte == 95u8 || is_letter(byte) || (byte >= 48u8 && byte <= 57u8)) {
+            return false;
+        }
+        index += 1u64;
+    }
+    !segment_start
+}
+
+fn is_letter(byte: u8) -> bool {
+    (byte >= 65u8 && byte <= 90u8) || (byte >= 97u8 && byte <= 122u8)
+}
+
+// ------------------------------------------------------------------ declarations
+
+fn parse_import(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "import".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "imported module path".as_slice());
+    if p.failed { return p; }
+    let path: u64 = p.result;
+    let path_token: u64 = p.current - 1u64;
+    if !valid_module_name(s.slice(text_start(t, path_token), text_end(t, path_token))) {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid import path `".as_slice());
+        message = bytes.append(message, s.slice(text_start(t, path_token), text_end(t, path_token)));
+        message = bytes.append(message, "`; relative imports are not supported in v0.16".as_slice());
+        return fail_at(t, p, message, path_token);
+    }
+    if peek_is(s, t, p.current, "as".as_slice()) {
+        let at: u64 = p.current;
+        return fail_at(t, p, bytes.copy("import aliases are not supported in v0.16".as_slice()), at);
+    }
+    p = agent_ast.object(p, agent_schema.IMPORT_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.IMPORT_DECL_PATH, path);
+    p.result = node;
+    p
+}
+
+fn parse_assertion(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "assert".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "assertion name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    let mut argument: u64 = 0u64;
+    if bytes.equal(s.slice(text_start(t, p.current - 1u64), text_end(t, p.current - 1u64)), "runtime_status".as_slice()) {
+        p = expect_identifier(s, t, p, "runtime status assertion argument".as_slice());
+        if p.failed { return p; }
+        argument = p.result;
+    }
+    p = agent_ast.object(p, agent_schema.ASSERTION_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.ASSERTION_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.ASSERTION_DECL_ARGUMENT, argument);
+    p.result = node;
+    p
+}
+
+fn parse_failure(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "failure".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "failure name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = expect_keyword(s, t, p, "action".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "failure action".as_slice());
+    if p.failed { return p; }
+    let action: u64 = p.result;
+    p = match_keyword(s, t, p, "trace".as_slice());
+    let trace_required: bool = p.matched;
+    if trace_required {
+        p = expect_keyword(s, t, p, "required".as_slice());
+        if p.failed { return p; }
+    }
+    p = expect_symbol(t, p, agent_lexer.RIGHT_BRACE, "`}`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.FAILURE_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.FAILURE_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.FAILURE_DECL_ACTION, action);
+    p = agent_ast.boolean(p, trace_required);
+    p = agent_ast.set_last(p, node, agent_schema.FAILURE_DECL_TRACE_REQUIRED);
+    p.result = node;
+    p
+}
+
+fn parse_tool(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "tool".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "tool name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    let mut provider: u64 = 0u64;
+    p = match_keyword(s, t, p, "provider".as_slice());
+    if p.matched {
+        p = expect_identifier(s, t, p, "tool provider".as_slice());
+        if p.failed { return p; }
+        provider = p.result;
+    }
+    p = expect_keyword(s, t, p, "capability".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "tool capability".as_slice());
+    if p.failed { return p; }
+    let capability: u64 = p.result;
+    p = expect_keyword(s, t, p, "input".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "tool input type".as_slice());
+    if p.failed { return p; }
+    let input: u64 = p.result;
+    p = expect_keyword(s, t, p, "output".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "tool output type".as_slice());
+    if p.failed { return p; }
+    let output: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.RIGHT_BRACE, "`}`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.TOOL_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.TOOL_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.TOOL_DECL_PROVIDER, provider);
+    p = agent_ast.set(p, node, agent_schema.TOOL_DECL_CAPABILITY, capability);
+    p = agent_ast.set(p, node, agent_schema.TOOL_DECL_INPUT, input);
+    p = agent_ast.set(p, node, agent_schema.TOOL_DECL_OUTPUT, output);
+    p.result = node;
+    p
+}
+
+fn parse_model(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "model".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "model name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = expect_keyword(s, t, p, "provider".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "model provider".as_slice());
+    if p.failed { return p; }
+    let provider: u64 = p.result;
+    p = expect_keyword(s, t, p, "capability".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "model capability".as_slice());
+    if p.failed { return p; }
+    let capability: u64 = p.result;
+    p = expect_keyword(s, t, p, "input".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "model input type".as_slice());
+    if p.failed { return p; }
+    let input: u64 = p.result;
+    p = expect_keyword(s, t, p, "output".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "model output type".as_slice());
+    if p.failed { return p; }
+    let output: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.RIGHT_BRACE, "`}`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.MODEL_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.MODEL_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.MODEL_DECL_PROVIDER, provider);
+    p = agent_ast.set(p, node, agent_schema.MODEL_DECL_CAPABILITY, capability);
+    p = agent_ast.set(p, node, agent_schema.MODEL_DECL_INPUT, input);
+    p = agent_ast.set(p, node, agent_schema.MODEL_DECL_OUTPUT, output);
+    p.result = node;
+    p
+}
+
+fn parse_capability(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "capability".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "capability name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = expect_keyword(s, t, p, "level".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "capability level".as_slice());
+    if p.failed { return p; }
+    let level_token: u64 = p.current - 1u64;
+    let word: Slice<u8> = s.slice(text_start(t, level_token), text_end(t, level_token));
+    let mut level: u64 = 0u64;
+    if bytes.equal(word, "safe".as_slice()) {
+        level = agent_schema.CAPABILITY_LEVEL_SAFE;
+    } else if bytes.equal(word, "restricted".as_slice()) {
+        level = agent_schema.CAPABILITY_LEVEL_RESTRICTED;
+    } else if bytes.equal(word, "dangerous".as_slice()) {
+        level = agent_schema.CAPABILITY_LEVEL_DANGEROUS;
+    } else {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid capability level `".as_slice());
+        message = bytes.append(message, word);
+        message = bytes.append(message, "`; expected `safe`, `restricted`, or `dangerous`".as_slice());
+        return fail_at(t, p, message, level_token);
+    }
+    p = match_keyword(s, t, p, "requires".as_slice());
+    let requires_approval: bool = p.matched;
+    if requires_approval {
+        p = expect_keyword(s, t, p, "approval".as_slice());
+        if p.failed { return p; }
+    }
+    p = expect_symbol(t, p, agent_lexer.RIGHT_BRACE, "`}`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.variant(p, agent_schema.CAPABILITY_LEVEL, level, 0u64);
+    p = spanned_last(t, p, level_token);
+    let level_node: u64 = p.result;
+    p = agent_ast.object(p, agent_schema.CAPABILITY_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.CAPABILITY_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.CAPABILITY_DECL_LEVEL, level_node);
+    p = agent_ast.boolean(p, requires_approval);
+    p = agent_ast.set_last(p, node, agent_schema.CAPABILITY_DECL_REQUIRES_APPROVAL);
+    p.result = node;
+    p
+}
+
+fn parse_enum(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "enum".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "enum name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let variants: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated enum declaration".as_slice());
+        if p.failed { return p; }
+        p = expect_identifier(s, t, p, "enum variant".as_slice());
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, variants, value);
+    }
+    p = advance(t, p);
+    p = agent_ast.object(p, agent_schema.ENUM_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.ENUM_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.ENUM_DECL_VARIANTS, variants);
+    p.result = node;
+    p
+}
+
+fn parse_type(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "type".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "type name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = agent_ast.array(p);
+    let fields: u64 = p.result;
+    if peek_kind(t, p.current) == agent_lexer.LEFT_BRACE {
+        p = advance(t, p);
+        while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+            p = ensure_not_eof(t, p, "unterminated type declaration".as_slice());
+            if p.failed { return p; }
+            p = expect_identifier(s, t, p, "field name".as_slice());
+            if p.failed { return p; }
+            let field_name: u64 = p.result;
+            p = expect_symbol(t, p, agent_lexer.COLON, "`:`".as_slice());
+            if p.failed { return p; }
+            p = expect_identifier(s, t, p, "field type".as_slice());
+            if p.failed { return p; }
+            let type_token: u64 = p.current - 1u64;
+            let word: Slice<u8> = s.slice(text_start(t, type_token), text_end(t, type_token));
+            let mut payload: u64 = 0u64;
+            let mut kind: u64 = agent_schema.MESSAGE_FIELD_TYPE_UNKNOWN;
+            if bytes.equal(word, "string".as_slice()) {
+                kind = agent_schema.MESSAGE_FIELD_TYPE_STRING;
+            } else if bytes.equal(word, "bool".as_slice()) {
+                kind = agent_schema.MESSAGE_FIELD_TYPE_BOOL;
+            } else if bytes.equal(word, "int".as_slice()) {
+                kind = agent_schema.MESSAGE_FIELD_TYPE_INT;
+            } else if bytes.equal(word, "float".as_slice()) {
+                kind = agent_schema.MESSAGE_FIELD_TYPE_FLOAT;
+            } else {
+                p = agent_ast.string(p, word);
+                payload = p.result;
+            }
+            p = agent_ast.variant(p, agent_schema.MESSAGE_FIELD_TYPE, kind, payload);
+            p = spanned_last(t, p, type_token);
+            let field_type: u64 = p.result;
+            p = agent_ast.object(p, agent_schema.FIELD_DECL);
+            let field: u64 = p.result;
+            p = agent_ast.set(p, field, agent_schema.FIELD_DECL_NAME, field_name);
+            p = agent_ast.set(p, field, agent_schema.FIELD_DECL_FIELD_TYPE, field_type);
+            p = agent_ast.push(p, fields, field);
+        }
+        p = advance(t, p);
+    }
+    p = agent_ast.object(p, agent_schema.TYPE_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.TYPE_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.TYPE_DECL_FIELDS, fields);
+    p.result = node;
+    p
+}
+
+fn parse_agent(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "agent".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "agent name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    let mut approval: u64 = 0u64;
+    p = agent_ast.array(p);
+    let receives: u64 = p.result;
+    p = agent_ast.array(p);
+    let sends: u64 = p.result;
+    p = agent_ast.array(p);
+    let capabilities: u64 = p.result;
+    p = agent_ast.array(p);
+    let tools: u64 = p.result;
+    p = agent_ast.array(p);
+    let models: u64 = p.result;
+    p = agent_ast.array(p);
+    let handlers: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated agent declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "security".as_slice()) {
+            if approval != 0u64 {
+                let at: u64 = p.current;
+                return fail_at(t, p, bytes.copy("duplicate security block".as_slice()), at);
+            }
+            p = advance(t, p);
+            p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+            if p.failed { return p; }
+            p = expect_keyword(s, t, p, "approval".as_slice());
+            if p.failed { return p; }
+            p = expect_identifier(s, t, p, "approval value".as_slice());
+            if p.failed { return p; }
+            let approval_token: u64 = p.current - 1u64;
+            let word: Slice<u8> = s.slice(text_start(t, approval_token), text_end(t, approval_token));
+            let mut value: u64 = 0u64;
+            if bytes.equal(word, "granted".as_slice()) {
+                value = agent_schema.APPROVAL_GRANTED;
+            } else if bytes.equal(word, "denied".as_slice()) {
+                value = agent_schema.APPROVAL_DENIED;
+            } else {
+                let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid approval value `".as_slice());
+                message = bytes.append(message, word);
+                message = bytes.append(message, "`; expected `granted` or `denied`".as_slice());
+                return fail_at(t, p, message, approval_token);
+            }
+            p = agent_ast.variant(p, agent_schema.APPROVAL, value, 0u64);
+            p = spanned_last(t, p, approval_token);
+            approval = p.result;
+            p = expect_symbol(t, p, agent_lexer.RIGHT_BRACE, "`}`".as_slice());
+            if p.failed { return p; }
+        } else if peek_is(s, t, p.current, "receives".as_slice()) {
+            p = advance(t, p);
+            p = expect_identifier(s, t, p, "received message type".as_slice());
+            if p.failed { return p; }
+            let message_type: u64 = p.result;
+            let mut from: u64 = 0u64;
+            p = match_keyword(s, t, p, "from".as_slice());
+            if p.matched {
+                p = expect_identifier(s, t, p, "source agent".as_slice());
+                if p.failed { return p; }
+                from = p.result;
+            }
+            p = agent_ast.object(p, agent_schema.RECEIVE_DECL);
+            let node: u64 = p.result;
+            p = agent_ast.set(p, node, agent_schema.RECEIVE_DECL_MESSAGE_TYPE, message_type);
+            p = agent_ast.set(p, node, agent_schema.RECEIVE_DECL_FROM, from);
+            p = agent_ast.push(p, receives, node);
+        } else if peek_is(s, t, p.current, "sends".as_slice()) {
+            p = advance(t, p);
+            p = expect_identifier(s, t, p, "sent message type".as_slice());
+            if p.failed { return p; }
+            let message_type: u64 = p.result;
+            p = expect_keyword(s, t, p, "to".as_slice());
+            if p.failed { return p; }
+            p = expect_identifier(s, t, p, "destination agent".as_slice());
+            if p.failed { return p; }
+            let to: u64 = p.result;
+            p = agent_ast.object(p, agent_schema.SEND_DECL);
+            let node: u64 = p.result;
+            p = agent_ast.set(p, node, agent_schema.SEND_DECL_MESSAGE_TYPE, message_type);
+            p = agent_ast.set(p, node, agent_schema.SEND_DECL_TO, to);
+            p = agent_ast.push(p, sends, node);
+        } else if peek_is(s, t, p.current, "capabilities".as_slice()) {
+            p = advance(t, p);
+            p = identifier_list(s, t, p, capabilities, "unterminated capabilities block".as_slice(), "capability".as_slice());
+            if p.failed { return p; }
+        } else if peek_is(s, t, p.current, "tools".as_slice()) {
+            p = advance(t, p);
+            p = identifier_list(s, t, p, tools, "unterminated tools block".as_slice(), "tool name".as_slice());
+            if p.failed { return p; }
+        } else if peek_is(s, t, p.current, "models".as_slice()) {
+            p = advance(t, p);
+            p = identifier_list(s, t, p, models, "unterminated models block".as_slice(), "model name".as_slice());
+            if p.failed { return p; }
+        } else if peek_is(s, t, p.current, "on".as_slice()) {
+            p = parse_handler(s, t, p);
+            if p.failed { return p; }
+            let handler: u64 = p.result;
+            p = agent_ast.push(p, handlers, handler);
+        } else if peek_kind(t, p.current) == agent_lexer.IDENT {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unexpected agent item `".as_slice());
+            message = bytes.append(message, s.slice(text_start(t, p.current), text_end(t, p.current)));
+            message.push(96u8);
+            let at: u64 = p.current;
+            return fail_at(t, p, message, at);
+        } else {
+            let at: u64 = p.current;
+            return fail_at(t, p, bytes.copy("expected `security`, `receives`, `sends`, `capabilities`, `tools`, `models`, or `on`".as_slice()), at);
+        }
+    }
+    p = advance(t, p);
+    p = agent_ast.object(p, agent_schema.AGENT_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.AGENT_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.AGENT_DECL_APPROVAL, approval);
+    p = agent_ast.set(p, node, agent_schema.AGENT_DECL_RECEIVES, receives);
+    p = agent_ast.set(p, node, agent_schema.AGENT_DECL_SENDS, sends);
+    p = agent_ast.set(p, node, agent_schema.AGENT_DECL_CAPABILITIES, capabilities);
+    p = agent_ast.set(p, node, agent_schema.AGENT_DECL_TOOLS, tools);
+    p = agent_ast.set(p, node, agent_schema.AGENT_DECL_MODELS, models);
+    p = agent_ast.set(p, node, agent_schema.AGENT_DECL_HANDLERS, handlers);
+    p.result = node;
+    p
+}
+
+// `{ identifier ... }` into array `list`.
+fn identifier_list(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, list: u64, unterminated: Slice<u8>, description: Slice<u8>) -> Tree {
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, unterminated);
+        if p.failed { return p; }
+        p = expect_identifier(s, t, p, description);
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, list, value);
+    }
+    advance(t, p)
+}
+
+fn parse_handler(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "on".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "handler message type".as_slice());
+    if p.failed { return p; }
+    let message_type: u64 = p.result;
+    p = expect_keyword(s, t, p, "as".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "handler binding".as_slice());
+    if p.failed { return p; }
+    let binding: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let instructions: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated handler declaration".as_slice());
+        if p.failed { return p; }
+        let mut holder: u64 = 0u64;
+        let mut which: u64 = 0u64;
+        if peek_is(s, t, p.current, "emit".as_slice()) {
+            p = advance(t, p);
+            p = expect_identifier(s, t, p, "emitted message type".as_slice());
+            if p.failed { return p; }
+            let emitted: u64 = p.result;
+            p = expect_keyword(s, t, p, "to".as_slice());
+            if p.failed { return p; }
+            p = expect_identifier(s, t, p, "emit destination".as_slice());
+            if p.failed { return p; }
+            let to: u64 = p.result;
+            p = agent_ast.object(p, agent_schema.HANDLER_INSTRUCTION__EMIT);
+            holder = p.result;
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__EMIT_MESSAGE_TYPE, emitted);
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__EMIT_TO, to);
+            which = agent_schema.HANDLER_INSTRUCTION_EMIT;
+        } else if peek_is(s, t, p.current, "trace".as_slice()) {
+            p = advance(t, p);
+            p = expect_identifier(s, t, p, "trace binding".as_slice());
+            if p.failed { return p; }
+            let traced: u64 = p.result;
+            p = agent_ast.object(p, agent_schema.HANDLER_INSTRUCTION__TRACE);
+            holder = p.result;
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__TRACE_BINDING, traced);
+            which = agent_schema.HANDLER_INSTRUCTION_TRACE;
+        } else if peek_is(s, t, p.current, "halt".as_slice()) {
+            let at: u64 = p.current;
+            p = span_of(t, p, at);
+            let halt_span: u64 = p.result;
+            p = advance(t, p);
+            p = agent_ast.object(p, agent_schema.HANDLER_INSTRUCTION__HALT);
+            holder = p.result;
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__HALT_SPAN, halt_span);
+            which = agent_schema.HANDLER_INSTRUCTION_HALT;
+        } else if peek_is(s, t, p.current, "call".as_slice()) {
+            p = advance(t, p);
+            p = expect_identifier(s, t, p, "tool name".as_slice());
+            if p.failed { return p; }
+            let tool: u64 = p.result;
+            p = expect_keyword(s, t, p, "with".as_slice());
+            if p.failed { return p; }
+            p = expect_identifier(s, t, p, "tool call binding".as_slice());
+            if p.failed { return p; }
+            let call_binding: u64 = p.result;
+            p = agent_ast.object(p, agent_schema.HANDLER_INSTRUCTION__CALL_TOOL);
+            holder = p.result;
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__CALL_TOOL_TOOL, tool);
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__CALL_TOOL_BINDING, call_binding);
+            which = agent_schema.HANDLER_INSTRUCTION_CALL_TOOL;
+        } else if peek_is(s, t, p.current, "ask".as_slice()) {
+            p = advance(t, p);
+            p = expect_identifier(s, t, p, "model name".as_slice());
+            if p.failed { return p; }
+            let model: u64 = p.result;
+            p = expect_keyword(s, t, p, "with".as_slice());
+            if p.failed { return p; }
+            p = expect_identifier(s, t, p, "model call binding".as_slice());
+            if p.failed { return p; }
+            let ask_binding: u64 = p.result;
+            p = agent_ast.object(p, agent_schema.HANDLER_INSTRUCTION__ASK_MODEL);
+            holder = p.result;
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__ASK_MODEL_MODEL, model);
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__ASK_MODEL_BINDING, ask_binding);
+            which = agent_schema.HANDLER_INSTRUCTION_ASK_MODEL;
+        } else if peek_kind(t, p.current) == agent_lexer.IDENT && peek_kind(t, p.current + 1u64) == agent_lexer.LEFT_PAREN {
+            p = expect_identifier(s, t, p, "intrinsic name".as_slice());
+            if p.failed { return p; }
+            let intrinsic: u64 = p.result;
+            p = expect_symbol(t, p, agent_lexer.LEFT_PAREN, "`(`".as_slice());
+            if p.failed { return p; }
+            p = expect_identifier(s, t, p, "intrinsic argument".as_slice());
+            if p.failed { return p; }
+            let argument: u64 = p.result;
+            p = expect_symbol(t, p, agent_lexer.RIGHT_PAREN, "`)`".as_slice());
+            if p.failed { return p; }
+            p = agent_ast.object(p, agent_schema.HANDLER_INSTRUCTION__INTRINSIC_CALL);
+            holder = p.result;
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__INTRINSIC_CALL_NAME, intrinsic);
+            p = agent_ast.set(p, holder, agent_schema.HANDLER_INSTRUCTION__INTRINSIC_CALL_ARGUMENT, argument);
+            which = agent_schema.HANDLER_INSTRUCTION_INTRINSIC_CALL;
+        } else if peek_kind(t, p.current) == agent_lexer.IDENT {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unsupported handler instruction `".as_slice());
+            message = bytes.append(message, s.slice(text_start(t, p.current), text_end(t, p.current)));
+            message.push(96u8);
+            let at: u64 = p.current;
+            return fail_at(t, p, message, at);
+        } else {
+            let at: u64 = p.current;
+            return fail_at(t, p, bytes.copy("expected `emit`, `trace`, or `halt`".as_slice()), at);
+        }
+        p = agent_ast.variant(p, agent_schema.HANDLER_INSTRUCTION, which, holder);
+        let instruction: u64 = p.result;
+        p = agent_ast.push(p, instructions, instruction);
+    }
+    p = advance(t, p);
+    p = agent_ast.object(p, agent_schema.HANDLER_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.HANDLER_DECL_MESSAGE_TYPE, message_type);
+    p = agent_ast.set(p, node, agent_schema.HANDLER_DECL_BINDING, binding);
+    p = agent_ast.set(p, node, agent_schema.HANDLER_DECL_INSTRUCTIONS, instructions);
+    p.result = node;
+    p
+}
+
+fn parse_protocol(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_keyword(s, t, parser, "protocol".as_slice());
+    if p.failed { return p; }
+    p = expect_identifier(s, t, p, "protocol name".as_slice());
+    if p.failed { return p; }
+    let name: u64 = p.result;
+    p = expect_symbol(t, p, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let steps: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated protocol declaration".as_slice());
+        if p.failed { return p; }
+        p = expect_identifier(s, t, p, "protocol source".as_slice());
+        if p.failed { return p; }
+        let from: u64 = p.result;
+        p = expect_symbol(t, p, agent_lexer.ARROW, "`->`".as_slice());
+        if p.failed { return p; }
+        p = expect_identifier(s, t, p, "protocol destination".as_slice());
+        if p.failed { return p; }
+        let to: u64 = p.result;
+        p = expect_symbol(t, p, agent_lexer.COLON, "`:`".as_slice());
+        if p.failed { return p; }
+        p = expect_identifier(s, t, p, "communicative act".as_slice());
+        if p.failed { return p; }
+        let act: u64 = p.result;
+        p = expect_identifier(s, t, p, "protocol message type".as_slice());
+        if p.failed { return p; }
+        let message_type: u64 = p.result;
+        p = agent_ast.object(p, agent_schema.PROTOCOL_STEP);
+        let step: u64 = p.result;
+        p = agent_ast.set(p, step, agent_schema.PROTOCOL_STEP_FROM, from);
+        p = agent_ast.set(p, step, agent_schema.PROTOCOL_STEP_TO, to);
+        p = agent_ast.set(p, step, agent_schema.PROTOCOL_STEP_ACT, act);
+        p = agent_ast.set(p, step, agent_schema.PROTOCOL_STEP_MESSAGE_TYPE, message_type);
+        p = agent_ast.push(p, steps, step);
+    }
+    p = advance(t, p);
+    p = agent_ast.object(p, agent_schema.PROTOCOL_DECL);
+    let node: u64 = p.result;
+    p = agent_ast.set(p, node, agent_schema.PROTOCOL_DECL_NAME, name);
+    p = agent_ast.set(p, node, agent_schema.PROTOCOL_DECL_STEPS, steps);
+    p.result = node;
+    p
+}
+
+// ------------------------------------------------------------------ helpers
+
+fn peek_kind(tokens: Slice<AgentToken>, at: u64) -> u64 {
+    if at >= tokens.length() {
+        return agent_lexer.EOF;
+    }
+    tokens[at].kind
+}
+
+fn is_eof(tokens: Slice<AgentToken>, at: u64) -> bool {
+    peek_kind(tokens, at) == agent_lexer.EOF
+}
+
+// Whether the token at `at` is the identifier `word`.
+fn peek_is(s: Slice<u8>, tokens: Slice<AgentToken>, at: u64, word: Slice<u8>) -> bool {
+    tokens[at].kind == agent_lexer.IDENT && bytes.equal(s.slice(tokens[at].start, tokens[at].end), word)
+}
+
+// Where an identifier's text, or a string's value, starts and ends.
+fn text_start(tokens: Slice<AgentToken>, at: u64) -> u64 {
+    if tokens[at].kind == agent_lexer.STRING {
+        return tokens[at].start + 1u64;
+    }
+    tokens[at].start
+}
+
+fn text_end(tokens: Slice<AgentToken>, at: u64) -> u64 {
+    if tokens[at].kind == agent_lexer.STRING {
+        return tokens[at].end - 1u64;
+    }
+    tokens[at].end
+}
+
+fn advance(t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = parser;
+    if !is_eof(t, p.current) {
+        p.current += 1u64;
+    }
+    p
+}
+
+// The first error: `message` at the token at `at`.
+fn fail_at(t: Slice<AgentToken>, parser: Tree, message: Buffer<u8>, at: u64) -> Tree {
+    let mut p: Tree = parser;
+    p.failed = true;
+    p.message = message;
+    p.line = t[at].line;
+    p.column = t[at].column;
+    p
+}
+
+// `result`: the span of the token at `at`.
+fn span_of(t: Slice<AgentToken>, parser: Tree, at: u64) -> Tree {
+    let mut p: Tree = parser;
+    let token: AgentToken = t[at];
+    p = agent_ast.span(p, token.start, token.end, token.line, token.column);
+    p.result = p.result;
+    p
+}
+
+// `result`: a `Spanned` of the node the last call made, with the span of the
+// token at `at`.
+fn spanned_last(t: Slice<AgentToken>, parser: Tree, at: u64) -> Tree {
+    let value: u64 = parser.result;
+    spanned_at(t, parser, value, at)
+}
+
+// `result`: a `Spanned` of `value` with the span of the token at `at`.
+fn spanned_at(t: Slice<AgentToken>, parser: Tree, value: u64, at: u64) -> Tree {
+    let mut p: Tree = span_of(t, parser, at);
+    let span_node: u64 = p.result;
+    p = agent_ast.spanned(p, value, span_node);
+    p.result = p.result;
+    p
+}
+
+fn expect_identifier(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, description: Slice<u8>) -> Tree {
+    let mut p: Tree = parser;
+    let at: u64 = p.current;
+    if peek_kind(t, at) != agent_lexer.IDENT {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected ".as_slice());
+        message = bytes.append(message, description);
+        return fail_at(t, p, message, at);
+    }
+    p = agent_ast.string(p, s.slice(text_start(t, at), text_end(t, at)));
+    p = spanned_last(t, p, at);
+    advance(t, p)
+}
+
+fn expect_string(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, description: Slice<u8>) -> Tree {
+    let mut p: Tree = parser;
+    let at: u64 = p.current;
+    if peek_kind(t, at) != agent_lexer.STRING {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected ".as_slice());
+        message = bytes.append(message, description);
+        return fail_at(t, p, message, at);
+    }
+    p = agent_ast.string(p, s.slice(text_start(t, at), text_end(t, at)));
+    p = spanned_last(t, p, at);
+    advance(t, p)
+}
+
+fn expect_integer(t: Slice<AgentToken>, parser: Tree, description: Slice<u8>) -> Tree {
+    let mut p: Tree = parser;
+    let at: u64 = p.current;
+    if peek_kind(t, at) != agent_lexer.INTEGER {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected ".as_slice());
+        message = bytes.append(message, description);
+        return fail_at(t, p, message, at);
+    }
+    let value: u64 = t[at].value;
+    p = agent_ast.integer(p, value);
+    p = spanned_last(t, p, at);
+    advance(t, p)
+}
+
+// `true` or `false`, as a `Spanned<bool>`.
+fn expect_bool(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, description: Slice<u8>) -> Tree {
+    let mut p: Tree = parser;
+    let at: u64 = p.current;
+    if peek_kind(t, at) != agent_lexer.IDENT {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected ".as_slice());
+        message = bytes.append(message, description);
+        return fail_at(t, p, message, at);
+    }
+    let word: Slice<u8> = s.slice(text_start(t, at), text_end(t, at));
+    let mut value: bool = false;
+    if bytes.equal(word, "true".as_slice()) {
+        value = true;
+    } else if !bytes.equal(word, "false".as_slice()) {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid boolean `".as_slice());
+        message = bytes.append(message, word);
+        message = bytes.append(message, "`; expected `true` or `false`".as_slice());
+        return fail_at(t, p, message, at);
+    }
+    p = agent_ast.boolean(p, value);
+    p = spanned_last(t, p, at);
+    advance(t, p)
+}
+
+fn expect_keyword(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, expected: Slice<u8>) -> Tree {
+    let p: Tree = parser;
+    let at: u64 = p.current;
+    if peek_is(s, t, at, expected) {
+        return advance(t, p);
+    }
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected `".as_slice());
+    message = bytes.append(message, expected);
+    message.push(96u8);
+    fail_at(t, p, message, at)
+}
+
+// Consumes the keyword if it is next; `matched` says whether it was.
+fn match_keyword(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, expected: Slice<u8>) -> Tree {
+    let mut p: Tree = parser;
+    let at: u64 = p.current;
+    if peek_is(s, t, at, expected) {
+        p = advance(t, p);
+        p.matched = true;
+        return p;
+    }
+    p.matched = false;
+    p
+}
+
+fn expect_symbol(t: Slice<AgentToken>, parser: Tree, expected: u64, display: Slice<u8>) -> Tree {
+    let p: Tree = parser;
+    let at: u64 = p.current;
+    if peek_kind(t, at) == expected {
+        return advance(t, p);
+    }
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected ".as_slice());
+    message = bytes.append(message, display);
+    fail_at(t, p, message, at)
+}
+
+fn ensure_not_eof(t: Slice<AgentToken>, parser: Tree, message: Slice<u8>) -> Tree {
+    let p: Tree = parser;
+    let at: u64 = p.current;
+    if is_eof(t, at) {
+        return fail_at(t, p, bytes.copy(message), at);
+    }
+    p
+}
