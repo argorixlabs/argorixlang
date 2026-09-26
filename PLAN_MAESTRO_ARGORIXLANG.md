@@ -23,8 +23,9 @@ para Linux, con el que el compilador se construye sin compilador C. ESP-017
 (segundo destino, Windows) espera revisión en el PR #63.
 **ESP-018 (lenguaje de agentes migrado) está EN_CURSO**: su lexer y su parser
 en Argorix coinciden con los de stage0 en todo el corpus (1.564 y 1.423
-archivos), y su chequeo semántico da los mismos diagnósticos en 1.430
-programas; falta el grafo de módulos.
+archivos), y su chequeo semántico y su grafo de módulos dan los mismos
+diagnósticos en 1.462 programas y 77 paquetes; faltan el lowering y la matriz
+de compatibilidad.
 Ninguna otra tarea cambió de estado.
 El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)
 y el estado operativo del día —carriles, ramas, PRs e issues abiertos— en

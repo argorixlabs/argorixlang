@@ -64,6 +64,9 @@ enum Command {
     /// Print the checker diagnostics of an agent-language source file
     /// (spec/language/check.md).
     AgentCheck { file: PathBuf },
+    /// Print the module graph and whole-package checker diagnostics of an
+    /// agent-language package (spec/language/packages.md).
+    AgentPackage { manifest: PathBuf },
     /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
     CoreAst { file: PathBuf },
     /// Print the checker diagnostics of one Core file, checked on its own.
@@ -215,6 +218,14 @@ fn run() -> Result<()> {
             let source =
                 fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
             print!("{}", argorix_semantics::agent_check_dump(&source));
+        }
+        Command::AgentPackage { manifest } => {
+            let manifest_path = if manifest.is_dir() {
+                manifest.join("argorix.toml")
+            } else {
+                manifest
+            };
+            print!("{}", argorix_module::package_dump(&manifest_path));
         }
         Command::CoreCheck { file } => {
             let compiled = compile_core(&file, cli.stdlib.as_deref(), &cli.modules)?;

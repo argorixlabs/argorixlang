@@ -1,6 +1,6 @@
 # Agent-language checker dump
 
-Status: ESP-018.C, in progress. Two checkers implement the checks of the
+Status: ESP-018.C, done. Two checkers implement the checks of the
 existing language:
 
 - the stage0 checker in `crates/argorix_semantics/src/checker.rs`;
@@ -29,8 +29,10 @@ The checks were ported one group of declarations at a time, in stage0's
 order, each group raising `MATCHED_AT_LEAST`. Until the last group landed, a
 program declaring something whose checks were not ported yet dumped
 `unsupported`, and the differential counted it instead of comparing it.
-Every check is ported now: all 1,430 programs match, and the differential
-fails on any `unsupported` dump.
+Every check is ported now, and the differential fails on any `unsupported`
+dump. All 1,462 programs match: the 1,430 of the table's last row, and the
+modules of the package samples of `packages.md`, which joined the corpus
+after it.
 
 | Group | Checks | Programs matched |
 | --- | --- | --- |
@@ -49,5 +51,5 @@ fails on any `unsupported` dump.
 | 13 | Spec freezes and release candidates | 1,344 of 1,430 |
 | 14 | Runtime execution profiles and sandboxed provider adapters | 1,430 of 1,430 |
 
-The checks work on one file. Resolving and merging a package of modules
-(`argorix_module`) is the other half of ESP-018.C.
+The checks work on one program. A package of modules is resolved and
+merged into one first (`packages.md`).

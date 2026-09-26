@@ -478,10 +478,13 @@ sintáctico que el parser stage0 en los 1.342 programas del corpus y 81
 muestras adversarias ([tokens](spec/language/tokens.md),
 [árbol](spec/language/ast.md)). El esquema del árbol, las tablas de palabras
 y 24 declaraciones se generan desde las fuentes de stage0 con tests en Rust.
-ESP-018.C está EN_CURSO: todos los chequeos de `checker.rs` están portados
+ESP-018.C está hecha: todos los chequeos de `checker.rs` están portados
 (`compiler/agent_check.argx`, [chequeo](spec/language/check.md)) y dan los
-mismos diagnósticos, spans incluidos, que stage0 en 1.430 programas; falta el
-grafo de módulos (`argorix_module`).
+mismos diagnósticos, spans incluidos, que stage0 en 1.462 programas; el grafo
+de módulos (`compiler/agent_package.argx`, [paquetes](spec/language/packages.md))
+resuelve, fusiona y chequea los 50 paquetes del repositorio y 27 paquetes
+adversarios igual que `argorix_module`. Siguen ESP-018.D (lowering) y E
+(matriz de compatibilidad).
 
 ### ESP-019 — VM y scheduler en Argorix
 

@@ -22,7 +22,7 @@ use std::{env, fs};
 
 /// How many samples the Argorix checker matches: all of them. Every check
 /// is ported, so none may dump `unsupported`.
-const MATCHED_AT_LEAST: usize = 1430;
+const MATCHED_AT_LEAST: usize = 1462;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

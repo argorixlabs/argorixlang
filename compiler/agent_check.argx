@@ -50,6 +50,17 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
     bytes.copy(y.out.as_slice())
 }
 
+// The diagnostics of `program`, one `line:column: message` line each, or
+// `ok`: the dump of a program already in a tree, such as a package's modules
+// merged into one (compiler.agent_package).
+pub fn check_tree(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Buffer<u8> {
+    let y: Symbols = check(sl, n, st, program);
+    if y.out.length() == 0u64 {
+        return bytes.copy("ok\n".as_slice());
+    }
+    bytes.copy(y.out.as_slice())
+}
+
 // ------------------------------------------------------------------ the checks
 
 fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Symbols {
@@ -2139,7 +2150,7 @@ fn char_width(lead: u8) -> u64 {
 }
 
 // Where `st[start..end]` starts once leading white space is trimmed.
-fn trim_start(st: Slice<u8>, start: u64, end: u64) -> u64 {
+pub fn trim_start(st: Slice<u8>, start: u64, end: u64) -> u64 {
     let mut at: u64 = start;
     while at < end {
         let width: u64 = space_width(st, at);
@@ -2152,7 +2163,7 @@ fn trim_start(st: Slice<u8>, start: u64, end: u64) -> u64 {
 }
 
 // Where `st[start..end]` ends once trailing white space is trimmed.
-fn trim_end(st: Slice<u8>, start: u64, end: u64) -> u64 {
+pub fn trim_end(st: Slice<u8>, start: u64, end: u64) -> u64 {
     let mut kept: u64 = start;
     let mut at: u64 = start;
     while at < end {

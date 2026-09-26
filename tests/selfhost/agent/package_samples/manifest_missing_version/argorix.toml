@@ -1,0 +1,4 @@
+[package]
+name = "demo"
+[entry]
+main = "src/main.argx"

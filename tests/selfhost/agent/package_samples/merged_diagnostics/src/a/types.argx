@@ -1,0 +1,2 @@
+module a.types
+agent A { receives Q }

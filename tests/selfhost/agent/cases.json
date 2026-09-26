@@ -2,7 +2,7 @@
   "schema_version": 1,
   "core_version": "0.1",
   "task": "ESP-018",
-  "purpose": "Fixtures of the agent-language lexer, parser and checker in compiler/agent_lexer.argx, compiler/agent_parser.argx and compiler/agent_check.argx. The differentials against stage0 over the whole corpus are crates/argorixc/tests/agent_lexer_differential.rs, agent_parser_differential.rs and agent_check_differential.rs; these run them under gcc, clang and the sanitizers.",
+  "purpose": "Fixtures of the agent-language lexer, parser, checker and module graph in compiler/agent_lexer.argx, compiler/agent_parser.argx, compiler/agent_check.argx and compiler/agent_package.argx. The differentials against stage0 over the whole corpus are crates/argorixc/tests/agent_lexer_differential.rs, agent_parser_differential.rs, agent_check_differential.rs and agent_package_differential.rs; these run them under gcc, clang and the sanitizers.",
   "cases": [
     {
       "id": "agent_lex_files",
@@ -52,6 +52,23 @@
         "expected_build": {
           "dumps/0.check": "ok\n",
           "dumps/1.check": "4:10: passport `P` is missing required field `agent_name`\n4:10: passport `P` is missing required field `global_id`\n4:10: passport `P` is missing required field `identity`\n4:10: passport `P` is missing required field `provider`\n4:10: passport `P` is missing required field `version`\n4:10: passport `P` is missing required field `jurisdiction`\n4:10: passport `P` is missing required field `intent`\n4:10: passport `P` requires non-empty `data_residency`\n5:11: passport `P` references unknown agent `Ghost`\n6:13: passport `P` country `chile` must use a 2-letter ISO-like code\n7:16: passport `P` has invalid risk_level `extreme`; allowed: low, medium, high, critical\n"
+        }
+      }
+    },
+    {
+      "id": "agent_package_files",
+      "file": "package_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "package_package",
+        "read_budget": 20000,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.package": "entry main\nmodule b.left src/b/left.argx\nmodule b.right src/b/right.argx\nmodule c.base src/c/base.argx\nmodule main src/main.argx\nimport b.left c.base\nimport b.right c.base\nimport main b.left\nimport main b.right\nok\n",
+          "dumps/1.package": "error: cyclic import detected: a.one -> a.two -> a.three -> a.one\n"
         }
       }
     }

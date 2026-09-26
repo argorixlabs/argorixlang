@@ -1,0 +1,677 @@
+core 0.1;
+module compiler.agent_package;
+
+// The module graph of an agent-language package, in Argorix (ESP-018.C). It
+// ports crates/argorix_module: the `argorix.toml` manifest, resolving the
+// modules an entry file imports, and merging them into one program checked
+// by compiler.agent_check. It prints the dump of spec/language/packages.md.
+//
+// A package is read through the compiler-host boundary, below a directory of
+// the package root (`root`, empty or ending in `/`).
+
+import stdlib.bytes;
+import stdlib.compiler_host;
+import stdlib.result;
+import compiler.agent_ast;
+import compiler.agent_schema;
+import compiler.agent_parser;
+import compiler.agent_check;
+
+// A resolved module: its name, path and source, as ranges of the arena.
+struct Module { name_a: u64, name_b: u64, path_a: u64, path_b: u64, source_a: u64, source_b: u64, }
+
+// An import edge, as ranges of the arena.
+struct Edge { from_a: u64, from_b: u64, to_a: u64, to_b: u64, }
+
+// The resolver's state, moved through it as one value. `text` is the arena
+// every name, path and source is kept in; `stack` the modules being visited;
+// the first error sets `failed` and its message in `out`.
+struct Package {
+    text: Buffer<u8>,
+    modules: Buffer<Module>,
+    edges: Buffer<Edge>,
+    stack: Buffer<u64>,
+    depth: u64,
+    failed: bool,
+    out: Buffer<u8>,
+}
+
+// What resolving needs of one module: its parse error (the messages joined
+// by `; `), or its declared name and its imports, one per line.
+struct Info { failed: bool, message: Buffer<u8>, name: Buffer<u8>, imports: Buffer<u8>, }
+
+// The manifest's error, or its `entry.main`.
+struct Manifest { failed: bool, message: Buffer<u8>, entry: Buffer<u8>, }
+
+// A relative path in `/`-joined components, or `ok` false when it is
+// absolute or leaves the package root.
+struct Normal { ok: bool, path: Buffer<u8>, }
+
+pub fn dump(package: PackageRead, root: Slice<u8>) -> Buffer<u8> {
+    let mut name: Buffer<u8> = bytes.append(Buffer::new(), root);
+    name = bytes.append(name, "argorix.toml".as_slice());
+    match compiler_host.read(package, name.as_slice()) {
+        BytesResult::Ok { value } => resolve(package, root, value.as_slice()),
+        BytesResult::Err { failure } => bytes.copy("error: failed to read manifest\n".as_slice()),
+    }
+}
+
+fn error(message: Slice<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "error: ".as_slice());
+    out = bytes.append(out, message);
+    out.push(10u8);
+    out
+}
+
+fn resolve(package: PackageRead, root: Slice<u8>, source: Slice<u8>) -> Buffer<u8> {
+    let manifest: Manifest = parse_manifest(source);
+    if manifest.failed {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid manifest: ".as_slice());
+        message = bytes.append(message, manifest.message.as_slice());
+        return error(message.as_slice());
+    }
+    let entry: Normal = normalize(manifest.entry.as_slice());
+    if !entry.ok {
+        let mut message: Buffer<u8> = bytes.append(Buffer::new(), "module file `".as_slice());
+        message = bytes.append(message, manifest.entry.as_slice());
+        message = bytes.append(message, "` is outside the project root".as_slice());
+        return error(message.as_slice());
+    }
+    let mut file: Buffer<u8> = bytes.append(Buffer::new(), root);
+    file = bytes.append(file, entry.path.as_slice());
+    match compiler_host.read(package, file.as_slice()) {
+        BytesResult::Ok { value } => resolve_entry(package, root, entry.path.as_slice(), value.as_slice()),
+        BytesResult::Err { failure } => {
+            let mut message: Buffer<u8> = bytes.append(Buffer::new(), "entry file `".as_slice());
+            message = bytes.append(message, entry.path.as_slice());
+            message = bytes.append(message, "` does not exist".as_slice());
+            error(message.as_slice())
+        },
+    }
+}
+
+fn resolve_entry(package: PackageRead, root: Slice<u8>, path: Slice<u8>, source: Slice<u8>) -> Buffer<u8> {
+    let info: Info = module_info(source);
+    if info.failed {
+        let failure: Buffer<u8> = parse_failure(path, info.message.as_slice());
+        return error(failure.as_slice());
+    }
+    let derived: Buffer<u8> = derive_entry_name(path);
+    let mut app: Buffer<u8> = bytes.append(Buffer::new(), "app.".as_slice());
+    app = bytes.append(app, derived.as_slice());
+    if !bytes.equal(info.name.as_slice(), derived.as_slice()) && !bytes.equal(info.name.as_slice(), app.as_slice()) {
+        let mismatch: Buffer<u8> = path_mismatch(path, info.name.as_slice(), derived.as_slice());
+        return error(mismatch.as_slice());
+    }
+    let mut pk: Package = Package {
+        text: Buffer::new(),
+        modules: Buffer::new(),
+        edges: Buffer::new(),
+        stack: Buffer::new(),
+        depth: 0u64,
+        failed: false,
+        out: Buffer::new(),
+    };
+    pk = visit(pk, package, root, info.name.as_slice(), path, source);
+    if pk.failed {
+        return error(pk.out.as_slice());
+    }
+    graph_dump(pk.text.as_slice(), pk.modules.as_slice(), pk.edges.as_slice())
+}
+
+// ------------------------------------------------------------------ the resolver
+
+fn visit(state: Package, package: PackageRead, root: Slice<u8>, name: Slice<u8>, path: Slice<u8>, source: Slice<u8>) -> Package {
+    let mut pk: Package = state;
+    let name_a: u64 = pk.text.length();
+    pk = keep(pk, name);
+    let path_a: u64 = pk.text.length();
+    pk = keep(pk, path);
+    let source_a: u64 = pk.text.length();
+    pk = keep(pk, source);
+    let me: u64 = pk.modules.length();
+    pk.modules.push(Module { name_a: name_a, name_b: path_a, path_a: path_a, path_b: source_a, source_a: source_a, source_b: pk.text.length() });
+    if pk.depth < pk.stack.length() {
+        pk.stack[pk.depth] = me;
+    } else {
+        pk.stack.push(me);
+    }
+    pk.depth += 1u64;
+    let info: Info = module_info(source);
+    pk = visit_imports(pk, package, root, me, info.imports.as_slice());
+    if pk.failed {
+        return pk;
+    }
+    pk.depth -= 1u64;
+    pk
+}
+
+// Each import of module `me`, one per line of `imports`, until one fails.
+fn visit_imports(state: Package, package: PackageRead, root: Slice<u8>, me: u64, imports: Slice<u8>) -> Package {
+    let mut pk: Package = state;
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at < imports.length() {
+        if imports[at] == 10u8 {
+            pk = visit_import(pk, package, root, me, imports.slice(start, at));
+            if pk.failed {
+                return pk;
+            }
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    pk
+}
+
+fn visit_import(state: Package, package: PackageRead, root: Slice<u8>, from: u64, to: Slice<u8>) -> Package {
+    let mut pk: Package = state;
+    if !agent_parser.valid_module_name(to) {
+        pk = fail(pk, "invalid module name `".as_slice());
+        pk = keep_out(pk, to);
+        return keep_out(pk, "`".as_slice());
+    }
+    let mut expected: Buffer<u8> = bytes.append(Buffer::new(), "src/".as_slice());
+    let mut index: u64 = 0u64;
+    while index < to.length() {
+        if to[index] == 46u8 {
+            expected.push(47u8);
+        } else {
+            expected.push(to[index]);
+        }
+        index += 1u64;
+    }
+    expected = bytes.append(expected, ".argx".as_slice());
+    let to_a: u64 = pk.text.length();
+    pk = keep(pk, to);
+    let from_module: Module = pk.modules[from];
+    pk.edges.push(Edge { from_a: from_module.name_a, from_b: from_module.name_b, to_a: to_a, to_b: pk.text.length() });
+    let existing: u64 = module_named(pk.text.as_slice(), pk.modules.as_slice(), to);
+    if existing != NONE {
+        let known: Module = pk.modules[existing];
+        if !same_text(pk.text.as_slice(), known.path_a, known.path_b, expected.as_slice()) {
+            pk = fail(pk, "duplicate module `".as_slice());
+            pk = keep_out(pk, to);
+            return keep_out(pk, "`".as_slice());
+        }
+        if on_stack(pk.stack.as_slice(), pk.depth, existing) {
+            return cycle(pk, existing, to);
+        }
+        return pk;
+    }
+    let normal: Normal = normalize(expected.as_slice());
+    if !normal.ok {
+        pk = fail(pk, "module file `".as_slice());
+        pk = keep_out(pk, expected.as_slice());
+        return keep_out(pk, "` is outside the project root".as_slice());
+    }
+    let mut file: Buffer<u8> = bytes.append(Buffer::new(), root);
+    file = bytes.append(file, expected.as_slice());
+    match compiler_host.read(package, file.as_slice()) {
+        BytesResult::Ok { value } => visit_child(pk, package, root, from, to, expected.as_slice(), value.as_slice()),
+        BytesResult::Err { failure } => {
+            let from_module_again: Module = pk.modules[from];
+            let mut q: Package = fail(pk, "module `".as_slice());
+            q = keep_out_range(q, from_module_again.name_a, from_module_again.name_b);
+            q = keep_out(q, "` imports unknown module `".as_slice());
+            q = keep_out(q, to);
+            keep_out(q, "`".as_slice())
+        },
+    }
+}
+
+fn visit_child(state: Package, package: PackageRead, root: Slice<u8>, from: u64, to: Slice<u8>, path: Slice<u8>, source: Slice<u8>) -> Package {
+    let mut pk: Package = state;
+    let info: Info = module_info(source);
+    if info.failed {
+        let failure: Buffer<u8> = parse_failure(path, info.message.as_slice());
+        pk = fail(pk, "".as_slice());
+        return keep_out(pk, failure.as_slice());
+    }
+    if !bytes.equal(info.name.as_slice(), to) {
+        let mismatch: Buffer<u8> = path_mismatch(path, info.name.as_slice(), to);
+        pk = fail(pk, "".as_slice());
+        return keep_out(pk, mismatch.as_slice());
+    }
+    visit(pk, package, root, to, path, source)
+}
+
+// "cyclic import detected: a -> b -> a", from where `target` is on the stack.
+fn cycle(state: Package, target: u64, to: Slice<u8>) -> Package {
+    let mut pk: Package = fail(state, "cyclic import detected: ".as_slice());
+    let mut index: u64 = 0u64;
+    while pk.stack[index] != target {
+        index += 1u64;
+    }
+    while index < pk.depth {
+        let module: Module = pk.modules[pk.stack[index]];
+        pk = keep_out_range(pk, module.name_a, module.name_b);
+        pk = keep_out(pk, " -> ".as_slice());
+        index += 1u64;
+    }
+    keep_out(pk, to)
+}
+
+const NONE: u64 = 1000000000u64;
+
+fn module_named(text: Slice<u8>, modules: Slice<Module>, name: Slice<u8>) -> u64 {
+    let mut index: u64 = 0u64;
+    while index < modules.length() {
+        let module: Module = modules[index];
+        if same_text(text, module.name_a, module.name_b, name) {
+            return index;
+        }
+        index += 1u64;
+    }
+    NONE
+}
+
+fn same_text(text: Slice<u8>, a: u64, b: u64, other: Slice<u8>) -> bool {
+    bytes.equal(text.slice(a, b), other)
+}
+
+fn on_stack(stack: Slice<u64>, depth: u64, module: u64) -> bool {
+    let mut index: u64 = 0u64;
+    while index < depth {
+        if stack[index] == module {
+            return true;
+        }
+        index += 1u64;
+    }
+    false
+}
+
+// `value` kept in the arena.
+fn keep(state: Package, value: Slice<u8>) -> Package {
+    let mut pk: Package = state;
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        pk.text.push(value[index]);
+        index += 1u64;
+    }
+    pk
+}
+
+// The error begins: `failed` set, `message` its first words.
+fn fail(state: Package, message: Slice<u8>) -> Package {
+    let mut pk: Package = state;
+    pk.failed = true;
+    keep_out(pk, message)
+}
+
+fn keep_out(state: Package, value: Slice<u8>) -> Package {
+    let mut pk: Package = state;
+    let mut index: u64 = 0u64;
+    while index < value.length() {
+        pk.out.push(value[index]);
+        index += 1u64;
+    }
+    pk
+}
+
+fn keep_out_range(state: Package, a: u64, b: u64) -> Package {
+    let mut pk: Package = state;
+    let mut index: u64 = a;
+    while index < b {
+        let byte: u8 = pk.text[index];
+        pk.out.push(byte);
+        index += 1u64;
+    }
+    pk
+}
+
+// ------------------------------------------------------------------ modules
+
+// One module parsed on its own: its name and imports, or its parse error.
+fn module_info(source: Slice<u8>) -> Info {
+    let parsed: Tree = agent_parser.parse(source);
+    if parsed.failed || parsed.unsupported {
+        let printed: Buffer<u8> = agent_parser.dump(source);
+        return Info { failed: true, message: parse_messages(printed.as_slice()), name: Buffer::new(), imports: Buffer::new() };
+    }
+    program_info(parsed.slots.as_slice(), parsed.nodes.as_slice(), parsed.strings.as_slice(), parsed.result)
+}
+
+fn program_info(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Info {
+    let module: u64 = agent_ast.get(sl, n, agent_ast.get(sl, n, program, agent_schema.PROGRAM_MODULE), agent_schema.SPANNED_VALUE);
+    let name: Buffer<u8> = bytes.copy(st.slice(n[module].a, n[module].b));
+    let mut imports: Buffer<u8> = Buffer::new();
+    let mut link: u64 = n[agent_ast.get(sl, n, program, agent_schema.PROGRAM_IMPORTS)].a;
+    while link != 0u64 {
+        let import: u64 = link - 1u64;
+        link = n[import].next;
+        let path: u64 = agent_ast.get(sl, n, agent_ast.get(sl, n, import, agent_schema.IMPORT_DECL_PATH), agent_schema.SPANNED_VALUE);
+        imports = bytes.append(imports, st.slice(n[path].a, n[path].b));
+        imports.push(10u8);
+    }
+    Info { failed: false, message: Buffer::new(), name: name, imports: imports }
+}
+
+// The messages of a failed parse's dump, `line:column: ` dropped, joined by
+// `; `.
+fn parse_messages(dump: Slice<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = Buffer::new();
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at < dump.length() {
+        if dump[at] == 10u8 {
+            let mut message: u64 = start;
+            while message + 1u64 < at && !(dump[message] == 58u8 && dump[message + 1u64] == 32u8) {
+                message += 1u64;
+            }
+            if out.length() > 0u64 {
+                out = bytes.append(out, "; ".as_slice());
+            }
+            out = bytes.append(out, dump.slice(message + 2u64, at));
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    out
+}
+
+fn parse_failure(path: Slice<u8>, messages: Slice<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "failed to parse module `".as_slice());
+    out = bytes.append(out, path);
+    out = bytes.append(out, "`: ".as_slice());
+    bytes.append(out, messages)
+}
+
+fn path_mismatch(path: Slice<u8>, declared: Slice<u8>, expected: Slice<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "module at `".as_slice());
+    out = bytes.append(out, path);
+    out = bytes.append(out, "` declares `".as_slice());
+    out = bytes.append(out, declared);
+    out = bytes.append(out, "` but its path requires `".as_slice());
+    out = bytes.append(out, expected);
+    out.push(96u8);
+    out
+}
+
+// `src/agents/research.argx` is `agents.research`.
+fn derive_entry_name(path: Slice<u8>) -> Buffer<u8> {
+    let mut start: u64 = 0u64;
+    if bytes.starts_with(path, "src/".as_slice()) {
+        start = 4u64;
+    }
+    let mut end: u64 = path.length();
+    if end - start >= 5u64 && bytes.equal(path.slice(end - 5u64, end), ".argx".as_slice()) {
+        end = end - 5u64;
+    }
+    let mut out: Buffer<u8> = Buffer::new();
+    let mut index: u64 = start;
+    while index < end {
+        if path[index] == 47u8 {
+            out.push(46u8);
+        } else {
+            out.push(path[index]);
+        }
+        index += 1u64;
+    }
+    out
+}
+
+// stage0's `normalize_relative`: `/` or `\` separated, `.` and empty
+// components dropped; absolute paths, `..` and drive prefixes refused.
+fn normalize(path: Slice<u8>) -> Normal {
+    let mut out: Buffer<u8> = Buffer::new();
+    if path.length() > 0u64 && (path[0u64] == 47u8 || path[0u64] == 92u8) {
+        return Normal { ok: false, path: out };
+    }
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at <= path.length() {
+        if at == path.length() || path[at] == 47u8 || path[at] == 92u8 {
+            let segment: Slice<u8> = path.slice(start, at);
+            let skip: bool = segment.length() == 0u64 || bytes.equal(segment, ".".as_slice());
+            if !skip {
+                if bytes.equal(segment, "..".as_slice()) || segment[segment.length() - 1u64] == 58u8 {
+                    return Normal { ok: false, path: out };
+                }
+                if out.length() > 0u64 {
+                    out.push(47u8);
+                }
+                out = bytes.append(out, segment);
+            }
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    Normal { ok: out.length() > 0u64, path: out }
+}
+
+// ------------------------------------------------------------------ the manifest
+
+// stage0's `parse_manifest`: `[section]` headers, `key = "value"` pairs, `#`
+// comments and blank lines; `package.name`, `package.version` and
+// `entry.main` are the only keys.
+fn parse_manifest(source: Slice<u8>) -> Manifest {
+    let mut section_a: u64 = 0u64;
+    let mut section_b: u64 = 0u64;
+    let mut has_name: bool = false;
+    let mut has_version: bool = false;
+    let mut has_entry: bool = false;
+    let mut entry_a: u64 = 0u64;
+    let mut entry_b: u64 = 0u64;
+    let mut number: u64 = 0u64;
+    let mut start: u64 = 0u64;
+    while start < source.length() {
+        let mut end: u64 = start;
+        while end < source.length() && source[end] != 10u8 {
+            end += 1u64;
+        }
+        let next: u64 = end + 1u64;
+        if end < source.length() && end > start && source[end - 1u64] == 13u8 {
+            end = end - 1u64;
+        }
+        number += 1u64;
+        let mut comment: u64 = start;
+        while comment < end && source[comment] != 35u8 {
+            comment += 1u64;
+        }
+        let a: u64 = agent_check.trim_start(source, start, comment);
+        let b: u64 = agent_check.trim_end(source, a, comment);
+        if b > a {
+            if b - a >= 2u64 && source[a] == 91u8 && source[b - 1u64] == 93u8 {
+                section_a = agent_check.trim_start(source, a + 1u64, b - 1u64);
+                section_b = agent_check.trim_end(source, section_a, b - 1u64);
+            } else {
+                let mut equals: u64 = a;
+                while equals < b && source[equals] != 61u8 {
+                    equals += 1u64;
+                }
+                if equals == b {
+                    return manifest_line(number, "expected `key = \"value\"`".as_slice());
+                }
+                let key_a: u64 = agent_check.trim_start(source, a, equals);
+                let key_b: u64 = agent_check.trim_end(source, key_a, equals);
+                let key: Slice<u8> = source.slice(key_a, key_b);
+                let value_a: u64 = agent_check.trim_start(source, equals + 1u64, b);
+                let value_b: u64 = agent_check.trim_end(source, value_a, b);
+                if value_b - value_a < 2u64 || source[value_a] != 34u8 || source[value_b - 1u64] != 34u8 {
+                    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "value for `".as_slice());
+                    message = bytes.append(message, key);
+                    message = bytes.append(message, "` must be a quoted string".as_slice());
+                    return manifest_line(number, message.as_slice());
+                }
+                let section: Slice<u8> = source.slice(section_a, section_b);
+                if bytes.equal(section, "package".as_slice()) && bytes.equal(key, "name".as_slice()) {
+                    has_name = true;
+                } else if bytes.equal(section, "package".as_slice()) && bytes.equal(key, "version".as_slice()) {
+                    has_version = true;
+                } else if bytes.equal(section, "entry".as_slice()) && bytes.equal(key, "main".as_slice()) {
+                    has_entry = true;
+                    entry_a = value_a + 1u64;
+                    entry_b = value_b - 1u64;
+                } else {
+                    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "unsupported manifest key `".as_slice());
+                    message = bytes.append(message, key);
+                    message = bytes.append(message, "` in section `[".as_slice());
+                    message = bytes.append(message, section);
+                    message = bytes.append(message, "]`".as_slice());
+                    return manifest_line(number, message.as_slice());
+                }
+            }
+        }
+        start = next;
+    }
+    if !has_entry {
+        return manifest_error("missing `entry.main`".as_slice());
+    }
+    if entry_b == entry_a {
+        return manifest_error("`entry.main` must not be empty".as_slice());
+    }
+    if !has_name {
+        return manifest_error("missing `package.name`".as_slice());
+    }
+    if !has_version {
+        return manifest_error("missing `package.version`".as_slice());
+    }
+    Manifest { failed: false, message: Buffer::new(), entry: bytes.copy(source.slice(entry_a, entry_b)) }
+}
+
+fn manifest_error(message: Slice<u8>) -> Manifest {
+    Manifest { failed: true, message: bytes.copy(message), entry: Buffer::new() }
+}
+
+// "line <n>: <message>".
+fn manifest_line(number: u64, message: Slice<u8>) -> Manifest {
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "line ".as_slice());
+    out = bytes.append_decimal(out, number);
+    out = bytes.append(out, ": ".as_slice());
+    out = bytes.append(out, message);
+    Manifest { failed: true, message: out, entry: Buffer::new() }
+}
+
+// ------------------------------------------------------------------ the dump
+
+// `entry`, the modules by name, the imports sorted and without repeats; then
+// the merged program's diagnostics.
+fn graph_dump(text: Slice<u8>, modules: Slice<Module>, edges: Slice<Edge>) -> Buffer<u8> {
+    let entry: Module = modules[0u64];
+    let mut out: Buffer<u8> = bytes.append(Buffer::new(), "entry ".as_slice());
+    out = bytes.append(out, text.slice(entry.name_a, entry.name_b));
+    out.push(10u8);
+    let order: Buffer<u64> = modules_by_name(text, modules);
+    let mut index: u64 = 0u64;
+    while index < order.length() {
+        let module: Module = modules[order[index]];
+        out = bytes.append(out, "module ".as_slice());
+        out = bytes.append(out, text.slice(module.name_a, module.name_b));
+        out.push(32u8);
+        out = bytes.append(out, text.slice(module.path_a, module.path_b));
+        out.push(10u8);
+        index += 1u64;
+    }
+    let sorted: Buffer<u64> = edges_sorted(text, edges);
+    index = 0u64;
+    while index < sorted.length() {
+        let edge: Edge = edges[sorted[index]];
+        let repeated: bool = index > 0u64 && edge_compare(text, edges[sorted[index - 1u64]], edge) == 0i8;
+        if !repeated {
+            out = bytes.append(out, "import ".as_slice());
+            out = bytes.append(out, text.slice(edge.from_a, edge.from_b));
+            out.push(32u8);
+            out = bytes.append(out, text.slice(edge.to_a, edge.to_b));
+            out.push(10u8);
+        }
+        index += 1u64;
+    }
+    // Merged in stage0's order: the entry, then the others by name.
+    let mut merge_order: Buffer<u64> = Buffer::new();
+    merge_order.push(0u64);
+    index = 0u64;
+    while index < order.length() {
+        if order[index] != 0u64 {
+            merge_order.push(order[index]);
+        }
+        index += 1u64;
+    }
+    let checked: Buffer<u8> = merged_check(text, modules, merge_order.as_slice());
+    bytes.append(out, checked.as_slice())
+}
+
+fn modules_by_name(text: Slice<u8>, modules: Slice<Module>) -> Buffer<u64> {
+    let mut order: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < modules.length() {
+        order.push(index);
+        let mut at: u64 = order.length() - 1u64;
+        while at > 0u64 {
+            let left: Module = modules[order[at - 1u64]];
+            let right: Module = modules[order[at]];
+            if bytes.compare(text.slice(left.name_a, left.name_b), text.slice(right.name_a, right.name_b)) <= 0i8 {
+                break;
+            }
+            let swap: u64 = order[at];
+            order[at] = order[at - 1u64];
+            order[at - 1u64] = swap;
+            at -= 1u64;
+        }
+        index += 1u64;
+    }
+    order
+}
+
+fn edges_sorted(text: Slice<u8>, edges: Slice<Edge>) -> Buffer<u64> {
+    let mut order: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < edges.length() {
+        order.push(index);
+        let mut at: u64 = order.length() - 1u64;
+        while at > 0u64 && edge_compare(text, edges[order[at - 1u64]], edges[order[at]]) > 0i8 {
+            let swap: u64 = order[at];
+            order[at] = order[at - 1u64];
+            order[at - 1u64] = swap;
+            at -= 1u64;
+        }
+        index += 1u64;
+    }
+    order
+}
+
+fn edge_compare(text: Slice<u8>, left: Edge, right: Edge) -> i8 {
+    let from: i8 = bytes.compare(text.slice(left.from_a, left.from_b), text.slice(right.from_a, right.from_b));
+    if from != 0i8 {
+        return from;
+    }
+    bytes.compare(text.slice(left.to_a, left.to_b), text.slice(right.to_a, right.to_b))
+}
+
+// stage0's `merge_package` and `check_program`: every module parsed into one
+// tree, in `order`, and one program whose lists hold each module's
+// declarations in turn.
+fn merged_check(text: Slice<u8>, modules: Slice<Module>, order: Slice<u64>) -> Buffer<u8> {
+    let mut tree: Tree = agent_ast.empty();
+    let mut programs: Buffer<u64> = Buffer::new();
+    let mut index: u64 = 0u64;
+    while index < order.length() {
+        let module: Module = modules[order[index]];
+        tree = agent_parser.parse_into(tree, text.slice(module.source_a, module.source_b));
+        programs.push(tree.result);
+        index += 1u64;
+    }
+    tree = agent_ast.object(tree, agent_schema.PROGRAM);
+    let program: u64 = tree.result;
+    let mut field: u64 = agent_schema.PROGRAM_IMPORTS;
+    while field < agent_schema.field_count(agent_schema.PROGRAM) {
+        tree = agent_ast.array(tree);
+        let merged: u64 = tree.result;
+        tree = agent_ast.set_last(tree, program, field);
+        if field != agent_schema.PROGRAM_IMPORTS {
+            index = 0u64;
+            while index < programs.length() {
+                let list: u64 = agent_ast.get(tree.slots.as_slice(), tree.nodes.as_slice(), programs[index], field);
+                let mut link: u64 = tree.nodes[list].a;
+                while link != 0u64 {
+                    let item: u64 = link - 1u64;
+                    link = tree.nodes[item].next;
+                    tree = agent_ast.push(tree, merged, item);
+                }
+                index += 1u64;
+            }
+        }
+        field += 1u64;
+    }
+    agent_check.check_tree(tree.slots.as_slice(), tree.nodes.as_slice(), tree.strings.as_slice(), program)
+}

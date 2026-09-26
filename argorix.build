@@ -5,6 +5,7 @@ root compiler/main.argx
 module compiler/agent_ast.argx
 module compiler/agent_check.argx
 module compiler/agent_lexer.argx
+module compiler/agent_package.argx
 module compiler/agent_parser.argx
 module compiler/agent_schema.argx
 module compiler/agent_words.argx

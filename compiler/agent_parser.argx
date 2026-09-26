@@ -38,6 +38,23 @@ pub fn parse(source: Slice<u8>) -> Tree {
     parse_program(source, lexed.tokens.as_slice(), p)
 }
 
+// `source` parsed into `tree`, after the programs already there: the modules
+// of a package share one tree, so their declarations can be merged into one
+// program. `result` is the new program.
+pub fn parse_into(tree: Tree, source: Slice<u8>) -> Tree {
+    let lexed: AgentLexed = agent_lexer.lex(source);
+    let mut p: Tree = tree;
+    p.current = 0u64;
+    p.matched = false;
+    p.failed = false;
+    p.unsupported = false;
+    if lexed.errors.length() > 0u64 {
+        p.failed = true;
+        return p;
+    }
+    parse_program(source, lexed.tokens.as_slice(), p)
+}
+
 // PARSED, FAILED or UNSUPPORTED.
 pub fn status(unsupported: bool, failed: bool) -> u64 {
     if unsupported {
@@ -225,7 +242,7 @@ fn parse_declaration(s: Slice<u8>, t: Slice<AgentToken>, p: Tree, into: u64) -> 
 }
 
 // `[a-zA-Z_][a-zA-Z0-9_]*`, joined by dots.
-fn valid_module_name(name: Slice<u8>) -> bool {
+pub fn valid_module_name(name: Slice<u8>) -> bool {
     if name.length() == 0u64 {
         return false;
     }

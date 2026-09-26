@@ -1,7 +1,9 @@
+pub mod dump;
 pub mod manifest;
 pub mod merge;
 pub mod resolver;
 
+pub use dump::package_dump;
 pub use manifest::{parse_manifest, Manifest};
 pub use merge::{check_package, merge_package, package_ir};
 pub use resolver::{
