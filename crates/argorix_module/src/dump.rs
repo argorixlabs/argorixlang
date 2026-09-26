@@ -32,6 +32,28 @@ pub fn agent_ir_dump(source: &[u8]) -> String {
     out
 }
 
+/// The canonical IR dump of a package (`spec/language/ir.md`): the
+/// resolver's error as in `package_dump`, the merged program's diagnostics,
+/// or `package_ir` as pretty JSON and a line feed.
+pub fn package_ir_dump(manifest_path: &Path) -> String {
+    let package = match resolve_package(manifest_path) {
+        Ok(package) => package,
+        Err(error) => return format!("error: {error}\n"),
+    };
+    let merged = merge_package(&package);
+    if let Err(diagnostics) = check_program(&merged) {
+        let mut out = String::new();
+        for diagnostic in diagnostics {
+            let _ = writeln!(out, "{diagnostic}");
+        }
+        return out;
+    }
+    let ir = crate::package_ir(&merged, &package.graph);
+    let mut out = serde_json::to_string_pretty(&ir).expect("the IR serializes");
+    out.push('\n');
+    out
+}
+
 /// - A package that does not resolve gives one line, `error: ` and the
 ///   resolver's message.
 /// - Otherwise `entry <name>`, a `module <name> <path>` line per module and

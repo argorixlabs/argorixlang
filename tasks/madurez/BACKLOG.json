@@ -111,7 +111,7 @@
       "status": "EN_CURSO",
       "file": "tasks/espada/ESP-018.md",
       "evidence": "crates/argorixc/tests/agent_lexer_differential.rs; crates/argorixc/tests/agent_parser_differential.rs; crates/argorixc/tests/agent_check_differential.rs; crates/argorixc/tests/agent_package_differential.rs; crates/argorixc/tests/agent_ir_differential.rs; crates/argorixc/tests/agent_ir_table.rs; crates/argorixc/tests/unicode_tables.rs; crates/argorixc/tests/agent_schema.rs; crates/argorixc/tests/agent_blocks.rs; tests/selfhost/agent/cases.json",
-      "scope": "Lenguaje de agentes migrado a Argorix; ESP-018.A (lexer) y ESP-018.B (parser) hechas, iguales a stage0 en 1564 y 1423 archivos; ESP-018.C (chequeo y grafo de modulos) hecha, igual a stage0 en 1462 programas y 79 paquetes; ESP-018.D en curso: IR de un archivo igual a stage0 en 557 programas; faltan IR de paquetes, bytecode, verificador y matriz de compatibilidad"
+      "scope": "Lenguaje de agentes migrado a Argorix; ESP-018.A (lexer) y ESP-018.B (parser) hechas, iguales a stage0 en 1564 y 1423 archivos; ESP-018.C (chequeo y grafo de modulos) hecha, igual a stage0 en 1462 programas y 79 paquetes; ESP-018.D en curso: IR igual a stage0 en 557 programas y 36 paquetes; faltan bytecode, verificador y matriz de compatibilidad"
     }
   },
   "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad. esp_progress se actualiza al reclamar o cerrar una tarea ESP; el estado operativo del día vive en WORKBOARD.md.",

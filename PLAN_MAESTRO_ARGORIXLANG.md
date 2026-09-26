@@ -25,7 +25,7 @@ para Linux, con el que el compilador se construye sin compilador C. ESP-017
 en Argorix coinciden con los de stage0 en todo el corpus (1.564 y 1.423
 archivos), y su chequeo semántico y su grafo de módulos dan los mismos
 diagnósticos en 1.462 programas y 79 paquetes; su IR es idéntico al de stage0
-en los 557 programas que chequean; faltan el bytecode y la matriz de
+en los 557 programas y 36 paquetes que chequean; faltan el bytecode y la matriz de
 compatibilidad.
 Ninguna otra tarea cambió de estado.
 El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)

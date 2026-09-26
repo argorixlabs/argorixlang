@@ -13,7 +13,7 @@
 // The differential needs a Unix C toolchain; elsewhere this file is empty.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
-use argorix_module::package_dump;
+use argorix_module::{package_dump, package_ir_dump};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
@@ -155,22 +155,31 @@ fn the_argorix_module_graph_matches_the_stage0_resolver_when_cc_is_available() {
     );
 
     let mut failed = Vec::new();
+    let mut lowered = 0;
     for (index, path) in unique.iter().enumerate() {
-        let expected = package_dump(&package.join(format!("p{index}/argorix.toml")));
-        let actual = fs::read(build.join(format!("dumps/{index}.package"))).unwrap();
-        if actual != expected.as_bytes() {
-            let name = path.strip_prefix(root()).unwrap_or(path).display();
-            failed.push(format!(
-                "{name}:\n  expected {expected:?}\n  got      {:?}",
-                String::from_utf8_lossy(&actual)
-            ));
+        let manifest = package.join(format!("p{index}/argorix.toml"));
+        let name = path.strip_prefix(root()).unwrap_or(path).display();
+        for (suffix, expected) in [
+            ("package", package_dump(&manifest)),
+            ("package-ir", package_ir_dump(&manifest)),
+        ] {
+            if suffix == "package-ir" && expected.starts_with('{') {
+                lowered += 1;
+            }
+            let actual = fs::read(build.join(format!("dumps/{index}.{suffix}"))).unwrap();
+            if actual != expected.as_bytes() {
+                failed.push(format!(
+                    "{name} ({suffix}):\n  expected {expected:?}\n  got      {:?}",
+                    String::from_utf8_lossy(&actual)
+                ));
+            }
         }
     }
     eprintln!(
-        "agent packages: {} match, {} differ, of {}",
-        unique.len() - failed.len(),
+        "agent packages: {} dumps match ({lowered} lowered to IR), {} differ, of {}",
+        2 * unique.len() - failed.len(),
         failed.len(),
-        unique.len()
+        2 * unique.len()
     );
     assert!(
         failed.is_empty(),

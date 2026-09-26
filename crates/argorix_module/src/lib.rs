@@ -3,7 +3,7 @@ pub mod manifest;
 pub mod merge;
 pub mod resolver;
 
-pub use dump::{agent_ir_dump, package_dump};
+pub use dump::{agent_ir_dump, package_dump, package_ir_dump};
 pub use manifest::{parse_manifest, Manifest};
 pub use merge::{check_package, merge_package, package_ir};
 pub use resolver::{

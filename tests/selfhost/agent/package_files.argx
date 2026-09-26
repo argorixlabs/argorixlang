@@ -6,7 +6,8 @@ module selfhost_agent.package_files;
 // `packages.txt` in the package root lists one directory per line, each
 // holding an `argorix.toml`. Each package is resolved, merged and checked,
 // and its canonical dump (spec/language/packages.md) written to
-// `dumps/<n>.package` in the build root, where n counts from 0. The result
+// `dumps/<n>.package` in the build root, where n counts from 0, and its IR
+// dump (spec/language/ir.md) to `dumps/<n>.package-ir`. The result
 // is the number of dumps written, or 1000000 plus the failure digest of the
 // first read or write that failed.
 
@@ -50,5 +51,11 @@ fn dump_one(package: PackageRead, build: BuildWrite, directory: Slice<u8>, numbe
     let mut root: Buffer<u8> = bytes.append(Buffer::new(), directory);
     root.push(47u8);
     let printed: Buffer<u8> = agent_package.dump(package, root.as_slice());
-    result.checked_digest(compiler_host.write(build, name.as_slice(), printed.as_slice()))
+    let written: u64 = result.checked_digest(compiler_host.write(build, name.as_slice(), printed.as_slice()));
+    if written != 0u64 {
+        return written;
+    }
+    name = bytes.append(name, "-ir".as_slice());
+    let lowered: Buffer<u8> = agent_package.ir_dump(package, root.as_slice());
+    result.checked_digest(compiler_host.write(build, name.as_slice(), lowered.as_slice()))
 }

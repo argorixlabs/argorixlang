@@ -16,6 +16,7 @@ import compiler.agent_ast;
 import compiler.agent_schema;
 import compiler.agent_parser;
 import compiler.agent_check;
+import compiler.agent_ir;
 
 // A resolved module: its name, path and source, as ranges of the arena.
 struct Module { name_a: u64, name_b: u64, path_a: u64, path_b: u64, source_a: u64, source_b: u64, }
@@ -47,11 +48,26 @@ struct Manifest { failed: bool, message: Buffer<u8>, entry: Buffer<u8>, }
 // absolute or leaves the package root.
 struct Normal { ok: bool, path: Buffer<u8>, }
 
+// What a resolved package prints: its graph and check (`dump`), or its IR
+// (`ir_dump`).
+const GRAPH: u64 = 0u64;
+const IR: u64 = 1u64;
+
 pub fn dump(package: PackageRead, root: Slice<u8>) -> Buffer<u8> {
+    load(package, root, GRAPH)
+}
+
+// The dump of `package_ir`: the resolver's error, the merged program's
+// diagnostics, or its IR with the modules and imports.
+pub fn ir_dump(package: PackageRead, root: Slice<u8>) -> Buffer<u8> {
+    load(package, root, IR)
+}
+
+fn load(package: PackageRead, root: Slice<u8>, mode: u64) -> Buffer<u8> {
     let mut name: Buffer<u8> = bytes.append(Buffer::new(), root);
     name = bytes.append(name, "argorix.toml".as_slice());
     match compiler_host.read(package, name.as_slice()) {
-        BytesResult::Ok { value } => resolve(package, root, value.as_slice()),
+        BytesResult::Ok { value } => resolve(package, root, value.as_slice(), mode),
         BytesResult::Err { failure } => bytes.copy("error: failed to read manifest\n".as_slice()),
     }
 }
@@ -63,7 +79,7 @@ fn error(message: Slice<u8>) -> Buffer<u8> {
     out
 }
 
-fn resolve(package: PackageRead, root: Slice<u8>, source: Slice<u8>) -> Buffer<u8> {
+fn resolve(package: PackageRead, root: Slice<u8>, source: Slice<u8>, mode: u64) -> Buffer<u8> {
     let manifest: Manifest = parse_manifest(source);
     if manifest.failed {
         let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid manifest: ".as_slice());
@@ -80,7 +96,7 @@ fn resolve(package: PackageRead, root: Slice<u8>, source: Slice<u8>) -> Buffer<u
     let mut file: Buffer<u8> = bytes.append(Buffer::new(), root);
     file = bytes.append(file, entry.path.as_slice());
     match compiler_host.read(package, file.as_slice()) {
-        BytesResult::Ok { value } => resolve_entry(package, root, entry.path.as_slice(), value.as_slice()),
+        BytesResult::Ok { value } => resolve_entry(package, root, entry.path.as_slice(), value.as_slice(), mode),
         BytesResult::Err { failure } => {
             let mut message: Buffer<u8> = bytes.append(Buffer::new(), "entry file `".as_slice());
             message = bytes.append(message, entry.path.as_slice());
@@ -90,7 +106,7 @@ fn resolve(package: PackageRead, root: Slice<u8>, source: Slice<u8>) -> Buffer<u
     }
 }
 
-fn resolve_entry(package: PackageRead, root: Slice<u8>, path: Slice<u8>, source: Slice<u8>) -> Buffer<u8> {
+fn resolve_entry(package: PackageRead, root: Slice<u8>, path: Slice<u8>, source: Slice<u8>, mode: u64) -> Buffer<u8> {
     let info: Info = module_info(source);
     if info.failed {
         let failure: Buffer<u8> = parse_failure(path, info.message.as_slice());
@@ -115,6 +131,9 @@ fn resolve_entry(package: PackageRead, root: Slice<u8>, path: Slice<u8>, source:
     pk = visit(pk, package, root, info.name.as_slice(), path, source);
     if pk.failed {
         return error(pk.out.as_slice());
+    }
+    if mode == IR {
+        return package_ir(pk.text.as_slice(), pk.modules.as_slice(), pk.edges.as_slice());
     }
     graph_dump(pk.text.as_slice(), pk.modules.as_slice(), pk.edges.as_slice())
 }
@@ -577,18 +596,60 @@ fn graph_dump(text: Slice<u8>, modules: Slice<Module>, edges: Slice<Edge>) -> Bu
         }
         index += 1u64;
     }
-    // Merged in stage0's order: the entry, then the others by name.
-    let mut merge_order: Buffer<u64> = Buffer::new();
-    merge_order.push(0u64);
-    index = 0u64;
+    let merge: Buffer<u64> = merge_order(order.as_slice());
+    let tree: Tree = merged(text, modules, merge.as_slice());
+    let checked: Buffer<u8> = agent_check.check_tree(tree.slots.as_slice(), tree.nodes.as_slice(), tree.strings.as_slice(), tree.result);
+    bytes.append(out, checked.as_slice())
+}
+
+// stage0's `package_ir`: the merged program's IR with the modules by name
+// and the imports sorted, or its diagnostics when it does not check.
+fn package_ir(text: Slice<u8>, modules: Slice<Module>, edges: Slice<Edge>) -> Buffer<u8> {
+    let order: Buffer<u64> = modules_by_name(text, modules);
+    let merge: Buffer<u64> = merge_order(order.as_slice());
+    let tree: Tree = merged(text, modules, merge.as_slice());
+    let checked: Buffer<u8> = agent_check.check_tree(tree.slots.as_slice(), tree.nodes.as_slice(), tree.strings.as_slice(), tree.result);
+    if !bytes.equal(checked.as_slice(), "ok\n".as_slice()) {
+        return checked;
+    }
+    let mut module_lines: Buffer<u8> = Buffer::new();
+    let mut index: u64 = 0u64;
     while index < order.length() {
-        if order[index] != 0u64 {
-            merge_order.push(order[index]);
+        let module: Module = modules[order[index]];
+        module_lines = bytes.append(module_lines, text.slice(module.name_a, module.name_b));
+        module_lines.push(32u8);
+        module_lines = bytes.append(module_lines, text.slice(module.path_a, module.path_b));
+        module_lines.push(10u8);
+        index += 1u64;
+    }
+    let mut import_lines: Buffer<u8> = Buffer::new();
+    let sorted: Buffer<u64> = edges_sorted(text, edges);
+    index = 0u64;
+    while index < sorted.length() {
+        let edge: Edge = edges[sorted[index]];
+        if !(index > 0u64 && edge_compare(text, edges[sorted[index - 1u64]], edge) == 0i8) {
+            import_lines = bytes.append(import_lines, text.slice(edge.from_a, edge.from_b));
+            import_lines.push(32u8);
+            import_lines = bytes.append(import_lines, text.slice(edge.to_a, edge.to_b));
+            import_lines.push(10u8);
         }
         index += 1u64;
     }
-    let checked: Buffer<u8> = merged_check(text, modules, merge_order.as_slice());
-    bytes.append(out, checked.as_slice())
+    agent_ir.program_ir(tree.slots.as_slice(), tree.nodes.as_slice(), tree.strings.as_slice(), tree.result, module_lines.as_slice(), import_lines.as_slice())
+}
+
+// Stage0's merge order: the entry, then the others by name (`order`).
+fn merge_order(order: Slice<u64>) -> Buffer<u64> {
+    let mut merge: Buffer<u64> = Buffer::new();
+    merge.push(0u64);
+    let mut index: u64 = 0u64;
+    while index < order.length() {
+        if order[index] != 0u64 {
+            merge.push(order[index]);
+        }
+        index += 1u64;
+    }
+    merge
 }
 
 fn modules_by_name(text: Slice<u8>, modules: Slice<Module>) -> Buffer<u64> {
@@ -641,7 +702,7 @@ fn edge_compare(text: Slice<u8>, left: Edge, right: Edge) -> i8 {
 // stage0's `merge_package` and `check_program`: every module parsed into one
 // tree, in `order`, and one program whose lists hold each module's
 // declarations in turn.
-fn merged_check(text: Slice<u8>, modules: Slice<Module>, order: Slice<u64>) -> Buffer<u8> {
+fn merged(text: Slice<u8>, modules: Slice<Module>, order: Slice<u64>) -> Tree {
     let mut tree: Tree = agent_ast.empty();
     let mut programs: Buffer<u64> = Buffer::new();
     let mut index: u64 = 0u64;
@@ -673,5 +734,14 @@ fn merged_check(text: Slice<u8>, modules: Slice<Module>, order: Slice<u64>) -> B
         }
         field += 1u64;
     }
-    agent_check.check_tree(tree.slots.as_slice(), tree.nodes.as_slice(), tree.strings.as_slice(), program)
+    // The merged program keeps the entry module's name, at 1:1.
+    let entry: Module = modules[0u64];
+    tree = agent_ast.string(tree, text.slice(entry.name_a, entry.name_b));
+    let name: u64 = tree.result;
+    tree = agent_ast.span(tree, 0u64, 0u64, 1u64, 1u64);
+    let span_node: u64 = tree.result;
+    tree = agent_ast.spanned(tree, name, span_node);
+    tree = agent_ast.set_last(tree, program, agent_schema.PROGRAM_MODULE);
+    tree.result = program;
+    tree
 }

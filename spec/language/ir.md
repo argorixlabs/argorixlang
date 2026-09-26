@@ -1,6 +1,6 @@
 # Agent-language IR dump
 
-Status: ESP-018.D.1. Two implementations lower a checked agent-language
+Status: ESP-018.D.1, done. Two implementations lower a checked agent-language
 program to the IR:
 
 - stage0's `IrProgram::from(&Program)` in `crates/argorix_ir/src/ir.rs`,
@@ -22,6 +22,22 @@ samples.
 - Otherwise the IR as `serde_json::to_string_pretty` writes it, and a line
   feed: two spaces per level, `"key": value`, `[]` for an empty list, the
   same string escapes as the syntax-tree dump (`ast.md`).
+
+## Packages
+
+`argorixc agent-package-ir <directory or manifest>` prints a package's IR
+dump, and so does `compiler.agent_package.ir_dump`:
+
+- a package that does not resolve gives the `error:` line of
+  `packages.md`;
+- a merged program that does not check gives its diagnostics, one
+  `line:column: message` line each;
+- otherwise `package_ir`: the merged program's IR, named after the entry
+  module, with `modules` (name and path, by name) and `imports` (from and
+  to, sorted, without repeats) after `module`.
+
+`crates/argorixc/tests/agent_package_differential.rs` compares these dumps
+too, for every package.
 
 ## The IR
 

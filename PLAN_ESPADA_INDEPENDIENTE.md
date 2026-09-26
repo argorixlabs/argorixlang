@@ -483,11 +483,11 @@ ESP-018.C está hecha: todos los chequeos de `checker.rs` están portados
 mismos diagnósticos, spans incluidos, que stage0 en 1.462 programas; el grafo
 de módulos (`compiler/agent_package.argx`, [paquetes](spec/language/packages.md))
 resuelve, fusiona y chequea los 50 paquetes del repositorio y 27 paquetes
-adversarios igual que `argorix_module`. ESP-018.D está EN_CURSO: el IR de un
-archivo (`compiler/agent_ir.argx`, [IR](spec/language/ir.md)), con emisores
-generados desde `ir.rs`, es idéntico al de stage0 en los 557 programas que
-chequean; siguen el IR de paquetes, el bytecode y las decisiones del
-verificador, y luego ESP-018.E (matriz de compatibilidad).
+adversarios igual que `argorix_module`. ESP-018.D está EN_CURSO: el IR
+(`compiler/agent_ir.argx`, [IR](spec/language/ir.md)), con emisores generados
+desde `ir.rs`, es idéntico al de stage0 en los 557 programas y los 36 paquetes
+que chequean; siguen el bytecode y las decisiones del verificador, y luego
+ESP-018.E (matriz de compatibilidad).
 
 ### ESP-019 — VM y scheduler en Argorix
 

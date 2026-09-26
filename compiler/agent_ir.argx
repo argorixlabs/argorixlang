@@ -16,7 +16,9 @@ import compiler.agent_check;
 
 // The output and serde_json's pretty layout: `depth` levels of two spaces,
 // and `first` while the innermost object or array has no member yet.
-struct Pretty { out: Buffer<u8>, depth: u64, first: bool, }
+// `modules` and `imports` are a package's, one `name path` or `from to`
+// line each; empty for one file.
+struct Pretty { out: Buffer<u8>, depth: u64, first: bool, modules: Buffer<u8>, imports: Buffer<u8>, }
 
 // The dump: the checker's when the program does not parse or check,
 // otherwise the IR and a line feed.
@@ -26,8 +28,14 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
         return checked;
     }
     let parsed: Tree = agent_parser.parse(source);
-    let program: u64 = parsed.result;
-    let y: Pretty = emit_program(Pretty { out: Buffer::new(), depth: 0u64, first: true }, parsed.slots.as_slice(), parsed.nodes.as_slice(), parsed.strings.as_slice(), program);
+    program_ir(parsed.slots.as_slice(), parsed.nodes.as_slice(), parsed.strings.as_slice(), parsed.result, "".as_slice(), "".as_slice())
+}
+
+// The IR of a checked `program` and a line feed, with a package's modules
+// and imports (`name path` and `from to` lines; empty for one file).
+pub fn program_ir(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, modules: Slice<u8>, imports: Slice<u8>) -> Buffer<u8> {
+    let start: Pretty = Pretty { out: Buffer::new(), depth: 0u64, first: true, modules: bytes.copy(modules), imports: bytes.copy(imports) };
+    let y: Pretty = emit_program(start, sl, n, st, program);
     let mut out: Buffer<u8> = bytes.copy(y.out.as_slice());
     out.push(10u8);
     out
@@ -274,14 +282,41 @@ fn optional_null(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u
 
 // ------------------------------------------------------------------ the fields written by hand
 
-// One file has no modules or imports; `package_ir` fills them (both are
-// left out when empty).
+// A package's modules and imports, which `package_ir` fills; both are left
+// out when empty, as for one file.
 fn special_program_modules(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
-    state
+    let lines: Buffer<u8> = bytes.copy(state.modules.as_slice());
+    pairs(state, field, lines.as_slice(), "name".as_slice(), "path".as_slice())
 }
 
 fn special_program_imports(state: Pretty, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, field: Slice<u8>, node: u64) -> Pretty {
-    state
+    let lines: Buffer<u8> = bytes.copy(state.imports.as_slice());
+    pairs(state, field, lines.as_slice(), "from".as_slice(), "to".as_slice())
+}
+
+// A list of objects `{left: .., right: ..}`, one per `left right` line.
+fn pairs(state: Pretty, field: Slice<u8>, lines: Slice<u8>, left: Slice<u8>, right: Slice<u8>) -> Pretty {
+    if lines.length() == 0u64 {
+        return state;
+    }
+    let mut y: Pretty = open(key(state, field), 91u8);
+    let mut start: u64 = 0u64;
+    let mut at: u64 = 0u64;
+    while at < lines.length() {
+        if lines[at] == 10u8 {
+            let mut space: u64 = start;
+            while lines[space] != 32u8 {
+                space += 1u64;
+            }
+            y = open(member(y), 123u8);
+            y = text(key(y, left), lines.slice(start, space));
+            y = text(key(y, right), lines.slice(space + 1u64, at));
+            y = close(y, 125u8);
+            start = at + 1u64;
+        }
+        at += 1u64;
+    }
+    close(y, 93u8)
 }
 
 // `declaration.effect()`: `require` or `deny`.
