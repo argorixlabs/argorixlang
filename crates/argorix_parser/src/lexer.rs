@@ -33,6 +33,57 @@ pub fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
     }
 }
 
+/// The canonical token dump of the agent-language lexer (ESP-018.A,
+/// `spec/language/tokens.md`): what `compiler/agent_lexer.argx` must print for
+/// the same bytes.
+///
+/// - Source that is not UTF-8 is one line, at the first invalid byte.
+/// - A source with lexical errors gives each diagnostic, `line:column:
+///   message`, in the order the lexer reports them.
+/// - Otherwise each token is one line, `line:column start end Kind`, then an
+///   identifier's text, a string's value between quotes and escaped as JSON,
+///   or an integer's value. The last token is `Eof`.
+pub fn token_dump(source: &[u8]) -> String {
+    let text = match std::str::from_utf8(source) {
+        Ok(text) => text,
+        Err(error) => {
+            let prefix = std::str::from_utf8(&source[..error.valid_up_to()]).unwrap_or_default();
+            let line = 1 + prefix.matches('\n').count();
+            let column = 1 + prefix.rsplit('\n').next().unwrap_or("").chars().count();
+            return format!("{line}:{column}: source is not valid UTF-8\n");
+        }
+    };
+    let mut out = String::new();
+    match lex(text) {
+        Err(diagnostics) => {
+            for diagnostic in diagnostics {
+                out.push_str(&format!("{diagnostic}\n"));
+            }
+        }
+        Ok(tokens) => {
+            for token in tokens {
+                let span = token.span;
+                out.push_str(&format!(
+                    "{}:{} {} {} ",
+                    span.line, span.column, span.start, span.end
+                ));
+                match &token.kind {
+                    TokenKind::Ident(name) => out.push_str(&format!("Ident {name}")),
+                    TokenKind::StringLiteral(value) => {
+                        out.push_str("String \"");
+                        out.push_str(&crate::core::escape_json(value));
+                        out.push('"');
+                    }
+                    TokenKind::IntegerLiteral(value) => out.push_str(&format!("Integer {value}")),
+                    other => out.push_str(&format!("{other:?}")),
+                }
+                out.push('\n');
+            }
+        }
+    }
+    out
+}
+
 struct Lexer<'source> {
     source: &'source str,
     offset: usize,

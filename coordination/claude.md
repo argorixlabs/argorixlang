@@ -2,8 +2,17 @@
 
 ## Current claim
 
-- None. Next in the plan: ESP-017 (second target and native bootstrap) and
-  ESP-018 (the agent language migrated).
+- Task: ESP-018 — the agent and policy language, migrated to Argorix, as
+  subtasks A (lexer), B (parser and AST), C (checks and modules), D
+  (lowering to IR and bytecode) and E (compatibility matrix).
+- State: IN PROGRESS. A is done on `claude/agent-lexer-esp018`: the lexer
+  matches stage0 on 1,564 files. B is next.
+- Started: 2026-09-26.
+- Ficha: `tasks/espada/ESP-018.md`; dump `spec/language/tokens.md`.
+- Paths: `compiler/agent_lexer.argx`, `compiler/unicode.argx` (generated),
+  `tests/selfhost/agent/**`, `spec/language/tokens.md`, the ficha, the token
+  dump in `crates/argorix_parser/src/lexer.rs` and its `argorixc` command.
+- Parallel: ESP-017 (the Windows target) is in PR #63, awaiting review.
 
 ## Handoff (ESP-016)
 

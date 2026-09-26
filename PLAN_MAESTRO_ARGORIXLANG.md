@@ -16,8 +16,13 @@ en `main`). Incluye:
 sus fuentes por la frontera de archivos y coincide byte a byte con el lexer
 stage0 en 49 muestras. **ESP-011 (parser en Argorix) está HECHA** (PR #54): el
 parser y el AST en `compiler/` coinciden con el parser stage0 en 135 archivos.
-**ESP-012 (chequeo semántico en Argorix) está EN_CURSO**: su parte A, el
-checker de tipos y nombres, coincide con el checker stage0 en 140 archivos.
+**ESP-012 a ESP-016 están HECHAS** (PRs #55 a #62): el checker y el linker,
+el IR, el verificador y el backend C en Argorix; stage1, el primer compilador
+self-hosted; el bootstrap stage2/stage3 sin Rust; y el backend nativo x86-64
+para Linux, con el que el compilador se construye sin compilador C. ESP-017
+(segundo destino, Windows) espera revisión en el PR #63.
+**ESP-018 (lenguaje de agentes migrado) está EN_CURSO**: su lexer en Argorix
+coincide byte a byte con el lexer stage0 en 1.564 archivos.
 Ninguna otra tarea cambió de estado.
 El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)
 y el estado operativo del día —carriles, ramas, PRs e issues abiertos— en
