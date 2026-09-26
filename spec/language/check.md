@@ -39,3 +39,4 @@ far the port has come.
 | 4 | Adapter profiles | 789 of 1,430 |
 | 5 | Passports, including `asn` registry, number and country | 846 of 1,430 |
 | 6 | A-Trust boundaries, identities, credential contracts and handshakes | 976 of 1,430 |
+| 7 | Trust ledgers and their hash chains | 1,025 of 1,430 |

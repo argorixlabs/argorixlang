@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -102,6 +102,7 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_atrust_identities(sl, n, st, program, y);
     y = check_atrust_credential_contracts(sl, n, st, program, y);
     y = check_atrust_handshakes(sl, n, st, program, y);
+    y = check_trust_ledgers(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -2682,4 +2683,178 @@ fn contract_mismatch(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: 
     y = put(y, rest);
     y = text(y, sl, n, st, ours);
     close(y)
+}
+
+// ------------------------------------------------------------------ trust ledgers
+
+// Whether some crypto named `name` is of kind `hash` and not denied.
+fn hash_crypto(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, name: u64) -> bool {
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_CRYPTOS);
+    while link != 0u64 {
+        let crypto: u64 = link - 1u64;
+        link = n[crypto].next;
+        if same(sl, n, st, get(sl, n, crypto, agent_schema.CRYPTO_DECL_NAME), name) && named(sl, n, st, get(sl, n, crypto, agent_schema.CRYPTO_DECL_KIND), "hash".as_slice()) && !named(sl, n, st, get(sl, n, crypto, agent_schema.CRYPTO_DECL_STATUS), "denied".as_slice()) {
+            return true;
+        }
+    }
+    false
+}
+
+// Whether `hash` starts with `<algorithm>:`.
+fn hash_prefixed(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, hash: u64, algorithm: u64) -> bool {
+    let h: u64 = value(sl, n, hash);
+    let a: u64 = value(sl, n, algorithm);
+    let length: u64 = n[a].b - n[a].a;
+    if n[h].b - n[h].a < length + 1u64 {
+        return false;
+    }
+    bytes.equal(st.slice(n[h].a, n[h].a + length), st.slice(n[a].a, n[a].b)) && st[n[h].a + length] == 58u8
+}
+
+fn check_trust_ledgers(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_TRUST_LEDGERS);
+    while link != 0u64 {
+        let l: u64 = link - 1u64;
+        link = n[l].next;
+        let name: u64 = get(sl, n, l, agent_schema.TRUST_LEDGER_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "trust_ledger".as_slice());
+        } else {
+            names.push(name);
+        }
+        let scope: u64 = get(sl, n, l, agent_schema.TRUST_LEDGER_DECL_SCOPE);
+        if !(named(sl, n, st, scope, "local".as_slice()) || named(sl, n, st, scope, "package".as_slice()) || named(sl, n, st, scope, "bundle".as_slice())) {
+            y = say(y, sl, n, st, scope, "trust_ledger".as_slice(), name, "requires scope `local`, `package`, or `bundle`\n".as_slice());
+        }
+        y = requires_either(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_MODE, "trust_ledger".as_slice(), name, "mode".as_slice(), "dry_run".as_slice(), "declared_only".as_slice());
+        let algorithm: u64 = get(sl, n, l, agent_schema.TRUST_LEDGER_DECL_HASH_ALGORITHM);
+        if empty(sl, n, algorithm) {
+            y = missing_field(y, sl, n, st, algorithm, "trust_ledger".as_slice(), name, "hash_algorithm".as_slice());
+        } else if !hash_crypto(sl, n, st, program, algorithm) {
+            y = say(y, sl, n, st, algorithm, "trust_ledger".as_slice(), name, "hash_algorithm `".as_slice());
+            y = text(y, sl, n, st, algorithm);
+            y = put(y, "` must reference a declared, non-denied crypto of kind `hash`\n".as_slice());
+        }
+        y = requires_either(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_CHAIN_POLICY, "trust_ledger".as_slice(), name, "chain_policy".as_slice(), "append_only".as_slice(), "declared_only".as_slice());
+        y = requires(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_NETWORK, "trust_ledger".as_slice(), name, "network".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_KEY_MATERIAL, "trust_ledger".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_SECRET_MATERIAL, "trust_ledger".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_EXECUTION, "trust_ledger".as_slice(), name, "execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_EVIDENCE, "trust_ledger".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_SECURITY_CLAIMS, "trust_ledger".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+        y = required_list(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_PURPOSE, "trust_ledger".as_slice(), name, "purpose".as_slice());
+        let mut purpose_link: u64 = first(sl, n, l, agent_schema.TRUST_LEDGER_DECL_PURPOSE);
+        while purpose_link != 0u64 {
+            let item: u64 = purpose_link - 1u64;
+            purpose_link = n[item].next;
+            if blank(sl, n, st, item) {
+                y = say(y, sl, n, st, item, "trust_ledger".as_slice(), name, "purpose must not contain empty strings\n".as_slice());
+            }
+        }
+        let notes: u64 = get(sl, n, l, agent_schema.TRUST_LEDGER_DECL_NOTES);
+        if notes != 0u64 && blank(sl, n, st, notes) {
+            y = say(y, sl, n, st, notes, "trust_ledger".as_slice(), name, "notes must not be empty\n".as_slice());
+        }
+        y = required_list(y, sl, n, st, l, agent_schema.TRUST_LEDGER_DECL_ENTRIES, "trust_ledger".as_slice(), name, "entries".as_slice());
+        let mut ids: Buffer<u64> = Buffer::new();
+        let mut previous: u64 = NONE;
+        let mut entry_link: u64 = first(sl, n, l, agent_schema.TRUST_LEDGER_DECL_ENTRIES);
+        while entry_link != 0u64 {
+            let e: u64 = entry_link - 1u64;
+            entry_link = n[e].next;
+            y = check_ledger_entry(sl, n, st, program, name, algorithm, e, previous, ids.as_slice(), y);
+            let id: u64 = get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_ID);
+            if !empty(sl, n, id) && !contains(sl, n, st, ids.as_slice(), id) {
+                ids.push(id);
+            }
+            previous = get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_ENTRY_HASH);
+        }
+        let chain_root: u64 = get(sl, n, l, agent_schema.TRUST_LEDGER_DECL_CHAIN_ROOT);
+        if empty(sl, n, chain_root) {
+            y = missing_field(y, sl, n, st, chain_root, "trust_ledger".as_slice(), name, "chain_root".as_slice());
+        } else if previous != NONE && !same(sl, n, st, chain_root, previous) {
+            y = say(y, sl, n, st, chain_root, "trust_ledger".as_slice(), name, "chain_root must match the final entry_hash\n".as_slice());
+        }
+    }
+    y
+}
+
+// One ledger entry; `previous` is the prior entry's `entry_hash`, or `NONE`
+// for the first, and `ids` the ids seen before it.
+fn check_ledger_entry(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, name: u64, algorithm: u64, e: u64, previous: u64, ids: Slice<u64>, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let id: u64 = get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_ID);
+    if empty(sl, n, id) {
+        y = say(y, sl, n, st, id, "trust_ledger".as_slice(), name, "entry is missing required field `id`\n".as_slice());
+    } else if contains(sl, n, st, ids, id) {
+        y = say(y, sl, n, st, id, "trust_ledger".as_slice(), name, "has duplicate entry id `".as_slice());
+        y = text(y, sl, n, st, id);
+        y = close(y);
+    }
+    let kind: u64 = get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_KIND);
+    let known_kind: bool = !variant_is(sl, n, kind, agent_schema.TRUST_LEDGER_ENTRY_KIND_UNKNOWN) || named(sl, n, st, kind, "identity".as_slice()) || named(sl, n, st, kind, "credential".as_slice()) || named(sl, n, st, kind, "handshake".as_slice()) || named(sl, n, st, kind, "evidence".as_slice()) || named(sl, n, st, kind, "policy".as_slice()) || named(sl, n, st, kind, "custom".as_slice());
+    if !known_kind {
+        y = ledger_entry(y, sl, n, st, kind, name, id);
+        y = put(y, "` has invalid kind\n".as_slice());
+    }
+    let subject: u64 = get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_SUBJECT);
+    if empty(sl, n, subject) {
+        y = ledger_entry(y, sl, n, st, subject, name, id);
+        y = put(y, "` is missing required field `subject`\n".as_slice());
+    } else {
+        let mut list: u64 = NONE;
+        if variant_is(sl, n, kind, agent_schema.TRUST_LEDGER_ENTRY_KIND_IDENTITY) {
+            list = agent_schema.PROGRAM_ATRUST_IDENTITIES;
+        } else if variant_is(sl, n, kind, agent_schema.TRUST_LEDGER_ENTRY_KIND_CREDENTIAL) {
+            list = agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS;
+        } else if variant_is(sl, n, kind, agent_schema.TRUST_LEDGER_ENTRY_KIND_HANDSHAKE) {
+            list = agent_schema.PROGRAM_ATRUST_HANDSHAKES;
+        } else if variant_is(sl, n, kind, agent_schema.TRUST_LEDGER_ENTRY_KIND_POLICY) {
+            list = agent_schema.PROGRAM_POLICIES;
+        }
+        if list != NONE && find_named(sl, n, st, program, list, subject) == NONE {
+            y = ledger_entry(y, sl, n, st, subject, name, id);
+            y = put(y, "` references unknown ".as_slice());
+            y = source_name(y, agent_schema.TRUST_LEDGER_ENTRY_KIND, n[value(sl, n, kind)].a);
+            y = put(y, " subject `".as_slice());
+            y = text(y, sl, n, st, subject);
+            y = close(y);
+        }
+    }
+    let evidence_ref: u64 = get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_EVIDENCE_REF);
+    if empty(sl, n, evidence_ref) {
+        y = ledger_entry(y, sl, n, st, evidence_ref, name, id);
+        y = put(y, "` is missing required field `evidence_ref`\n".as_slice());
+    }
+    let entry_hash: u64 = get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_ENTRY_HASH);
+    if empty(sl, n, entry_hash) {
+        y = ledger_entry(y, sl, n, st, entry_hash, name, id);
+        y = put(y, "` is missing required field `entry_hash`\n".as_slice());
+    } else if !empty(sl, n, algorithm) && !hash_prefixed(sl, n, st, entry_hash, algorithm) {
+        y = ledger_entry(y, sl, n, st, entry_hash, name, id);
+        y = put(y, "` entry_hash must use the `".as_slice());
+        y = text(y, sl, n, st, algorithm);
+        y = put(y, ":` prefix\n".as_slice());
+    }
+    let previous_hash: u64 = get(sl, n, e, agent_schema.TRUST_LEDGER_ENTRY_DECL_PREVIOUS_HASH);
+    if empty(sl, n, previous_hash) {
+        y = ledger_entry(y, sl, n, st, previous_hash, name, id);
+        y = put(y, "` is missing required field `previous_hash`\n".as_slice());
+    } else if previous == NONE {
+        if !is(sl, n, st, previous_hash, "GENESIS".as_slice()) {
+            y = say(y, sl, n, st, previous_hash, "trust_ledger".as_slice(), name, "first entry previous_hash must be `GENESIS`\n".as_slice());
+        }
+    } else if !same(sl, n, st, previous_hash, previous) {
+        y = ledger_entry(y, sl, n, st, previous_hash, name, id);
+        y = put(y, "` previous_hash must match the prior entry_hash\n".as_slice());
+    }
+    y
+}
+
+// "trust_ledger `<name>` entry `<id>" at `spanned`.
+fn ledger_entry(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64, name: u64, id: u64) -> Symbols {
+    let y: Symbols = say(symbols, sl, n, st, spanned, "trust_ledger".as_slice(), name, "entry `".as_slice());
+    text(y, sl, n, st, id)
 }
