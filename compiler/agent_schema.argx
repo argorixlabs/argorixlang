@@ -1325,30 +1325,161 @@ pub const A_TRUST_EVIDENCE_MAP_MAPPING_MODE: u64 = 61u64;
 pub const A_TRUST_EVIDENCE_MAP_MAPPING_MODE_DECLARED_ONLY: u64 = 0u64;
 pub const A_TRUST_EVIDENCE_MAP_MAPPING_MODE_EVIDENCE_ONLY: u64 = 1u64;
 pub const A_TRUST_EVIDENCE_MAP_MAPPING_MODE_UNKNOWN: u64 = 2u64;
-pub const BRIDGE_TRANSPORT: u64 = 62u64;
+pub const GOVERNANCE_SCOPE: u64 = 62u64;
+pub const GOVERNANCE_SCOPE_AGENT: u64 = 0u64;
+pub const GOVERNANCE_SCOPE_SYSTEM: u64 = 1u64;
+pub const GOVERNANCE_SCOPE_PACKAGE: u64 = 2u64;
+pub const GOVERNANCE_SCOPE_ORGANIZATION: u64 = 3u64;
+pub const GOVERNANCE_SCOPE_UNKNOWN: u64 = 4u64;
+pub const GOVERNANCE_LEVEL: u64 = 63u64;
+pub const GOVERNANCE_LEVEL_BASELINE: u64 = 0u64;
+pub const GOVERNANCE_LEVEL_AUDIT: u64 = 1u64;
+pub const GOVERNANCE_LEVEL_REGULATED: u64 = 2u64;
+pub const GOVERNANCE_LEVEL_EXPERIMENTAL: u64 = 3u64;
+pub const GOVERNANCE_LEVEL_UNKNOWN: u64 = 4u64;
+pub const GOVERNANCE_DOMAIN: u64 = 64u64;
+pub const GOVERNANCE_DOMAIN_AI_AGENT: u64 = 0u64;
+pub const GOVERNANCE_DOMAIN_SECURITY: u64 = 1u64;
+pub const GOVERNANCE_DOMAIN_COMPLIANCE: u64 = 2u64;
+pub const GOVERNANCE_DOMAIN_PRIVACY: u64 = 3u64;
+pub const GOVERNANCE_DOMAIN_SAFETY: u64 = 4u64;
+pub const GOVERNANCE_DOMAIN_CUSTOM: u64 = 5u64;
+pub const GOVERNANCE_DOMAIN_UNKNOWN: u64 = 6u64;
+pub const GOVERNANCE_RISK_LEVEL: u64 = 65u64;
+pub const GOVERNANCE_RISK_LEVEL_LOW: u64 = 0u64;
+pub const GOVERNANCE_RISK_LEVEL_MODERATE: u64 = 1u64;
+pub const GOVERNANCE_RISK_LEVEL_HIGH: u64 = 2u64;
+pub const GOVERNANCE_RISK_LEVEL_CRITICAL: u64 = 3u64;
+pub const GOVERNANCE_RISK_LEVEL_UNKNOWN_RISK: u64 = 4u64;
+pub const GOVERNANCE_RISK_LEVEL_UNKNOWN: u64 = 5u64;
+pub const GOVERNANCE_REVIEW_STATUS: u64 = 66u64;
+pub const GOVERNANCE_REVIEW_STATUS_DRAFT: u64 = 0u64;
+pub const GOVERNANCE_REVIEW_STATUS_REVIEWED: u64 = 1u64;
+pub const GOVERNANCE_REVIEW_STATUS_APPROVED_INTERNAL: u64 = 2u64;
+pub const GOVERNANCE_REVIEW_STATUS_DEPRECATED: u64 = 3u64;
+pub const GOVERNANCE_REVIEW_STATUS_UNKNOWN: u64 = 4u64;
+pub const GOVERNANCE_ASSURANCE: u64 = 67u64;
+pub const GOVERNANCE_ASSURANCE_DECLARED_ONLY: u64 = 0u64;
+pub const GOVERNANCE_ASSURANCE_EVIDENCE_MAPPED: u64 = 1u64;
+pub const GOVERNANCE_ASSURANCE_MANUALLY_REVIEWED: u64 = 2u64;
+pub const GOVERNANCE_ASSURANCE_UNKNOWN: u64 = 3u64;
+pub const GOVERNANCE_CONTROL_CATEGORY: u64 = 68u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_IDENTITY: u64 = 0u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_CREDENTIAL: u64 = 1u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_HANDSHAKE: u64 = 2u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_LEDGER: u64 = 3u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_BRIDGE: u64 = 4u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_EVIDENCE: u64 = 5u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_RUNTIME_BOUNDARY: u64 = 6u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_POLICY: u64 = 7u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_SECURITY: u64 = 8u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_PRIVACY: u64 = 9u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_SAFETY: u64 = 10u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_COMPLIANCE: u64 = 11u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_CUSTOM: u64 = 12u64;
+pub const GOVERNANCE_CONTROL_CATEGORY_UNKNOWN: u64 = 13u64;
+pub const GOVERNANCE_CONTROL_STATUS: u64 = 69u64;
+pub const GOVERNANCE_CONTROL_STATUS_MAPPED: u64 = 0u64;
+pub const GOVERNANCE_CONTROL_STATUS_DECLARED: u64 = 1u64;
+pub const GOVERNANCE_CONTROL_STATUS_PENDING_REVIEW: u64 = 2u64;
+pub const GOVERNANCE_CONTROL_STATUS_NOT_APPLICABLE: u64 = 3u64;
+pub const GOVERNANCE_CONTROL_STATUS_UNKNOWN: u64 = 4u64;
+pub const REGULATORY_COVERAGE: u64 = 70u64;
+pub const REGULATORY_COVERAGE_MAPPED: u64 = 0u64;
+pub const REGULATORY_COVERAGE_PARTIAL: u64 = 1u64;
+pub const REGULATORY_COVERAGE_PENDING_REVIEW: u64 = 2u64;
+pub const REGULATORY_COVERAGE_UNKNOWN: u64 = 3u64;
+pub const REGULATORY_ASSESSMENT: u64 = 71u64;
+pub const REGULATORY_ASSESSMENT_DECLARED_ONLY: u64 = 0u64;
+pub const REGULATORY_ASSESSMENT_EVIDENCE_MAPPED: u64 = 1u64;
+pub const REGULATORY_ASSESSMENT_MANUAL_REVIEW_REQUIRED: u64 = 2u64;
+pub const REGULATORY_ASSESSMENT_UNKNOWN: u64 = 3u64;
+pub const REGULATORY_OBLIGATION_STATUS: u64 = 72u64;
+pub const REGULATORY_OBLIGATION_STATUS_MAPPED: u64 = 0u64;
+pub const REGULATORY_OBLIGATION_STATUS_PENDING_REVIEW: u64 = 1u64;
+pub const REGULATORY_OBLIGATION_STATUS_GAP: u64 = 2u64;
+pub const REGULATORY_OBLIGATION_STATUS_NOT_APPLICABLE: u64 = 3u64;
+pub const REGULATORY_OBLIGATION_STATUS_UNKNOWN: u64 = 4u64;
+pub const THIRD_PARTY_VERIFIER_TYPE: u64 = 73u64;
+pub const THIRD_PARTY_VERIFIER_TYPE_INTERNAL: u64 = 0u64;
+pub const THIRD_PARTY_VERIFIER_TYPE_COMMUNITY: u64 = 1u64;
+pub const THIRD_PARTY_VERIFIER_TYPE_ACADEMIC: u64 = 2u64;
+pub const THIRD_PARTY_VERIFIER_TYPE_VENDOR: u64 = 3u64;
+pub const THIRD_PARTY_VERIFIER_TYPE_INDEPENDENT_LAB: u64 = 4u64;
+pub const THIRD_PARTY_VERIFIER_TYPE_CUSTOM: u64 = 5u64;
+pub const THIRD_PARTY_VERIFIER_TYPE_UNKNOWN: u64 = 6u64;
+pub const VERIFIER_INDEPENDENCE: u64 = 74u64;
+pub const VERIFIER_INDEPENDENCE_DECLARED: u64 = 0u64;
+pub const VERIFIER_INDEPENDENCE_SELF_ATTESTED: u64 = 1u64;
+pub const VERIFIER_INDEPENDENCE_INDEPENDENT_DECLARED: u64 = 2u64;
+pub const VERIFIER_INDEPENDENCE_UNKNOWN: u64 = 3u64;
+pub const VERIFIER_IDENTITY_MODE: u64 = 75u64;
+pub const VERIFIER_IDENTITY_MODE_DECLARED_ONLY: u64 = 0u64;
+pub const VERIFIER_IDENTITY_MODE_DOCUMENT_ONLY: u64 = 1u64;
+pub const VERIFIER_IDENTITY_MODE_UNKNOWN: u64 = 2u64;
+pub const VERIFIER_VERIFICATION_MODE: u64 = 76u64;
+pub const VERIFIER_VERIFICATION_MODE_REPRODUCIBLE_ARTIFACTS: u64 = 0u64;
+pub const VERIFIER_VERIFICATION_MODE_DOCUMENT_REVIEW: u64 = 1u64;
+pub const VERIFIER_VERIFICATION_MODE_CONFORMANCE_REPLAY: u64 = 2u64;
+pub const VERIFIER_VERIFICATION_MODE_UNKNOWN: u64 = 3u64;
+pub const PUBLIC_CONFORMANCE_RESULT: u64 = 77u64;
+pub const PUBLIC_CONFORMANCE_RESULT_PASSED: u64 = 0u64;
+pub const PUBLIC_CONFORMANCE_RESULT_FAILED: u64 = 1u64;
+pub const PUBLIC_CONFORMANCE_RESULT_PENDING_REVIEW: u64 = 2u64;
+pub const PUBLIC_CONFORMANCE_RESULT_UNKNOWN: u64 = 3u64;
+pub const PUBLIC_CONFORMANCE_REPRODUCIBILITY: u64 = 78u64;
+pub const PUBLIC_CONFORMANCE_REPRODUCIBILITY_DECLARED: u64 = 0u64;
+pub const PUBLIC_CONFORMANCE_REPRODUCIBILITY_REPLAYABLE_LOCALLY: u64 = 1u64;
+pub const PUBLIC_CONFORMANCE_REPRODUCIBILITY_DOCUMENT_ONLY: u64 = 2u64;
+pub const PUBLIC_CONFORMANCE_REPRODUCIBILITY_UNKNOWN: u64 = 3u64;
+pub const PUBLIC_CONFORMANCE_REVIEW_STATUS: u64 = 79u64;
+pub const PUBLIC_CONFORMANCE_REVIEW_STATUS_DRAFT: u64 = 0u64;
+pub const PUBLIC_CONFORMANCE_REVIEW_STATUS_REVIEWED: u64 = 1u64;
+pub const PUBLIC_CONFORMANCE_REVIEW_STATUS_PUBLISHED: u64 = 2u64;
+pub const PUBLIC_CONFORMANCE_REVIEW_STATUS_DEPRECATED: u64 = 3u64;
+pub const PUBLIC_CONFORMANCE_REVIEW_STATUS_UNKNOWN: u64 = 4u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY: u64 = 80u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_CONFORMANCE: u64 = 0u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_EVIDENCE: u64 = 1u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_SECURITY_REPORT: u64 = 2u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_GOVERNANCE: u64 = 3u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_REGULATORY_MAPPING: u64 = 4u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_BYTECODE: u64 = 5u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_SOURCE: u64 = 6u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_POLICY: u64 = 7u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_RUNTIME_BOUNDARY: u64 = 8u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_CUSTOM: u64 = 9u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_CATEGORY_UNKNOWN: u64 = 10u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_STATUS: u64 = 81u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_STATUS_MAPPED: u64 = 0u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_STATUS_DECLARED: u64 = 1u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_STATUS_PENDING_REVIEW: u64 = 2u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_STATUS_NOT_APPLICABLE: u64 = 3u64;
+pub const PUBLIC_CONFORMANCE_CLAIM_STATUS_UNKNOWN: u64 = 4u64;
+pub const BRIDGE_TRANSPORT: u64 = 82u64;
 pub const BRIDGE_TRANSPORT_DECLARED_ONLY: u64 = 0u64;
 pub const BRIDGE_TRANSPORT_DISABLED: u64 = 1u64;
 pub const BRIDGE_TRANSPORT_UNKNOWN: u64 = 2u64;
-pub const MCP_PROTOCOL: u64 = 63u64;
+pub const MCP_PROTOCOL: u64 = 83u64;
 pub const MCP_PROTOCOL_MCP: u64 = 0u64;
 pub const MCP_PROTOCOL_UNKNOWN: u64 = 1u64;
-pub const A2_A_PROTOCOL: u64 = 64u64;
+pub const A2_A_PROTOCOL: u64 = 84u64;
 pub const A2_A_PROTOCOL_A2_A: u64 = 0u64;
 pub const A2_A_PROTOCOL_UNKNOWN: u64 = 1u64;
-pub const BRIDGE_DIRECTION: u64 = 65u64;
+pub const BRIDGE_DIRECTION: u64 = 85u64;
 pub const BRIDGE_DIRECTION_INBOUND: u64 = 0u64;
 pub const BRIDGE_DIRECTION_OUTBOUND: u64 = 1u64;
 pub const BRIDGE_DIRECTION_BIDIRECTIONAL: u64 = 2u64;
 pub const BRIDGE_DIRECTION_UNKNOWN: u64 = 3u64;
-pub const BRIDGE_AUTHENTICATION: u64 = 66u64;
+pub const BRIDGE_AUTHENTICATION: u64 = 86u64;
 pub const BRIDGE_AUTHENTICATION_NONE: u64 = 0u64;
 pub const BRIDGE_AUTHENTICATION_DECLARED_ONLY: u64 = 1u64;
 pub const BRIDGE_AUTHENTICATION_UNKNOWN: u64 = 2u64;
-pub const BRIDGE_AUTHORIZATION: u64 = 67u64;
+pub const BRIDGE_AUTHORIZATION: u64 = 87u64;
 pub const BRIDGE_AUTHORIZATION_POLICY_BOUND: u64 = 0u64;
 pub const BRIDGE_AUTHORIZATION_DECLARED_ONLY: u64 = 1u64;
 pub const BRIDGE_AUTHORIZATION_UNKNOWN: u64 = 2u64;
-pub const ENUMS: u64 = 68u64;
+pub const ENUMS: u64 = 88u64;
 
 // ------------------------------------------------------------------ names
 
@@ -2411,21 +2542,81 @@ pub fn variant_shape(e: u64, v: u64) -> u64 {
         if v == 2u64 { return VALUE; }
     }
     if e == 62u64 {
-        if v == 2u64 { return VALUE; }
+        if v == 4u64 { return VALUE; }
     }
     if e == 63u64 {
-        if v == 1u64 { return VALUE; }
+        if v == 4u64 { return VALUE; }
     }
     if e == 64u64 {
-        if v == 1u64 { return VALUE; }
+        if v == 6u64 { return VALUE; }
     }
     if e == 65u64 {
-        if v == 3u64 { return VALUE; }
+        if v == 5u64 { return VALUE; }
     }
     if e == 66u64 {
-        if v == 2u64 { return VALUE; }
+        if v == 4u64 { return VALUE; }
     }
     if e == 67u64 {
+        if v == 3u64 { return VALUE; }
+    }
+    if e == 68u64 {
+        if v == 13u64 { return VALUE; }
+    }
+    if e == 69u64 {
+        if v == 4u64 { return VALUE; }
+    }
+    if e == 70u64 {
+        if v == 3u64 { return VALUE; }
+    }
+    if e == 71u64 {
+        if v == 3u64 { return VALUE; }
+    }
+    if e == 72u64 {
+        if v == 4u64 { return VALUE; }
+    }
+    if e == 73u64 {
+        if v == 6u64 { return VALUE; }
+    }
+    if e == 74u64 {
+        if v == 3u64 { return VALUE; }
+    }
+    if e == 75u64 {
+        if v == 2u64 { return VALUE; }
+    }
+    if e == 76u64 {
+        if v == 3u64 { return VALUE; }
+    }
+    if e == 77u64 {
+        if v == 3u64 { return VALUE; }
+    }
+    if e == 78u64 {
+        if v == 3u64 { return VALUE; }
+    }
+    if e == 79u64 {
+        if v == 4u64 { return VALUE; }
+    }
+    if e == 80u64 {
+        if v == 10u64 { return VALUE; }
+    }
+    if e == 81u64 {
+        if v == 4u64 { return VALUE; }
+    }
+    if e == 82u64 {
+        if v == 2u64 { return VALUE; }
+    }
+    if e == 83u64 {
+        if v == 1u64 { return VALUE; }
+    }
+    if e == 84u64 {
+        if v == 1u64 { return VALUE; }
+    }
+    if e == 85u64 {
+        if v == 3u64 { return VALUE; }
+    }
+    if e == 86u64 {
+        if v == 2u64 { return VALUE; }
+    }
+    if e == 87u64 {
         if v == 2u64 { return VALUE; }
     }
     UNIT
@@ -3081,30 +3272,181 @@ pub fn append_variant(out: Buffer<u8>, e: u64, v: u64) -> Buffer<u8> {
         if v == 2u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
     }
     if e == 62u64 {
+        if v == 0u64 { return bytes.append(out, "\"Agent\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"System\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"Package\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Organization\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 63u64 {
+        if v == 0u64 { return bytes.append(out, "\"Baseline\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Audit\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"Regulated\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Experimental\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 64u64 {
+        if v == 0u64 { return bytes.append(out, "\"AiAgent\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Security\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"Compliance\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Privacy\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Safety\"".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "\"Custom\"".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 65u64 {
+        if v == 0u64 { return bytes.append(out, "\"Low\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Moderate\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"High\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Critical\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"UnknownRisk\"".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 66u64 {
+        if v == 0u64 { return bytes.append(out, "\"Draft\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Reviewed\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"ApprovedInternal\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Deprecated\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 67u64 {
+        if v == 0u64 { return bytes.append(out, "\"DeclaredOnly\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"EvidenceMapped\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"ManuallyReviewed\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 68u64 {
+        if v == 0u64 { return bytes.append(out, "\"Identity\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Credential\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"Handshake\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Ledger\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Bridge\"".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "\"Evidence\"".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "\"RuntimeBoundary\"".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "\"Policy\"".as_slice()); }
+        if v == 8u64 { return bytes.append(out, "\"Security\"".as_slice()); }
+        if v == 9u64 { return bytes.append(out, "\"Privacy\"".as_slice()); }
+        if v == 10u64 { return bytes.append(out, "\"Safety\"".as_slice()); }
+        if v == 11u64 { return bytes.append(out, "\"Compliance\"".as_slice()); }
+        if v == 12u64 { return bytes.append(out, "\"Custom\"".as_slice()); }
+        if v == 13u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 69u64 {
+        if v == 0u64 { return bytes.append(out, "\"Mapped\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Declared\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"PendingReview\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"NotApplicable\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 70u64 {
+        if v == 0u64 { return bytes.append(out, "\"Mapped\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Partial\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"PendingReview\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 71u64 {
+        if v == 0u64 { return bytes.append(out, "\"DeclaredOnly\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"EvidenceMapped\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"ManualReviewRequired\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 72u64 {
+        if v == 0u64 { return bytes.append(out, "\"Mapped\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"PendingReview\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"Gap\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"NotApplicable\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 73u64 {
+        if v == 0u64 { return bytes.append(out, "\"Internal\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Community\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"Academic\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Vendor\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"IndependentLab\"".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "\"Custom\"".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 74u64 {
+        if v == 0u64 { return bytes.append(out, "\"Declared\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"SelfAttested\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"IndependentDeclared\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 75u64 {
+        if v == 0u64 { return bytes.append(out, "\"DeclaredOnly\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"DocumentOnly\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 76u64 {
+        if v == 0u64 { return bytes.append(out, "\"ReproducibleArtifacts\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"DocumentReview\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"ConformanceReplay\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 77u64 {
+        if v == 0u64 { return bytes.append(out, "\"Passed\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Failed\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"PendingReview\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 78u64 {
+        if v == 0u64 { return bytes.append(out, "\"Declared\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"ReplayableLocally\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"DocumentOnly\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 79u64 {
+        if v == 0u64 { return bytes.append(out, "\"Draft\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Reviewed\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"Published\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Deprecated\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 80u64 {
+        if v == 0u64 { return bytes.append(out, "\"Conformance\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Evidence\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"SecurityReport\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"Governance\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"RegulatoryMapping\"".as_slice()); }
+        if v == 5u64 { return bytes.append(out, "\"Bytecode\"".as_slice()); }
+        if v == 6u64 { return bytes.append(out, "\"Source\"".as_slice()); }
+        if v == 7u64 { return bytes.append(out, "\"Policy\"".as_slice()); }
+        if v == 8u64 { return bytes.append(out, "\"RuntimeBoundary\"".as_slice()); }
+        if v == 9u64 { return bytes.append(out, "\"Custom\"".as_slice()); }
+        if v == 10u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 81u64 {
+        if v == 0u64 { return bytes.append(out, "\"Mapped\"".as_slice()); }
+        if v == 1u64 { return bytes.append(out, "\"Declared\"".as_slice()); }
+        if v == 2u64 { return bytes.append(out, "\"PendingReview\"".as_slice()); }
+        if v == 3u64 { return bytes.append(out, "\"NotApplicable\"".as_slice()); }
+        if v == 4u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
+    }
+    if e == 82u64 {
         if v == 0u64 { return bytes.append(out, "\"DeclaredOnly\"".as_slice()); }
         if v == 1u64 { return bytes.append(out, "\"Disabled\"".as_slice()); }
         if v == 2u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
     }
-    if e == 63u64 {
+    if e == 83u64 {
         if v == 0u64 { return bytes.append(out, "\"Mcp\"".as_slice()); }
         if v == 1u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
     }
-    if e == 64u64 {
+    if e == 84u64 {
         if v == 0u64 { return bytes.append(out, "\"A2A\"".as_slice()); }
         if v == 1u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
     }
-    if e == 65u64 {
+    if e == 85u64 {
         if v == 0u64 { return bytes.append(out, "\"Inbound\"".as_slice()); }
         if v == 1u64 { return bytes.append(out, "\"Outbound\"".as_slice()); }
         if v == 2u64 { return bytes.append(out, "\"Bidirectional\"".as_slice()); }
         if v == 3u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
     }
-    if e == 66u64 {
+    if e == 86u64 {
         if v == 0u64 { return bytes.append(out, "\"None\"".as_slice()); }
         if v == 1u64 { return bytes.append(out, "\"DeclaredOnly\"".as_slice()); }
         if v == 2u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }
     }
-    if e == 67u64 {
+    if e == 87u64 {
         if v == 0u64 { return bytes.append(out, "\"PolicyBound\"".as_slice()); }
         if v == 1u64 { return bytes.append(out, "\"DeclaredOnly\"".as_slice()); }
         if v == 2u64 { return bytes.append(out, "\"Unknown\"".as_slice()); }

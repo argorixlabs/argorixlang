@@ -193,6 +193,21 @@ fn parse_declaration(s: Slice<u8>, t: Slice<AgentToken>, p: Tree, into: u64) -> 
     if into == agent_schema.PROGRAM_POLICIES { return parse_policy(s, t, p); }
     if into == agent_schema.PROGRAM_CRYPTOS { return parse_crypto(s, t, p); }
     if into == agent_schema.PROGRAM_DID_METHODS { return parse_did_method(s, t, p); }
+    if into == agent_schema.PROGRAM_HARNESSES { return parse_harness(s, t, p); }
+    if into == agent_schema.PROGRAM_ADAPTERS { return parse_adapter(s, t, p); }
+    if into == agent_schema.PROGRAM_ADAPTER_PROFILES { return parse_adapter_profile(s, t, p); }
+    if into == agent_schema.PROGRAM_ATRUST_BOUNDARIES { return parse_atrust_boundary(s, t, p); }
+    if into == agent_schema.PROGRAM_ATRUST_IDENTITIES { return parse_atrust_identity(s, t, p); }
+    if into == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS { return parse_atrust_credential_contract(s, t, p); }
+    if into == agent_schema.PROGRAM_ATRUST_HANDSHAKES { return parse_atrust_handshake(s, t, p); }
+    if into == agent_schema.PROGRAM_TRUST_LEDGERS { return parse_trust_ledger(s, t, p); }
+    if into == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS { return parse_mcp_bridge_contract(s, t, p); }
+    if into == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS { return parse_a2a_bridge_contract(s, t, p); }
+    if into == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS { return parse_atrust_evidence_map(s, t, p); }
+    if into == agent_schema.PROGRAM_GOVERNANCE_PROFILES { return parse_governance_profile(s, t, p); }
+    if into == agent_schema.PROGRAM_REGULATORY_MAPPINGS { return parse_regulatory_mapping(s, t, p); }
+    if into == agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS { return parse_third_party_verifier(s, t, p); }
+    if into == agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS { return parse_public_conformance_report(s, t, p); }
     let mut q: Tree = p;
     q.unsupported = true;
     q
@@ -1268,8 +1283,8 @@ fn field_identifier_block(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node
 }
 
 // The token at `current` is no key of `block`: "unexpected <block> item `x`"
-// for an identifier, "expected a <block> field" otherwise.
-fn block_unexpected(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, block: Slice<u8>) -> Tree {
+// for an identifier, "expected a <block> field" (or "an") otherwise.
+fn block_unexpected(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, block: Slice<u8>, article: Slice<u8>) -> Tree {
     let p: Tree = parser;
     let at: u64 = p.current;
     if peek_kind(t, at) == agent_lexer.IDENT {
@@ -1280,7 +1295,11 @@ fn block_unexpected(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, block: Sli
         message.push(96u8);
         return fail_at(t, p, message, at);
     }
-    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected a ".as_slice());
+    let mut message: Buffer<u8> = bytes.append(Buffer::new(), "expected ".as_slice());
+    if article.length() > 0u64 {
+        message = bytes.append(message, article);
+        message.push(32u8);
+    }
     message = bytes.append(message, block);
     message = bytes.append(message, " field".as_slice());
     fail_at(t, p, message, at)
@@ -1339,15 +1358,15 @@ fn unset(slots: Slice<u64>, nodes: Slice<AgentNode>, node: u64, field: u64) -> b
     agent_ast.get(slots, nodes, node, field) == 0u64
 }
 
-// Defaults for keys left out, spanned by the declaration's name.
+// Defaults for keys left out, spanned by `span_node`: the declaration's name,
+// or the `{` of an anonymous block.
 
-// `Spanned::new(<e>::<variant>(String::new()), name.span)`.
-fn default_unknown(parser: Tree, node: u64, field: u64, e: u64, variant: u64) -> Tree {
+// `Spanned::new(<e>::<variant>(String::new()), span)`.
+fn default_unknown(parser: Tree, node: u64, field: u64, e: u64, variant: u64, span_node: u64) -> Tree {
     let mut p: Tree = parser;
     if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
         return p;
     }
-    let span_node: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
     p = agent_ast.string(p, "".as_slice());
     let payload: u64 = p.result;
     p = agent_ast.variant(p, e, variant, payload);
@@ -1356,26 +1375,24 @@ fn default_unknown(parser: Tree, node: u64, field: u64, e: u64, variant: u64) ->
     agent_ast.set_last(p, node, field)
 }
 
-// `Spanned::new(<e>::<variant>, name.span)`, a variant without data.
-fn default_variant(parser: Tree, node: u64, field: u64, e: u64, variant: u64) -> Tree {
+// `Spanned::new(<e>::<variant>, span)`, a variant without data.
+fn default_variant(parser: Tree, node: u64, field: u64, e: u64, variant: u64, span_node: u64) -> Tree {
     let mut p: Tree = parser;
     if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
         return p;
     }
-    let span_node: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
     p = agent_ast.variant(p, e, variant, 0u64);
     let value: u64 = p.result;
     p = agent_ast.spanned(p, value, span_node);
     agent_ast.set_last(p, node, field)
 }
 
-// `Spanned::new(String::new(), name.span)`.
-fn default_string(parser: Tree, node: u64, field: u64) -> Tree {
+// `Spanned::new(String::new(), span)`.
+fn default_string(parser: Tree, node: u64, field: u64, span_node: u64) -> Tree {
     let mut p: Tree = parser;
     if !unset(p.slots.as_slice(), p.nodes.as_slice(), node, field) {
         return p;
     }
-    let span_node: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
     p = agent_ast.string(p, "".as_slice());
     let value: u64 = p.result;
     p = agent_ast.spanned(p, value, span_node);
@@ -1399,8 +1416,166 @@ fn block_end(t: Slice<AgentToken>, parser: Tree, node: u64) -> Tree {
     p
 }
 
-// ------------------------------------------------------------------ crypto and DIDs
+// ------------------------------------------------------------------ generated keyed blocks
 
+// GENERATED by crates/argorixc/tests/agent_blocks.rs from the keyed-block
+// declarations of crates/argorix_parser/src/parser.rs; regenerate with
+// ARGORIX_BLESS=1, do not edit.
+
+// `parse_harness`.
+fn parse_harness(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "harness".as_slice(), "harness name".as_slice(), agent_schema.PROVIDER_HARNESS_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated harness declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "provider".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_PROVIDER, "harness".as_slice(), "harness provider reference".as_slice());
+        } else if peek_is(s, t, p.current, "feature".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_FEATURE, "harness".as_slice(), "harness feature reference".as_slice());
+        } else if peek_is(s, t, p.current, "secret".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_SECRET, "harness".as_slice(), "harness secret reference".as_slice());
+        } else if peek_is(s, t, p.current, "mode".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_MODE, "harness".as_slice(), "harness mode".as_slice(), agent_schema.HARNESS_MODE, agent_words.T_PARSE_HARNESS__HARNESS_MODE, agent_schema.HARNESS_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_NETWORK, "harness".as_slice(), "harness network mode".as_slice(), agent_schema.HARNESS_NETWORK, agent_words.T_PARSE_HARNESS__HARNESS_NETWORK, agent_schema.HARNESS_NETWORK_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secrets".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_SECRETS, "harness".as_slice(), "harness secrets mode".as_slice(), agent_schema.HARNESS_SECRETS, agent_words.T_PARSE_HARNESS__HARNESS_SECRETS, agent_schema.HARNESS_SECRETS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "filesystem".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_FILESYSTEM, "harness".as_slice(), "harness filesystem mode".as_slice(), agent_schema.HARNESS_FILESYSTEM, agent_words.T_PARSE_HARNESS__HARNESS_FILESYSTEM, agent_schema.HARNESS_FILESYSTEM_UNKNOWN);
+        } else if peek_is(s, t, p.current, "max_steps".as_slice()) {
+            p = field_integer(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_MAX_STEPS, "harness".as_slice(), "harness max_steps integer".as_slice());
+        } else if peek_is(s, t, p.current, "timeout_ms".as_slice()) {
+            p = field_integer(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_TIMEOUT_MS, "harness".as_slice(), "harness timeout_ms integer".as_slice());
+        } else if peek_is(s, t, p.current, "input_contract".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_INPUT_CONTRACT, "harness".as_slice(), "harness input contract".as_slice());
+        } else if peek_is(s, t, p.current, "output_contract".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_OUTPUT_CONTRACT, "harness".as_slice(), "harness output contract".as_slice());
+        } else if peek_is(s, t, p.current, "attestations".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.PROVIDER_HARNESS_DECL_ATTESTATIONS, "harness".as_slice(), "harness attestation".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "harness".as_slice(), "a".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.PROVIDER_HARNESS_DECL_PROVIDER, fallback);
+    p = default_unknown(p, node, agent_schema.PROVIDER_HARNESS_DECL_MODE, agent_schema.HARNESS_MODE, agent_schema.HARNESS_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PROVIDER_HARNESS_DECL_NETWORK, agent_schema.HARNESS_NETWORK, agent_schema.HARNESS_NETWORK_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PROVIDER_HARNESS_DECL_SECRETS, agent_schema.HARNESS_SECRETS, agent_schema.HARNESS_SECRETS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PROVIDER_HARNESS_DECL_FILESYSTEM, agent_schema.HARNESS_FILESYSTEM, agent_schema.HARNESS_FILESYSTEM_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.PROVIDER_HARNESS_DECL_ATTESTATIONS);
+    block_end(t, p, node)
+}
+
+// `parse_adapter`.
+fn parse_adapter(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "adapter".as_slice(), "adapter name".as_slice(), agent_schema.ADAPTER_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated adapter declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "provider".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_DECL_PROVIDER, "adapter".as_slice(), "adapter provider reference".as_slice());
+        } else if peek_is(s, t, p.current, "feature".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_DECL_FEATURE, "adapter".as_slice(), "adapter feature reference".as_slice());
+        } else if peek_is(s, t, p.current, "secret".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_DECL_SECRET, "adapter".as_slice(), "adapter secret reference".as_slice());
+        } else if peek_is(s, t, p.current, "harness".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_DECL_HARNESS, "adapter".as_slice(), "adapter harness reference".as_slice());
+        } else if peek_is(s, t, p.current, "kind".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_DECL_KIND, "adapter".as_slice(), "adapter kind".as_slice(), agent_schema.ADAPTER_KIND, agent_words.T_PARSE_ADAPTER__ADAPTER_KIND, agent_schema.ADAPTER_KIND_UNKNOWN);
+        } else if peek_is(s, t, p.current, "vendor".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.ADAPTER_DECL_VENDOR, "adapter".as_slice(), "adapter vendor".as_slice());
+        } else if peek_is(s, t, p.current, "mode".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_DECL_MODE, "adapter".as_slice(), "adapter mode".as_slice(), agent_schema.ADAPTER_MODE, agent_words.T_PARSE_ADAPTER__ADAPTER_MODE, agent_schema.ADAPTER_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_DECL_EXECUTION, "adapter".as_slice(), "adapter execution".as_slice(), agent_schema.ADAPTER_EXECUTION, agent_words.T_PARSE_ADAPTER__ADAPTER_EXECUTION, agent_schema.ADAPTER_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_DECL_NETWORK, "adapter".as_slice(), "adapter network".as_slice(), agent_schema.ADAPTER_NETWORK, agent_words.T_PARSE_ADAPTER__ADAPTER_NETWORK, agent_schema.ADAPTER_NETWORK_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secrets".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_DECL_SECRETS, "adapter".as_slice(), "adapter secrets".as_slice(), agent_schema.ADAPTER_SECRETS, agent_words.T_PARSE_ADAPTER__ADAPTER_SECRETS, agent_schema.ADAPTER_SECRETS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "filesystem".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_DECL_FILESYSTEM, "adapter".as_slice(), "adapter filesystem".as_slice(), agent_schema.ADAPTER_FILESYSTEM, agent_words.T_PARSE_ADAPTER__ADAPTER_FILESYSTEM, agent_schema.ADAPTER_FILESYSTEM_UNKNOWN);
+        } else if peek_is(s, t, p.current, "input_contract".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_DECL_INPUT_CONTRACT, "adapter".as_slice(), "adapter input contract".as_slice());
+        } else if peek_is(s, t, p.current, "output_contract".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_DECL_OUTPUT_CONTRACT, "adapter".as_slice(), "adapter output contract".as_slice());
+        } else if peek_is(s, t, p.current, "conformance".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.ADAPTER_DECL_CONFORMANCE, "adapter".as_slice(), "adapter conformance item".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "adapter".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.ADAPTER_DECL_PROVIDER, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_DECL_MODE, agent_schema.ADAPTER_MODE, agent_schema.ADAPTER_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_DECL_EXECUTION, agent_schema.ADAPTER_EXECUTION, agent_schema.ADAPTER_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_DECL_NETWORK, agent_schema.ADAPTER_NETWORK, agent_schema.ADAPTER_NETWORK_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_DECL_SECRETS, agent_schema.ADAPTER_SECRETS, agent_schema.ADAPTER_SECRETS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_DECL_FILESYSTEM, agent_schema.ADAPTER_FILESYSTEM, agent_schema.ADAPTER_FILESYSTEM_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.ADAPTER_DECL_CONFORMANCE);
+    block_end(t, p, node)
+}
+
+// `parse_adapter_profile`.
+fn parse_adapter_profile(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "adapter_profile".as_slice(), "adapter profile name".as_slice(), agent_schema.ADAPTER_PROFILE_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated adapter_profile declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "adapter".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_ADAPTER, "adapter_profile".as_slice(), "adapter reference".as_slice());
+        } else if peek_is(s, t, p.current, "provider".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_PROVIDER, "adapter_profile".as_slice(), "provider reference".as_slice());
+        } else if peek_is(s, t, p.current, "vendor".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_VENDOR, "adapter_profile".as_slice(), "vendor name".as_slice());
+        } else if peek_is(s, t, p.current, "family".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_FAMILY, "adapter_profile".as_slice(), "profile family".as_slice(), agent_schema.ADAPTER_PROFILE_FAMILY, agent_words.T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_FAMILY, agent_schema.ADAPTER_PROFILE_FAMILY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "api_style".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_API_STYLE, "adapter_profile".as_slice(), "profile api_style".as_slice(), agent_schema.ADAPTER_PROFILE_API_STYLE, agent_words.T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_API_STYLE, agent_schema.ADAPTER_PROFILE_API_STYLE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "auth".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_AUTH, "adapter_profile".as_slice(), "profile auth".as_slice(), agent_schema.ADAPTER_PROFILE_AUTH, agent_words.T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_AUTH, agent_schema.ADAPTER_PROFILE_AUTH_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_EXECUTION, "adapter_profile".as_slice(), "profile execution".as_slice(), agent_schema.ADAPTER_PROFILE_EXECUTION, agent_words.T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_EXECUTION, agent_schema.ADAPTER_PROFILE_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_NETWORK, "adapter_profile".as_slice(), "profile network".as_slice(), agent_schema.ADAPTER_PROFILE_NETWORK, agent_words.T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_NETWORK, agent_schema.ADAPTER_PROFILE_NETWORK_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secrets".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_SECRETS, "adapter_profile".as_slice(), "profile secrets".as_slice(), agent_schema.ADAPTER_PROFILE_SECRETS, agent_words.T_PARSE_ADAPTER_PROFILE__ADAPTER_PROFILE_SECRETS, agent_schema.ADAPTER_PROFILE_SECRETS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "request_contract".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_REQUEST_CONTRACT, "adapter_profile".as_slice(), "request contract type".as_slice());
+        } else if peek_is(s, t, p.current, "response_contract".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_RESPONSE_CONTRACT, "adapter_profile".as_slice(), "response contract type".as_slice());
+        } else if peek_is(s, t, p.current, "capabilities".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_CAPABILITIES, "adapter_profile".as_slice(), "profile capability".as_slice());
+        } else if peek_is(s, t, p.current, "required_conformance".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.ADAPTER_PROFILE_DECL_REQUIRED_CONFORMANCE, "adapter_profile".as_slice(), "profile required conformance item".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "adapter_profile".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.ADAPTER_PROFILE_DECL_ADAPTER, fallback);
+    p = default_string(p, node, agent_schema.ADAPTER_PROFILE_DECL_PROVIDER, fallback);
+    p = default_string(p, node, agent_schema.ADAPTER_PROFILE_DECL_VENDOR, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_PROFILE_DECL_FAMILY, agent_schema.ADAPTER_PROFILE_FAMILY, agent_schema.ADAPTER_PROFILE_FAMILY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_PROFILE_DECL_API_STYLE, agent_schema.ADAPTER_PROFILE_API_STYLE, agent_schema.ADAPTER_PROFILE_API_STYLE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_PROFILE_DECL_AUTH, agent_schema.ADAPTER_PROFILE_AUTH, agent_schema.ADAPTER_PROFILE_AUTH_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_PROFILE_DECL_EXECUTION, agent_schema.ADAPTER_PROFILE_EXECUTION, agent_schema.ADAPTER_PROFILE_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_PROFILE_DECL_NETWORK, agent_schema.ADAPTER_PROFILE_NETWORK, agent_schema.ADAPTER_PROFILE_NETWORK_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.ADAPTER_PROFILE_DECL_SECRETS, agent_schema.ADAPTER_PROFILE_SECRETS, agent_schema.ADAPTER_PROFILE_SECRETS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.ADAPTER_PROFILE_DECL_CAPABILITIES);
+    p = default_array(p, node, agent_schema.ADAPTER_PROFILE_DECL_REQUIRED_CONFORMANCE);
+    block_end(t, p, node)
+}
+
+// `parse_crypto`.
 fn parse_crypto(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
     let mut p: Tree = block_start(s, t, parser, "crypto".as_slice(), "crypto primitive name".as_slice(), agent_schema.CRYPTO_DECL);
     if p.failed { return p; }
@@ -1425,17 +1600,19 @@ fn parse_crypto(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
         } else if peek_is(s, t, p.current, "notes".as_slice()) {
             p = field_string(s, t, p, node, agent_schema.CRYPTO_DECL_NOTES, "crypto".as_slice(), "crypto notes".as_slice());
         } else {
-            return block_unexpected(s, t, p, "crypto".as_slice());
+            return block_unexpected(s, t, p, "crypto".as_slice(), "a".as_slice());
         }
         if p.failed { return p; }
     }
-    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_KIND, agent_schema.CRYPTO_KIND, agent_schema.CRYPTO_KIND_UNKNOWN);
-    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_STATUS, agent_schema.CRYPTO_STATUS, agent_schema.CRYPTO_STATUS_UNKNOWN);
-    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_STRENGTH, agent_schema.CRYPTO_STRENGTH, agent_schema.CRYPTO_STRENGTH_UNKNOWN_VALUE);
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_KIND, agent_schema.CRYPTO_KIND, agent_schema.CRYPTO_KIND_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_STATUS, agent_schema.CRYPTO_STATUS, agent_schema.CRYPTO_STATUS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.CRYPTO_DECL_STRENGTH, agent_schema.CRYPTO_STRENGTH, agent_schema.CRYPTO_STRENGTH_UNKNOWN_VALUE, fallback);
     p = default_array(p, node, agent_schema.CRYPTO_DECL_PURPOSE);
     block_end(t, p, node)
 }
 
+// `parse_did_method`.
 fn parse_did_method(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
     let mut p: Tree = block_start(s, t, parser, "did_method".as_slice(), "did method name".as_slice(), agent_schema.DID_METHOD_DECL);
     if p.failed { return p; }
@@ -1458,14 +1635,1186 @@ fn parse_did_method(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
         } else if peek_is(s, t, p.current, "notes".as_slice()) {
             p = field_string(s, t, p, node, agent_schema.DID_METHOD_DECL_NOTES, "did_method".as_slice(), "did_method notes".as_slice());
         } else {
-            return block_unexpected(s, t, p, "did_method".as_slice());
+            return block_unexpected(s, t, p, "did_method".as_slice(), "a".as_slice());
         }
         if p.failed { return p; }
     }
-    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_STATUS, agent_schema.DID_METHOD_STATUS, agent_schema.DID_METHOD_STATUS_UNKNOWN);
-    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_RESOLUTION, agent_schema.DID_RESOLUTION_MODE, agent_schema.DID_RESOLUTION_MODE_UNKNOWN);
-    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_LEDGER, agent_schema.DID_LEDGER_MODE, agent_schema.DID_LEDGER_MODE_UNKNOWN);
-    p = default_string(p, node, agent_schema.DID_METHOD_DECL_CRYPTO_BOUNDARY);
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_STATUS, agent_schema.DID_METHOD_STATUS, agent_schema.DID_METHOD_STATUS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_RESOLUTION, agent_schema.DID_RESOLUTION_MODE, agent_schema.DID_RESOLUTION_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.DID_METHOD_DECL_LEDGER, agent_schema.DID_LEDGER_MODE, agent_schema.DID_LEDGER_MODE_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.DID_METHOD_DECL_CRYPTO_BOUNDARY, fallback);
     p = default_array(p, node, agent_schema.DID_METHOD_DECL_PURPOSE);
     block_end(t, p, node)
 }
+
+// `parse_atrust_boundary`.
+fn parse_atrust_boundary(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "atrust_boundary".as_slice(), "atrust boundary name".as_slice(), agent_schema.A_TRUST_BOUNDARY_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated atrust_boundary declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "crypto_boundary".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_CRYPTO_BOUNDARY, "atrust_boundary".as_slice(), "atrust_boundary crypto_boundary reference".as_slice());
+        } else if peek_is(s, t, p.current, "did_methods".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_DID_METHODS, "atrust_boundary".as_slice(), "atrust_boundary did_methods".as_slice());
+        } else if peek_is(s, t, p.current, "identity_format".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_IDENTITY_FORMAT, "atrust_boundary".as_slice(), "atrust_boundary identity_format".as_slice(), agent_schema.A_TRUST_IDENTITY_FORMAT, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_IDENTITY_FORMAT, agent_schema.A_TRUST_IDENTITY_FORMAT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "credential_mode".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_CREDENTIAL_MODE, "atrust_boundary".as_slice(), "atrust_boundary credential_mode".as_slice(), agent_schema.A_TRUST_CREDENTIAL_MODE, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_CREDENTIAL_MODE, agent_schema.A_TRUST_CREDENTIAL_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "handshake".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_HANDSHAKE, "atrust_boundary".as_slice(), "atrust_boundary handshake".as_slice(), agent_schema.A_TRUST_HANDSHAKE_MODE, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_HANDSHAKE_MODE, agent_schema.A_TRUST_HANDSHAKE_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "resolution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_RESOLUTION, "atrust_boundary".as_slice(), "atrust_boundary resolution".as_slice(), agent_schema.A_TRUST_RESOLUTION_MODE, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_KEY_MATERIAL, "atrust_boundary".as_slice(), "atrust_boundary key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_SECRET_MATERIAL, "atrust_boundary".as_slice(), "atrust_boundary secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_EXECUTION, "atrust_boundary".as_slice(), "atrust_boundary execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "post_quantum_ready".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_POST_QUANTUM_READY, "atrust_boundary".as_slice(), "atrust_boundary post_quantum_ready".as_slice(), agent_schema.A_TRUST_POST_QUANTUM_REQUIREMENT, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_POST_QUANTUM_REQUIREMENT, agent_schema.A_TRUST_POST_QUANTUM_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_SECURITY_CLAIMS, "atrust_boundary".as_slice(), "atrust_boundary security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_ATRUST_BOUNDARY__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_PURPOSE, "atrust_boundary".as_slice(), "atrust_boundary purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_BOUNDARY_DECL_NOTES, "atrust_boundary".as_slice(), "atrust_boundary notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "atrust_boundary".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_CRYPTO_BOUNDARY, fallback);
+    p = default_array(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_DID_METHODS);
+    p = default_unknown(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_IDENTITY_FORMAT, agent_schema.A_TRUST_IDENTITY_FORMAT, agent_schema.A_TRUST_IDENTITY_FORMAT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_CREDENTIAL_MODE, agent_schema.A_TRUST_CREDENTIAL_MODE, agent_schema.A_TRUST_CREDENTIAL_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_HANDSHAKE, agent_schema.A_TRUST_HANDSHAKE_MODE, agent_schema.A_TRUST_HANDSHAKE_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_RESOLUTION, agent_schema.A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.A_TRUST_BOUNDARY_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_atrust_identity`.
+fn parse_atrust_identity(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "atrust_identity".as_slice(), "atrust identity name".as_slice(), agent_schema.A_TRUST_IDENTITY_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated atrust_identity declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "subject".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_SUBJECT, "atrust_identity".as_slice(), "atrust_identity subject agent".as_slice());
+        } else if peek_is(s, t, p.current, "did".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_DID, "atrust_identity".as_slice(), "atrust_identity did".as_slice());
+        } else if peek_is(s, t, p.current, "method".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_METHOD, "atrust_identity".as_slice(), "atrust_identity did_method reference".as_slice());
+        } else if peek_is(s, t, p.current, "boundary".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_BOUNDARY, "atrust_identity".as_slice(), "atrust_identity atrust_boundary reference".as_slice());
+        } else if peek_is(s, t, p.current, "status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_STATUS, "atrust_identity".as_slice(), "atrust_identity status".as_slice(), agent_schema.A_TRUST_IDENTITY_STATUS, agent_words.T_PARSE_ATRUST_IDENTITY__A_TRUST_IDENTITY_STATUS, agent_schema.A_TRUST_IDENTITY_STATUS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "validation".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_VALIDATION, "atrust_identity".as_slice(), "atrust_identity validation".as_slice(), agent_schema.A_TRUST_IDENTITY_VALIDATION, agent_words.T_PARSE_ATRUST_IDENTITY__A_TRUST_IDENTITY_VALIDATION, agent_schema.A_TRUST_IDENTITY_VALIDATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "resolution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_RESOLUTION, "atrust_identity".as_slice(), "atrust_identity resolution".as_slice(), agent_schema.A_TRUST_RESOLUTION_MODE, agent_words.T_PARSE_ATRUST_IDENTITY__A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_KEY_MATERIAL, "atrust_identity".as_slice(), "atrust_identity key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_ATRUST_IDENTITY__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_SECRET_MATERIAL, "atrust_identity".as_slice(), "atrust_identity secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_ATRUST_IDENTITY__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_EXECUTION, "atrust_identity".as_slice(), "atrust_identity execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_ATRUST_IDENTITY__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_EVIDENCE, "atrust_identity".as_slice(), "atrust_identity evidence".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_ATRUST_IDENTITY__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_SECURITY_CLAIMS, "atrust_identity".as_slice(), "atrust_identity security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_ATRUST_IDENTITY__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_PURPOSE, "atrust_identity".as_slice(), "atrust_identity purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_IDENTITY_DECL_NOTES, "atrust_identity".as_slice(), "atrust_identity notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "atrust_identity".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.A_TRUST_IDENTITY_DECL_SUBJECT, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_IDENTITY_DECL_DID, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_IDENTITY_DECL_METHOD, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_IDENTITY_DECL_BOUNDARY, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_IDENTITY_DECL_STATUS, agent_schema.A_TRUST_IDENTITY_STATUS, agent_schema.A_TRUST_IDENTITY_STATUS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_IDENTITY_DECL_VALIDATION, agent_schema.A_TRUST_IDENTITY_VALIDATION, agent_schema.A_TRUST_IDENTITY_VALIDATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_IDENTITY_DECL_RESOLUTION, agent_schema.A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_IDENTITY_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_IDENTITY_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_IDENTITY_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_IDENTITY_DECL_EVIDENCE, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_IDENTITY_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.A_TRUST_IDENTITY_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_atrust_credential_contract`.
+fn parse_atrust_credential_contract(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "atrust_credential_contract".as_slice(), "atrust credential contract name".as_slice(), agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated atrust_credential_contract declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "subject".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SUBJECT, "atrust_credential_contract".as_slice(), "atrust_credential_contract subject agent".as_slice());
+        } else if peek_is(s, t, p.current, "identity".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_IDENTITY, "atrust_credential_contract".as_slice(), "atrust_credential_contract identity reference".as_slice());
+        } else if peek_is(s, t, p.current, "boundary".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_BOUNDARY, "atrust_credential_contract".as_slice(), "atrust_credential_contract atrust_boundary reference".as_slice());
+        } else if peek_is(s, t, p.current, "method".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_METHOD, "atrust_credential_contract".as_slice(), "atrust_credential_contract did_method reference".as_slice());
+        } else if peek_is(s, t, p.current, "issuer_did".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_ISSUER_DID, "atrust_credential_contract".as_slice(), "atrust_credential_contract issuer_did".as_slice());
+        } else if peek_is(s, t, p.current, "holder_did".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_HOLDER_DID, "atrust_credential_contract".as_slice(), "atrust_credential_contract holder_did".as_slice());
+        } else if peek_is(s, t, p.current, "credential_type".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_CREDENTIAL_TYPE, "atrust_credential_contract".as_slice(), "atrust_credential_contract credential_type".as_slice());
+        } else if peek_is(s, t, p.current, "schema".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SCHEMA, "atrust_credential_contract".as_slice(), "atrust_credential_contract schema".as_slice());
+        } else if peek_is(s, t, p.current, "status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_STATUS, "atrust_credential_contract".as_slice(), "atrust_credential_contract status".as_slice(), agent_schema.A_TRUST_CREDENTIAL_STATUS, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_CREDENTIAL_STATUS, agent_schema.A_TRUST_CREDENTIAL_STATUS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "verification".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_VERIFICATION, "atrust_credential_contract".as_slice(), "atrust_credential_contract verification".as_slice(), agent_schema.A_TRUST_CREDENTIAL_VERIFICATION, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_CREDENTIAL_VERIFICATION, agent_schema.A_TRUST_CREDENTIAL_VERIFICATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "presentation".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_PRESENTATION, "atrust_credential_contract".as_slice(), "atrust_credential_contract presentation".as_slice(), agent_schema.A_TRUST_CREDENTIAL_PRESENTATION, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_CREDENTIAL_PRESENTATION, agent_schema.A_TRUST_CREDENTIAL_PRESENTATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "resolution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_RESOLUTION, "atrust_credential_contract".as_slice(), "atrust_credential_contract resolution".as_slice(), agent_schema.A_TRUST_RESOLUTION_MODE, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_KEY_MATERIAL, "atrust_credential_contract".as_slice(), "atrust_credential_contract key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SECRET_MATERIAL, "atrust_credential_contract".as_slice(), "atrust_credential_contract secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_EXECUTION, "atrust_credential_contract".as_slice(), "atrust_credential_contract execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_EVIDENCE, "atrust_credential_contract".as_slice(), "atrust_credential_contract evidence".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SECURITY_CLAIMS, "atrust_credential_contract".as_slice(), "atrust_credential_contract security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_ATRUST_CREDENTIAL_CONTRACT__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "claims".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_CLAIMS, "atrust_credential_contract".as_slice(), "atrust_credential_contract claims".as_slice());
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_PURPOSE, "atrust_credential_contract".as_slice(), "atrust_credential_contract purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_NOTES, "atrust_credential_contract".as_slice(), "atrust_credential_contract notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "atrust_credential_contract".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SUBJECT, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_IDENTITY, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_BOUNDARY, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_METHOD, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_ISSUER_DID, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_HOLDER_DID, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_CREDENTIAL_TYPE, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SCHEMA, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_STATUS, agent_schema.A_TRUST_CREDENTIAL_STATUS, agent_schema.A_TRUST_CREDENTIAL_STATUS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_VERIFICATION, agent_schema.A_TRUST_CREDENTIAL_VERIFICATION, agent_schema.A_TRUST_CREDENTIAL_VERIFICATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_PRESENTATION, agent_schema.A_TRUST_CREDENTIAL_PRESENTATION, agent_schema.A_TRUST_CREDENTIAL_PRESENTATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_RESOLUTION, agent_schema.A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_EVIDENCE, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_CLAIMS);
+    p = default_array(p, node, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_atrust_handshake`.
+fn parse_atrust_handshake(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "atrust_handshake".as_slice(), "atrust handshake name".as_slice(), agent_schema.A_TRUST_HANDSHAKE_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated atrust_handshake declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "initiator".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR, "atrust_handshake".as_slice(), "atrust_handshake initiator agent".as_slice());
+        } else if peek_is(s, t, p.current, "responder".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER, "atrust_handshake".as_slice(), "atrust_handshake responder agent".as_slice());
+        } else if peek_is(s, t, p.current, "initiator_identity".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR_IDENTITY, "atrust_handshake".as_slice(), "atrust_handshake initiator_identity reference".as_slice());
+        } else if peek_is(s, t, p.current, "responder_identity".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER_IDENTITY, "atrust_handshake".as_slice(), "atrust_handshake responder_identity reference".as_slice());
+        } else if peek_is(s, t, p.current, "credential_contracts".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_CREDENTIAL_CONTRACTS, "atrust_handshake".as_slice(), "atrust_handshake credential_contracts".as_slice());
+        } else if peek_is(s, t, p.current, "boundary".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_BOUNDARY, "atrust_handshake".as_slice(), "atrust_handshake atrust_boundary reference".as_slice());
+        } else if peek_is(s, t, p.current, "method".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_METHOD, "atrust_handshake".as_slice(), "atrust_handshake did_method reference".as_slice());
+        } else if peek_is(s, t, p.current, "mode".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_MODE, "atrust_handshake".as_slice(), "atrust_handshake mode".as_slice(), agent_schema.A_TRUST_HANDSHAKE_DRY_RUN_MODE, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_DRY_RUN_MODE, agent_schema.A_TRUST_HANDSHAKE_DRY_RUN_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "direction".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_DIRECTION, "atrust_handshake".as_slice(), "atrust_handshake direction".as_slice(), agent_schema.A_TRUST_HANDSHAKE_DIRECTION, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_DIRECTION, agent_schema.A_TRUST_HANDSHAKE_DIRECTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "challenge".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_CHALLENGE, "atrust_handshake".as_slice(), "atrust_handshake challenge".as_slice(), agent_schema.A_TRUST_HANDSHAKE_CHALLENGE, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_CHALLENGE, agent_schema.A_TRUST_HANDSHAKE_CHALLENGE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "response".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONSE, "atrust_handshake".as_slice(), "atrust_handshake response".as_slice(), agent_schema.A_TRUST_HANDSHAKE_RESPONSE, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_RESPONSE, agent_schema.A_TRUST_HANDSHAKE_RESPONSE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "transcript".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_TRANSCRIPT, "atrust_handshake".as_slice(), "atrust_handshake transcript".as_slice(), agent_schema.A_TRUST_HANDSHAKE_TRANSCRIPT, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_TRANSCRIPT, agent_schema.A_TRUST_HANDSHAKE_TRANSCRIPT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "verification".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_VERIFICATION, "atrust_handshake".as_slice(), "atrust_handshake verification".as_slice(), agent_schema.A_TRUST_HANDSHAKE_VERIFICATION, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_HANDSHAKE_VERIFICATION, agent_schema.A_TRUST_HANDSHAKE_VERIFICATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "resolution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESOLUTION, "atrust_handshake".as_slice(), "atrust_handshake resolution".as_slice(), agent_schema.A_TRUST_RESOLUTION_MODE, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_NETWORK, "atrust_handshake".as_slice(), "atrust_handshake network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_KEY_MATERIAL, "atrust_handshake".as_slice(), "atrust_handshake key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_SECRET_MATERIAL, "atrust_handshake".as_slice(), "atrust_handshake secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_EXECUTION, "atrust_handshake".as_slice(), "atrust_handshake execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_EVIDENCE, "atrust_handshake".as_slice(), "atrust_handshake evidence".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_SECURITY_CLAIMS, "atrust_handshake".as_slice(), "atrust_handshake security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_ATRUST_HANDSHAKE__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_PURPOSE, "atrust_handshake".as_slice(), "atrust_handshake purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_NOTES, "atrust_handshake".as_slice(), "atrust_handshake notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "atrust_handshake".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR_IDENTITY, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER_IDENTITY, fallback);
+    p = default_array(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_CREDENTIAL_CONTRACTS);
+    p = default_string(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_BOUNDARY, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_METHOD, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_MODE, agent_schema.A_TRUST_HANDSHAKE_DRY_RUN_MODE, agent_schema.A_TRUST_HANDSHAKE_DRY_RUN_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_DIRECTION, agent_schema.A_TRUST_HANDSHAKE_DIRECTION, agent_schema.A_TRUST_HANDSHAKE_DIRECTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_CHALLENGE, agent_schema.A_TRUST_HANDSHAKE_CHALLENGE, agent_schema.A_TRUST_HANDSHAKE_CHALLENGE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONSE, agent_schema.A_TRUST_HANDSHAKE_RESPONSE, agent_schema.A_TRUST_HANDSHAKE_RESPONSE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_TRANSCRIPT, agent_schema.A_TRUST_HANDSHAKE_TRANSCRIPT, agent_schema.A_TRUST_HANDSHAKE_TRANSCRIPT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_VERIFICATION, agent_schema.A_TRUST_HANDSHAKE_VERIFICATION, agent_schema.A_TRUST_HANDSHAKE_VERIFICATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_RESOLUTION, agent_schema.A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_EVIDENCE, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.A_TRUST_HANDSHAKE_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_trust_ledger`.
+fn parse_trust_ledger(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "trust_ledger".as_slice(), "trust ledger name".as_slice(), agent_schema.TRUST_LEDGER_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated trust_ledger declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "scope".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_SCOPE, "trust_ledger".as_slice(), "trust_ledger scope".as_slice(), agent_schema.TRUST_LEDGER_SCOPE, agent_words.T_PARSE_TRUST_LEDGER__TRUST_LEDGER_SCOPE, agent_schema.TRUST_LEDGER_SCOPE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "mode".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_MODE, "trust_ledger".as_slice(), "trust_ledger mode".as_slice(), agent_schema.TRUST_LEDGER_MODE, agent_words.T_PARSE_TRUST_LEDGER__TRUST_LEDGER_MODE, agent_schema.TRUST_LEDGER_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "hash_algorithm".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_HASH_ALGORITHM, "trust_ledger".as_slice(), "trust_ledger hash_algorithm reference".as_slice());
+        } else if peek_is(s, t, p.current, "chain_policy".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_CHAIN_POLICY, "trust_ledger".as_slice(), "trust_ledger chain_policy".as_slice(), agent_schema.TRUST_LEDGER_CHAIN_POLICY, agent_words.T_PARSE_TRUST_LEDGER__TRUST_LEDGER_CHAIN_POLICY, agent_schema.TRUST_LEDGER_CHAIN_POLICY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "entries".as_slice()) {
+            p = field_parse_trust_ledger_entries(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_ENTRIES, "trust_ledger".as_slice());
+        } else if peek_is(s, t, p.current, "chain_root".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_CHAIN_ROOT, "trust_ledger".as_slice(), "trust_ledger chain_root".as_slice());
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_NETWORK, "trust_ledger".as_slice(), "trust_ledger network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_TRUST_LEDGER__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_KEY_MATERIAL, "trust_ledger".as_slice(), "trust_ledger key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_TRUST_LEDGER__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_SECRET_MATERIAL, "trust_ledger".as_slice(), "trust_ledger secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_TRUST_LEDGER__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_EXECUTION, "trust_ledger".as_slice(), "trust_ledger execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_TRUST_LEDGER__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_EVIDENCE, "trust_ledger".as_slice(), "trust_ledger evidence".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_TRUST_LEDGER__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_SECURITY_CLAIMS, "trust_ledger".as_slice(), "trust_ledger security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_TRUST_LEDGER__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_PURPOSE, "trust_ledger".as_slice(), "trust_ledger purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.TRUST_LEDGER_DECL_NOTES, "trust_ledger".as_slice(), "trust_ledger notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "trust_ledger".as_slice(), "a".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_SCOPE, agent_schema.TRUST_LEDGER_SCOPE, agent_schema.TRUST_LEDGER_SCOPE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_MODE, agent_schema.TRUST_LEDGER_MODE, agent_schema.TRUST_LEDGER_MODE_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.TRUST_LEDGER_DECL_HASH_ALGORITHM, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_CHAIN_POLICY, agent_schema.TRUST_LEDGER_CHAIN_POLICY, agent_schema.TRUST_LEDGER_CHAIN_POLICY_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.TRUST_LEDGER_DECL_ENTRIES);
+    p = default_string(p, node, agent_schema.TRUST_LEDGER_DECL_CHAIN_ROOT, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_EVIDENCE, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.TRUST_LEDGER_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_trust_ledger_entries`.
+fn parse_trust_ledger_entries(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACKET, "`[`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let values: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACKET {
+        p = ensure_not_eof(t, p, "unterminated trust_ledger entries array".as_slice());
+        if p.failed { return p; }
+        p = parse_trust_ledger_entry(s, t, p);
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, values, value);
+        if peek_kind(t, p.current) == agent_lexer.COMMA {
+            p = advance(t, p);
+        }
+    }
+    p = advance(t, p);
+    p.result = values;
+    p
+}
+
+// A key whose value `parse_trust_ledger_entries` reads.
+fn field_parse_trust_ledger_entries(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = parse_trust_ledger_entries(s, t, p);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+// `parse_trust_ledger_entry`.
+fn parse_trust_ledger_entry(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let open: u64 = parser.current;
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.TRUST_LEDGER_ENTRY_DECL);
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated trust_ledger entry".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "id".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_ID, "trust_ledger entry".as_slice(), "trust_ledger entry id".as_slice());
+        } else if peek_is(s, t, p.current, "kind".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_KIND, "trust_ledger entry".as_slice(), "trust_ledger entry kind".as_slice(), agent_schema.TRUST_LEDGER_ENTRY_KIND, agent_words.T_PARSE_TRUST_LEDGER_ENTRY__TRUST_LEDGER_ENTRY_KIND, agent_schema.TRUST_LEDGER_ENTRY_KIND_UNKNOWN);
+        } else if peek_is(s, t, p.current, "subject".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_SUBJECT, "trust_ledger entry".as_slice(), "trust_ledger entry subject".as_slice());
+        } else if peek_is(s, t, p.current, "previous_hash".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_PREVIOUS_HASH, "trust_ledger entry".as_slice(), "trust_ledger entry previous_hash".as_slice());
+        } else if peek_is(s, t, p.current, "entry_hash".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_ENTRY_HASH, "trust_ledger entry".as_slice(), "trust_ledger entry entry_hash".as_slice());
+        } else if peek_is(s, t, p.current, "evidence_ref".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_EVIDENCE_REF, "trust_ledger entry".as_slice(), "trust_ledger entry evidence_ref".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "trust_ledger entry".as_slice(), "a".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    p = span_of(t, p, open);
+    let fallback: u64 = p.result;
+    p = default_string(p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_ID, fallback);
+    p = default_unknown(p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_KIND, agent_schema.TRUST_LEDGER_ENTRY_KIND, agent_schema.TRUST_LEDGER_ENTRY_KIND_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_SUBJECT, fallback);
+    p = default_string(p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_PREVIOUS_HASH, fallback);
+    p = default_string(p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_ENTRY_HASH, fallback);
+    p = default_string(p, node, agent_schema.TRUST_LEDGER_ENTRY_DECL_EVIDENCE_REF, fallback);
+    block_end(t, p, node)
+}
+
+// `parse_mcp_bridge_contract`.
+fn parse_mcp_bridge_contract(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract name".as_slice(), agent_schema.MCP_BRIDGE_CONTRACT_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated mcp_bridge_contract declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "agent".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AGENT, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract agent reference".as_slice());
+        } else if peek_is(s, t, p.current, "passport".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PASSPORT, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract passport reference".as_slice());
+        } else if peek_is(s, t, p.current, "identity".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_IDENTITY, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract identity reference".as_slice());
+        } else if peek_is(s, t, p.current, "boundary".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_BOUNDARY, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract boundary reference".as_slice());
+        } else if peek_is(s, t, p.current, "transport".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TRANSPORT, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract transport".as_slice(), agent_schema.BRIDGE_TRANSPORT, agent_words.T_PARSE_MCP_BRIDGE_CONTRACT__BRIDGE_TRANSPORT, agent_schema.BRIDGE_TRANSPORT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "protocol".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PROTOCOL, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract protocol".as_slice(), agent_schema.MCP_PROTOCOL, agent_words.T_PARSE_MCP_BRIDGE_CONTRACT__MCP_PROTOCOL, agent_schema.MCP_PROTOCOL_UNKNOWN);
+        } else if peek_is(s, t, p.current, "direction".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_DIRECTION, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract direction".as_slice(), agent_schema.BRIDGE_DIRECTION, agent_words.T_PARSE_BRIDGE_DIRECTION__BRIDGE_DIRECTION, agent_schema.BRIDGE_DIRECTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "tools".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TOOLS, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract tools".as_slice());
+        } else if peek_is(s, t, p.current, "resources".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_RESOURCES, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract resources".as_slice());
+        } else if peek_is(s, t, p.current, "prompts".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PROMPTS, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract prompts".as_slice());
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NETWORK, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_MCP_BRIDGE_CONTRACT__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_EXTERNAL_EXECUTION, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract external_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "tool_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TOOL_EXECUTION, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract tool_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_SECRET_MATERIAL, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_KEY_MATERIAL, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "authentication".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AUTHENTICATION, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract authentication".as_slice(), agent_schema.BRIDGE_AUTHENTICATION, agent_words.T_PARSE_BRIDGE_AUTHENTICATION__BRIDGE_AUTHENTICATION, agent_schema.BRIDGE_AUTHENTICATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "authorization".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AUTHORIZATION, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract authorization".as_slice(), agent_schema.BRIDGE_AUTHORIZATION, agent_words.T_PARSE_BRIDGE_AUTHORIZATION__BRIDGE_AUTHORIZATION, agent_schema.BRIDGE_AUTHORIZATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_EVIDENCE, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract evidence".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_MCP_BRIDGE_CONTRACT__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_SECURITY_CLAIMS, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_MCP_BRIDGE_CONTRACT__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PURPOSE, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NOTES, "mcp_bridge_contract".as_slice(), "mcp_bridge_contract notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "mcp_bridge_contract".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AGENT, fallback);
+    p = default_string(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PASSPORT, fallback);
+    p = default_string(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_IDENTITY, fallback);
+    p = default_string(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_BOUNDARY, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TRANSPORT, agent_schema.BRIDGE_TRANSPORT, agent_schema.BRIDGE_TRANSPORT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PROTOCOL, agent_schema.MCP_PROTOCOL, agent_schema.MCP_PROTOCOL_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_DIRECTION, agent_schema.BRIDGE_DIRECTION, agent_schema.BRIDGE_DIRECTION_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TOOLS);
+    p = default_array(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_RESOURCES);
+    p = default_array(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PROMPTS);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_EXTERNAL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_TOOL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AUTHENTICATION, agent_schema.BRIDGE_AUTHENTICATION, agent_schema.BRIDGE_AUTHENTICATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_AUTHORIZATION, agent_schema.BRIDGE_AUTHORIZATION, agent_schema.BRIDGE_AUTHORIZATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_EVIDENCE, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.MCP_BRIDGE_CONTRACT_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_a2a_bridge_contract`.
+fn parse_a2a_bridge_contract(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract name".as_slice(), agent_schema.A2_A_BRIDGE_CONTRACT_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated a2a_bridge_contract declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "initiator".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract initiator reference".as_slice());
+        } else if peek_is(s, t, p.current, "responder".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract responder reference".as_slice());
+        } else if peek_is(s, t, p.current, "initiator_passport".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_PASSPORT, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract initiator_passport reference".as_slice());
+        } else if peek_is(s, t, p.current, "responder_passport".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_PASSPORT, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract responder_passport reference".as_slice());
+        } else if peek_is(s, t, p.current, "initiator_identity".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_IDENTITY, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract initiator_identity reference".as_slice());
+        } else if peek_is(s, t, p.current, "responder_identity".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_IDENTITY, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract responder_identity reference".as_slice());
+        } else if peek_is(s, t, p.current, "handshake".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_HANDSHAKE, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract handshake reference".as_slice());
+        } else if peek_is(s, t, p.current, "trust_ledger".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRUST_LEDGER, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract trust_ledger reference".as_slice());
+        } else if peek_is(s, t, p.current, "boundary".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_BOUNDARY, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract boundary reference".as_slice());
+        } else if peek_is(s, t, p.current, "protocol".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PROTOCOL, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract protocol".as_slice(), agent_schema.A2_A_PROTOCOL, agent_words.T_PARSE_A2A_BRIDGE_CONTRACT__A2_A_PROTOCOL, agent_schema.A2_A_PROTOCOL_UNKNOWN);
+        } else if peek_is(s, t, p.current, "transport".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRANSPORT, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract transport".as_slice(), agent_schema.BRIDGE_TRANSPORT, agent_words.T_PARSE_A2A_BRIDGE_CONTRACT__BRIDGE_TRANSPORT, agent_schema.BRIDGE_TRANSPORT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "direction".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_DIRECTION, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract direction".as_slice(), agent_schema.BRIDGE_DIRECTION, agent_words.T_PARSE_BRIDGE_DIRECTION__BRIDGE_DIRECTION, agent_schema.BRIDGE_DIRECTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "message_contracts".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_MESSAGE_CONTRACTS, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract message_contracts".as_slice());
+        } else if peek_is(s, t, p.current, "capabilities".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_CAPABILITIES, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract capabilities".as_slice());
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NETWORK, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_A2A_BRIDGE_CONTRACT__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_EXTERNAL_EXECUTION, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract external_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "agent_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AGENT_EXECUTION, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract agent_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_SECRET_MATERIAL, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_KEY_MATERIAL, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "authentication".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AUTHENTICATION, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract authentication".as_slice(), agent_schema.BRIDGE_AUTHENTICATION, agent_words.T_PARSE_BRIDGE_AUTHENTICATION__BRIDGE_AUTHENTICATION, agent_schema.BRIDGE_AUTHENTICATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "authorization".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AUTHORIZATION, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract authorization".as_slice(), agent_schema.BRIDGE_AUTHORIZATION, agent_words.T_PARSE_BRIDGE_AUTHORIZATION__BRIDGE_AUTHORIZATION, agent_schema.BRIDGE_AUTHORIZATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "evidence".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_EVIDENCE, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract evidence".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_A2A_BRIDGE_CONTRACT__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_SECURITY_CLAIMS, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_A2A_BRIDGE_CONTRACT__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PURPOSE, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NOTES, "a2a_bridge_contract".as_slice(), "a2a_bridge_contract notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "a2a_bridge_contract".as_slice(), "an".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR, fallback);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER, fallback);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_PASSPORT, fallback);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_PASSPORT, fallback);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_INITIATOR_IDENTITY, fallback);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_RESPONDER_IDENTITY, fallback);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_HANDSHAKE, fallback);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRUST_LEDGER, fallback);
+    p = default_string(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_BOUNDARY, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PROTOCOL, agent_schema.A2_A_PROTOCOL, agent_schema.A2_A_PROTOCOL_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_TRANSPORT, agent_schema.BRIDGE_TRANSPORT, agent_schema.BRIDGE_TRANSPORT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_DIRECTION, agent_schema.BRIDGE_DIRECTION, agent_schema.BRIDGE_DIRECTION_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_MESSAGE_CONTRACTS);
+    p = default_array(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_CAPABILITIES);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_EXTERNAL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AGENT_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AUTHENTICATION, agent_schema.BRIDGE_AUTHENTICATION, agent_schema.BRIDGE_AUTHENTICATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_AUTHORIZATION, agent_schema.BRIDGE_AUTHORIZATION, agent_schema.BRIDGE_AUTHORIZATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_EVIDENCE, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.A2_A_BRIDGE_CONTRACT_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_atrust_evidence_map`.
+fn parse_atrust_evidence_map(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "atrust_evidence_map".as_slice(), "atrust_evidence_map name".as_slice(), agent_schema.A_TRUST_EVIDENCE_MAP_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated atrust_evidence_map declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "agent".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_AGENT, "atrust_evidence_map".as_slice(), "evidence map agent".as_slice());
+        } else if peek_is(s, t, p.current, "passport".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PASSPORT, "atrust_evidence_map".as_slice(), "evidence map passport".as_slice());
+        } else if peek_is(s, t, p.current, "identity".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_IDENTITY, "atrust_evidence_map".as_slice(), "evidence map identity".as_slice());
+        } else if peek_is(s, t, p.current, "credential_contract".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_CREDENTIAL_CONTRACT, "atrust_evidence_map".as_slice(), "evidence map credential_contract".as_slice());
+        } else if peek_is(s, t, p.current, "handshake".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_HANDSHAKE, "atrust_evidence_map".as_slice(), "evidence map handshake".as_slice());
+        } else if peek_is(s, t, p.current, "trust_ledger".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRUST_LEDGER, "atrust_evidence_map".as_slice(), "evidence map trust_ledger".as_slice());
+        } else if peek_is(s, t, p.current, "mcp_bridges".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MCP_BRIDGES, "atrust_evidence_map".as_slice(), "evidence map mcp_bridge".as_slice());
+        } else if peek_is(s, t, p.current, "a2a_bridges".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_A2A_BRIDGES, "atrust_evidence_map".as_slice(), "evidence map a2a_bridge".as_slice());
+        } else if peek_is(s, t, p.current, "policies".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_POLICIES, "atrust_evidence_map".as_slice(), "evidence map policy".as_slice());
+        } else if peek_is(s, t, p.current, "coverage".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_COVERAGE, "atrust_evidence_map".as_slice(), "evidence map coverage".as_slice(), agent_schema.A_TRUST_EVIDENCE_MAP_COVERAGE, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_EVIDENCE_MAP_COVERAGE, agent_schema.A_TRUST_EVIDENCE_MAP_COVERAGE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "mapping_mode".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MAPPING_MODE, "atrust_evidence_map".as_slice(), "evidence map mapping_mode".as_slice(), agent_schema.A_TRUST_EVIDENCE_MAP_MAPPING_MODE, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_EVIDENCE_MAP_MAPPING_MODE, agent_schema.A_TRUST_EVIDENCE_MAP_MAPPING_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "verification".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_VERIFICATION, "atrust_evidence_map".as_slice(), "evidence map verification".as_slice(), agent_schema.A_TRUST_HANDSHAKE_VERIFICATION, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_HANDSHAKE_VERIFICATION, agent_schema.A_TRUST_HANDSHAKE_VERIFICATION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "resolution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_RESOLUTION, "atrust_evidence_map".as_slice(), "evidence map resolution".as_slice(), agent_schema.A_TRUST_RESOLUTION_MODE, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "evidence_bundle".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EVIDENCE_BUNDLE, "atrust_evidence_map".as_slice(), "evidence map evidence_bundle".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_report".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_REPORT, "atrust_evidence_map".as_slice(), "evidence map security_report".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "trace".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRACE, "atrust_evidence_map".as_slice(), "evidence map trace".as_slice(), agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NETWORK, "atrust_evidence_map".as_slice(), "evidence map network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EXTERNAL_EXECUTION, "atrust_evidence_map".as_slice(), "evidence map external_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECRET_MATERIAL, "atrust_evidence_map".as_slice(), "evidence map secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_KEY_MATERIAL, "atrust_evidence_map".as_slice(), "evidence map key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EXECUTION, "atrust_evidence_map".as_slice(), "evidence map execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_CLAIMS, "atrust_evidence_map".as_slice(), "evidence map security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_ATRUST_EVIDENCE_MAP__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PURPOSE, "atrust_evidence_map".as_slice(), "evidence map purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NOTES, "atrust_evidence_map".as_slice(), "evidence map notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "atrust_evidence_map".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_AGENT, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PASSPORT, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_IDENTITY, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_CREDENTIAL_CONTRACT, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_HANDSHAKE, fallback);
+    p = default_string(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRUST_LEDGER, fallback);
+    p = default_array(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MCP_BRIDGES);
+    p = default_array(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_A2A_BRIDGES);
+    p = default_array(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_POLICIES);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_COVERAGE, agent_schema.A_TRUST_EVIDENCE_MAP_COVERAGE, agent_schema.A_TRUST_EVIDENCE_MAP_COVERAGE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_MAPPING_MODE, agent_schema.A_TRUST_EVIDENCE_MAP_MAPPING_MODE, agent_schema.A_TRUST_EVIDENCE_MAP_MAPPING_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_VERIFICATION, agent_schema.A_TRUST_HANDSHAKE_VERIFICATION, agent_schema.A_TRUST_HANDSHAKE_VERIFICATION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_RESOLUTION, agent_schema.A_TRUST_RESOLUTION_MODE, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EVIDENCE_BUNDLE, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_REPORT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_TRACE, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT, agent_schema.A_TRUST_EVIDENCE_REQUIREMENT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EXTERNAL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.A_TRUST_EVIDENCE_MAP_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_governance_profile`.
+fn parse_governance_profile(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "governance_profile".as_slice(), "governance_profile name".as_slice(), agent_schema.GOVERNANCE_PROFILE_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated governance_profile declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "scope".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_SCOPE, "governance_profile".as_slice(), "governance_profile scope".as_slice(), agent_schema.GOVERNANCE_SCOPE, agent_words.T_PARSE_GOVERNANCE_SCOPE__GOVERNANCE_SCOPE, agent_schema.GOVERNANCE_SCOPE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "level".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_LEVEL, "governance_profile".as_slice(), "governance_profile level".as_slice(), agent_schema.GOVERNANCE_LEVEL, agent_words.T_PARSE_GOVERNANCE_LEVEL__GOVERNANCE_LEVEL, agent_schema.GOVERNANCE_LEVEL_UNKNOWN);
+        } else if peek_is(s, t, p.current, "domain".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_DOMAIN, "governance_profile".as_slice(), "governance_profile domain".as_slice(), agent_schema.GOVERNANCE_DOMAIN, agent_words.T_PARSE_GOVERNANCE_DOMAIN__GOVERNANCE_DOMAIN, agent_schema.GOVERNANCE_DOMAIN_UNKNOWN);
+        } else if peek_is(s, t, p.current, "owner".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_OWNER, "governance_profile".as_slice(), "governance_profile owner".as_slice());
+        } else if peek_is(s, t, p.current, "jurisdiction".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_JURISDICTION, "governance_profile".as_slice(), "governance_profile jurisdiction".as_slice());
+        } else if peek_is(s, t, p.current, "framework".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_FRAMEWORK, "governance_profile".as_slice(), "governance_profile framework".as_slice());
+        } else if peek_is(s, t, p.current, "evidence_map".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_EVIDENCE_MAP, "governance_profile".as_slice(), "governance_profile evidence_map".as_slice());
+        } else if peek_is(s, t, p.current, "trust_ledger".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_TRUST_LEDGER, "governance_profile".as_slice(), "governance_profile trust_ledger".as_slice());
+        } else if peek_is(s, t, p.current, "policies".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_POLICIES, "governance_profile".as_slice(), "governance_profile policy".as_slice());
+        } else if peek_is(s, t, p.current, "controls".as_slice()) {
+            p = field_parse_governance_controls(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_CONTROLS, "governance_profile".as_slice());
+        } else if peek_is(s, t, p.current, "risk_level".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_RISK_LEVEL, "governance_profile".as_slice(), "governance_profile risk_level".as_slice(), agent_schema.GOVERNANCE_RISK_LEVEL, agent_words.T_PARSE_GOVERNANCE_RISK_LEVEL__GOVERNANCE_RISK_LEVEL, agent_schema.GOVERNANCE_RISK_LEVEL_UNKNOWN);
+        } else if peek_is(s, t, p.current, "review_status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_REVIEW_STATUS, "governance_profile".as_slice(), "governance_profile review_status".as_slice(), agent_schema.GOVERNANCE_REVIEW_STATUS, agent_words.T_PARSE_GOVERNANCE_REVIEW_STATUS__GOVERNANCE_REVIEW_STATUS, agent_schema.GOVERNANCE_REVIEW_STATUS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "assurance".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_ASSURANCE, "governance_profile".as_slice(), "governance_profile assurance".as_slice(), agent_schema.GOVERNANCE_ASSURANCE, agent_words.T_PARSE_GOVERNANCE_ASSURANCE__GOVERNANCE_ASSURANCE, agent_schema.GOVERNANCE_ASSURANCE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_NETWORK, "governance_profile".as_slice(), "governance_profile network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_GOVERNANCE_NETWORK__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_EXTERNAL_EXECUTION, "governance_profile".as_slice(), "governance_profile external_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_SECRET_MATERIAL, "governance_profile".as_slice(), "governance_profile secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_KEY_MATERIAL, "governance_profile".as_slice(), "governance_profile key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_EXECUTION, "governance_profile".as_slice(), "governance_profile execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_SECURITY_CLAIMS, "governance_profile".as_slice(), "governance_profile security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_GOVERNANCE_SECURITY_CLAIMS__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_PURPOSE, "governance_profile".as_slice(), "governance_profile purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.GOVERNANCE_PROFILE_DECL_NOTES, "governance_profile".as_slice(), "governance_profile notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "governance_profile".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_SCOPE, agent_schema.GOVERNANCE_SCOPE, agent_schema.GOVERNANCE_SCOPE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_LEVEL, agent_schema.GOVERNANCE_LEVEL, agent_schema.GOVERNANCE_LEVEL_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_DOMAIN, agent_schema.GOVERNANCE_DOMAIN, agent_schema.GOVERNANCE_DOMAIN_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_OWNER, fallback);
+    p = default_string(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_JURISDICTION, fallback);
+    p = default_string(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_FRAMEWORK, fallback);
+    p = default_string(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_EVIDENCE_MAP, fallback);
+    p = default_string(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_TRUST_LEDGER, fallback);
+    p = default_array(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_POLICIES);
+    p = default_array(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_CONTROLS);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_RISK_LEVEL, agent_schema.GOVERNANCE_RISK_LEVEL, agent_schema.GOVERNANCE_RISK_LEVEL_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_REVIEW_STATUS, agent_schema.GOVERNANCE_REVIEW_STATUS, agent_schema.GOVERNANCE_REVIEW_STATUS_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_ASSURANCE, agent_schema.GOVERNANCE_ASSURANCE, agent_schema.GOVERNANCE_ASSURANCE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_EXTERNAL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.GOVERNANCE_PROFILE_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_governance_controls`.
+fn parse_governance_controls(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACKET, "`[`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let values: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACKET {
+        p = ensure_not_eof(t, p, "unterminated governance_profile controls array".as_slice());
+        if p.failed { return p; }
+        p = parse_governance_control(s, t, p);
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, values, value);
+        if peek_kind(t, p.current) == agent_lexer.COMMA {
+            p = advance(t, p);
+        }
+    }
+    p = advance(t, p);
+    p.result = values;
+    p
+}
+
+// A key whose value `parse_governance_controls` reads.
+fn field_parse_governance_controls(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = parse_governance_controls(s, t, p);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+// `parse_governance_control`.
+fn parse_governance_control(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let open: u64 = parser.current;
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.GOVERNANCE_CONTROL_DECL);
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated governance control".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "id".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.GOVERNANCE_CONTROL_DECL_ID, "governance control".as_slice(), "governance control id".as_slice());
+        } else if peek_is(s, t, p.current, "category".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_CONTROL_DECL_CATEGORY, "governance control".as_slice(), "governance control category".as_slice(), agent_schema.GOVERNANCE_CONTROL_CATEGORY, agent_words.T_PARSE_GOVERNANCE_CONTROL_CATEGORY__GOVERNANCE_CONTROL_CATEGORY, agent_schema.GOVERNANCE_CONTROL_CATEGORY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "requirement".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.GOVERNANCE_CONTROL_DECL_REQUIREMENT, "governance control".as_slice(), "governance control requirement".as_slice());
+        } else if peek_is(s, t, p.current, "evidence_ref".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.GOVERNANCE_CONTROL_DECL_EVIDENCE_REF, "governance control".as_slice(), "governance control evidence_ref".as_slice());
+        } else if peek_is(s, t, p.current, "status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.GOVERNANCE_CONTROL_DECL_STATUS, "governance control".as_slice(), "governance control status".as_slice(), agent_schema.GOVERNANCE_CONTROL_STATUS, agent_words.T_PARSE_GOVERNANCE_CONTROL_STATUS__GOVERNANCE_CONTROL_STATUS, agent_schema.GOVERNANCE_CONTROL_STATUS_UNKNOWN);
+        } else {
+            return block_unexpected(s, t, p, "governance control".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    p = span_of(t, p, open);
+    let fallback: u64 = p.result;
+    p = default_string(p, node, agent_schema.GOVERNANCE_CONTROL_DECL_ID, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_CONTROL_DECL_CATEGORY, agent_schema.GOVERNANCE_CONTROL_CATEGORY, agent_schema.GOVERNANCE_CONTROL_CATEGORY_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.GOVERNANCE_CONTROL_DECL_REQUIREMENT, fallback);
+    p = default_string(p, node, agent_schema.GOVERNANCE_CONTROL_DECL_EVIDENCE_REF, fallback);
+    p = default_unknown(p, node, agent_schema.GOVERNANCE_CONTROL_DECL_STATUS, agent_schema.GOVERNANCE_CONTROL_STATUS, agent_schema.GOVERNANCE_CONTROL_STATUS_UNKNOWN, fallback);
+    block_end(t, p, node)
+}
+
+// `parse_regulatory_mapping`.
+fn parse_regulatory_mapping(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "regulatory_mapping".as_slice(), "regulatory_mapping name".as_slice(), agent_schema.REGULATORY_MAPPING_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated regulatory_mapping declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "governance_profile".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_GOVERNANCE_PROFILE, "regulatory_mapping".as_slice(), "regulatory_mapping governance_profile".as_slice());
+        } else if peek_is(s, t, p.current, "evidence_map".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_EVIDENCE_MAP, "regulatory_mapping".as_slice(), "regulatory_mapping evidence_map".as_slice());
+        } else if peek_is(s, t, p.current, "jurisdiction".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_JURISDICTION, "regulatory_mapping".as_slice(), "regulatory_mapping jurisdiction".as_slice());
+        } else if peek_is(s, t, p.current, "framework".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_FRAMEWORK, "regulatory_mapping".as_slice(), "regulatory_mapping framework".as_slice());
+        } else if peek_is(s, t, p.current, "obligations".as_slice()) {
+            p = field_parse_regulatory_obligations(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_OBLIGATIONS, "regulatory_mapping".as_slice());
+        } else if peek_is(s, t, p.current, "coverage".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_COVERAGE, "regulatory_mapping".as_slice(), "regulatory_mapping coverage".as_slice(), agent_schema.REGULATORY_COVERAGE, agent_words.T_PARSE_REGULATORY_COVERAGE__REGULATORY_COVERAGE, agent_schema.REGULATORY_COVERAGE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "assessment".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_ASSESSMENT, "regulatory_mapping".as_slice(), "regulatory_mapping assessment".as_slice(), agent_schema.REGULATORY_ASSESSMENT, agent_words.T_PARSE_REGULATORY_ASSESSMENT__REGULATORY_ASSESSMENT, agent_schema.REGULATORY_ASSESSMENT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "legal_claims".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_LEGAL_CLAIMS, "regulatory_mapping".as_slice(), "regulatory_mapping legal_claims".as_slice());
+        } else if peek_is(s, t, p.current, "certification".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_CERTIFICATION, "regulatory_mapping".as_slice(), "regulatory_mapping certification".as_slice());
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_NETWORK, "regulatory_mapping".as_slice(), "regulatory_mapping network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_GOVERNANCE_NETWORK__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_EXTERNAL_EXECUTION, "regulatory_mapping".as_slice(), "regulatory_mapping external_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_SECRET_MATERIAL, "regulatory_mapping".as_slice(), "regulatory_mapping secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_KEY_MATERIAL, "regulatory_mapping".as_slice(), "regulatory_mapping key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_EXECUTION, "regulatory_mapping".as_slice(), "regulatory_mapping execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_SECURITY_CLAIMS, "regulatory_mapping".as_slice(), "regulatory_mapping security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_GOVERNANCE_SECURITY_CLAIMS__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_PURPOSE, "regulatory_mapping".as_slice(), "regulatory_mapping purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.REGULATORY_MAPPING_DECL_NOTES, "regulatory_mapping".as_slice(), "regulatory_mapping notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "regulatory_mapping".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.REGULATORY_MAPPING_DECL_GOVERNANCE_PROFILE, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_MAPPING_DECL_EVIDENCE_MAP, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_MAPPING_DECL_JURISDICTION, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_MAPPING_DECL_FRAMEWORK, fallback);
+    p = default_array(p, node, agent_schema.REGULATORY_MAPPING_DECL_OBLIGATIONS);
+    p = default_unknown(p, node, agent_schema.REGULATORY_MAPPING_DECL_COVERAGE, agent_schema.REGULATORY_COVERAGE, agent_schema.REGULATORY_COVERAGE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.REGULATORY_MAPPING_DECL_ASSESSMENT, agent_schema.REGULATORY_ASSESSMENT, agent_schema.REGULATORY_ASSESSMENT_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_MAPPING_DECL_LEGAL_CLAIMS, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_MAPPING_DECL_CERTIFICATION, fallback);
+    p = default_unknown(p, node, agent_schema.REGULATORY_MAPPING_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.REGULATORY_MAPPING_DECL_EXTERNAL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.REGULATORY_MAPPING_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.REGULATORY_MAPPING_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.REGULATORY_MAPPING_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.REGULATORY_MAPPING_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.REGULATORY_MAPPING_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_third_party_verifier`.
+fn parse_third_party_verifier(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "third_party_verifier".as_slice(), "third_party_verifier name".as_slice(), agent_schema.THIRD_PARTY_VERIFIER_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated third_party_verifier declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "verifier_type".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_VERIFIER_TYPE, "third_party_verifier".as_slice(), "third_party_verifier verifier_type".as_slice(), agent_schema.THIRD_PARTY_VERIFIER_TYPE, agent_words.T_PARSE_THIRD_PARTY_VERIFIER_TYPE__THIRD_PARTY_VERIFIER_TYPE, agent_schema.THIRD_PARTY_VERIFIER_TYPE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "independence".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_INDEPENDENCE, "third_party_verifier".as_slice(), "third_party_verifier independence".as_slice(), agent_schema.VERIFIER_INDEPENDENCE, agent_words.T_PARSE_VERIFIER_INDEPENDENCE__VERIFIER_INDEPENDENCE, agent_schema.VERIFIER_INDEPENDENCE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "identity_mode".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_IDENTITY_MODE, "third_party_verifier".as_slice(), "third_party_verifier identity_mode".as_slice(), agent_schema.VERIFIER_IDENTITY_MODE, agent_words.T_PARSE_VERIFIER_IDENTITY_MODE__VERIFIER_IDENTITY_MODE, agent_schema.VERIFIER_IDENTITY_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "verification_mode".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_VERIFICATION_MODE, "third_party_verifier".as_slice(), "third_party_verifier verification_mode".as_slice(), agent_schema.VERIFIER_VERIFICATION_MODE, agent_words.T_PARSE_VERIFIER_VERIFICATION_MODE__VERIFIER_VERIFICATION_MODE, agent_schema.VERIFIER_VERIFICATION_MODE_UNKNOWN);
+        } else if peek_is(s, t, p.current, "name".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISPLAY_NAME, "third_party_verifier".as_slice(), "third_party_verifier name".as_slice());
+        } else if peek_is(s, t, p.current, "organization".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_ORGANIZATION, "third_party_verifier".as_slice(), "third_party_verifier organization".as_slice());
+        } else if peek_is(s, t, p.current, "jurisdiction".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_JURISDICTION, "third_party_verifier".as_slice(), "third_party_verifier jurisdiction".as_slice());
+        } else if peek_is(s, t, p.current, "allowed_scopes".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_ALLOWED_SCOPES, "third_party_verifier".as_slice(), "third_party_verifier allowed scope".as_slice());
+        } else if peek_is(s, t, p.current, "disallowed_claims".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISALLOWED_CLAIMS, "third_party_verifier".as_slice(), "third_party_verifier disallowed claim".as_slice());
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_NETWORK, "third_party_verifier".as_slice(), "third_party_verifier network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_GOVERNANCE_NETWORK__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_EXTERNAL_EXECUTION, "third_party_verifier".as_slice(), "third_party_verifier external_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_SECRET_MATERIAL, "third_party_verifier".as_slice(), "third_party_verifier secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_KEY_MATERIAL, "third_party_verifier".as_slice(), "third_party_verifier key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_EXECUTION, "third_party_verifier".as_slice(), "third_party_verifier execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "legal_claims".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_LEGAL_CLAIMS, "third_party_verifier".as_slice(), "third_party_verifier legal_claims".as_slice());
+        } else if peek_is(s, t, p.current, "certification".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_CERTIFICATION, "third_party_verifier".as_slice(), "third_party_verifier certification".as_slice());
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_SECURITY_CLAIMS, "third_party_verifier".as_slice(), "third_party_verifier security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_GOVERNANCE_SECURITY_CLAIMS__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_PURPOSE, "third_party_verifier".as_slice(), "third_party_verifier purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_NOTES, "third_party_verifier".as_slice(), "third_party_verifier notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "third_party_verifier".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_VERIFIER_TYPE, agent_schema.THIRD_PARTY_VERIFIER_TYPE, agent_schema.THIRD_PARTY_VERIFIER_TYPE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_INDEPENDENCE, agent_schema.VERIFIER_INDEPENDENCE, agent_schema.VERIFIER_INDEPENDENCE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_IDENTITY_MODE, agent_schema.VERIFIER_IDENTITY_MODE, agent_schema.VERIFIER_IDENTITY_MODE_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_VERIFICATION_MODE, agent_schema.VERIFIER_VERIFICATION_MODE, agent_schema.VERIFIER_VERIFICATION_MODE_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISPLAY_NAME, fallback);
+    p = default_string(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_ORGANIZATION, fallback);
+    p = default_string(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_JURISDICTION, fallback);
+    p = default_array(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_ALLOWED_SCOPES);
+    p = default_array(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISALLOWED_CLAIMS);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_EXTERNAL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_LEGAL_CLAIMS, fallback);
+    p = default_string(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_CERTIFICATION, fallback);
+    p = default_unknown(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.THIRD_PARTY_VERIFIER_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_public_conformance_report`.
+fn parse_public_conformance_report(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = block_start(s, t, parser, "public_conformance_report".as_slice(), "public_conformance_report name".as_slice(), agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL);
+    if p.failed { return p; }
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated public_conformance_report declaration".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "verifier".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_VERIFIER, "public_conformance_report".as_slice(), "public_conformance_report verifier".as_slice());
+        } else if peek_is(s, t, p.current, "suite".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE, "public_conformance_report".as_slice(), "public_conformance_report suite".as_slice());
+        } else if peek_is(s, t, p.current, "suite_version".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE_VERSION, "public_conformance_report".as_slice(), "public_conformance_report suite_version".as_slice());
+        } else if peek_is(s, t, p.current, "source_artifact".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SOURCE_ARTIFACT, "public_conformance_report".as_slice(), "public_conformance_report source_artifact".as_slice());
+        } else if peek_is(s, t, p.current, "bytecode_artifact".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_BYTECODE_ARTIFACT, "public_conformance_report".as_slice(), "public_conformance_report bytecode_artifact".as_slice());
+        } else if peek_is(s, t, p.current, "evidence_map".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EVIDENCE_MAP, "public_conformance_report".as_slice(), "public_conformance_report evidence_map".as_slice());
+        } else if peek_is(s, t, p.current, "governance_profile".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_GOVERNANCE_PROFILE, "public_conformance_report".as_slice(), "public_conformance_report governance_profile".as_slice());
+        } else if peek_is(s, t, p.current, "regulatory_mapping".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REGULATORY_MAPPING, "public_conformance_report".as_slice(), "public_conformance_report regulatory_mapping".as_slice());
+        } else if peek_is(s, t, p.current, "trust_ledger".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_TRUST_LEDGER, "public_conformance_report".as_slice(), "public_conformance_report trust_ledger".as_slice());
+        } else if peek_is(s, t, p.current, "security_report".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECURITY_REPORT, "public_conformance_report".as_slice(), "public_conformance_report security_report".as_slice());
+        } else if peek_is(s, t, p.current, "evidence_bundle".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EVIDENCE_BUNDLE, "public_conformance_report".as_slice(), "public_conformance_report evidence_bundle".as_slice());
+        } else if peek_is(s, t, p.current, "trace".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_TRACE, "public_conformance_report".as_slice(), "public_conformance_report trace".as_slice());
+        } else if peek_is(s, t, p.current, "result".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_RESULT, "public_conformance_report".as_slice(), "public_conformance_report result".as_slice(), agent_schema.PUBLIC_CONFORMANCE_RESULT, agent_words.T_PARSE_PUBLIC_CONFORMANCE_RESULT__PUBLIC_CONFORMANCE_RESULT, agent_schema.PUBLIC_CONFORMANCE_RESULT_UNKNOWN);
+        } else if peek_is(s, t, p.current, "reproducibility".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REPRODUCIBILITY, "public_conformance_report".as_slice(), "public_conformance_report reproducibility".as_slice(), agent_schema.PUBLIC_CONFORMANCE_REPRODUCIBILITY, agent_words.T_PARSE_PUBLIC_CONFORMANCE_REPRODUCIBILITY__PUBLIC_CONFORMANCE_REPRODUCIBILITY, agent_schema.PUBLIC_CONFORMANCE_REPRODUCIBILITY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "review_status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REVIEW_STATUS, "public_conformance_report".as_slice(), "public_conformance_report review_status".as_slice(), agent_schema.PUBLIC_CONFORMANCE_REVIEW_STATUS, agent_words.T_PARSE_PUBLIC_CONFORMANCE_REVIEW_STATUS__PUBLIC_CONFORMANCE_REVIEW_STATUS, agent_schema.PUBLIC_CONFORMANCE_REVIEW_STATUS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "claims".as_slice()) {
+            p = field_parse_public_conformance_claims(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_CLAIMS, "public_conformance_report".as_slice());
+        } else if peek_is(s, t, p.current, "network".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NETWORK, "public_conformance_report".as_slice(), "public_conformance_report network".as_slice(), agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_words.T_PARSE_GOVERNANCE_NETWORK__A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "external_execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EXTERNAL_EXECUTION, "public_conformance_report".as_slice(), "public_conformance_report external_execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "secret_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECRET_MATERIAL, "public_conformance_report".as_slice(), "public_conformance_report secret_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "key_material".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_KEY_MATERIAL, "public_conformance_report".as_slice(), "public_conformance_report key_material".as_slice(), agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_words.T_PARSE_BRIDGE_MATERIAL__A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "execution".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EXECUTION, "public_conformance_report".as_slice(), "public_conformance_report execution".as_slice(), agent_schema.A_TRUST_EXECUTION, agent_words.T_PARSE_BRIDGE_EXECUTION__A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN);
+        } else if peek_is(s, t, p.current, "legal_claims".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_LEGAL_CLAIMS, "public_conformance_report".as_slice(), "public_conformance_report legal_claims".as_slice());
+        } else if peek_is(s, t, p.current, "certification".as_slice()) {
+            p = field_ident(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_CERTIFICATION, "public_conformance_report".as_slice(), "public_conformance_report certification".as_slice());
+        } else if peek_is(s, t, p.current, "security_claims".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECURITY_CLAIMS, "public_conformance_report".as_slice(), "public_conformance_report security_claims".as_slice(), agent_schema.A_TRUST_SECURITY_CLAIMS, agent_words.T_PARSE_GOVERNANCE_SECURITY_CLAIMS__A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN);
+        } else if peek_is(s, t, p.current, "purpose".as_slice()) {
+            p = field_string_array(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_PURPOSE, "public_conformance_report".as_slice(), "public_conformance_report purpose".as_slice());
+        } else if peek_is(s, t, p.current, "notes".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NOTES, "public_conformance_report".as_slice(), "public_conformance_report notes".as_slice());
+        } else {
+            return block_unexpected(s, t, p, "public_conformance_report".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    let fallback: u64 = name_span(p.slots.as_slice(), p.nodes.as_slice(), node);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_VERIFIER, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE_VERSION, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SOURCE_ARTIFACT, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_BYTECODE_ARTIFACT, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EVIDENCE_MAP, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_GOVERNANCE_PROFILE, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REGULATORY_MAPPING, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_TRUST_LEDGER, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECURITY_REPORT, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EVIDENCE_BUNDLE, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_TRACE, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_RESULT, agent_schema.PUBLIC_CONFORMANCE_RESULT, agent_schema.PUBLIC_CONFORMANCE_RESULT_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REPRODUCIBILITY, agent_schema.PUBLIC_CONFORMANCE_REPRODUCIBILITY, agent_schema.PUBLIC_CONFORMANCE_REPRODUCIBILITY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REVIEW_STATUS, agent_schema.PUBLIC_CONFORMANCE_REVIEW_STATUS, agent_schema.PUBLIC_CONFORMANCE_REVIEW_STATUS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_CLAIMS);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NETWORK, agent_schema.A_TRUST_NETWORK_BOUNDARY, agent_schema.A_TRUST_NETWORK_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EXTERNAL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECRET_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_KEY_MATERIAL, agent_schema.A_TRUST_MATERIAL_BOUNDARY, agent_schema.A_TRUST_MATERIAL_BOUNDARY_UNKNOWN, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EXECUTION, agent_schema.A_TRUST_EXECUTION, agent_schema.A_TRUST_EXECUTION_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_LEGAL_CLAIMS, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_CERTIFICATION, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS, agent_schema.A_TRUST_SECURITY_CLAIMS_UNKNOWN, fallback);
+    p = default_array(p, node, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_PURPOSE);
+    block_end(t, p, node)
+}
+
+// `parse_public_conformance_claims`.
+fn parse_public_conformance_claims(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACKET, "`[`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let values: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACKET {
+        p = ensure_not_eof(t, p, "unterminated public_conformance_report claims array".as_slice());
+        if p.failed { return p; }
+        p = parse_public_conformance_claim(s, t, p);
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, values, value);
+        if peek_kind(t, p.current) == agent_lexer.COMMA {
+            p = advance(t, p);
+        }
+    }
+    p = advance(t, p);
+    p.result = values;
+    p
+}
+
+// A key whose value `parse_public_conformance_claims` reads.
+fn field_parse_public_conformance_claims(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = parse_public_conformance_claims(s, t, p);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+// `parse_public_conformance_claim`.
+fn parse_public_conformance_claim(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let open: u64 = parser.current;
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL);
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated public conformance claim".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "id".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_ID, "public conformance claim".as_slice(), "public conformance claim id".as_slice());
+        } else if peek_is(s, t, p.current, "category".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_CATEGORY, "public conformance claim".as_slice(), "public conformance claim category".as_slice(), agent_schema.PUBLIC_CONFORMANCE_CLAIM_CATEGORY, agent_words.T_PARSE_PUBLIC_CONFORMANCE_CLAIM_CATEGORY__PUBLIC_CONFORMANCE_CLAIM_CATEGORY, agent_schema.PUBLIC_CONFORMANCE_CLAIM_CATEGORY_UNKNOWN);
+        } else if peek_is(s, t, p.current, "statement".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_STATEMENT, "public conformance claim".as_slice(), "public conformance claim statement".as_slice());
+        } else if peek_is(s, t, p.current, "evidence_ref".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_EVIDENCE_REF, "public conformance claim".as_slice(), "public conformance claim evidence_ref".as_slice());
+        } else if peek_is(s, t, p.current, "status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_STATUS, "public conformance claim".as_slice(), "public conformance claim status".as_slice(), agent_schema.PUBLIC_CONFORMANCE_CLAIM_STATUS, agent_words.T_PARSE_PUBLIC_CONFORMANCE_CLAIM_STATUS__PUBLIC_CONFORMANCE_CLAIM_STATUS, agent_schema.PUBLIC_CONFORMANCE_CLAIM_STATUS_UNKNOWN);
+        } else {
+            return block_unexpected(s, t, p, "public conformance claim".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    p = span_of(t, p, open);
+    let fallback: u64 = p.result;
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_ID, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_CATEGORY, agent_schema.PUBLIC_CONFORMANCE_CLAIM_CATEGORY, agent_schema.PUBLIC_CONFORMANCE_CLAIM_CATEGORY_UNKNOWN, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_STATEMENT, fallback);
+    p = default_string(p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_EVIDENCE_REF, fallback);
+    p = default_unknown(p, node, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_STATUS, agent_schema.PUBLIC_CONFORMANCE_CLAIM_STATUS, agent_schema.PUBLIC_CONFORMANCE_CLAIM_STATUS_UNKNOWN, fallback);
+    block_end(t, p, node)
+}
+
+// `parse_regulatory_obligations`.
+fn parse_regulatory_obligations(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACKET, "`[`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.array(p);
+    let values: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACKET {
+        p = ensure_not_eof(t, p, "unterminated regulatory_mapping obligations array".as_slice());
+        if p.failed { return p; }
+        p = parse_regulatory_obligation(s, t, p);
+        if p.failed { return p; }
+        let value: u64 = p.result;
+        p = agent_ast.push(p, values, value);
+        if peek_kind(t, p.current) == agent_lexer.COMMA {
+            p = advance(t, p);
+        }
+    }
+    p = advance(t, p);
+    p.result = values;
+    p
+}
+
+// A key whose value `parse_regulatory_obligations` reads.
+fn field_parse_regulatory_obligations(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree, node: u64, field: u64, block: Slice<u8>) -> Tree {
+    let mut p: Tree = field_start(s, t, parser, node, field, block);
+    if p.failed { return p; }
+    p = parse_regulatory_obligations(s, t, p);
+    if p.failed { return p; }
+    agent_ast.set_last(p, node, field)
+}
+
+// `parse_regulatory_obligation`.
+fn parse_regulatory_obligation(s: Slice<u8>, t: Slice<AgentToken>, parser: Tree) -> Tree {
+    let open: u64 = parser.current;
+    let mut p: Tree = expect_symbol(t, parser, agent_lexer.LEFT_BRACE, "`{`".as_slice());
+    if p.failed { return p; }
+    p = agent_ast.object(p, agent_schema.REGULATORY_OBLIGATION_DECL);
+    let node: u64 = p.result;
+    while peek_kind(t, p.current) != agent_lexer.RIGHT_BRACE {
+        p = ensure_not_eof(t, p, "unterminated regulatory obligation".as_slice());
+        if p.failed { return p; }
+        if peek_is(s, t, p.current, "id".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.REGULATORY_OBLIGATION_DECL_ID, "regulatory obligation".as_slice(), "regulatory obligation id".as_slice());
+        } else if peek_is(s, t, p.current, "source".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.REGULATORY_OBLIGATION_DECL_SOURCE, "regulatory obligation".as_slice(), "regulatory obligation source".as_slice());
+        } else if peek_is(s, t, p.current, "requirement".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.REGULATORY_OBLIGATION_DECL_REQUIREMENT, "regulatory obligation".as_slice(), "regulatory obligation requirement".as_slice());
+        } else if peek_is(s, t, p.current, "control".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.REGULATORY_OBLIGATION_DECL_CONTROL, "regulatory obligation".as_slice(), "regulatory obligation control".as_slice());
+        } else if peek_is(s, t, p.current, "evidence_ref".as_slice()) {
+            p = field_string(s, t, p, node, agent_schema.REGULATORY_OBLIGATION_DECL_EVIDENCE_REF, "regulatory obligation".as_slice(), "regulatory obligation evidence_ref".as_slice());
+        } else if peek_is(s, t, p.current, "status".as_slice()) {
+            p = field_enum(s, t, p, node, agent_schema.REGULATORY_OBLIGATION_DECL_STATUS, "regulatory obligation".as_slice(), "regulatory obligation status".as_slice(), agent_schema.REGULATORY_OBLIGATION_STATUS, agent_words.T_PARSE_REGULATORY_OBLIGATION_STATUS__REGULATORY_OBLIGATION_STATUS, agent_schema.REGULATORY_OBLIGATION_STATUS_UNKNOWN);
+        } else {
+            return block_unexpected(s, t, p, "regulatory obligation".as_slice(), "".as_slice());
+        }
+        if p.failed { return p; }
+    }
+    p = span_of(t, p, open);
+    let fallback: u64 = p.result;
+    p = default_string(p, node, agent_schema.REGULATORY_OBLIGATION_DECL_ID, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_OBLIGATION_DECL_SOURCE, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_OBLIGATION_DECL_REQUIREMENT, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_OBLIGATION_DECL_CONTROL, fallback);
+    p = default_string(p, node, agent_schema.REGULATORY_OBLIGATION_DECL_EVIDENCE_REF, fallback);
+    p = default_unknown(p, node, agent_schema.REGULATORY_OBLIGATION_DECL_STATUS, agent_schema.REGULATORY_OBLIGATION_STATUS, agent_schema.REGULATORY_OBLIGATION_STATUS_UNKNOWN, fallback);
+    block_end(t, p, node)
+}
+
+// ------------------------------------------------------------------ end of generated keyed blocks

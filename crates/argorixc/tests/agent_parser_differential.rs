@@ -23,7 +23,7 @@ use std::{env, fs};
 
 /// How many samples the Argorix parser matches today. Raise it with each
 /// group of declarations ported; B is done when every sample matches.
-const MATCHED_AT_LEAST: usize = 541;
+const MATCHED_AT_LEAST: usize = 738;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

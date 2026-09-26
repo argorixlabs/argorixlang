@@ -43,6 +43,16 @@ enum. Two `match`es of one function that map the same word must agree, or
 the test fails. Stage0's handling of any other word (an error, or an
 `Unknown` variant) is ported by hand.
 
+## Generated keyed blocks
+
+`crates/argorixc/tests/agent_blocks.rs` reads every keyed-block `parse_*`
+function of `parser.rs` and writes its port into a marked region of
+`compiler/agent_parser.argx`. It reads the header, the keys and the kind
+of value each takes, the two messages for an unknown key, the defaults and
+the lists of nested blocks. A function it cannot read exactly is left out,
+with the reason, for a hand port. The test fails when the region is stale,
+and `ARGORIX_BLESS=1` regenerates it.
+
 ## The schema
 
 `compiler/agent_schema.argx` is generated from `ast.rs` and `span.rs` by
@@ -68,3 +78,4 @@ it instead of comparing it. Every program that is compared must match.
 | 1 | `module`, `import`, `type`, `enum`, `capability`, `tool`, `model`, `failure`, `assert`, `agent` (with its handlers), `protocol` | 267 of 1,385: 224 of the corpus and 43 samples |
 | 2 | `policy`: `require` and `deny` rules, `on violation` | 496 of 1,394 |
 | 3 | `crypto`, `did_method`, and the keyed-block helpers (`set_block_field`, defaults) | 541 of 1,403 |
+| 4 | Generated from `parser.rs` by `crates/argorixc/tests/agent_blocks.rs`: `harness`, `adapter`, `adapter_profile`, `crypto`, `did_method`, the `atrust_*` declarations, `trust_ledger`, the MCP and A2A bridge contracts, `atrust_evidence_map`, `governance_profile`, `regulatory_mapping`, `third_party_verifier` and `public_conformance_report`, with their nested lists | 738 of 1,403 |

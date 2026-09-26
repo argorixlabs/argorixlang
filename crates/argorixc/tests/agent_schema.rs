@@ -79,6 +79,32 @@ fn read(file: &str, structs: &mut Vec<Struct>, enums: &mut Vec<Enum>) {
     let mut index = 0;
     while index < lines.len() {
         let line = lines[index];
+        // `source_enum!(Name { Variant => "word", ... });`: the variants, then
+        // `Unknown(String)`.
+        if let Some(rest) = line.strip_prefix("source_enum!(") {
+            let name = rest.trim_end_matches(" {").to_string();
+            let mut variants = Vec::new();
+            index += 1;
+            while lines[index] != "});" {
+                let (variant, _) = lines[index].trim().split_once(" => ").unwrap_or_else(|| {
+                    panic!("{file}: unexpected source_enum line `{}`", lines[index])
+                });
+                variants.push(Variant {
+                    name: variant.into(),
+                    shape: Shape::Unit,
+                    fields_struct: None,
+                });
+                index += 1;
+            }
+            variants.push(Variant {
+                name: "Unknown".into(),
+                shape: Shape::Value,
+                fields_struct: None,
+            });
+            enums.push(Enum { name, variants });
+            index += 1;
+            continue;
+        }
         let header = line
             .strip_prefix("pub struct ")
             .map(|rest| (true, rest))
