@@ -1,6 +1,6 @@
 # ArgorixLang collaboration board
 
-Last coordination update: 2026-09-24.
+Last coordination update: 2026-09-26.
 
 This file prevents Codex, Claude, and human contributors from modifying the
 same work at the same time. It coordinates ownership; the plans and task files
@@ -10,6 +10,7 @@ remain the source of truth for scope and acceptance.
 
 | Owner | Task | Branch | State | Exclusive paths | Agent log |
 | --- | --- | --- | --- | --- | --- |
+| Claude | ESP-017 — the second target (Windows x86-64) and the native bootstrap | `claude/native-windows-esp017` | DONE pending review | `compiler/coff.argx` (new), the target of `compiler/native.argx`, the `target` key of `compiler/main.argx`, the native manifest of `compiler/pipeline.argx`, the Windows branch of `bootstrap/c/argorix_core_host.h`, the Windows branch of `bootstrap/native/argorix_native_shim.c`, `bootstrap/native/toolchain.json`, `bootstrap/native/BUILDING.md`, `bootstrap/native-windows.ps1` (new), `spec/core/native-x86-64.md`, the host section of `spec/core/stdlib.md`, `tasks/espada/ESP-017.md`, the `native-windows` job of `.github/workflows/core-c.yml` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-016 — the first native backend (x86-64 Linux, subtasks A–E) | `claude/trabajo-pendiente-ae9bcz` | DONE (PR #61; CI green on `main@5e881ac`) | `compiler/native.argx`, `compiler/x86.argx`, `compiler/elf.argx`, the shared entry points of `compiler/c_emit.argx`, the `object` key and limits of `compiler/main.argx`, the native manifest of `compiler/pipeline.argx`, `bootstrap/native/**`, `bootstrap/native.py`, `bootstrap/container/native/**`, `tests/selfhost/native/**`, `crates/argorixc/tests/native.rs`, `spec/core/native-x86-64.md`, `tasks/espada/ESP-016.md`, the native jobs of `.github/workflows/core-c.yml` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-015 — stage2/stage3 bootstrap without Rust | `claude/trabajo-pendiente-ae9bcz` | DONE (PR #60) | `bootstrap/selfhost.py`, `bootstrap/container/**`, the selfhost job of `.github/workflows/core-c.yml`, `spec/core/stage1.md` (stage2/stage3), `tasks/espada/ESP-015.md` | [coordination/claude.md](coordination/claude.md) |
 | Claude | ESP-014 — the first complete self-hosted compiler (subtasks A–D) | `claude/trabajo-pendiente-ae9bcz` | DONE (PR #59; CI green on `main@9054379`) | `compiler/main.argx`, `compiler/report.argx`, messages in `compiler/check.argx`, `compiler/link.argx` and `compiler/c_emit.argx`, `argorix.build`, `bootstrap/stage1.py`, `tests/selfhost/stage1/**`, `spec/core/stage1.md`, `tasks/espada/ESP-014.md`, the stage1 jobs of `.github/workflows/core-c.yml` | [coordination/claude.md](coordination/claude.md) |

@@ -622,3 +622,65 @@ jobs:
           name: native-oracle
           path: target/core-c/native-fuzz-*/
           if-no-files-found: ignore
+
+  native-windows:
+    name: Native bootstrap on Windows without a C compiler or Rust (ESP-017)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build argorixc and the harness
+        run: cargo build --locked -p argorixc -p argorix-core-c
+      - name: Enter the MSVC developer environment
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+          }
+      - name: Stage0 writes stage1; cl builds stage1 and the shim; stage1 writes the seed
+        # The last step with a C compiler (stage N1).
+        shell: pwsh
+        run: ./bootstrap/native-windows.ps1 seed -Argorixc target/debug/argorixc.exe -Out target/native-windows
+      - name: Copy the linker out of the developer environment
+        shell: pwsh
+        run: ./bootstrap/native-windows.ps1 linker -Out target/native-windows
+      - name: The native compiler builds itself and compiles the suites, with only the linker on the path
+        shell: pwsh
+        run: |
+          $out = (Resolve-Path target/native-windows).Path
+          $env:LIB = (Get-Content -Raw "$out/linker.json" | ConvertFrom-Json).lib
+          $env:PATH = "$out\linker;$env:SystemRoot\System32;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File bootstrap/native-windows.ps1 bootstrap -Out $out -RequireNoCCompiler -RequireRustFreeHost
+          exit $LASTEXITCODE
+      - name: Generated programs, compiled natively, against the spec oracle
+        # The programs import nothing, so they are generated outside the
+        # repository and each is compiled on its own.
+        shell: pwsh
+        run: |
+          $fuzz = Join-Path $env:RUNNER_TEMP "native-fuzz"
+          foreach ($seed in 1..6) {
+            ./target/debug/core-c-harness.exe generate --seed $seed --count 80 --out "$fuzz/seed-$seed"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $out = (Resolve-Path target/native-windows).Path
+          $env:LIB = (Get-Content -Raw "$out/linker.json" | ConvertFrom-Json).lib
+          $env:PATH = "$out\linker;$env:SystemRoot\System32;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+          $cases = (1..6 | ForEach-Object { "$fuzz/seed-$_/cases.json" }) -join ","
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ./bootstrap/native-windows.ps1 cases -Out '$out' -Cases $cases; exit `$LASTEXITCODE"
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-windows-report
+          path: |
+            target/native-windows/native-report.json
+            target/native-windows/shim.json
+            target/native-windows/linker.json
+            target/native-windows/cases-report.json
+            target/native-windows/native3/argorixc.exe
+            target/native-windows/native3/build/compiler.obj
+            target/native-windows/native3/build/compiler.json
+          if-no-files-found: ignore

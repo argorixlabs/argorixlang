@@ -59,7 +59,8 @@ pub fn manifest(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, end
 // The manifest of a native build (ESP-016): the same record, for the object
 // `compiler.native` wrote with `status` (its `EMITTED`, `CHECK_FAILED` or
 // `UNSUPPORTED`), and the target, runtime and limits the object was built
-// for. The output is null when there is no object.
+// for. The target is the last of the limits: 1 for Windows, which
+// gets a COFF object, and otherwise Linux, which gets an ELF64 one. The output is null when there is no object.
 pub fn native_manifest(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u8>, ends: Slice<u64>, status: u64, object: Slice<u8>, limits: Slice<u64>) -> Buffer<u8> {
     let mut name: Buffer<u8> = bytes.copy("emitted".as_slice());
     if status == 1u64 {
@@ -68,7 +69,11 @@ pub fn native_manifest(paths: Slice<u8>, path_ends: Slice<u64>, sources: Slice<u
         name = bytes.copy("unsupported".as_slice());
     }
     let mut out: Buffer<u8> = head("argorix-core-native 0.1".as_slice(), name.as_slice(), paths, path_ends, sources, ends);
-    out = bytes.append(out, "],\"options\":{\"target\":\"x86_64-linux\",\"object\":\"elf64-relocatable\",\"runtime_abi\":\"C1\",\"limits\":{\"steps\":".as_slice());
+    if limits.length() > 5u64 && limits[5u64] == 1u64 {
+        out = bytes.append(out, "],\"options\":{\"target\":\"x86_64-windows\",\"object\":\"coff-amd64-relocatable\",\"runtime_abi\":\"C1\",\"limits\":{\"steps\":".as_slice());
+    } else {
+        out = bytes.append(out, "],\"options\":{\"target\":\"x86_64-linux\",\"object\":\"elf64-relocatable\",\"runtime_abi\":\"C1\",\"limits\":{\"steps\":".as_slice());
+    }
     out = bytes.append_decimal(out, limits[0u64]);
     out = bytes.append(out, ",\"depth\":".as_slice());
     out = bytes.append_decimal(out, limits[1u64]);

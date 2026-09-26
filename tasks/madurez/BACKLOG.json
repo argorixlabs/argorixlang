@@ -102,10 +102,40 @@
       "scope": "Parser y AST en Argorix (compiler/); volcado canonico del AST igual al del parser stage0 en 135 archivos; limite de anidamiento de 256 en ambos parsers; PR 54, CI verde en main@21b80ca"
     },
     "ESP-012": {
-      "status": "EN_CURSO",
+      "status": "HECHA",
       "file": "tasks/espada/ESP-012.md",
-      "evidence": "crates/argorixc/tests/check_differential.rs; tests/selfhost/check/cases.json",
-      "scope": "Resolucion, tipos y modulos en Argorix; ESP-012.A (tipos y nombres, PR 55) y ESP-012.B (ownership y vistas) hechas en compiler/check.argx, iguales al checker stage0 en 141 archivos; falta ESP-012.C (linker)"
+      "evidence": "crates/argorixc/tests/check_differential.rs; crates/argorixc/tests/link_differential.rs; tests/selfhost/check/cases.json",
+      "scope": "Resolucion, tipos y modulos en Argorix: checker (PRs 55 y 56) y linker (PR 57) en compiler/check.argx y compiler/link.argx, iguales a stage0"
+    },
+    "ESP-013": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-013.md",
+      "evidence": "PR 58; tests/selfhost/ir/cases.json; tests/selfhost/c/cases.json; tests/selfhost/pipeline/cases.json",
+      "scope": "IR, verificador, backend C y pipeline de build en Argorix"
+    },
+    "ESP-014": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-014.md",
+      "evidence": "PR 59; bootstrap/stage1.py; tests/selfhost/stage1/cases.json",
+      "scope": "stage1, el primer compilador self-hosted completo"
+    },
+    "ESP-015": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-015.md",
+      "evidence": "PR 60; bootstrap/selfhost.py",
+      "scope": "Bootstrap stage2/stage3 sin Rust"
+    },
+    "ESP-016": {
+      "status": "HECHA",
+      "file": "tasks/espada/ESP-016.md",
+      "evidence": "PR 61; bootstrap/native.py; crates/argorixc/tests/native.rs",
+      "scope": "Backend nativo x86-64 Linux (ELF64); el compilador se construye sin compilador C"
+    },
+    "ESP-017": {
+      "status": "EN_CURSO",
+      "file": "tasks/espada/ESP-017.md",
+      "evidence": "bootstrap/native-windows.ps1; native-windows job of .github/workflows/core-c.yml",
+      "scope": "Segundo destino: Windows x86-64 (COFF, ABI x64 de Microsoft, host de archivos wide) y bootstrap nativo sin compilador C ni Rust en ambos sistemas"
     }
   },
   "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad. esp_progress se actualiza al reclamar o cerrar una tarea ESP; el estado operativo del día vive en WORKBOARD.md.",
