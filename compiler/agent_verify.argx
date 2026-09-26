@@ -2195,7 +2195,7 @@ fn same_value(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, left: u64, right: 
 fn unported(n: Slice<Value>, sl: Slice<u64>, p: u64) -> bool {
     let mut field: u64 = 0u64;
     while field < agent_bytecode_schema.field_count(agent_bytecode_schema.BS_PROGRAM) {
-        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS || field == agent_bytecode_schema.BS_PROGRAM__PASSPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES || field == agent_bytecode_schema.BS_PROGRAM__FEATURES || field == agent_bytecode_schema.BS_PROGRAM__SECRETS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTERS;
+        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS || field == agent_bytecode_schema.BS_PROGRAM__PASSPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES || field == agent_bytecode_schema.BS_PROGRAM__FEATURES || field == agent_bytecode_schema.BS_PROGRAM__SECRETS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTERS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTER_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__CRYPTOS || field == agent_bytecode_schema.BS_PROGRAM__CRYPTO_BOUNDARIES || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES;
         let value: u64 = fld(n, sl, p, field);
         if !ported && n[value].kind == V_ARRAY && n[value].a != 0u64 {
             return true;
@@ -2241,6 +2241,7 @@ fn metadata(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: 
     o = gate(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__CRYPTO_BOUNDARIES, 25u64, "crypto boundary metadata requires bytecode version 0.25".as_slice());
     o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_CREDENTIAL_CONTRACTS)), 28u64);
     o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES)), 29u64);
+    o = validate_atrust_handshakes(o, n, sl, st, p);
     o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS)), 30u64);
     o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__MCP_BRIDGE_CONTRACTS)) && is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__A2A_BRIDGE_CONTRACTS)), 31u64);
     o = gate(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS, 32u64, "atrust_evidence_maps require bytecode_version 0.32".as_slice());
@@ -2249,7 +2250,10 @@ fn metadata(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: 
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__RUNTIME_HARDENING_PROFILES, agent_bytecode_schema.BS_PROGRAM__THREAT_MODELS, 35u64, "runtime_hardening_profiles and threat_models require bytecode_version 0.35".as_slice());
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__SPEC_FREEZES, agent_bytecode_schema.BS_PROGRAM__RELEASE_CANDIDATES, 36u64, "spec_freezes and release_candidates require bytecode_version 0.36".as_slice());
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__RUNTIME_EXECUTION_PROFILES, agent_bytecode_schema.BS_PROGRAM__SANDBOXED_PROVIDER_ADAPTERS, 100u64, "runtime MVP metadata requires bytecode version 1.0".as_slice());
-    validate_adapters(o, n, sl, st, p)
+    o = validate_adapters(o, n, sl, st, p);
+    o = validate_adapter_profiles(o, n, sl, st, p);
+    o = validate_cryptos(o, n, sl, st, p);
+    validate_crypto_boundaries(o, n, sl, st, p)
 }
 
 fn gate_pair(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, p: u64, rank: u64, first: u64, second: u64, minor: u64, head: Slice<u8>) -> Buffer<u8> {
@@ -2590,6 +2594,196 @@ fn validate_adapters(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice
                     o = invalid(o, n, st, "adapter".as_slice(), name, "provider mismatch with harness".as_slice(), NONE);
                 }
             }
+        }
+    }
+    o
+}
+
+// "invalid <kind> `<name>`: <reason>" unless field `field` of `item` is one
+// of `words`.
+fn must(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, words: Slice<u8>, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
+    if one_of(n, st, fld(n, sl, item, field), words) {
+        return out;
+    }
+    invalid(out, n, st, kind, name, reason, NONE)
+}
+
+// ... unless field `field` of `item` is not blank.
+fn filled(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
+    if !blank(n, st, fld(n, sl, item, field)) {
+        return out;
+    }
+    invalid(out, n, st, kind, name, reason, NONE)
+}
+
+// ... once for each blank entry of list field `field` of `item`.
+fn each_blank(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let mut link: u64 = n[fld(n, sl, item, field)].a;
+    while link != 0u64 {
+        let entry: u64 = link - 1u64;
+        link = n[entry].next;
+        if blank(n, st, entry) {
+            o = invalid(o, n, st, kind, name, reason, NONE);
+        }
+    }
+    o
+}
+
+// ... once if any entry of list field `field` of `item` is blank.
+fn any_blank_field(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
+    if !any_blank(n, st, fld(n, sl, item, field)) {
+        return out;
+    }
+    invalid(out, n, st, kind, name, reason, NONE)
+}
+
+// ... if u64 option field `field` of `item` is `Some(0)`.
+fn positive(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
+    if !some_zero(n, fld(n, sl, item, field)) {
+        return out;
+    }
+    invalid(out, n, st, kind, name, reason, NONE)
+}
+
+// "invalid <kind> `<name>`: <reason><value>`" unless field `field` is one of
+// `words`.
+fn must_named(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, words: Slice<u8>, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
+    let value: u64 = fld(n, sl, item, field);
+    if one_of(n, st, value, words) {
+        return out;
+    }
+    invalid(out, n, st, kind, name, reason, value)
+}
+
+// A reference field: "missing <what>" when blank, "unknown <what> `<v>`"
+// when not declared in `list` (by field `list_field`).
+fn reference(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, list: u64, list_field: u64, kind: Slice<u8>, name: u64, missing: Slice<u8>, unknown: Slice<u8>) -> Buffer<u8> {
+    let value: u64 = fld(n, sl, item, field);
+    if blank(n, st, value) {
+        return invalid(out, n, st, kind, name, missing, NONE);
+    }
+    if list_has(n, sl, st, list, list_field, value) {
+        return out;
+    }
+    invalid(out, n, st, kind, name, unknown, value)
+}
+
+fn validate_adapter_profiles(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let profiles: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ADAPTER_PROFILES);
+    let adapters: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ADAPTERS);
+    let providers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS);
+    let mut link: u64 = n[profiles].a;
+    while link != 0u64 {
+        let profile: u64 = link - 1u64;
+        link = n[profile].next;
+        let name: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__NAME);
+        if seen_before(n, sl, st, profiles, agent_bytecode_schema.BS_ADAPTER_PROFILE__NAME, profile, name) {
+            o = named(o, n, st, "duplicate adapter profile ".as_slice(), name, "".as_slice());
+        } else {
+            o = reference(o, n, sl, st, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__ADAPTER, adapters, agent_bytecode_schema.BS_ADAPTER__NAME, "adapter profile".as_slice(), name, "missing adapter".as_slice(), "unknown adapter `".as_slice());
+            o = reference(o, n, sl, st, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__PROVIDER, providers, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME, "adapter profile".as_slice(), name, "missing provider".as_slice(), "unknown provider `".as_slice());
+            o = filled(o, n, sl, st, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__VENDOR, "adapter profile".as_slice(), name, "missing vendor".as_slice());
+            o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__EXECUTION, "disabled".as_slice(), "adapter profile".as_slice(), name, "execution must be disabled".as_slice());
+            o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__NETWORK, "denied".as_slice(), "adapter profile".as_slice(), name, "network must be denied".as_slice());
+            o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__SECRETS, "denied".as_slice(), "adapter profile".as_slice(), name, "secrets must be denied".as_slice());
+            o = each_blank(o, n, sl, st, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__CAPABILITIES, "adapter profile".as_slice(), name, "empty capability".as_slice());
+            o = each_blank(o, n, sl, st, profile, agent_bytecode_schema.BS_ADAPTER_PROFILE__REQUIRED_CONFORMANCE, "adapter profile".as_slice(), name, "empty required_conformance item".as_slice());
+        }
+    }
+    o
+}
+
+fn validate_cryptos(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let cryptos: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__CRYPTOS);
+    let mut link: u64 = n[cryptos].a;
+    while link != 0u64 {
+        let crypto: u64 = link - 1u64;
+        link = n[crypto].next;
+        let name: u64 = fld(n, sl, crypto, agent_bytecode_schema.BS_CRYPTO__NAME);
+        if seen_before(n, sl, st, cryptos, agent_bytecode_schema.BS_CRYPTO__NAME, crypto, name) {
+            o = named(o, n, st, "duplicate crypto ".as_slice(), name, "".as_slice());
+        } else {
+            o = filled(o, n, sl, st, crypto, agent_bytecode_schema.BS_CRYPTO__KIND, "crypto".as_slice(), name, "missing kind".as_slice());
+            o = filled(o, n, sl, st, crypto, agent_bytecode_schema.BS_CRYPTO__STATUS, "crypto".as_slice(), name, "missing status".as_slice());
+            o = filled(o, n, sl, st, crypto, agent_bytecode_schema.BS_CRYPTO__STRENGTH, "crypto".as_slice(), name, "missing strength".as_slice());
+            if is_empty(n, fld(n, sl, crypto, agent_bytecode_schema.BS_CRYPTO__PURPOSE)) {
+                o = invalid(o, n, st, "crypto".as_slice(), name, "missing or empty purpose".as_slice(), NONE);
+            } else {
+                o = each_blank(o, n, sl, st, crypto, agent_bytecode_schema.BS_CRYPTO__PURPOSE, "crypto".as_slice(), name, "empty purpose item".as_slice());
+            }
+            o = positive(o, n, sl, st, crypto, agent_bytecode_schema.BS_CRYPTO__OUTPUT_BITS, "crypto".as_slice(), name, "output_bits must be > 0".as_slice());
+            o = positive(o, n, sl, st, crypto, agent_bytecode_schema.BS_CRYPTO__MIN_KEY_BITS, "crypto".as_slice(), name, "min_key_bits must be > 0".as_slice());
+        }
+    }
+    o
+}
+
+fn validate_crypto_boundaries(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let boundaries: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__CRYPTO_BOUNDARIES);
+    let mut link: u64 = n[boundaries].a;
+    while link != 0u64 {
+        let boundary: u64 = link - 1u64;
+        link = n[boundary].next;
+        let name: u64 = fld(n, sl, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__NAME);
+        if seen_before(n, sl, st, boundaries, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__NAME, boundary, name) {
+            o = named(o, n, st, "duplicate crypto boundary ".as_slice(), name, "".as_slice());
+        } else {
+            if blank(n, st, name) {
+                o = invalid(o, n, st, "crypto boundary".as_slice(), name, "name must not be empty".as_slice(), NONE);
+            }
+            o = must_named(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__KEY_MATERIAL, "denied allowed required".as_slice(), "crypto boundary".as_slice(), name, "invalid key_material `".as_slice());
+            o = must_named(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__SECRET_MATERIAL, "denied allowed required".as_slice(), "crypto boundary".as_slice(), name, "invalid secret_material `".as_slice());
+            o = must(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__EXECUTION, "disabled".as_slice(), "crypto boundary".as_slice(), name, "execution must be disabled".as_slice());
+            o = positive(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__MIN_HASH_BITS, "crypto boundary".as_slice(), name, "min_hash_bits must be > 0".as_slice());
+            o = each_blank(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__ALLOWED_HASHES, "crypto boundary".as_slice(), name, "empty list item".as_slice());
+            o = each_blank(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__ALLOWED_SIGNATURES, "crypto boundary".as_slice(), name, "empty list item".as_slice());
+            o = each_blank(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__ALLOWED_KEMS, "crypto boundary".as_slice(), name, "empty list item".as_slice());
+            o = each_blank(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__ALLOWED_AEADS, "crypto boundary".as_slice(), name, "empty list item".as_slice());
+            o = each_blank(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__LEGACY_ALLOWED, "crypto boundary".as_slice(), name, "empty list item".as_slice());
+            o = each_blank(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__DENIED, "crypto boundary".as_slice(), name, "empty list item".as_slice());
+            o = each_blank(o, n, sl, st, boundary, agent_bytecode_schema.BS_CRYPTO_BOUNDARY__PURPOSE, "crypto boundary".as_slice(), name, "empty list item".as_slice());
+        }
+    }
+    o
+}
+
+fn validate_atrust_handshakes(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let handshakes: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES);
+    let mut link: u64 = n[handshakes].a;
+    while link != 0u64 {
+        let h: u64 = link - 1u64;
+        link = n[h].next;
+        let name: u64 = fld(n, sl, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__NAME);
+        if seen_before(n, sl, st, handshakes, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__NAME, h, name) {
+            o = named(o, n, st, "duplicate atrust handshake ".as_slice(), name, "".as_slice());
+        } else {
+            o = filled(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__NAME, "atrust handshake".as_slice(), name, "name must not be empty".as_slice());
+            o = filled(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__INITIATOR, "atrust handshake".as_slice(), name, "initiator must not be empty".as_slice());
+            o = filled(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__RESPONDER, "atrust handshake".as_slice(), name, "responder must not be empty".as_slice());
+            o = filled(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__INITIATOR_IDENTITY, "atrust handshake".as_slice(), name, "initiator_identity must not be empty".as_slice());
+            o = filled(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__RESPONDER_IDENTITY, "atrust handshake".as_slice(), name, "responder_identity must not be empty".as_slice());
+            o = filled(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__BOUNDARY, "atrust handshake".as_slice(), name, "boundary must not be empty".as_slice());
+            o = filled(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__METHOD, "atrust handshake".as_slice(), name, "method must not be empty".as_slice());
+            o = any_blank_field(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__CREDENTIAL_CONTRACTS, "atrust handshake".as_slice(), name, "credential_contracts must not contain empty items".as_slice());
+            o = any_blank_field(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__PURPOSE, "atrust handshake".as_slice(), name, "purpose must not contain empty items".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__MODE, "dry_run".as_slice(), "atrust handshake".as_slice(), name, "mode must be dry_run".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__DIRECTION, "one_way mutual".as_slice(), "atrust handshake".as_slice(), name, "direction must be one_way or mutual".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__CHALLENGE, "disabled declared_only".as_slice(), "atrust handshake".as_slice(), name, "challenge must be disabled or declared_only".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__RESPONSE, "disabled declared_only".as_slice(), "atrust handshake".as_slice(), name, "response must be disabled or declared_only".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__TRANSCRIPT, "metadata_only evidence_only".as_slice(), "atrust handshake".as_slice(), name, "transcript must be metadata_only or evidence_only".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__VERIFICATION, "disabled declared_only".as_slice(), "atrust handshake".as_slice(), name, "verification must be disabled or declared_only".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__RESOLUTION, "disabled embedded local".as_slice(), "atrust handshake".as_slice(), name, "resolution must be disabled, embedded, or local".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__NETWORK, "denied".as_slice(), "atrust handshake".as_slice(), name, "network must be denied".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__KEY_MATERIAL, "denied".as_slice(), "atrust handshake".as_slice(), name, "key_material must be denied".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__SECRET_MATERIAL, "denied".as_slice(), "atrust handshake".as_slice(), name, "secret_material must be denied".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__EXECUTION, "disabled".as_slice(), "atrust handshake".as_slice(), name, "execution must be disabled".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__EVIDENCE, "required".as_slice(), "atrust handshake".as_slice(), name, "evidence must be required".as_slice());
+            o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__SECURITY_CLAIMS, "none".as_slice(), "atrust handshake".as_slice(), name, "security_claims must be none".as_slice());
         }
     }
     o
