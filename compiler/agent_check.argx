@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -98,6 +98,10 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_adapter_profiles(sl, n, st, program, y);
     y = check_cryptos(sl, n, st, program, y);
     y = check_did_methods(sl, n, st, program, y);
+    y = check_atrust_boundaries(sl, n, st, program, y);
+    y = check_atrust_identities(sl, n, st, program, y);
+    y = check_atrust_credential_contracts(sl, n, st, program, y);
+    y = check_atrust_handshakes(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -2264,5 +2268,418 @@ fn passport_required(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: 
     }
     let mut y: Symbols = say(symbols, sl, n, st, field, "passport".as_slice(), name, "is missing required field `".as_slice());
     y = put(y, label);
+    close(y)
+}
+
+// ------------------------------------------------------------------ atrust
+
+// Whether the value of a `Spanned<String>` is empty, untrimmed.
+fn empty(sl: Slice<u64>, n: Slice<AgentNode>, spanned: u64) -> bool {
+    let string: u64 = value(sl, n, spanned);
+    n[string].a == n[string].b
+}
+
+// Whether an enum `Spanned`'s `source_name()` is `word`: the word itself for
+// `Unknown`, the variant's source name otherwise.
+fn named(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64, word: Slice<u8>) -> bool {
+    let variant: u64 = value(sl, n, spanned);
+    if n[variant].b != 0u64 {
+        return raw_is(n, st, n[variant].b, word);
+    }
+    let name: Buffer<u8> = agent_schema.append_source_name(Buffer::new(), n[variant].schema, n[variant].a);
+    bytes.equal(name.as_slice(), word)
+}
+
+// The last declaration in list `list` named `name`, as stage0's maps built
+// with `collect()` keep it, or `NONE`.
+fn find_last(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, list: u64, name: u64) -> u64 {
+    let mut found: u64 = NONE;
+    let mut link: u64 = first(sl, n, program, list);
+    while link != 0u64 {
+        if same(sl, n, st, get(sl, n, link - 1u64, 0u64), name) {
+            found = link - 1u64;
+        }
+        link = n[link - 1u64].next;
+    }
+    found
+}
+
+// "<kind> `<name>` is missing required field `<field>`" at `spanned`.
+fn missing_field(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    let mut y: Symbols = say(symbols, sl, n, st, spanned, kind, name, "is missing required field `".as_slice());
+    y = put(y, field);
+    close(y)
+}
+
+// The missing-field message when string field `field` of `node` is empty.
+fn required_string(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    let spanned: u64 = get(sl, n, node, index);
+    if !empty(sl, n, spanned) {
+        return symbols;
+    }
+    missing_field(symbols, sl, n, st, spanned, kind, name, field)
+}
+
+// The missing-field message, at the name, when list `index` of `node` is
+// empty.
+fn required_list(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    if first(sl, n, node, index) != 0u64 {
+        return symbols;
+    }
+    missing_field(symbols, sl, n, st, name, kind, name, field)
+}
+
+// The missing-field message when enum field `index` of `node` is an empty
+// `Unknown`.
+fn required_variant(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, unknown: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    let spanned: u64 = get(sl, n, node, index);
+    if !empty_unknown(sl, n, spanned, unknown) {
+        return symbols;
+    }
+    missing_field(symbols, sl, n, st, spanned, kind, name, field)
+}
+
+// "<kind> `<name>` requires <field> `<word>`" unless enum field `index` of
+// `node` is `word`.
+fn requires(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>, word: Slice<u8>) -> Symbols {
+    let spanned: u64 = get(sl, n, node, index);
+    if named(sl, n, st, spanned, word) {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, spanned, kind, name, "requires ".as_slice());
+    y = put(y, field);
+    y = put(y, " `".as_slice());
+    y = put(y, word);
+    close(y)
+}
+
+// "<kind> `<name>` requires <field> `<one>` or `<other>`" unless enum field
+// `index` of `node` is either word.
+fn requires_either(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>, one: Slice<u8>, other: Slice<u8>) -> Symbols {
+    let spanned: u64 = get(sl, n, node, index);
+    if named(sl, n, st, spanned, one) || named(sl, n, st, spanned, other) {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, spanned, kind, name, "requires ".as_slice());
+    y = put(y, field);
+    y = put(y, " `".as_slice());
+    y = put(y, one);
+    y = put(y, "` or `".as_slice());
+    y = put(y, other);
+    close(y)
+}
+
+// `message` at each blank entry of list `index` of `node`.
+fn blank_entries(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, message: Slice<u8>) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut link: u64 = first(sl, n, node, index);
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if blank(sl, n, st, item) {
+            y = at(y, sl, n, item);
+            y = put(y, message);
+        }
+    }
+    y
+}
+
+// "resolution remote/network/live/distributed not permitted".
+fn live_resolution(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, resolution: u64) -> Symbols {
+    if named(sl, n, st, resolution, "remote".as_slice()) || named(sl, n, st, resolution, "network".as_slice()) || named(sl, n, st, resolution, "live".as_slice()) || named(sl, n, st, resolution, "distributed".as_slice()) {
+        let y: Symbols = at(symbols, sl, n, resolution);
+        return put(y, "resolution remote/network/live/distributed not permitted\n".as_slice());
+    }
+    symbols
+}
+
+fn check_atrust_boundaries(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_ATRUST_BOUNDARIES);
+    while link != 0u64 {
+        let a: u64 = link - 1u64;
+        link = n[a].next;
+        let name: u64 = get(sl, n, a, agent_schema.A_TRUST_BOUNDARY_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "atrust_boundary".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = required_string(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_CRYPTO_BOUNDARY, "atrust_boundary".as_slice(), name, "crypto_boundary".as_slice());
+        y = required_list(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_DID_METHODS, "atrust_boundary".as_slice(), name, "did_methods".as_slice());
+        y = blank_entries(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_DID_METHODS, "did_methods entries must be non-empty\n".as_slice());
+        y = required_variant(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_IDENTITY_FORMAT, agent_schema.A_TRUST_IDENTITY_FORMAT_UNKNOWN, "atrust_boundary".as_slice(), name, "identity_format".as_slice());
+        y = required_variant(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_CREDENTIAL_MODE, agent_schema.A_TRUST_CREDENTIAL_MODE_UNKNOWN, "atrust_boundary".as_slice(), name, "credential_mode".as_slice());
+        y = required_variant(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_HANDSHAKE, agent_schema.A_TRUST_HANDSHAKE_MODE_UNKNOWN, "atrust_boundary".as_slice(), name, "handshake".as_slice());
+        y = required_variant(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_RESOLUTION, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN, "atrust_boundary".as_slice(), name, "resolution".as_slice());
+        y = requires(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_KEY_MATERIAL, "atrust_boundary".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_SECRET_MATERIAL, "atrust_boundary".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_EXECUTION, "atrust_boundary".as_slice(), name, "execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_SECURITY_CLAIMS, "atrust_boundary".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+        y = required_list(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_PURPOSE, "atrust_boundary".as_slice(), name, "purpose".as_slice());
+        y = blank_entries(y, sl, n, st, a, agent_schema.A_TRUST_BOUNDARY_DECL_PURPOSE, "purpose entries must be non-empty\n".as_slice());
+        let credential_mode: u64 = get(sl, n, a, agent_schema.A_TRUST_BOUNDARY_DECL_CREDENTIAL_MODE);
+        if named(sl, n, st, credential_mode, "verified".as_slice()) || named(sl, n, st, credential_mode, "live".as_slice()) || named(sl, n, st, credential_mode, "remote".as_slice()) {
+            y = at(y, sl, n, credential_mode);
+            y = put(y, "credential_mode verified/live/remote not permitted\n".as_slice());
+        }
+        let handshake: u64 = get(sl, n, a, agent_schema.A_TRUST_BOUNDARY_DECL_HANDSHAKE);
+        if named(sl, n, st, handshake, "enabled".as_slice()) || named(sl, n, st, handshake, "live".as_slice()) || named(sl, n, st, handshake, "real".as_slice()) || named(sl, n, st, handshake, "network".as_slice()) {
+            y = at(y, sl, n, handshake);
+            y = put(y, "handshake enabled/live/real/network not permitted\n".as_slice());
+        }
+        y = live_resolution(y, sl, n, st, get(sl, n, a, agent_schema.A_TRUST_BOUNDARY_DECL_RESOLUTION));
+    }
+    y
+}
+
+fn check_atrust_identities(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_ATRUST_IDENTITIES);
+    while link != 0u64 {
+        let i: u64 = link - 1u64;
+        link = n[i].next;
+        let name: u64 = get(sl, n, i, agent_schema.A_TRUST_IDENTITY_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "atrust_identity".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = required_string(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_SUBJECT, "atrust_identity".as_slice(), name, "subject".as_slice());
+        let did: u64 = get(sl, n, i, agent_schema.A_TRUST_IDENTITY_DECL_DID);
+        let did_string: u64 = value(sl, n, did);
+        if empty(sl, n, did) {
+            y = missing_field(y, sl, n, st, did, "atrust_identity".as_slice(), name, "did".as_slice());
+        } else if !bytes.starts_with(st.slice(n[did_string].a, n[did_string].b), "did:".as_slice()) {
+            y = say(y, sl, n, st, did, "atrust_identity".as_slice(), name, "did must start with 'did:'\n".as_slice());
+        }
+        y = required_string(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_METHOD, "atrust_identity".as_slice(), name, "method".as_slice());
+        y = required_string(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_BOUNDARY, "atrust_identity".as_slice(), name, "boundary".as_slice());
+        y = required_variant(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_STATUS, agent_schema.A_TRUST_IDENTITY_STATUS_UNKNOWN, "atrust_identity".as_slice(), name, "status".as_slice());
+        y = required_variant(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_VALIDATION, agent_schema.A_TRUST_IDENTITY_VALIDATION_UNKNOWN, "atrust_identity".as_slice(), name, "validation".as_slice());
+        y = required_variant(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_RESOLUTION, agent_schema.A_TRUST_RESOLUTION_MODE_UNKNOWN, "atrust_identity".as_slice(), name, "resolution".as_slice());
+        y = requires(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_KEY_MATERIAL, "atrust_identity".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_SECRET_MATERIAL, "atrust_identity".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_EXECUTION, "atrust_identity".as_slice(), name, "execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_EVIDENCE, "atrust_identity".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_SECURITY_CLAIMS, "atrust_identity".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+        y = required_list(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_PURPOSE, "atrust_identity".as_slice(), name, "purpose".as_slice());
+        y = blank_entries(y, sl, n, st, i, agent_schema.A_TRUST_IDENTITY_DECL_PURPOSE, "purpose entries must be non-empty\n".as_slice());
+        let validation: u64 = get(sl, n, i, agent_schema.A_TRUST_IDENTITY_DECL_VALIDATION);
+        if named(sl, n, st, validation, "real".as_slice()) || named(sl, n, st, validation, "verified".as_slice()) || named(sl, n, st, validation, "live".as_slice()) {
+            y = at(y, sl, n, validation);
+            y = put(y, "validation must be dry_run in v0.27\n".as_slice());
+        }
+        y = live_resolution(y, sl, n, st, get(sl, n, i, agent_schema.A_TRUST_IDENTITY_DECL_RESOLUTION));
+    }
+    y
+}
+
+fn check_atrust_credential_contracts(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS);
+    while link != 0u64 {
+        let c: u64 = link - 1u64;
+        link = n[c].next;
+        let name: u64 = get(sl, n, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "atrust_credential_contract".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = required_string(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SUBJECT, "atrust_credential_contract".as_slice(), name, "subject".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_IDENTITY, "atrust_credential_contract".as_slice(), name, "identity".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_BOUNDARY, "atrust_credential_contract".as_slice(), name, "boundary".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_METHOD, "atrust_credential_contract".as_slice(), name, "method".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_ISSUER_DID, "atrust_credential_contract".as_slice(), name, "issuer_did".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_HOLDER_DID, "atrust_credential_contract".as_slice(), name, "holder_did".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_CREDENTIAL_TYPE, "atrust_credential_contract".as_slice(), name, "credential_type".as_slice());
+        y = required_string(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SCHEMA, "atrust_credential_contract".as_slice(), name, "schema".as_slice());
+        y = required_list(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_CLAIMS, "atrust_credential_contract".as_slice(), name, "claims".as_slice());
+        y = required_list(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_PURPOSE, "atrust_credential_contract".as_slice(), name, "purpose".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_VERIFICATION, "atrust_credential_contract".as_slice(), name, "verification".as_slice(), "declared_only".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_KEY_MATERIAL, "atrust_credential_contract".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SECRET_MATERIAL, "atrust_credential_contract".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_EXECUTION, "atrust_credential_contract".as_slice(), name, "execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_EVIDENCE, "atrust_credential_contract".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, c, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_SECURITY_CLAIMS, "atrust_credential_contract".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+    }
+    y
+}
+
+fn check_atrust_handshakes(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_ATRUST_HANDSHAKES);
+    while link != 0u64 {
+        let h: u64 = link - 1u64;
+        link = n[h].next;
+        let name: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "atrust_handshake".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = required_string(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR, "atrust_handshake".as_slice(), name, "initiator".as_slice());
+        y = required_string(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER, "atrust_handshake".as_slice(), name, "responder".as_slice());
+        y = required_string(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR_IDENTITY, "atrust_handshake".as_slice(), name, "initiator_identity".as_slice());
+        y = required_string(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER_IDENTITY, "atrust_handshake".as_slice(), name, "responder_identity".as_slice());
+        y = required_list(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_CREDENTIAL_CONTRACTS, "atrust_handshake".as_slice(), name, "credential_contracts".as_slice());
+        y = required_string(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_BOUNDARY, "atrust_handshake".as_slice(), name, "boundary".as_slice());
+        y = required_string(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_METHOD, "atrust_handshake".as_slice(), name, "method".as_slice());
+        y = required_list(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_PURPOSE, "atrust_handshake".as_slice(), name, "purpose".as_slice());
+        let mut purpose_link: u64 = first(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_PURPOSE);
+        while purpose_link != 0u64 {
+            let item: u64 = purpose_link - 1u64;
+            purpose_link = n[item].next;
+            if blank(sl, n, st, item) {
+                y = say(y, sl, n, st, item, "atrust_handshake".as_slice(), name, "purpose must not contain empty strings\n".as_slice());
+            }
+        }
+        let notes: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_NOTES);
+        if notes != 0u64 && blank(sl, n, st, notes) {
+            y = say(y, sl, n, st, notes, "atrust_handshake".as_slice(), name, "notes must not be empty\n".as_slice());
+        }
+        y = requires(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_MODE, "atrust_handshake".as_slice(), name, "mode".as_slice(), "dry_run".as_slice());
+        y = requires_either(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_DIRECTION, "atrust_handshake".as_slice(), name, "direction".as_slice(), "one_way".as_slice(), "mutual".as_slice());
+        y = requires_either(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_CHALLENGE, "atrust_handshake".as_slice(), name, "challenge".as_slice(), "declared_only".as_slice(), "disabled".as_slice());
+        y = requires_either(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONSE, "atrust_handshake".as_slice(), name, "response".as_slice(), "declared_only".as_slice(), "disabled".as_slice());
+        y = requires_either(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_TRANSCRIPT, "atrust_handshake".as_slice(), name, "transcript".as_slice(), "metadata_only".as_slice(), "evidence_only".as_slice());
+        y = requires_either(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_VERIFICATION, "atrust_handshake".as_slice(), name, "verification".as_slice(), "declared_only".as_slice(), "disabled".as_slice());
+        let resolution: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_RESOLUTION);
+        if !(named(sl, n, st, resolution, "disabled".as_slice()) || named(sl, n, st, resolution, "embedded".as_slice()) || named(sl, n, st, resolution, "local".as_slice())) {
+            y = say(y, sl, n, st, resolution, "atrust_handshake".as_slice(), name, "resolution must be `disabled`, `embedded`, or `local`\n".as_slice());
+        }
+        y = requires(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_NETWORK, "atrust_handshake".as_slice(), name, "network".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_KEY_MATERIAL, "atrust_handshake".as_slice(), name, "key_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_SECRET_MATERIAL, "atrust_handshake".as_slice(), name, "secret_material".as_slice(), "denied".as_slice());
+        y = requires(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_EXECUTION, "atrust_handshake".as_slice(), name, "execution".as_slice(), "disabled".as_slice());
+        y = requires(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_EVIDENCE, "atrust_handshake".as_slice(), name, "evidence".as_slice(), "required".as_slice());
+        y = requires(y, sl, n, st, h, agent_schema.A_TRUST_HANDSHAKE_DECL_SECURITY_CLAIMS, "atrust_handshake".as_slice(), name, "security_claims".as_slice(), "none".as_slice());
+
+        let initiator: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR);
+        let responder: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER);
+        let boundary: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_BOUNDARY);
+        let method: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_METHOD);
+        if !empty(sl, n, initiator) && !contains(sl, n, st, y.agents.as_slice(), initiator) {
+            y = handshake_unknown(y, sl, n, st, name, "initiator agent".as_slice(), initiator);
+        }
+        if !empty(sl, n, responder) && !contains(sl, n, st, y.agents.as_slice(), responder) {
+            y = handshake_unknown(y, sl, n, st, name, "responder agent".as_slice(), responder);
+        }
+        if !empty(sl, n, initiator) && same(sl, n, st, initiator, responder) {
+            y = say(y, sl, n, st, responder, "atrust_handshake".as_slice(), name, "initiator and responder must be distinct\n".as_slice());
+        }
+        if !empty(sl, n, boundary) && !contains(sl, n, st, y.atrust_boundaries.as_slice(), boundary) {
+            y = handshake_unknown(y, sl, n, st, name, "atrust_boundary".as_slice(), boundary);
+        }
+        if !empty(sl, n, method) && !contains(sl, n, st, y.did_methods.as_slice(), method) {
+            y = handshake_unknown(y, sl, n, st, name, "did_method".as_slice(), method);
+        }
+        let declared_boundary: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_ATRUST_BOUNDARIES, boundary);
+        if declared_boundary != NONE && !empty(sl, n, method) && !in_list(sl, n, st, declared_boundary, agent_schema.A_TRUST_BOUNDARY_DECL_DID_METHODS, method) {
+            y = say(y, sl, n, st, method, "atrust_handshake".as_slice(), name, "method `".as_slice());
+            y = text(y, sl, n, st, method);
+            y = put(y, "` is not allowed by boundary `".as_slice());
+            y = text(y, sl, n, st, boundary);
+            y = close(y);
+        }
+        let initiator_identity: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_INITIATOR_IDENTITY);
+        let responder_identity: u64 = get(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_RESPONDER_IDENTITY);
+        y = handshake_identity(y, sl, n, st, program, name, "initiator".as_slice(), initiator_identity, initiator, boundary, method);
+        y = handshake_identity(y, sl, n, st, program, name, "responder".as_slice(), responder_identity, responder, boundary, method);
+        let mut contract_link: u64 = first(sl, n, h, agent_schema.A_TRUST_HANDSHAKE_DECL_CREDENTIAL_CONTRACTS);
+        while contract_link != 0u64 {
+            let c: u64 = contract_link - 1u64;
+            contract_link = n[c].next;
+            let contract: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS, c);
+            if contract == NONE {
+                y = handshake_unknown(y, sl, n, st, name, "credential_contract".as_slice(), c);
+            } else {
+                let identity: u64 = get(sl, n, contract, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_IDENTITY);
+                if !(same(sl, n, st, identity, initiator_identity) || same(sl, n, st, identity, responder_identity)) {
+                    y = say(y, sl, n, st, c, "atrust_handshake".as_slice(), name, "credential_contract `".as_slice());
+                    y = text(y, sl, n, st, c);
+                    y = put(y, "` is not bound to a participant identity\n".as_slice());
+                }
+                let contract_boundary: u64 = get(sl, n, contract, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_BOUNDARY);
+                if !empty(sl, n, boundary) && !same(sl, n, st, contract_boundary, boundary) {
+                    y = contract_mismatch(y, sl, n, st, name, c, "boundary `".as_slice(), contract_boundary, "` does not match handshake boundary `".as_slice(), boundary);
+                }
+                let contract_method: u64 = get(sl, n, contract, agent_schema.A_TRUST_CREDENTIAL_CONTRACT_DECL_METHOD);
+                if !empty(sl, n, method) && !same(sl, n, st, contract_method, method) {
+                    y = contract_mismatch(y, sl, n, st, name, c, "method `".as_slice(), contract_method, "` does not match handshake method `".as_slice(), method);
+                }
+            }
+        }
+    }
+    y
+}
+
+// "atrust_handshake `<name>` references unknown <what> `<reference>`".
+fn handshake_unknown(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, name: u64, what: Slice<u8>, reference: u64) -> Symbols {
+    let mut y: Symbols = say(symbols, sl, n, st, reference, "atrust_handshake".as_slice(), name, "references unknown ".as_slice());
+    y = put(y, what);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, reference);
+    close(y)
+}
+
+// A handshake participant's identity: declared, and bound to the same
+// agent, boundary and method as the handshake.
+fn handshake_identity(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, name: u64, role: Slice<u8>, reference: u64, participant: u64, boundary: u64, method: u64) -> Symbols {
+    if empty(sl, n, reference) {
+        return symbols;
+    }
+    let mut y: Symbols = symbols;
+    let identity: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_ATRUST_IDENTITIES, reference);
+    if identity == NONE {
+        y = say(y, sl, n, st, reference, "atrust_handshake".as_slice(), name, "references unknown ".as_slice());
+        y = put(y, role);
+        y = put(y, "_identity `".as_slice());
+        y = text(y, sl, n, st, reference);
+        return close(y);
+    }
+    let subject: u64 = get(sl, n, identity, agent_schema.A_TRUST_IDENTITY_DECL_SUBJECT);
+    if !empty(sl, n, participant) && !same(sl, n, st, subject, participant) {
+        y = identity_mismatch(y, sl, n, st, name, role, reference, "subject `".as_slice(), subject, "` does not match ".as_slice(), role, participant);
+    }
+    let identity_boundary: u64 = get(sl, n, identity, agent_schema.A_TRUST_IDENTITY_DECL_BOUNDARY);
+    if !empty(sl, n, boundary) && !same(sl, n, st, identity_boundary, boundary) {
+        y = identity_mismatch(y, sl, n, st, name, role, reference, "boundary `".as_slice(), identity_boundary, "` does not match handshake ".as_slice(), "boundary".as_slice(), boundary);
+    }
+    let identity_method: u64 = get(sl, n, identity, agent_schema.A_TRUST_IDENTITY_DECL_METHOD);
+    if !empty(sl, n, method) && !same(sl, n, st, identity_method, method) {
+        y = identity_mismatch(y, sl, n, st, name, role, reference, "method `".as_slice(), identity_method, "` does not match handshake ".as_slice(), "method".as_slice(), method);
+    }
+    y
+}
+
+// "atrust_handshake `<name>` <role>_identity <what><theirs>` does not match
+// <scope><field> `<ours>`", at the identity reference.
+fn identity_mismatch(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, name: u64, role: Slice<u8>, reference: u64, what: Slice<u8>, theirs: u64, scope: Slice<u8>, field: Slice<u8>, ours: u64) -> Symbols {
+    let mut y: Symbols = say(symbols, sl, n, st, reference, "atrust_handshake".as_slice(), name, role);
+    y = put(y, "_identity ".as_slice());
+    y = put(y, what);
+    y = text(y, sl, n, st, theirs);
+    y = put(y, scope);
+    y = put(y, field);
+    y = put(y, " `".as_slice());
+    y = text(y, sl, n, st, ours);
+    close(y)
+}
+
+// "atrust_handshake `<name>` credential_contract `<c>` <what><theirs><rest><ours>`".
+fn contract_mismatch(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, name: u64, c: u64, what: Slice<u8>, theirs: u64, rest: Slice<u8>, ours: u64) -> Symbols {
+    let mut y: Symbols = say(symbols, sl, n, st, c, "atrust_handshake".as_slice(), name, "credential_contract `".as_slice());
+    y = text(y, sl, n, st, c);
+    y = put(y, "` ".as_slice());
+    y = put(y, what);
+    y = text(y, sl, n, st, theirs);
+    y = put(y, rest);
+    y = text(y, sl, n, st, ours);
     close(y)
 }
