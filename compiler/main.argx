@@ -27,6 +27,8 @@ module compiler.main;
 //   limits a native object is built with, in decimal. Each defaults to the
 //   C backend's default. For C they are compiler flags instead, so they
 //   apply only with `object`.
+// - `target` is the system a native object is for: `x86_64-linux`, the
+//   default, or `x86_64-windows` (ESP-017). It applies only with `object`.
 // - Blank lines and lines starting with `#` are ignored; a line may end in
 //   CR LF.
 //
@@ -70,8 +72,10 @@ const NO_MANIFEST: u64 = 7u64;
 const NO_DIAGNOSTICS: u64 = 8u64;
 const BOTH_OUTPUTS: u64 = 9u64;
 const NOT_A_NUMBER: u64 = 10u64;
+const NOT_A_TARGET: u64 = 11u64;
 
-// The limit keys, in the order `compiler.native` takes the limits.
+// The limit keys, in the order `compiler.native` takes the limits; the
+// target follows them.
 const LIMIT_KEYS: u64 = 5u64;
 
 // A build file, read. Each path is a (start, end) range of the file's text;
@@ -88,6 +92,7 @@ struct Build {
     // The limits, and whether each was given.
     limits: Buffer<u64>,
     given: Buffer<u64>,
+    target_given: bool,
     manifest_start: u64,
     manifest_end: u64,
     diagnostics_start: u64,
@@ -272,6 +277,7 @@ fn read_build(text: Slice<u8>) -> Build {
         object_end: 0u64,
         limits: native.default_limits(),
         given: Buffer::new(),
+        target_given: false,
         manifest_start: 0u64,
         manifest_end: 0u64,
         diagnostics_start: 0u64,
@@ -384,6 +390,21 @@ fn build_line(text: Slice<u8>, start: u64, end: u64, line: u64, build: Build) ->
         b.object_end = end;
         return b;
     }
+    if bytes.equal(key.as_slice(), "target".as_slice()) {
+        if b.target_given {
+            return build_failed(REPEATED_KEY, line, b);
+        }
+        let value: Slice<u8> = text.slice(value_start, end);
+        if bytes.equal(value, "x86_64-linux".as_slice()) {
+            b.limits[LIMIT_KEYS] = native.LINUX;
+        } else if bytes.equal(value, "x86_64-windows".as_slice()) {
+            b.limits[LIMIT_KEYS] = native.WINDOWS;
+        } else {
+            return build_failed(NOT_A_TARGET, line, b);
+        }
+        b.target_given = true;
+        return b;
+    }
     let limit: u64 = limit_key(key.as_slice());
     if limit < LIMIT_KEYS {
         if b.given[limit] != 0u64 {
@@ -464,7 +485,7 @@ fn build_error(error: u64, line: u64) -> Buffer<u8> {
     } else if error == MALFORMED {
         out = bytes.append(out, "expected `key value`, with one space and no space in the value".as_slice());
     } else if error == UNKNOWN_KEY {
-        out = bytes.append(out, "unknown key; the keys are `root`, `module`, `c`, `object`, `manifest`, `diagnostics`, `steps`, `depth`, `buffer-bytes`, `arena-bytes` and `arena-slots`".as_slice());
+        out = bytes.append(out, "unknown key; the keys are `root`, `module`, `c`, `object`, `manifest`, `diagnostics`, `steps`, `depth`, `buffer-bytes`, `arena-bytes`, `arena-slots` and `target`".as_slice());
     } else if error == REPEATED_KEY {
         out = bytes.append(out, "this key was already given; only `module` may repeat".as_slice());
     } else if error == NO_ROOT {
@@ -475,6 +496,8 @@ fn build_error(error: u64, line: u64) -> Buffer<u8> {
         out = bytes.append(out, "`c` and `object` exclude each other".as_slice());
     } else if error == NOT_A_NUMBER {
         out = bytes.append(out, "a limit is a decimal number below 2^64".as_slice());
+    } else if error == NOT_A_TARGET {
+        out = bytes.append(out, "the target is `x86_64-linux` or `x86_64-windows`".as_slice());
     } else if error == NO_MANIFEST {
         out = bytes.append(out, "no `manifest` line".as_slice());
     } else {

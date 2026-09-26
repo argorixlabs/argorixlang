@@ -1,0 +1,170 @@
+core 0.1;
+module compiler.coff;
+
+// COFF relocatable objects for x86-64 Windows, in Argorix (ESP-017). The
+// native backend writes one object per program for the `x86_64-windows`
+// target, as `compiler.elf` does for Linux, from the same input. The system
+// linker combines it with the runtime shim and the C library
+// (spec/core/native-x86-64.md).
+//
+// The object has one section, `.text`: the program's code, then its
+// read-only data, so every reference inside the object is RIP-relative and
+// resolved before the object is written. What is left for the linker is a
+// call to each function of the shim: an `IMAGE_REL_AMD64_REL32` relocation
+// against an undefined external symbol. COFF keeps the addend in the field
+// itself, relative to the field's end, so the field holds 0.
+//
+// Layout: the file header, `.text`'s section header, its bytes, its
+// relocations, the symbol table and the string table. Symbols: `.text`'s
+// section symbol and its auxiliary record, then the externals in the order
+// given. Nothing depends on the host or the time: the same input gives the
+// same bytes, with a time stamp of 0.
+
+import stdlib.bytes;
+import compiler.x86;
+
+const HEADER_SIZE: u64 = 20u64;
+const SECTION_SIZE: u64 = 40u64;
+const RELOCATION_SIZE: u64 = 10u64;
+const SYMBOL_SIZE: u64 = 18u64;
+// IMAGE_FILE_MACHINE_AMD64.
+const MACHINE: u64 = 34404u64;
+// IMAGE_SCN_CNT_CODE, IMAGE_SCN_ALIGN_16BYTES, IMAGE_SCN_MEM_EXECUTE and
+// IMAGE_SCN_MEM_READ.
+const TEXT_FLAGS: u64 = 1615855648u64;
+// IMAGE_SCN_LNK_NRELOC_OVFL: the relocation count is in the first
+// relocation, because it does not fit the header's 16 bits.
+const OVERFLOW_FLAG: u64 = 16777216u64;
+const MAX_RELOCATIONS: u64 = 65535u64;
+
+// The object for `text`, with the arguments of `compiler.elf.relocatable`:
+// the symbols' names in `names`, ended at `name_ends`; `defined[i]`, the
+// offset in `text` of symbol i + 1, or 0 for a symbol the object only calls;
+// `calls`, (offset, symbol) pairs, each four bytes at the offset a call's
+// displacement to that symbol.
+pub fn relocatable(text: Slice<u8>, names: Slice<u8>, name_ends: Slice<u64>, defined: Slice<u64>, calls: Slice<u64>) -> Buffer<u8> {
+    // The string table: its size (4 bytes, counted), then the names that do
+    // not fit the 8 bytes of a symbol, each ended by a zero byte.
+    let mut strings: Buffer<u8> = x86.little(Buffer::new(), 0u64, 4u64);
+    let mut name_offsets: Buffer<u64> = Buffer::new();
+    let mut start: u64 = 0u64;
+    let mut index: u64 = 0u64;
+    while index < name_ends.length() {
+        if name_ends[index] - start > 8u64 {
+            name_offsets.push(strings.length());
+            strings = bytes.append(strings, names.slice(start, name_ends[index]));
+            strings.push(0u8);
+        } else {
+            name_offsets.push(0u64);
+        }
+        start = name_ends[index];
+        index += 1u64;
+    }
+    let size: u64 = strings.length();
+    strings = set(strings, 0u64, size, 4u64);
+    let count: u64 = calls.length() / 2u64;
+    let overflow: bool = count >= MAX_RELOCATIONS;
+    let records: u64 = if overflow { count + 1u64 } else { count };
+    let text_offset: u64 = HEADER_SIZE + SECTION_SIZE;
+    let relocations_offset: u64 = text_offset + text.length();
+    let symbols_offset: u64 = relocations_offset + records * RELOCATION_SIZE;
+    // `.text`, its auxiliary record, then one symbol per name.
+    let symbols: u64 = 2u64 + name_ends.length();
+
+    // IMAGE_FILE_HEADER.
+    let mut out: Buffer<u8> = x86.little(Buffer::new(), MACHINE, 2u64);
+    out = x86.little(out, 1u64, 2u64);
+    out = x86.little(out, 0u64, 4u64);
+    out = x86.little(out, symbols_offset, 4u64);
+    out = x86.little(out, symbols, 4u64);
+    out = x86.little(out, 0u64, 2u64);
+    out = x86.little(out, 0u64, 2u64);
+    // IMAGE_SECTION_HEADER for `.text`.
+    out = short_name(out, ".text".as_slice());
+    out = x86.little(out, 0u64, 4u64);
+    out = x86.little(out, 0u64, 4u64);
+    out = x86.little(out, text.length(), 4u64);
+    out = x86.little(out, text_offset, 4u64);
+    out = x86.little(out, if records == 0u64 { 0u64 } else { relocations_offset }, 4u64);
+    out = x86.little(out, 0u64, 4u64);
+    out = x86.little(out, if overflow { MAX_RELOCATIONS } else { count }, 2u64);
+    out = x86.little(out, 0u64, 2u64);
+    out = x86.little(out, if overflow { TEXT_FLAGS + OVERFLOW_FLAG } else { TEXT_FLAGS }, 4u64);
+    out = bytes.append(out, text);
+    // IMAGE_RELOCATION: the offset, the symbol's index (after `.text` and its
+    // auxiliary record), IMAGE_REL_AMD64_REL32 (4). With the overflow flag,
+    // the first record holds the count, itself included.
+    if overflow {
+        out = x86.little(out, records, 4u64);
+        out = x86.little(out, 0u64, 4u64);
+        out = x86.little(out, 0u64, 2u64);
+    }
+    index = 0u64;
+    while index < calls.length() {
+        out = x86.little(out, calls[index], 4u64);
+        out = x86.little(out, calls[index + 1u64] + 2u64, 4u64);
+        out = x86.little(out, 4u64, 2u64);
+        index += 2u64;
+    }
+    // `.text`: static (3), with an auxiliary section-definition record.
+    out = short_name(out, ".text".as_slice());
+    out = x86.little(out, 0u64, 4u64);
+    out = x86.little(out, 1u64, 2u64);
+    out = x86.little(out, 0u64, 2u64);
+    out.push(3u8);
+    out.push(1u8);
+    out = x86.little(out, text.length(), 4u64);
+    out = x86.little(out, if overflow { MAX_RELOCATIONS } else { count }, 2u64);
+    out = x86.little(out, 0u64, 2u64);
+    out = x86.little(out, 0u64, 4u64);
+    out = x86.little(out, 0u64, 2u64);
+    out = x86.little(out, 0u64, 4u64);
+    // The names: external (2), functions (0x20), in `.text` or undefined.
+    start = 0u64;
+    index = 0u64;
+    while index < name_ends.length() {
+        if name_offsets[index] == 0u64 {
+            out = short_name(out, names.slice(start, name_ends[index]));
+        } else {
+            out = x86.little(out, 0u64, 4u64);
+            out = x86.little(out, name_offsets[index], 4u64);
+        }
+        if defined[index] != 0u64 {
+            out = x86.little(out, defined[index] - 1u64, 4u64);
+            out = x86.little(out, 1u64, 2u64);
+        } else {
+            out = x86.little(out, 0u64, 4u64);
+            out = x86.little(out, 0u64, 2u64);
+        }
+        out = x86.little(out, 32u64, 2u64);
+        out.push(2u8);
+        out.push(0u8);
+        start = name_ends[index];
+        index += 1u64;
+    }
+    bytes.append(out, strings.as_slice())
+}
+
+// A name of at most 8 bytes, padded with zeros to 8.
+fn short_name(code: Buffer<u8>, name: Slice<u8>) -> Buffer<u8> {
+    let mut out: Buffer<u8> = bytes.append(code, name);
+    let mut index: u64 = name.length();
+    while index < 8u64 {
+        out.push(0u8);
+        index += 1u64;
+    }
+    out
+}
+
+// `value` in the `count` bytes at `at`, little-endian.
+fn set(code: Buffer<u8>, at: u64, value: u64, count: u64) -> Buffer<u8> {
+    let mut out: Buffer<u8> = code;
+    let mut rest: u64 = value;
+    let mut index: u64 = 0u64;
+    while index < count {
+        out[at + index] = x86.byte(rest % 256u64);
+        rest = rest / 256u64;
+        index += 1u64;
+    }
+    out
+}

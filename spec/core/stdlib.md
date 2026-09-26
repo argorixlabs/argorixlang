@@ -186,10 +186,22 @@ file-system function, and the harness checks this (`host_only_imports` in
      symlink;
   4. writes with `O_NOFOLLOW`;
   5. charges the byte budget.
-- Windows is not supported yet: every operation returns 7.
-- The window between resolving a path and opening it is not closed against
-  concurrent writers to the roots. OS isolation of the compiler process
-  (MAT-011) covers that race.
+- On Windows (ESP-017) the same rules hold over the wide Win32 API:
+  - arguments are read from the UTF-16 command line and paths are converted
+    from UTF-8, so no code page stands in between;
+  - roots and files are resolved through an open handle
+    (`GetFinalPathNameByHandleW`), which follows symbolic links and
+    junctions as `realpath` does, and every name is used in its `\\?\` form,
+    so a DOS device name or a trailing dot is not reinterpreted;
+  - a file is read through the handle that was resolved and checked;
+  - a file written is opened without following a reparse point, and one
+    found there is refused as outside the root, as `O_NOFOLLOW` refuses a
+    symlink.
+- Status 7 is left for a host with no file access.
+- On POSIX, the window between resolving a path and opening it is not closed
+  against concurrent writers to the roots; on Windows a read has no such
+  window, but a write between checking its directory and creating its file
+  does. OS isolation of the compiler process (MAT-011) covers those races.
 
 ## Required evidence
 

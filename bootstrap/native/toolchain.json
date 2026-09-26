@@ -190,5 +190,115 @@
       "<libdir>/crtn.o"
     ],
     "libdir": "/usr/lib/x86_64-linux-gnu"
+  },
+  "windows": {
+    "task": "ESP-017",
+    "target": {
+      "profile": "windows-x86_64",
+      "architecture": "x86_64",
+      "system": "windows",
+      "abi": "Microsoft x64",
+      "object_format": "pe-x86-64 COFF relocatable",
+      "runtime_abi": "C1"
+    },
+    "backend_sources": [
+      "compiler/x86.argx",
+      "compiler/coff.argx",
+      "compiler/native.argx"
+    ],
+    "versions_and_digests": "Host-specific: bootstrap/native-windows.ps1 records the linker's version and digest and the digests of the libraries it links in native-report.json, the linker's files in linker.json, and the shim's sources, compiler and objects in shim.json.",
+    "dependencies": [
+      {
+        "name": "MSVC link.exe, with mspdb140.dll, mspdbcore.dll, msobj140.dll, mspdbsrv.exe, mspdbst.dll, tbbmalloc.dll, cvtres.exe and the MSVC C++ runtime DLLs it loads",
+        "kind": "system_linker",
+        "license": "Microsoft Visual Studio Build Tools license",
+        "purpose": "combines the native object, the shim objects and the C library into an executable",
+        "owner": "Microsoft",
+        "stages": [
+          "N1",
+          "N2",
+          "R1"
+        ]
+      },
+      {
+        "name": "The static C library: libcmt.lib, libucrt.lib, libvcruntime.lib; and kernel32.lib and shell32.lib",
+        "kind": "os_abi",
+        "license": "Microsoft Visual Studio Build Tools and Windows SDK licenses",
+        "purpose": "process start-up, memory, output, files and exit, used by the runtime shim; threads and the wide file API for the stack and the host; the UTF-16 command line",
+        "owner": "Microsoft",
+        "stages": [
+          "N1",
+          "N2",
+          "R1"
+        ]
+      },
+      {
+        "name": "Argorix native runtime shim",
+        "kind": "bounded_native_shim",
+        "license": "Apache-2.0",
+        "purpose": "as on Linux; argorix_rt_run takes the place of argorix_rt_stack",
+        "owner": "ArgorixLang (bootstrap/c, bootstrap/native)",
+        "stages": [
+          "N1",
+          "N2"
+        ],
+        "sources": [
+          "bootstrap/c/argorix_core_runtime.c",
+          "bootstrap/c/argorix_core_runtime.h",
+          "bootstrap/c/argorix_core_host.h",
+          "bootstrap/native/argorix_native_shim.c",
+          "bootstrap/native/argorix_native_host.c"
+        ],
+        "symbols": {
+          "shim": [
+            "argorix_rt_run",
+            "argorix_rt_print_u64",
+            "argorix_rt_print_i64",
+            "argorix_rt_print_bool",
+            "argorix_rt_buffer_new",
+            "argorix_rt_arena_new",
+            "argorix_rt_arena_alloc",
+            "argorix_rt_handle_get",
+            "argorix_rt_decode_utf8"
+          ],
+          "note": "The runtime, checked-arithmetic and host symbols are the Linux ones."
+        }
+      }
+    ],
+    "rebuild_shim": {
+      "kind": "c_compiler",
+      "stage": "N1",
+      "compilers": [
+        "cl"
+      ],
+      "flags": [
+        "/std:c11",
+        "/O2",
+        "/W3",
+        "/WX",
+        "/wd5105",
+        "/c"
+      ],
+      "note": "Declared separately: only rebuilding the shim, and stage1 for the seed, needs a C compiler. Building and rebuilding Argorix programs, the compiler included, does not."
+    },
+    "link": {
+      "command": [
+        "link",
+        "/nologo",
+        "/Brepro",
+        "/subsystem:console",
+        "/out:<program>.exe",
+        "<program>.obj",
+        "argorix_core_runtime.obj",
+        "argorix_native_shim.obj",
+        "argorix_native_host.obj",
+        "libcmt.lib",
+        "libucrt.lib",
+        "libvcruntime.lib",
+        "kernel32.lib",
+        "shell32.lib"
+      ],
+      "libdir": "the LIB variable of an MSVC developer environment"
+    }
   }
 }
