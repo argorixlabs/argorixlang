@@ -57,6 +57,28 @@ pub fn agent_bytecode_dump(source: &[u8]) -> String {
     out
 }
 
+/// The canonical dump of the bytecode verifier's decision on serialized
+/// bytecode (ESP-018.D.3, `spec/language/verify.md`): what
+/// `argorixc verify-bytecode` decides on a `.argbc.json` file.
+///
+/// - Bytes that are not UTF-8: `invalid bytecode: not UTF-8`.
+/// - JSON serde cannot read as `BytecodeProgram`: `invalid bytecode JSON: `
+///   and serde_json's message, with its line and column.
+/// - Otherwise `ok`, or each error of `verify_bytecode`, one per line.
+pub fn bytecode_verify_dump(bytes: &[u8]) -> String {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return "invalid bytecode: not UTF-8\n".to_string();
+    };
+    let program: argorix_bytecode::BytecodeProgram = match serde_json::from_str(text) {
+        Ok(program) => program,
+        Err(error) => return format!("invalid bytecode JSON: {error}\n"),
+    };
+    match argorix_bytecode::verify_bytecode(&program) {
+        Ok(()) => "ok\n".to_string(),
+        Err(errors) => errors.iter().map(|error| format!("{error}\n")).collect(),
+    }
+}
+
 /// The canonical bytecode dump of a package (`spec/language/bytecode.md`):
 /// what `package_ir_dump` gives when there is no IR, otherwise the bytecode
 /// `emit-bytecode-package` lowers, unverified and with no source digest.

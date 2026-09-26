@@ -79,6 +79,9 @@ enum Command {
     /// Print the bytecode of an agent-language package, unverified, or its
     /// diagnostics (spec/language/bytecode.md).
     AgentPackageBytecode { manifest: PathBuf },
+    /// Print the bytecode verifier's decision on a serialized bytecode file
+    /// (spec/language/verify.md).
+    AgentVerify { file: PathBuf },
     /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
     CoreAst { file: PathBuf },
     /// Print the checker diagnostics of one Core file, checked on its own.
@@ -264,6 +267,11 @@ fn run() -> Result<()> {
                 manifest
             };
             print!("{}", argorix_module::package_bytecode_dump(&manifest_path));
+        }
+        Command::AgentVerify { file } => {
+            let bytes =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_module::bytecode_verify_dump(&bytes));
         }
         Command::CoreCheck { file } => {
             let compiled = compile_core(&file, cli.stdlib.as_deref(), &cli.modules)?;

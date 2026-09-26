@@ -4,7 +4,8 @@ pub mod merge;
 pub mod resolver;
 
 pub use dump::{
-    agent_bytecode_dump, agent_ir_dump, package_bytecode_dump, package_dump, package_ir_dump,
+    agent_bytecode_dump, agent_ir_dump, bytecode_verify_dump, package_bytecode_dump, package_dump,
+    package_ir_dump,
 };
 pub use manifest::{parse_manifest, Manifest};
 pub use merge::{check_package, merge_package, package_ir};
