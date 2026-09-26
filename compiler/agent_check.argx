@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_GOVERNANCE_PROFILES || field == agent_schema.PROGRAM_REGULATORY_MAPPINGS || field == agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS || field == agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS || field == agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES || field == agent_schema.PROGRAM_THREAT_MODELS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_GOVERNANCE_PROFILES || field == agent_schema.PROGRAM_REGULATORY_MAPPINGS || field == agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS || field == agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS || field == agent_schema.PROGRAM_RUNTIME_HARDENING_PROFILES || field == agent_schema.PROGRAM_THREAT_MODELS || field == agent_schema.PROGRAM_SPEC_FREEZES || field == agent_schema.PROGRAM_RELEASE_CANDIDATES || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -112,6 +112,8 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_public_conformance_reports(sl, n, st, program, y);
     y = check_runtime_hardening_profiles(sl, n, st, program, y);
     y = check_threat_models(sl, n, st, program, y);
+    y = check_spec_freezes(sl, n, st, program, y);
+    y = check_release_candidates(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -3933,6 +3935,157 @@ fn check_threat_models(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, progr
         let notes: u64 = get(sl, n, m, agent_schema.THREAT_MODEL_DECL_NOTES);
         if notes != 0u64 {
             y = nonempty_text(y, sl, n, st, notes, "threat_model".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+// ------------------------------------------------------------------ spec freezes and release candidates
+
+// Whether some entry of list `index` of `node` has field `field` (or is,
+// when `field` is `NONE`) exactly `word`.
+fn list_has(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, field: u64, word: Slice<u8>) -> bool {
+    let mut link: u64 = first(sl, n, node, index);
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        let mut spanned: u64 = item;
+        if field != NONE {
+            spanned = get(sl, n, item, field);
+        }
+        if is(sl, n, st, spanned, word) {
+            return true;
+        }
+    }
+    false
+}
+
+// "<kind> `<name>` <what> `<version>`" at the name unless `version` is in
+// the list.
+fn requires_version(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, field: u64, kind: Slice<u8>, name: u64, what: Slice<u8>, version: Slice<u8>) -> Symbols {
+    if list_has(sl, n, st, node, index, field, version) {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, name, kind, name, what);
+    y = put(y, " `".as_slice());
+    y = put(y, version);
+    close(y)
+}
+
+// The string list `index` of `node`: non-empty, without empty entries.
+fn string_list(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>) -> Symbols {
+    let y: Symbols = nonempty_list(symbols, sl, n, st, node, index, kind, name, field);
+    empty_strings(y, sl, n, st, node, index, kind, name, field)
+}
+
+fn check_spec_freezes(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_SPEC_FREEZES);
+    while link != 0u64 {
+        let f: u64 = link - 1u64;
+        link = n[f].next;
+        let name: u64 = get(sl, n, f, agent_schema.SPEC_FREEZE_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "spec_freeze".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = requires_text(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_VERSION, "spec_freeze".as_slice(), name, "version".as_slice(), "0.36".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, f, agent_schema.SPEC_FREEZE_DECL_TARGET), "spec_freeze".as_slice(), name, "target".as_slice());
+        y = allowed(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_FREEZE_SCOPE, "spec_freeze".as_slice(), name, "freeze_scope".as_slice(), "language bytecode conformance evidence full".as_slice());
+        y = allowed(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_COMPATIBILITY, "spec_freeze".as_slice(), name, "compatibility".as_slice(), "cumulative declared_only".as_slice());
+        y = allowed(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_STABILITY, "spec_freeze".as_slice(), name, "stability".as_slice(), "rc_candidate frozen_draft".as_slice());
+        y = requires_text(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_EVIDENCE_BUNDLE, "spec_freeze".as_slice(), name, "evidence_bundle".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_SECURITY_REPORT, "spec_freeze".as_slice(), name, "security_report".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_CONFORMANCE, "spec_freeze".as_slice(), name, "conformance".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_BACKWARD_COMPATIBILITY, "spec_freeze".as_slice(), name, "backward_compatibility".as_slice(), "required".as_slice());
+        y = sealed_runtime(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_RUNTIME_STATUS, "spec_freeze".as_slice(), name);
+        y = string_list(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_FROZEN_FEATURES, "spec_freeze".as_slice(), name, "frozen_features".as_slice());
+        y = string_list(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_COMPATIBLE_VERSIONS, "spec_freeze".as_slice(), name, "compatible_versions".as_slice());
+        y = string_list(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_REQUIRED_SUITES, "spec_freeze".as_slice(), name, "required_suites".as_slice());
+        y = string_list(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_PURPOSE, "spec_freeze".as_slice(), name, "purpose".as_slice());
+        y = requires_version(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_COMPATIBLE_VERSIONS, NONE, "spec_freeze".as_slice(), name, "compatible_versions requires".as_slice(), "0.34".as_slice());
+        y = requires_version(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_COMPATIBLE_VERSIONS, NONE, "spec_freeze".as_slice(), name, "compatible_versions requires".as_slice(), "0.35".as_slice());
+        y = requires_version(y, sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_COMPATIBLE_VERSIONS, NONE, "spec_freeze".as_slice(), name, "compatible_versions requires".as_slice(), "0.36".as_slice());
+        if !list_has(sl, n, st, f, agent_schema.SPEC_FREEZE_DECL_REQUIRED_SUITES, NONE, "conformance/suite.v036.json".as_slice()) {
+            y = say(y, sl, n, st, name, "spec_freeze".as_slice(), name, "requires conformance/suite.v036.json\n".as_slice());
+        }
+        let notes: u64 = get(sl, n, f, agent_schema.SPEC_FREEZE_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "spec_freeze".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+// The thirteen sealed-runtime strings both spec freezes and release
+// candidates store as consecutive fields from `runtime_status`.
+fn sealed_runtime(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, runtime_status: u64, kind: Slice<u8>, name: u64) -> Symbols {
+    let mut y: Symbols = requires_text(symbols, sl, n, st, node, runtime_status, kind, name, "runtime_status".as_slice(), "disabled".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 1u64, kind, name, "network".as_slice(), "denied".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 2u64, kind, name, "external_execution".as_slice(), "disabled".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 3u64, kind, name, "provider_execution".as_slice(), "disabled".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 4u64, kind, name, "secret_material".as_slice(), "denied".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 5u64, kind, name, "key_material".as_slice(), "denied".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 6u64, kind, name, "env_access".as_slice(), "denied".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 7u64, kind, name, "filesystem_access".as_slice(), "denied".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 8u64, kind, name, "tool_execution".as_slice(), "disabled".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 9u64, kind, name, "agent_execution".as_slice(), "disabled".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 10u64, kind, name, "security_claims".as_slice(), "none".as_slice());
+    y = requires_text(y, sl, n, st, node, runtime_status + 11u64, kind, name, "legal_claims".as_slice(), "none".as_slice());
+    requires_text(y, sl, n, st, node, runtime_status + 12u64, kind, name, "certification".as_slice(), "none".as_slice())
+}
+
+fn check_release_candidates(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_RELEASE_CANDIDATES);
+    while link != 0u64 {
+        let c: u64 = link - 1u64;
+        link = n[c].next;
+        let name: u64 = get(sl, n, c, agent_schema.RELEASE_CANDIDATE_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "release_candidate".as_slice());
+        } else {
+            names.push(name);
+        }
+        let version: u64 = get(sl, n, c, agent_schema.RELEASE_CANDIDATE_DECL_VERSION);
+        let version_string: u64 = value(sl, n, version);
+        if !bytes.starts_with(st.slice(n[version_string].a, n[version_string].b), "1.0.0-rc".as_slice()) {
+            y = say(y, sl, n, st, version, "release_candidate".as_slice(), name, "version must start with `1.0.0-rc`\n".as_slice());
+        }
+        y = requires_text(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_BASE_VERSION, "release_candidate".as_slice(), name, "base_version".as_slice(), "0.36".as_slice());
+        y = known_reference(y, sl, n, st, program, c, agent_schema.RELEASE_CANDIDATE_DECL_SPEC_FREEZE, agent_schema.PROGRAM_SPEC_FREEZES, "release_candidate".as_slice(), name, "spec_freeze".as_slice());
+        y = allowed(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_READINESS, "release_candidate".as_slice(), name, "readiness".as_slice(), "draft rc pending_review".as_slice());
+        y = sealed_runtime(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_RUNTIME_STATUS, "release_candidate".as_slice(), name);
+        y = string_list(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_REQUIRED_ARTIFACTS, "release_candidate".as_slice(), name, "required_artifacts".as_slice());
+        y = string_list(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_REQUIRED_CHECKS, "release_candidate".as_slice(), name, "required_checks".as_slice());
+        y = string_list(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_KNOWN_LIMITATIONS, "release_candidate".as_slice(), name, "known_limitations".as_slice());
+        y = string_list(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_PURPOSE, "release_candidate".as_slice(), name, "purpose".as_slice());
+        y = nonempty_list(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_COMPATIBILITY_MATRIX, "release_candidate".as_slice(), name, "compatibility_matrix".as_slice());
+        let mut versions: Buffer<u64> = Buffer::new();
+        let mut entry_link: u64 = first(sl, n, c, agent_schema.RELEASE_CANDIDATE_DECL_COMPATIBILITY_MATRIX);
+        while entry_link != 0u64 {
+            let e: u64 = entry_link - 1u64;
+            entry_link = n[e].next;
+            let entry_version: u64 = get(sl, n, e, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_VERSION);
+            if contains(sl, n, st, versions.as_slice(), entry_version) {
+                y = duplicate(y, sl, n, st, entry_version, "compatibility matrix version".as_slice());
+            } else {
+                versions.push(entry_version);
+            }
+            y = nonempty_text(y, sl, n, st, entry_version, "release_candidate".as_slice(), name, "compatibility matrix version".as_slice());
+            y = allowed(y, sl, n, st, e, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_BYTECODE, "release_candidate".as_slice(), name, "bytecode compatibility".as_slice(), "compatible native unsupported".as_slice());
+            y = allowed(y, sl, n, st, e, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_EVIDENCE, "release_candidate".as_slice(), name, "evidence compatibility".as_slice(), "compatible native unsupported".as_slice());
+            y = allowed(y, sl, n, st, e, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_CONFORMANCE, "release_candidate".as_slice(), name, "conformance compatibility".as_slice(), "compatible native unsupported".as_slice());
+        }
+        y = requires_version(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_COMPATIBILITY_MATRIX, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_VERSION, "release_candidate".as_slice(), name, "compatibility_matrix requires".as_slice(), "0.34".as_slice());
+        y = requires_version(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_COMPATIBILITY_MATRIX, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_VERSION, "release_candidate".as_slice(), name, "compatibility_matrix requires".as_slice(), "0.35".as_slice());
+        y = requires_version(y, sl, n, st, c, agent_schema.RELEASE_CANDIDATE_DECL_COMPATIBILITY_MATRIX, agent_schema.COMPATIBILITY_MATRIX_ENTRY_DECL_VERSION, "release_candidate".as_slice(), name, "compatibility_matrix requires".as_slice(), "0.36".as_slice());
+        let notes: u64 = get(sl, n, c, agent_schema.RELEASE_CANDIDATE_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "release_candidate".as_slice(), name, "notes".as_slice());
         }
     }
     y

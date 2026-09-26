@@ -45,3 +45,4 @@ far the port has come.
 | 10 | Governance profiles and regulatory mappings | 1,185 of 1,430 |
 | 11 | Third-party verifiers and public conformance reports | 1,240 of 1,430 |
 | 12 | Runtime hardening profiles and threat models | 1,294 of 1,430 |
+| 13 | Spec freezes and release candidates | 1,344 of 1,430 |
