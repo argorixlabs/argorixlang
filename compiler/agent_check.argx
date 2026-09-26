@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -99,6 +99,7 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_cryptos(sl, n, st, program, y);
     y = check_did_methods(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
+    y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
     y = check_models(sl, n, st, program, y);
     y = check_types(sl, n, st, program, y);
@@ -2089,4 +2090,179 @@ fn check_adapter_profiles(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, pr
         }
     }
     y
+}
+
+// ------------------------------------------------------------------ passports
+
+// The width of the Unicode white-space character at `at`, or 0 when the
+// character there is not white space (Rust's `char::is_whitespace`).
+fn space_width(st: Slice<u8>, at: u64) -> u64 {
+    let lead: u8 = st[at];
+    if lead < 128u8 {
+        if lead == 32u8 || (lead >= 9u8 && lead <= 13u8) {
+            return 1u64;
+        }
+        return 0u64;
+    }
+    if lead < 224u8 {
+        let next: u8 = st[at + 1u64];
+        if lead == 194u8 && (next == 133u8 || next == 160u8) {
+            return 2u64;
+        }
+        return 0u64;
+    }
+    if lead < 240u8 {
+        let second: u8 = st[at + 1u64];
+        let third: u8 = st[at + 2u64];
+        let ogham: bool = lead == 225u8 && second == 154u8 && third == 128u8;
+        let general: bool = lead == 226u8 && ((second == 128u8 && (third <= 138u8 || third == 168u8 || third == 169u8 || third == 175u8)) || (second == 129u8 && third == 159u8));
+        let ideographic: bool = lead == 227u8 && second == 128u8 && third == 128u8;
+        if ogham || general || ideographic {
+            return 3u64;
+        }
+        return 0u64;
+    }
+    0u64
+}
+
+fn char_width(lead: u8) -> u64 {
+    if lead < 128u8 {
+        1u64
+    } else if lead < 224u8 {
+        2u64
+    } else if lead < 240u8 {
+        3u64
+    } else {
+        4u64
+    }
+}
+
+// Where `st[start..end]` starts once leading white space is trimmed.
+fn trim_start(st: Slice<u8>, start: u64, end: u64) -> u64 {
+    let mut at: u64 = start;
+    while at < end {
+        let width: u64 = space_width(st, at);
+        if width == 0u64 {
+            return at;
+        }
+        at += width;
+    }
+    end
+}
+
+// Where `st[start..end]` ends once trailing white space is trimmed.
+fn trim_end(st: Slice<u8>, start: u64, end: u64) -> u64 {
+    let mut kept: u64 = start;
+    let mut at: u64 = start;
+    while at < end {
+        let width: u64 = space_width(st, at);
+        if width == 0u64 {
+            at += char_width(st[at]);
+            kept = at;
+        } else {
+            at += width;
+        }
+    }
+    kept
+}
+
+// A 2-letter code in ASCII upper case.
+fn iso_country(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, spanned: u64) -> bool {
+    let string: u64 = value(sl, n, spanned);
+    let start: u64 = n[string].a;
+    n[string].b - start == 2u64 && st[start] >= 65u8 && st[start] <= 90u8 && st[start + 1u64] >= 65u8 && st[start + 1u64] <= 90u8
+}
+
+fn check_passports(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut agents_with_passport: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_PASSPORTS);
+    while link != 0u64 {
+        let passport: u64 = link - 1u64;
+        link = n[passport].next;
+        let name: u64 = get(sl, n, passport, agent_schema.PASSPORT_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "passport".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = passport_required(y, sl, n, st, name, "agent".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_AGENT));
+        y = passport_required(y, sl, n, st, name, "agent_name".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_AGENT_NAME));
+        y = passport_required(y, sl, n, st, name, "global_id".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_GLOBAL_ID));
+        y = passport_required(y, sl, n, st, name, "identity".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_IDENTITY));
+        y = passport_required(y, sl, n, st, name, "provider".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_PROVIDER));
+        y = passport_required(y, sl, n, st, name, "version".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_VERSION));
+        y = passport_required(y, sl, n, st, name, "country".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_COUNTRY));
+        y = passport_required(y, sl, n, st, name, "jurisdiction".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_JURISDICTION));
+        y = passport_required(y, sl, n, st, name, "intent".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_INTENT));
+        y = passport_required(y, sl, n, st, name, "risk_level".as_slice(), get(sl, n, passport, agent_schema.PASSPORT_DECL_RISK_LEVEL));
+        if first(sl, n, passport, agent_schema.PASSPORT_DECL_DATA_RESIDENCY) == 0u64 {
+            y = say(y, sl, n, st, name, "passport".as_slice(), name, "requires non-empty `data_residency`\n".as_slice());
+        }
+        let agent: u64 = get(sl, n, passport, agent_schema.PASSPORT_DECL_AGENT);
+        if !blank(sl, n, st, agent) {
+            if !contains(sl, n, st, y.agents.as_slice(), agent) {
+                y = say(y, sl, n, st, agent, "passport".as_slice(), name, "references unknown agent `".as_slice());
+                y = text(y, sl, n, st, agent);
+                y = close(y);
+            } else if contains(sl, n, st, agents_with_passport.as_slice(), agent) {
+                y = at(y, sl, n, agent);
+                y = put(y, "agent `".as_slice());
+                y = text(y, sl, n, st, agent);
+                y = put(y, "` already has a passport; only one passport per agent is allowed\n".as_slice());
+            } else {
+                agents_with_passport.push(agent);
+            }
+        }
+        let country: u64 = get(sl, n, passport, agent_schema.PASSPORT_DECL_COUNTRY);
+        if !blank(sl, n, st, country) && !iso_country(sl, n, st, country) {
+            y = say(y, sl, n, st, country, "passport".as_slice(), name, "country `".as_slice());
+            y = text(y, sl, n, st, country);
+            y = put(y, "` must use a 2-letter ISO-like code\n".as_slice());
+        }
+        let risk: u64 = get(sl, n, passport, agent_schema.PASSPORT_DECL_RISK_LEVEL);
+        if !blank(sl, n, st, risk) && !(is(sl, n, st, risk, "low".as_slice()) || is(sl, n, st, risk, "medium".as_slice()) || is(sl, n, st, risk, "high".as_slice()) || is(sl, n, st, risk, "critical".as_slice())) {
+            y = say(y, sl, n, st, risk, "passport".as_slice(), name, "has invalid risk_level `".as_slice());
+            y = text(y, sl, n, st, risk);
+            y = put(y, "`; allowed: low, medium, high, critical\n".as_slice());
+        }
+        let asn: u64 = get(sl, n, passport, agent_schema.PASSPORT_DECL_ASN);
+        if asn != 0u64 {
+            let registry: u64 = get(sl, n, asn, agent_schema.PASSPORT_ASN_DECL_REGISTRY);
+            if !(is(sl, n, st, registry, "LACNIC".as_slice()) || is(sl, n, st, registry, "ARIN".as_slice()) || is(sl, n, st, registry, "RIPE".as_slice()) || is(sl, n, st, registry, "APNIC".as_slice()) || is(sl, n, st, registry, "AFRINIC".as_slice()) || is(sl, n, st, registry, "UNKNOWN".as_slice())) {
+                y = say(y, sl, n, st, registry, "passport".as_slice(), name, "has invalid asn registry `".as_slice());
+                y = text(y, sl, n, st, registry);
+                y = put(y, "`; allowed: LACNIC, ARIN, RIPE, APNIC, AFRINIC, UNKNOWN\n".as_slice());
+            }
+            let number: u64 = get(sl, n, asn, agent_schema.PASSPORT_ASN_DECL_NUMBER);
+            let string: u64 = value(sl, n, number);
+            let start: u64 = trim_start(st, n[string].a, n[string].b);
+            let end: u64 = trim_end(st, start, n[string].b);
+            let trimmed: Slice<u8> = st.slice(start, end);
+            let valid: bool = end > start && (bytes.starts_with(trimmed, "AS".as_slice()) || bytes.equal(trimmed, "PLACEHOLDER".as_slice()));
+            if !valid {
+                y = say(y, sl, n, st, number, "passport".as_slice(), name, "asn number `".as_slice());
+                y = text(y, sl, n, st, number);
+                y = put(y, "` must be an `AS`-prefixed value or explicit placeholder\n".as_slice());
+            }
+            let asn_country: u64 = get(sl, n, asn, agent_schema.PASSPORT_ASN_DECL_COUNTRY);
+            if !blank(sl, n, st, asn_country) && !iso_country(sl, n, st, asn_country) {
+                y = say(y, sl, n, st, asn_country, "passport".as_slice(), name, "asn country `".as_slice());
+                y = text(y, sl, n, st, asn_country);
+                y = put(y, "` must use a 2-letter ISO-like code\n".as_slice());
+            }
+        }
+    }
+    y
+}
+
+// "passport `<name>` is missing required field `<label>`" for a blank field.
+fn passport_required(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, name: u64, label: Slice<u8>, field: u64) -> Symbols {
+    if !blank(sl, n, st, field) {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, field, "passport".as_slice(), name, "is missing required field `".as_slice());
+    y = put(y, label);
+    close(y)
 }

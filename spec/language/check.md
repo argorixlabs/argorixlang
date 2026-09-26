@@ -37,3 +37,4 @@ far the port has come.
 | 2 | Provider contracts, features, secrets, cryptos, crypto boundaries (no checks), DID methods, and every duplicate `collect_symbols` reports | 737 of 1,430 |
 | 3 | Harnesses and adapters | 782 of 1,430 |
 | 4 | Adapter profiles | 789 of 1,430 |
+| 5 | Passports, including `asn` registry, number and country | 846 of 1,430 |
