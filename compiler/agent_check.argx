@@ -58,7 +58,7 @@ pub fn dump(source: Slice<u8>) -> Buffer<u8> {
 fn ported(sl: Slice<u64>, n: Slice<AgentNode>, program: u64) -> bool {
     let mut field: u64 = agent_schema.PROGRAM_PROVIDERS;
     while field < agent_schema.field_count(agent_schema.PROGRAM) {
-        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_GOVERNANCE_PROFILES || field == agent_schema.PROGRAM_REGULATORY_MAPPINGS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
+        let core: bool = field == agent_schema.PROGRAM_IMPORTS || field == agent_schema.PROGRAM_PROVIDERS || field == agent_schema.PROGRAM_HARNESSES || field == agent_schema.PROGRAM_ADAPTERS || field == agent_schema.PROGRAM_ADAPTER_PROFILES || field == agent_schema.PROGRAM_PASSPORTS || field == agent_schema.PROGRAM_ATRUST_BOUNDARIES || field == agent_schema.PROGRAM_ATRUST_IDENTITIES || field == agent_schema.PROGRAM_ATRUST_CREDENTIAL_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_HANDSHAKES || field == agent_schema.PROGRAM_TRUST_LEDGERS || field == agent_schema.PROGRAM_MCP_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_A2A_BRIDGE_CONTRACTS || field == agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS || field == agent_schema.PROGRAM_GOVERNANCE_PROFILES || field == agent_schema.PROGRAM_REGULATORY_MAPPINGS || field == agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS || field == agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS || field == agent_schema.PROGRAM_FEATURES || field == agent_schema.PROGRAM_SECRETS || field == agent_schema.PROGRAM_CRYPTOS || field == agent_schema.PROGRAM_CRYPTO_BOUNDARIES || field == agent_schema.PROGRAM_DID_METHODS || field == agent_schema.PROGRAM_ASSERTIONS || field == agent_schema.PROGRAM_POLICIES || field == agent_schema.PROGRAM_FAILURES || field == agent_schema.PROGRAM_CAPABILITIES || field == agent_schema.PROGRAM_ENUMS || field == agent_schema.PROGRAM_TYPES || field == agent_schema.PROGRAM_TOOLS || field == agent_schema.PROGRAM_MODELS || field == agent_schema.PROGRAM_AGENTS || field == agent_schema.PROGRAM_PROTOCOLS;
         if !core && n[get(sl, n, program, field)].a != 0u64 {
             return false;
         }
@@ -108,6 +108,8 @@ fn check(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64) -> Sy
     y = check_atrust_evidence_maps(sl, n, st, program, y);
     y = check_governance_profiles(sl, n, st, program, y);
     y = check_regulatory_mappings(sl, n, st, program, y);
+    y = check_third_party_verifiers(sl, n, st, program, y);
+    y = check_public_conformance_reports(sl, n, st, program, y);
     y = check_policies(sl, n, st, program, y);
     y = check_passports(sl, n, st, program, y);
     y = check_tools(sl, n, st, program, y);
@@ -3546,4 +3548,161 @@ fn profile_control(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, profile: 
         }
     }
     false
+}
+
+// ------------------------------------------------------------------ public conformance
+
+// "<kind> `<name>` requires <field> `<word>`" unless string field `index` of
+// `node` is `word`.
+fn requires_text(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, index: u64, kind: Slice<u8>, name: u64, field: Slice<u8>, word: Slice<u8>) -> Symbols {
+    let spanned: u64 = get(sl, n, node, index);
+    if is(sl, n, st, spanned, word) {
+        return symbols;
+    }
+    let mut y: Symbols = say(symbols, sl, n, st, spanned, kind, name, "requires ".as_slice());
+    y = put(y, field);
+    y = put(y, " `".as_slice());
+    y = put(y, word);
+    close(y)
+}
+
+// stage0's `require_public_denied_boundaries`: five enum boundaries from
+// `network`, then the `legal_claims` and `certification` strings, then
+// `security_claims`, as consecutive fields.
+fn public_boundaries(symbols: Symbols, sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, node: u64, network: u64, kind: Slice<u8>, name: u64) -> Symbols {
+    let mut y: Symbols = requires(symbols, sl, n, st, node, network, kind, name, "network".as_slice(), "denied".as_slice());
+    y = requires(y, sl, n, st, node, network + 1u64, kind, name, "external_execution".as_slice(), "disabled".as_slice());
+    y = requires(y, sl, n, st, node, network + 2u64, kind, name, "secret_material".as_slice(), "denied".as_slice());
+    y = requires(y, sl, n, st, node, network + 3u64, kind, name, "key_material".as_slice(), "denied".as_slice());
+    y = requires(y, sl, n, st, node, network + 4u64, kind, name, "execution".as_slice(), "disabled".as_slice());
+    y = requires_text(y, sl, n, st, node, network + 5u64, kind, name, "legal_claims".as_slice(), "none".as_slice());
+    y = requires_text(y, sl, n, st, node, network + 6u64, kind, name, "certification".as_slice(), "none".as_slice());
+    requires(y, sl, n, st, node, network + 7u64, kind, name, "security_claims".as_slice(), "none".as_slice())
+}
+
+fn check_third_party_verifiers(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS);
+    while link != 0u64 {
+        let v: u64 = link - 1u64;
+        link = n[v].next;
+        let name: u64 = get(sl, n, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "third_party_verifier".as_slice());
+        } else {
+            names.push(name);
+        }
+        y = invalid_variant(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_VERIFIER_TYPE, agent_schema.THIRD_PARTY_VERIFIER_TYPE_UNKNOWN, "third_party_verifier".as_slice(), name, "verifier_type".as_slice());
+        y = invalid_variant(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_INDEPENDENCE, agent_schema.VERIFIER_INDEPENDENCE_UNKNOWN, "third_party_verifier".as_slice(), name, "independence".as_slice());
+        y = invalid_variant(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_IDENTITY_MODE, agent_schema.VERIFIER_IDENTITY_MODE_UNKNOWN, "third_party_verifier".as_slice(), name, "identity_mode".as_slice());
+        y = invalid_variant(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_VERIFICATION_MODE, agent_schema.VERIFIER_VERIFICATION_MODE_UNKNOWN, "third_party_verifier".as_slice(), name, "verification_mode".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISPLAY_NAME), "third_party_verifier".as_slice(), name, "name".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_ORGANIZATION), "third_party_verifier".as_slice(), name, "organization".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_JURISDICTION), "third_party_verifier".as_slice(), name, "jurisdiction".as_slice());
+        y = nonempty_list(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_ALLOWED_SCOPES, "third_party_verifier".as_slice(), name, "allowed_scopes".as_slice());
+        y = empty_strings(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_ALLOWED_SCOPES, "third_party_verifier".as_slice(), name, "allowed_scopes".as_slice());
+        y = nonempty_list(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISALLOWED_CLAIMS, "third_party_verifier".as_slice(), name, "disallowed_claims".as_slice());
+        y = empty_strings(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_DISALLOWED_CLAIMS, "third_party_verifier".as_slice(), name, "disallowed_claims".as_slice());
+        y = nonempty_list(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_PURPOSE, "third_party_verifier".as_slice(), name, "purpose".as_slice());
+        y = empty_strings(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_PURPOSE, "third_party_verifier".as_slice(), name, "purpose".as_slice());
+        y = public_boundaries(y, sl, n, st, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_NETWORK, "third_party_verifier".as_slice(), name);
+        let notes: u64 = get(sl, n, v, agent_schema.THIRD_PARTY_VERIFIER_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "third_party_verifier".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
+}
+
+fn check_public_conformance_reports(sl: Slice<u64>, n: Slice<AgentNode>, st: Slice<u8>, program: u64, symbols: Symbols) -> Symbols {
+    let mut y: Symbols = symbols;
+    let mut names: Buffer<u64> = Buffer::new();
+    let mut link: u64 = first(sl, n, program, agent_schema.PROGRAM_PUBLIC_CONFORMANCE_REPORTS);
+    while link != 0u64 {
+        let r: u64 = link - 1u64;
+        link = n[r].next;
+        let name: u64 = get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NAME);
+        if contains(sl, n, st, names.as_slice(), name) {
+            y = duplicate(y, sl, n, st, name, "public_conformance_report".as_slice());
+        } else {
+            names.push(name);
+        }
+        let verifier: u64 = get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_VERIFIER);
+        let evidence_map: u64 = get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EVIDENCE_MAP);
+        let profile_ref: u64 = get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_GOVERNANCE_PROFILE);
+        let mapping_ref: u64 = get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REGULATORY_MAPPING);
+        let ledger: u64 = get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_TRUST_LEDGER);
+        let profile: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_GOVERNANCE_PROFILES, profile_ref);
+        let mapping: u64 = find_last(sl, n, st, program, agent_schema.PROGRAM_REGULATORY_MAPPINGS, mapping_ref);
+        if find_named(sl, n, st, program, agent_schema.PROGRAM_THIRD_PARTY_VERIFIERS, verifier) == NONE {
+            y = references_unknown(y, sl, n, st, "public_conformance_report".as_slice(), name, "third_party_verifier".as_slice(), verifier);
+        }
+        if find_named(sl, n, st, program, agent_schema.PROGRAM_ATRUST_EVIDENCE_MAPS, evidence_map) == NONE {
+            y = references_unknown(y, sl, n, st, "public_conformance_report".as_slice(), name, "evidence_map".as_slice(), evidence_map);
+        }
+        if profile == NONE {
+            y = references_unknown(y, sl, n, st, "public_conformance_report".as_slice(), name, "governance_profile".as_slice(), profile_ref);
+        }
+        if mapping == NONE {
+            y = references_unknown(y, sl, n, st, "public_conformance_report".as_slice(), name, "regulatory_mapping".as_slice(), mapping_ref);
+        }
+        if find_named(sl, n, st, program, agent_schema.PROGRAM_TRUST_LEDGERS, ledger) == NONE {
+            y = references_unknown(y, sl, n, st, "public_conformance_report".as_slice(), name, "trust_ledger".as_slice(), ledger);
+        }
+        if profile != NONE && !same(sl, n, st, get(sl, n, profile, agent_schema.GOVERNANCE_PROFILE_DECL_EVIDENCE_MAP), evidence_map) {
+            y = say(y, sl, n, st, evidence_map, "public_conformance_report".as_slice(), name, "governance/evidence_map mismatch\n".as_slice());
+        }
+        if mapping != NONE {
+            if !same(sl, n, st, get(sl, n, mapping, agent_schema.REGULATORY_MAPPING_DECL_GOVERNANCE_PROFILE), profile_ref) {
+                y = say(y, sl, n, st, mapping_ref, "public_conformance_report".as_slice(), name, "regulatory/governance mismatch\n".as_slice());
+            }
+            if !same(sl, n, st, get(sl, n, mapping, agent_schema.REGULATORY_MAPPING_DECL_EVIDENCE_MAP), evidence_map) {
+                y = say(y, sl, n, st, mapping_ref, "public_conformance_report".as_slice(), name, "regulatory/evidence_map mismatch\n".as_slice());
+            }
+        }
+        y = nonempty_text(y, sl, n, st, get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE), "public_conformance_report".as_slice(), name, "suite".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE_VERSION), "public_conformance_report".as_slice(), name, "suite_version".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SOURCE_ARTIFACT), "public_conformance_report".as_slice(), name, "source_artifact".as_slice());
+        y = nonempty_text(y, sl, n, st, get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_BYTECODE_ARTIFACT), "public_conformance_report".as_slice(), name, "bytecode_artifact".as_slice());
+        y = requires_text(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SUITE_VERSION, "public_conformance_report".as_slice(), name, "suite_version".as_slice(), "0.34".as_slice());
+        y = invalid_variant(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_RESULT, agent_schema.PUBLIC_CONFORMANCE_RESULT_UNKNOWN, "public_conformance_report".as_slice(), name, "result".as_slice());
+        y = invalid_variant(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REPRODUCIBILITY, agent_schema.PUBLIC_CONFORMANCE_REPRODUCIBILITY_UNKNOWN, "public_conformance_report".as_slice(), name, "reproducibility".as_slice());
+        y = invalid_variant(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_REVIEW_STATUS, agent_schema.PUBLIC_CONFORMANCE_REVIEW_STATUS_UNKNOWN, "public_conformance_report".as_slice(), name, "review_status".as_slice());
+        y = requires_text(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_SECURITY_REPORT, "public_conformance_report".as_slice(), name, "security_report".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_EVIDENCE_BUNDLE, "public_conformance_report".as_slice(), name, "evidence_bundle".as_slice(), "required".as_slice());
+        y = requires_text(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_TRACE, "public_conformance_report".as_slice(), name, "trace".as_slice(), "required".as_slice());
+        y = nonempty_list(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_CLAIMS, "public_conformance_report".as_slice(), name, "claims".as_slice());
+        let mut ids: Buffer<u64> = Buffer::new();
+        let mut claim_link: u64 = first(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_CLAIMS);
+        while claim_link != 0u64 {
+            let claim: u64 = claim_link - 1u64;
+            claim_link = n[claim].next;
+            let id: u64 = get(sl, n, claim, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_ID);
+            if contains(sl, n, st, ids.as_slice(), id) {
+                y = duplicate(y, sl, n, st, id, "public conformance claim id".as_slice());
+            } else {
+                ids.push(id);
+            }
+            y = nonempty_text(y, sl, n, st, id, "public_conformance_report".as_slice(), name, "id".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, claim, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_STATEMENT), "public_conformance_report".as_slice(), name, "statement".as_slice());
+            y = nonempty_text(y, sl, n, st, get(sl, n, claim, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_EVIDENCE_REF), "public_conformance_report".as_slice(), name, "evidence_ref".as_slice());
+            let category: u64 = get(sl, n, claim, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_CATEGORY);
+            if variant_is(sl, n, category, agent_schema.PUBLIC_CONFORMANCE_CLAIM_CATEGORY_UNKNOWN) {
+                y = say(y, sl, n, st, category, "public_conformance_report".as_slice(), name, "has invalid claim category\n".as_slice());
+            }
+            let status: u64 = get(sl, n, claim, agent_schema.PUBLIC_CONFORMANCE_CLAIM_DECL_STATUS);
+            if variant_is(sl, n, status, agent_schema.PUBLIC_CONFORMANCE_CLAIM_STATUS_UNKNOWN) {
+                y = say(y, sl, n, st, status, "public_conformance_report".as_slice(), name, "has invalid claim status\n".as_slice());
+            }
+        }
+        y = nonempty_list(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_PURPOSE, "public_conformance_report".as_slice(), name, "purpose".as_slice());
+        y = empty_strings(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_PURPOSE, "public_conformance_report".as_slice(), name, "purpose".as_slice());
+        y = public_boundaries(y, sl, n, st, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NETWORK, "public_conformance_report".as_slice(), name);
+        let notes: u64 = get(sl, n, r, agent_schema.PUBLIC_CONFORMANCE_REPORT_DECL_NOTES);
+        if notes != 0u64 {
+            y = nonempty_text(y, sl, n, st, notes, "public_conformance_report".as_slice(), name, "notes".as_slice());
+        }
+    }
+    y
 }

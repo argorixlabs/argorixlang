@@ -43,3 +43,4 @@ far the port has come.
 | 8 | MCP and A2A bridge contracts | 1,083 of 1,430 |
 | 9 | A-Trust evidence maps | 1,135 of 1,430 |
 | 10 | Governance profiles and regulatory mappings | 1,185 of 1,430 |
+| 11 | Third-party verifiers and public conformance reports | 1,240 of 1,430 |
