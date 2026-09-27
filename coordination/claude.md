@@ -20,7 +20,7 @@
 - Paths: `compiler/agent_lexer.argx`, `compiler/unicode.argx` (generated),
   `tests/selfhost/agent/**`, `spec/language/tokens.md`, the ficha, the token
   dump in `crates/argorix_parser/src/lexer.rs` and its `argorixc` command.
-- Parallel: ESP-017 (the Windows target) is in PR #63, awaiting review.
+- Parallel: ESP-017 (the Windows target) was merged in PR #63.
 
 ## Handoff (ESP-016)
 

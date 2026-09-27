@@ -394,13 +394,160 @@ static inline uint32_t argorix_host_build_write(
     return ARGORIX_HOST_OK;
 }
 
-#else /* _WIN32: no compiler-host boundary yet; every operation says so. */
+#else /* _WIN32 (ESP-017) */
 
+/* The same boundary over the wide Win32 API. Paths are UTF-8 on the Argorix
+ * side and UTF-16 here; the command line is read as UTF-16 too, so a root
+ * outside the ANSI code page works. Every root and every file is resolved
+ * through an open handle (GetFinalPathNameByHandleW), which follows symbolic
+ * links and junctions as realpath does, and the result must lie under the
+ * root. Every name is used in its `\\?\` form, so no DOS device name,
+ * trailing dot or length limit reinterprets it. A file written is opened
+ * without following a reparse point: one found there is refused as outside
+ * the root, as O_NOFOLLOW refuses a symlink. */
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#include <wchar.h>
+
+#ifdef _MSC_VER
+#pragma comment(lib, "shell32.lib")
+#endif
+
+/* The longest path the wide API takes, in UTF-16 units. */
+#define ARGORIX_HOST_WIDE_MAX 32768
+
+/* Index 1 is the package root, index 2 the build root. */
+static wchar_t argorix_host_root[3][ARGORIX_HOST_WIDE_MAX];
 static bool argorix_host_granted[3];
+static uint64_t argorix_host_budget[3];
+/* Scratch paths; the boundary is single-threaded. */
+static wchar_t argorix_host_joined[ARGORIX_HOST_WIDE_MAX];
+static wchar_t argorix_host_resolved[ARGORIX_HOST_WIDE_MAX];
+static wchar_t argorix_host_target[ARGORIX_HOST_WIDE_MAX];
 
+static inline bool argorix_host_parse_budget(const wchar_t *text, uint64_t *out) {
+    uint64_t value = 0U;
+    if (text[0] == L'\0') {
+        return false;
+    }
+    for (const wchar_t *cursor = text; *cursor != L'\0'; cursor++) {
+        if (*cursor < L'0' || *cursor > L'9') {
+            return false;
+        }
+        uint64_t digit = (uint64_t)(*cursor - L'0');
+        if (value > (UINT64_MAX - digit) / 10U) {
+            return false;
+        }
+        value = value * 10U + digit;
+    }
+    *out = value;
+    return true;
+}
+
+/* The final path of an open handle, in `out`. */
+static inline bool argorix_host_final(HANDLE handle, wchar_t *out) {
+    DWORD length = GetFinalPathNameByHandleW(
+        handle, out, ARGORIX_HOST_WIDE_MAX, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS
+    );
+    return length > 0U && length < ARGORIX_HOST_WIDE_MAX;
+}
+
+/* Opens a file or a directory for its attributes, following links. */
+static inline HANDLE argorix_host_open_any(const wchar_t *path, DWORD access) {
+    return CreateFileW(
+        path, access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL
+    );
+}
+
+static inline uint32_t argorix_host_open_failure(void) {
+    DWORD error = GetLastError();
+    if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
+        || error == ERROR_DIRECTORY || error == ERROR_BAD_NETPATH) {
+        return ARGORIX_HOST_NOT_FOUND;
+    }
+    if (error == ERROR_INVALID_NAME || error == ERROR_BAD_PATHNAME
+        || error == ERROR_FILENAME_EXCED_RANGE) {
+        return ARGORIX_HOST_INVALID_PATH;
+    }
+    return ARGORIX_HOST_IO_ERROR;
+}
+
+/* Grants exactly the capabilities the entry takes, by the rules of the POSIX
+   host. `argv` is not used: the wide command line carries the same
+   arguments without a code page in between. */
 static inline void argorix_host_start(int argc, char **argv, bool package, bool build) {
     (void)argc;
     (void)argv;
+    int count = 0;
+    wchar_t **wide = CommandLineToArgvW(GetCommandLineW(), &count);
+    if (wide == NULL) {
+        argorix_trap("PERMISSION_DENIED");
+    }
+    bool seen_root[3] = {false, false, false};
+    bool seen_budget[3] = {false, false, false};
+    for (int index = 1; index < count; index += 2) {
+        if (index + 1 >= count) {
+            argorix_trap("PERMISSION_DENIED");
+        }
+        const wchar_t *flag = wide[index];
+        const wchar_t *value = wide[index + 1];
+        int kind = 0;
+        bool is_root = false;
+        if (wcscmp(flag, L"--package-root") == 0) {
+            kind = 1;
+            is_root = true;
+        } else if (wcscmp(flag, L"--read-budget") == 0) {
+            kind = 1;
+        } else if (wcscmp(flag, L"--build-root") == 0) {
+            kind = 2;
+            is_root = true;
+        } else if (wcscmp(flag, L"--write-budget") == 0) {
+            kind = 2;
+        } else {
+            argorix_trap("PERMISSION_DENIED");
+        }
+        if ((kind == 1 && !package) || (kind == 2 && !build)) {
+            argorix_trap("PERMISSION_DENIED");
+        }
+        if (is_root) {
+            if (seen_root[kind]) {
+                argorix_trap("PERMISSION_DENIED");
+            }
+            HANDLE handle = argorix_host_open_any(value, 0U);
+            BY_HANDLE_FILE_INFORMATION info;
+            bool directory = handle != INVALID_HANDLE_VALUE
+                && GetFileInformationByHandle(handle, &info)
+                && (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0U
+                && argorix_host_final(handle, argorix_host_root[kind]);
+            if (handle != INVALID_HANDLE_VALUE) {
+                (void)CloseHandle(handle);
+            }
+            if (!directory) {
+                argorix_trap("PERMISSION_DENIED");
+            }
+            /* A drive's root ends in the separator; the join adds its own. */
+            size_t length = wcslen(argorix_host_root[kind]);
+            if (length > 0U && argorix_host_root[kind][length - 1U] == L'\\') {
+                argorix_host_root[kind][length - 1U] = L'\0';
+            }
+            seen_root[kind] = true;
+        } else {
+            if (seen_budget[kind] || !argorix_host_parse_budget(value, &argorix_host_budget[kind])) {
+                argorix_trap("PERMISSION_DENIED");
+            }
+            seen_budget[kind] = true;
+        }
+    }
+    (void)LocalFree(wide);
+    if ((package && (!seen_root[1] || !seen_budget[1]))
+        || (build && (!seen_root[2] || !seen_budget[2]))) {
+        argorix_trap("PERMISSION_DENIED");
+    }
     argorix_host_granted[1] = package;
     argorix_host_granted[2] = build;
 }
@@ -413,25 +560,138 @@ static inline argorix_capability argorix_host_capability(uint32_t kind) {
     return capability;
 }
 
+static inline void argorix_host_require(argorix_capability capability, uint32_t kind) {
+    if (capability.kind != kind || !argorix_host_granted[kind]) {
+        argorix_trap("PERMISSION_DENIED");
+    }
+}
+
+/* root + "\" + path, with `/` as `\`, or false if it does not fit. The path
+   is valid UTF-8 already. */
+static inline bool argorix_host_join(uint32_t kind, const uint8_t *path, uint64_t length) {
+    size_t root = wcslen(argorix_host_root[kind]);
+    if (length >= (uint64_t)ARGORIX_HOST_WIDE_MAX || root + 2U >= ARGORIX_HOST_WIDE_MAX) {
+        return false;
+    }
+    wmemcpy(argorix_host_joined, argorix_host_root[kind], root);
+    argorix_host_joined[root] = L'\\';
+    int room = (int)(ARGORIX_HOST_WIDE_MAX - root - 2U);
+    int units = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, (const char *)path, (int)length,
+        argorix_host_joined + root + 1U, room
+    );
+    if (units <= 0) {
+        return false;
+    }
+    argorix_host_joined[root + 1U + (size_t)units] = L'\0';
+    for (wchar_t *cursor = argorix_host_joined + root + 1U; *cursor != L'\0'; cursor++) {
+        if (*cursor == L'/') {
+            *cursor = L'\\';
+        }
+    }
+    return true;
+}
+
+/* Whether a resolved path is the root or lies under it. */
+static inline bool argorix_host_inside(uint32_t kind, const wchar_t *resolved, bool allow_root) {
+    size_t root = wcslen(argorix_host_root[kind]);
+    if (wcsncmp(resolved, argorix_host_root[kind], root) != 0) {
+        return false;
+    }
+    if (resolved[root] == L'\0') {
+        return allow_root;
+    }
+    return resolved[root] == L'\\';
+}
+
+/* Resolves a package path to a regular file inside the package root, and
+   leaves it open for reading in `*file`. */
+static inline uint32_t argorix_host_locate(
+    const uint8_t *path, uint64_t length, HANDLE *file, uint64_t *size
+) {
+    *file = INVALID_HANDLE_VALUE;
+    if (!argorix_host_path_valid(path, length) || !argorix_host_join(1U, path, length)) {
+        return ARGORIX_HOST_INVALID_PATH;
+    }
+    HANDLE handle = argorix_host_open_any(argorix_host_joined, GENERIC_READ);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return argorix_host_open_failure();
+    }
+    if (!argorix_host_final(handle, argorix_host_resolved)) {
+        (void)CloseHandle(handle);
+        return ARGORIX_HOST_IO_ERROR;
+    }
+    if (!argorix_host_inside(1U, argorix_host_resolved, false)) {
+        (void)CloseHandle(handle);
+        return ARGORIX_HOST_OUTSIDE_ROOT;
+    }
+    BY_HANDLE_FILE_INFORMATION info;
+    if (!GetFileInformationByHandle(handle, &info)) {
+        (void)CloseHandle(handle);
+        return ARGORIX_HOST_IO_ERROR;
+    }
+    if ((info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0U
+        || GetFileType(handle) != FILE_TYPE_DISK) {
+        (void)CloseHandle(handle);
+        return ARGORIX_HOST_NOT_A_FILE;
+    }
+    *size = ((uint64_t)info.nFileSizeHigh << 32) | (uint64_t)info.nFileSizeLow;
+    if (*size > argorix_host_budget[1]) {
+        (void)CloseHandle(handle);
+        return ARGORIX_HOST_OVER_BUDGET;
+    }
+    *file = handle;
+    return ARGORIX_HOST_OK;
+}
+
 static inline uint32_t argorix_host_package_status(
     argorix_capability capability, const uint8_t *path, uint64_t length
 ) {
-    (void)capability;
-    (void)path;
-    (void)length;
-    return ARGORIX_HOST_UNSUPPORTED;
+    argorix_host_require(capability, 1U);
+    HANDLE file = INVALID_HANDLE_VALUE;
+    uint64_t size = 0U;
+    uint32_t status = argorix_host_locate(path, length, &file, &size);
+    if (file != INVALID_HANDLE_VALUE) {
+        (void)CloseHandle(file);
+    }
+    return status;
 }
 
+/* The file's bytes, read through the handle that was checked. A file that
+   changed in between is the trap HOST_UNAVAILABLE, never a partial result. */
 static inline argorix_buffer argorix_host_package_read(
     argorix_capability capability, const uint8_t *path, uint64_t length, uint64_t byte_limit
 ) {
-    (void)capability;
-    (void)path;
-    (void)length;
-    (void)byte_limit;
-    argorix_trap("HOST_UNAVAILABLE");
+    argorix_host_require(capability, 1U);
+    HANDLE file = INVALID_HANDLE_VALUE;
+    uint64_t size = 0U;
+    if (argorix_host_locate(path, length, &file, &size) != ARGORIX_HOST_OK) {
+        argorix_trap("HOST_UNAVAILABLE");
+    }
+    argorix_buffer buffer = argorix_buffer_new(1U, byte_limit);
+    uint8_t chunk[4096];
+    uint64_t total = 0U;
+    while (total < size) {
+        DWORD count = 0U;
+        if (!ReadFile(file, chunk, (DWORD)sizeof chunk, &count, NULL) || count == 0U
+            || total + (uint64_t)count > size) {
+            (void)CloseHandle(file);
+            argorix_buffer_drop(&buffer);
+            argorix_trap("HOST_UNAVAILABLE");
+        }
+        for (DWORD index = 0U; index < count; index++) {
+            argorix_buffer_push(&buffer, &chunk[index]);
+        }
+        total += (uint64_t)count;
+    }
+    (void)CloseHandle(file);
+    argorix_host_budget[1] -= size;
+    return buffer;
 }
 
+/* Writes a whole file under the build root. The directory must exist inside
+   the root; the file itself is created or replaced, never followed if it is
+   a reparse point. */
 static inline uint32_t argorix_host_build_write(
     argorix_capability capability,
     const uint8_t *path,
@@ -439,12 +699,88 @@ static inline uint32_t argorix_host_build_write(
     const uint8_t *data,
     uint64_t data_length
 ) {
-    (void)capability;
-    (void)path;
-    (void)length;
-    (void)data;
-    (void)data_length;
-    return ARGORIX_HOST_UNSUPPORTED;
+    argorix_host_require(capability, 2U);
+    if (!argorix_host_path_valid(path, length)) {
+        return ARGORIX_HOST_INVALID_PATH;
+    }
+    if (data_length > argorix_host_budget[2]) {
+        return ARGORIX_HOST_OVER_BUDGET;
+    }
+    if (!argorix_host_join(2U, path, length)) {
+        return ARGORIX_HOST_INVALID_PATH;
+    }
+    wchar_t *separator = wcsrchr(argorix_host_joined, L'\\');
+    *separator = L'\0';
+    const wchar_t *name = separator + 1;
+    HANDLE parent = argorix_host_open_any(argorix_host_joined, 0U);
+    if (parent == INVALID_HANDLE_VALUE) {
+        return argorix_host_open_failure();
+    }
+    BY_HANDLE_FILE_INFORMATION info;
+    bool directory = GetFileInformationByHandle(parent, &info)
+        && (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0U;
+    bool resolved = argorix_host_final(parent, argorix_host_resolved);
+    (void)CloseHandle(parent);
+    if (!resolved) {
+        return ARGORIX_HOST_IO_ERROR;
+    }
+    if (!directory) {
+        return ARGORIX_HOST_NOT_FOUND;
+    }
+    if (!argorix_host_inside(2U, argorix_host_resolved, true)) {
+        return ARGORIX_HOST_OUTSIDE_ROOT;
+    }
+    size_t parent_length = wcslen(argorix_host_resolved);
+    size_t name_length = wcslen(name);
+    if (parent_length + 1U + name_length + 1U > ARGORIX_HOST_WIDE_MAX) {
+        return ARGORIX_HOST_INVALID_PATH;
+    }
+    wmemcpy(argorix_host_target, argorix_host_resolved, parent_length);
+    argorix_host_target[parent_length] = L'\\';
+    wmemcpy(argorix_host_target + parent_length + 1U, name, name_length + 1U);
+    DWORD attributes = GetFileAttributesW(argorix_host_target);
+    if (attributes != INVALID_FILE_ATTRIBUTES) {
+        if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0U) {
+            return ARGORIX_HOST_OUTSIDE_ROOT;
+        }
+        if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0U) {
+            return ARGORIX_HOST_NOT_A_FILE;
+        }
+    }
+    HANDLE file = CreateFileW(
+        argorix_host_target, GENERIC_WRITE, 0U, NULL, OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL
+    );
+    if (file == INVALID_HANDLE_VALUE) {
+        uint32_t status = argorix_host_open_failure();
+        return status == ARGORIX_HOST_NOT_FOUND ? ARGORIX_HOST_IO_ERROR : status;
+    }
+    /* Checked again on the handle: a link put there since is not followed. */
+    if (!GetFileInformationByHandle(file, &info)
+        || (info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) != 0U) {
+        (void)CloseHandle(file);
+        return ARGORIX_HOST_OUTSIDE_ROOT;
+    }
+    if (!SetEndOfFile(file)) {
+        (void)CloseHandle(file);
+        return ARGORIX_HOST_IO_ERROR;
+    }
+    uint64_t written = 0U;
+    while (written < data_length) {
+        uint64_t remaining = data_length - written;
+        DWORD step = remaining > 1073741824U ? 1073741824U : (DWORD)remaining;
+        DWORD count = 0U;
+        if (!WriteFile(file, data + written, step, &count, NULL) || count == 0U) {
+            (void)CloseHandle(file);
+            return ARGORIX_HOST_IO_ERROR;
+        }
+        written += (uint64_t)count;
+    }
+    if (!CloseHandle(file)) {
+        return ARGORIX_HOST_IO_ERROR;
+    }
+    argorix_host_budget[2] -= data_length;
+    return ARGORIX_HOST_OK;
 }
 
 #endif /* _WIN32 */

@@ -104,9 +104,10 @@
     "ESP-012": {
       "status": "EN_CURSO",
       "file": "tasks/espada/ESP-012.md",
-      "evidence": "crates/argorixc/tests/check_differential.rs; tests/selfhost/check/cases.json",
-      "scope": "Resolucion, tipos y modulos en Argorix; ESP-012.A (tipos y nombres, PR 55) y ESP-012.B (ownership y vistas) hechas en compiler/check.argx, iguales al checker stage0 en 141 archivos; falta ESP-012.C (linker)"
+      "evidence": "crates/argorixc/tests/check_differential.rs; crates/argorixc/tests/link_differential.rs; tests/selfhost/check/cases.json",
+      "scope": "Checker (PRs 55 y 56) y linker (PR 57) en Argorix, iguales a stage0"
     },
+    "ESP-017": {"status": "HECHA", "file": "tasks/espada/ESP-017.md", "evidence": "bootstrap/native-windows.ps1; native-windows job of .github/workflows/core-c.yml", "scope": "Windows x86-64 y bootstrap nativo sin compilador C ni Rust"},
     "ESP-018": {
       "status": "EN_CURSO",
       "file": "tasks/espada/ESP-018.md",

@@ -30,6 +30,14 @@ module compiler.native;
 // its own frame pointer; the budget's address goes in RDI and the address
 // of the result in RDX. Runtime functions are called as the System V ABI
 // says.
+//
+// Targets (ESP-017). The same program is written for two targets, which
+// differ only where the program meets the system: `x86_64-linux` writes an
+// ELF64 object and calls the runtime as the System V ABI says;
+// `x86_64-windows` writes a COFF object and calls the runtime as the
+// Microsoft x64 ABI says, probes each frame a page at a time so the stack
+// can grow past its guard page, and runs the entry on a thread whose stack
+// the runtime reserves. The target travels as the last of the limits.
 
 import stdlib.bytes;
 import compiler.token;
@@ -39,6 +47,7 @@ import compiler.ir;
 import compiler.c_emit;
 import compiler.x86;
 import compiler.elf;
+import compiler.coff;
 
 pub const EMITTED: u64 = 0u64;
 pub const CHECK_FAILED: u64 = 1u64;
@@ -76,6 +85,8 @@ const F_FUNCTION: u64 = 1u64;
 const F_DROP: u64 = 2u64;
 const F_DATA: u64 = 3u64;
 const F_EXTERN: u64 = 4u64;
+// The address of code, from `lea` (ESP-017).
+const F_CODE: u64 = 5u64;
 
 // A function's first slots: the budget's address, and the result's.
 const BUDGET_SLOT: u64 = 8u64;
@@ -87,6 +98,10 @@ const DEPTH: u64 = 1u64;
 const BUFFER_BYTES: u64 = 2u64;
 const ARENA_BYTES: u64 = 3u64;
 const ARENA_SLOTS: u64 = 4u64;
+// The target, after the limits.
+const TARGET: u64 = 5u64;
+pub const LINUX: u64 = 0u64;
+pub const WINDOWS: u64 = 1u64;
 
 const RAX: u64 = 0u64;
 const RCX: u64 = 1u64;
@@ -97,11 +112,13 @@ const RBP: u64 = 5u64;
 const RSI: u64 = 6u64;
 const RDI: u64 = 7u64;
 const R8: u64 = 8u64;
+const R9: u64 = 9u64;
+const R10: u64 = 10u64;
 
 // ------------------------------------------------------------------ entry
 
 // The C backend's default limits: steps, call depth, bytes per buffer,
-// bytes per arena and slots per arena.
+// bytes per arena and slots per arena, then the target, Linux.
 pub fn default_limits() -> Buffer<u64> {
     let mut out: Buffer<u64> = Buffer::new();
     out.push(1000000u64);
@@ -109,6 +126,7 @@ pub fn default_limits() -> Buffer<u64> {
     out.push(1048576u64);
     out.push(1048576u64);
     out.push(1024u64);
+    out.push(LINUX);
     out
 }
 
@@ -570,9 +588,23 @@ fn call_drop(e: CEmit, ty: u64) -> CEmit {
     fixup(x, F_DROP, at, ty)
 }
 
-// A call to a runtime function, which the linker resolves.
+// A call to a runtime function, which the linker resolves. Its arguments are
+// in RDI, RSI, RDX, RCX and R8, as System V passes them; for Windows they
+// move to RCX, RDX, R8, R9 and the stack, under the 32 bytes the callee may
+// use, and the stack comes back after the call.
 fn call_extern(e: CEmit, name: Slice<u8>) -> CEmit {
-    let mut x: CEmit = asm(e, x86.call(Buffer::new()));
+    let windows: bool = on_windows(e.limits.as_slice());
+    let mut x: CEmit = e;
+    if windows {
+        x = mov(x, R9, RCX);
+        x = mov(x, R10, R8);
+        x = mov(x, R8, RDX);
+        x = mov(x, RDX, RSI);
+        x = mov(x, RCX, RDI);
+        x = asm(x, x86.reserve(Buffer::new(), 48u64));
+        x = mem_store(x, 8u64, RSP, 32u64, false, R10);
+    }
+    x = asm(x, x86.call(Buffer::new()));
     let mut found: u64 = x.extern_ends.length();
     let mut index: u64 = 0u64;
     let mut start: u64 = 0u64;
@@ -594,7 +626,32 @@ fn call_extern(e: CEmit, name: Slice<u8>) -> CEmit {
         x.extern_ends.push(end);
     }
     let site: u64 = x.code.length() - 4u64;
-    fixup(x, F_EXTERN, site, found)
+    x = fixup(x, F_EXTERN, site, found);
+    if windows {
+        x = asm(x, x86.release(Buffer::new(), 48u64));
+    }
+    x
+}
+
+fn on_windows(limits: Slice<u64>) -> bool {
+    limits.length() > TARGET && limits[TARGET] == WINDOWS
+}
+
+// Touches the frame a page at a time, from the frame pointer down to the
+// stack pointer, so a Windows stack grows through its guard page in order
+// however large the frame is.
+fn probe(e: CEmit) -> CEmit {
+    let mut x: CEmit = mov(e, RCX, RBP);
+    let top: u64 = x.code.length();
+    x = put_imm(x, RAX, 4096u64);
+    x = asm(x, x86.sub(Buffer::new(), RCX, RAX));
+    x = asm(x, x86.cmp(Buffer::new(), RCX, RSP));
+    x = branch(x, x86.BELOW);
+    let done: u64 = x.result;
+    x = mem_load(x, 1u64, false, RAX, RCX, 0u64, false);
+    x = jump_to(x, top);
+    x = land(x, done);
+    mem_load(x, 1u64, false, RAX, RSP, 0u64, false)
 }
 
 // `argorix_<type>_<operation>`: a checked-arithmetic helper of the runtime.
@@ -1181,6 +1238,9 @@ fn emit_function(s: Slice<u8>, t: Slice<Token>, st: Slice<u8>, n: Slice<Node>, g
     let reserve: u64 = x.code.length() - 4u64;
     x = mem_store(x, 8u64, RBP, BUDGET_SLOT, true, RDI);
     x = mem_store(x, 8u64, RBP, RESULT_SLOT, true, RDX);
+    if on_windows(x.limits.as_slice()) {
+        x = probe(x);
+    }
     x = budget_call(x, "argorix_step".as_slice());
     x = budget_call(x, "argorix_enter".as_slice());
     // The parameters are in the caller's argument block, above the saved
@@ -3148,7 +3208,6 @@ fn emit_drop(e: CEmit, ty: u64) -> CEmit {
 // prints it.
 fn emit_main(e: CEmit, entry: u64) -> CEmit {
     let mut x: CEmit = e;
-    let main: CFunction = x.functions[entry];
     // The stack: every frame at the deepest call the budget allows, and a
     // mebibyte for the runtime.
     let mut deepest: u64 = 0u64;
@@ -3161,6 +3220,9 @@ fn emit_main(e: CEmit, entry: u64) -> CEmit {
         index += 1u64;
     }
     let stack: u64 = x.limits[DEPTH] * (deepest + 16u64) + 1048576u64;
+    if on_windows(x.limits.as_slice()) {
+        return windows_main(x, entry, stack);
+    }
     x.main_at = x.code.length();
     // push rbp; mov rbp, rsp; push rbx; sub rsp, 24; argc and argv.
     x = asm(x, x86.push(Buffer::new(), RBP));
@@ -3173,6 +3235,69 @@ fn emit_main(e: CEmit, entry: u64) -> CEmit {
     x = call_extern(x, "argorix_rt_stack".as_slice());
     x = mov(x, RBX, RSP);
     x = mov(x, RSP, RAX);
+    x = run_entry(x, entry, 16u64, 24u64);
+    x = mov(x, RSP, RBX);
+    x = mem_load(x, 8u64, false, RBX, RBP, 8u64, true);
+    x = put_imm(x, RAX, 0u64);
+    epilogue(x)
+}
+
+// Windows (ESP-017): `main(argc, argv)` asks the runtime to run the rest on a
+// thread whose stack reserves `stack` bytes, since a stack switched to by
+// hand would not be the one Windows grows and checks. RDI and RSI, which
+// the Microsoft ABI has a callee keep, are saved around the program.
+// `argorix_rt_run(stack, body, context)` calls the body with the address of
+// argv and argc, and returns once it has.
+fn windows_main(e: CEmit, entry: u64, stack: u64) -> CEmit {
+    let mut x: CEmit = e;
+    x.main_at = x.code.length();
+    // push rbp; mov rbp, rsp; push rdi; push rsi; sub rsp, 16; argc at
+    // [rbp - 24], argv at [rbp - 32].
+    x = asm(x, x86.push(Buffer::new(), RBP));
+    x = mov(x, RBP, RSP);
+    x = asm(x, x86.push(Buffer::new(), RDI));
+    x = asm(x, x86.push(Buffer::new(), RSI));
+    x = asm(x, x86.reserve(Buffer::new(), 16u64));
+    x = mem_store(x, 8u64, RBP, 24u64, true, RCX);
+    x = mem_store(x, 8u64, RBP, 32u64, true, RDX);
+    x = put_imm(x, RDI, stack);
+    x = asm(x, x86.lea_rip(Buffer::new(), RSI));
+    let body_address: u64 = x.code.length() - 4u64;
+    x = mem_lea(x, RDX, RBP, 32u64, true);
+    x = call_extern(x, "argorix_rt_run".as_slice());
+    x = mem_load(x, 8u64, false, RSI, RBP, 16u64, true);
+    x = mem_load(x, 8u64, false, RDI, RBP, 8u64, true);
+    x = put_imm(x, RAX, 0u64);
+    x = epilogue(x);
+    // The body, called as the Microsoft ABI says with the context in RCX: it
+    // keeps RBX, RSI and RDI. push rbp; mov rbp, rsp; push rbx; push rsi;
+    // push rdi; sub rsp, 24; argc at [rbp - 32], argv at [rbp - 40].
+    let body: u64 = x.code.length();
+    x = fixup(x, F_CODE, body_address, body);
+    x = asm(x, x86.push(Buffer::new(), RBP));
+    x = mov(x, RBP, RSP);
+    x = asm(x, x86.push(Buffer::new(), RBX));
+    x = asm(x, x86.push(Buffer::new(), RSI));
+    x = asm(x, x86.push(Buffer::new(), RDI));
+    x = asm(x, x86.reserve(Buffer::new(), 24u64));
+    x = mem_load(x, 8u64, false, RAX, RCX, 8u64, false);
+    x = mem_store(x, 8u64, RBP, 32u64, true, RAX);
+    x = mem_load(x, 8u64, false, RAX, RCX, 0u64, false);
+    x = mem_store(x, 8u64, RBP, 40u64, true, RAX);
+    x = run_entry(x, entry, 32u64, 40u64);
+    x = mem_load(x, 8u64, false, RDI, RBP, 24u64, true);
+    x = mem_load(x, 8u64, false, RSI, RBP, 16u64, true);
+    x = mem_load(x, 8u64, false, RBX, RBP, 8u64, true);
+    epilogue(x)
+}
+
+// The budget, the host and the entry, on the stack the program runs on, and
+// the entry's result printed. `argc` and `argv` are saved below the frame
+// pointer at the given offsets.
+fn run_entry(e: CEmit, entry: u64, argc: u64, argv: u64) -> CEmit {
+    let mut x: CEmit = e;
+    let main: CFunction = x.functions[entry];
+    let mut index: u64 = 0u64;
     // [rsp] the entry's arguments, [rsp + 32] its result, [rsp + 48] the
     // budget.
     x = asm(x, x86.reserve(Buffer::new(), 64u64));
@@ -3195,8 +3320,8 @@ fn emit_main(e: CEmit, entry: u64) -> CEmit {
             }
             index += 1u64;
         }
-        x = mem_load(x, 8u64, false, RDI, RBP, 16u64, true);
-        x = mem_load(x, 8u64, false, RSI, RBP, 24u64, true);
+        x = mem_load(x, 8u64, false, RDI, RBP, argc, true);
+        x = mem_load(x, 8u64, false, RSI, RBP, argv, true);
         x = put_imm(x, RDX, if read { 1u64 } else { 0u64 });
         x = put_imm(x, RCX, if write { 1u64 } else { 0u64 });
         x = call_extern(x, "argorix_rt_host_start".as_slice());
@@ -3226,10 +3351,7 @@ fn emit_main(e: CEmit, entry: u64) -> CEmit {
     } else {
         x = call_extern(x, "argorix_rt_print_u64".as_slice());
     }
-    x = mov(x, RSP, RBX);
-    x = mem_load(x, 8u64, false, RBX, RBP, 8u64, true);
-    x = put_imm(x, RAX, 0u64);
-    epilogue(x)
+    x
 }
 
 // ------------------------------------------------------------------ object
@@ -3257,6 +3379,8 @@ fn object(e: CEmit) -> Buffer<u8> {
             code = x86.patch(code, at, drop_at(x.drop_code.as_slice(), target));
         } else if kind == F_DATA {
             code = x86.patch(code, at, base + target);
+        } else if kind == F_CODE {
+            code = x86.patch(code, at, target);
         } else {
             calls.push(at);
             calls.push(target + 1u64);
@@ -3274,6 +3398,9 @@ fn object(e: CEmit) -> Buffer<u8> {
         name_ends.push(4u64 + x.extern_ends[index]);
         defined.push(0u64);
         index += 1u64;
+    }
+    if on_windows(x.limits.as_slice()) {
+        return coff.relocatable(code.as_slice(), names.as_slice(), name_ends.as_slice(), defined.as_slice(), calls.as_slice());
     }
     elf.relocatable(code.as_slice(), names.as_slice(), name_ends.as_slice(), defined.as_slice(), calls.as_slice())
 }

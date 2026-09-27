@@ -20,7 +20,7 @@ parser y el AST en `compiler/` coinciden con el parser stage0 en 135 archivos.
 el IR, el verificador y el backend C en Argorix; stage1, el primer compilador
 self-hosted; el bootstrap stage2/stage3 sin Rust; y el backend nativo x86-64
 para Linux, con el que el compilador se construye sin compilador C. ESP-017
-(segundo destino, Windows) espera revisión en el PR #63.
+(segundo destino, Windows) está HECHA (PR #63).
 **ESP-018 (lenguaje de agentes migrado) está EN_CURSO**: su lexer y su parser
 en Argorix coinciden con los de stage0 en todo el corpus (1.564 y 1.423
 archivos), y su chequeo semántico y su grafo de módulos dan los mismos
