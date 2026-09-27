@@ -487,8 +487,7 @@ adversarios igual que `argorix_module`. ESP-018.D está EN_CURSO: el IR
 (`compiler/agent_ir.argx`, [IR](spec/language/ir.md)), con emisores generados
 desde `ir.rs`, es idéntico al de stage0 en los 557 programas y los 36 paquetes
 que chequean, y también el bytecode sin verificar
-([bytecode](spec/language/bytecode.md)); siguen las decisiones del
-verificador y luego ESP-018.E (matriz de compatibilidad).
+([bytecode](spec/language/bytecode.md)); el verificador coincide con stage0 en 891 casos; ESP-018.E documenta la matriz de compatibilidad y el límite de decisiones de política. PR #65 espera revisión y CI.
 
 ### ESP-019 — VM y scheduler en Argorix
 

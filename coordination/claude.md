@@ -2,25 +2,11 @@
 
 ## Current claim
 
-- Task: ESP-018 — the agent and policy language, migrated to Argorix, as
-  subtasks A (lexer), B (parser and AST), C (checks and modules), D
-  (lowering to IR and bytecode) and E (compatibility matrix).
-- State: IN PROGRESS. A (the lexer) is in PR #64. B (the parser) is done on
-  `claude/agent-parser-esp018b`, to open once #64 merges: every agent-language
-  program of the repository, 1,342, and 81 samples parse to stage0's tree.
-  C (checks and modules) is done on the same branch: every check of
-  `checker.rs` (`compiler/agent_check.argx`), 1,462 programs, and the module
-  graph (`compiler/agent_package.argx`), 79 packages, give stage0's dumps.
-  D (lowering) is in progress: the IR of files (`compiler/agent_ir.argx`)
-  and of packages (`compiler/agent_package.argx`) matches stage0 on all 557
-  programs and 36 packages that check, and so does the bytecode (D.2); D.3,
-  the verifier's decisions, is next.
-- Started: 2026-09-26.
-- Ficha: `tasks/espada/ESP-018.md`; dump `spec/language/tokens.md`.
-- Paths: `compiler/agent_lexer.argx`, `compiler/unicode.argx` (generated),
-  `tests/selfhost/agent/**`, `spec/language/tokens.md`, the ficha, the token
-  dump in `crates/argorix_parser/src/lexer.rs` and its `argorixc` command.
-- Parallel: ESP-017 (the Windows target) was merged in PR #63.
+- Task: ESP-018 — agent and policy language migration, PRs #64 and #65.
+- State: IMPLEMENTED pending PR #65 review and CI. A, B, C, D and E are implemented on the PR branches. The D.3 verifier matches stage0 on 891 serialized and emitted cases, including eight negative controls; no corpus case is undecided.
+- Compatibility: `spec/language/compatibility-matrix.md` records the version gates; bytecode parity and 137/137 stage0 VM conformance support the compiler-boundary policy outcome claim. ESP-019 must test outcomes again for a migrated VM.
+- Branch: `claude/agent-parser-esp018b` (PR #65, based on #64).
+- Ficha: `tasks/espada/ESP-018.md`; verifier dump: `spec/language/verify.md`.
 
 ## Handoff (ESP-016)
 

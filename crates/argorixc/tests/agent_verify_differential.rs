@@ -9,10 +9,8 @@
 //! checks. For each it writes the canonical dump of `spec/language/verify.md`,
 //! which must equal stage0's (`argorixc agent-verify`).
 //!
-//! The verifier is ported in steps. A file the Argorix side cannot decide
-//! yet dumps `unsupported`; it is counted, not compared. It fails on any
-//! mismatch, when the Argorix side rejects a file stage0 reads, and when
-//! fewer files match than the port has reached (`MATCHED_AT_LEAST`).
+//! Every corpus file must be decided exactly as stage0. An `unsupported`
+//! result or a different diagnostic fails the test.
 
 // The differential needs a Unix C toolchain; elsewhere this file is empty.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
@@ -21,9 +19,6 @@ use argorix_module::{agent_bytecode_dump, bytecode_verify_dump};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
-
-/// How many files the Argorix verifier decides as stage0 does today.
-const MATCHED_AT_LEAST: usize = 745;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -65,6 +60,59 @@ fn samples() -> Vec<(String, Vec<u8>)> {
             (name, fs::read(&path).unwrap())
         })
         .collect();
+    // Every newly ported metadata generation needs a rejection path as well
+    // as its positive example. The oracle supplies the exact error ordering.
+    for (file, field, value) in [
+        (
+            "public_conformance_v034",
+            "third_party_verifiers.0.network",
+            serde_json::json!("allowed"),
+        ),
+        (
+            "public_conformance_v034",
+            "public_conformance_reports.0.claims",
+            serde_json::json!([]),
+        ),
+        (
+            "runtime_hardening_v035",
+            "runtime_hardening_profiles.0.deny_by_default",
+            serde_json::json!(false),
+        ),
+        (
+            "runtime_hardening_v035",
+            "threat_models.0.assets",
+            serde_json::json!([]),
+        ),
+        (
+            "spec_freeze_v036",
+            "spec_freezes.0.security_claims",
+            serde_json::json!("approved"),
+        ),
+        (
+            "spec_freeze_v036",
+            "release_candidates.0.readiness",
+            serde_json::json!("ready"),
+        ),
+        (
+            "runtime_mvp_v100",
+            "runtime_execution_profiles.0.fail_closed",
+            serde_json::json!(false),
+        ),
+        (
+            "runtime_mvp_v100",
+            "sandboxed_provider_adapters.0.secret_value",
+            serde_json::json!("SECRET"),
+        ),
+    ] {
+        let bytes = fs::read(root().join(format!("examples/{file}.argbc.json"))).unwrap();
+        let mut program: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let (list, rest) = field.split_once(".0.").unwrap();
+        program[list][0][rest] = value;
+        samples.push((
+            format!("negative {file}: {field}"),
+            serde_json::to_vec(&program).unwrap(),
+        ));
+    }
     let mut sources = Vec::new();
     walk(&root(), ".argx", &mut sources);
     for path in sources {
@@ -175,6 +223,9 @@ fn the_argorix_verifier_decides_as_stage0_when_cc_is_available() {
         let actual = fs::read(build.join(format!("dumps/{index}.verify"))).unwrap();
         if actual == b"unsupported\n" {
             unsupported += 1;
+            if env::var_os("ARGORIX_SHOW_UNSUPPORTED").is_some() {
+                eprintln!("unsupported: {name}");
+            }
         } else if actual == expected.as_bytes() {
             matched += 1;
         } else {
@@ -200,9 +251,12 @@ fn the_argorix_verifier_decides_as_stage0_when_cc_is_available() {
             .collect::<Vec<_>>()
             .join("\n")
     );
-    assert!(
-        matched >= MATCHED_AT_LEAST,
-        "only {matched} files match; the port had reached {MATCHED_AT_LEAST}"
+    assert_eq!(unsupported, 0, "{unsupported} files remain undecided");
+    assert_eq!(
+        matched,
+        samples.len(),
+        "only {matched} of {} files match",
+        samples.len()
     );
     fs::remove_dir_all(work).unwrap();
 }

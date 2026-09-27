@@ -9,10 +9,11 @@ module compiler.agent_verify;
 //
 // The reader ports serde_json 1.0.151 (de.rs, read.rs, error.rs) and serde's
 // derived and internally tagged deserialization, over the tables of
-// compiler.agent_bytecode_schema. What it does not reproduce dumps
-// `unsupported`: floating point values in messages, numbers past u64 or out
-// of f64's range, structs written as arrays, and non-ASCII text in a
-// message's `string "..."`.
+// compiler.agent_bytecode_schema. Unreproduced forms still dump
+// `unsupported`: noncanonical float diagnostics, numbers past u64 or out
+// of f64's range, structs written as arrays, and Unicode Debug formatting
+// outside printable Latin-1. The differential rejects `unsupported` in the
+// maintained corpus.
 
 import stdlib.bytes;
 import stdlib.text;
@@ -403,10 +404,10 @@ fn ignore_string(s: Slice<u8>, reader: Reader) -> Reader {
 // ------------------------------------------------------------------ numbers
 
 // `parse_integer` after an optional `-`: a U64, I64 or F64 node. A number
-// serde_json turns into a float by overflowing u64, or that could be out of
-// f64's range, is `unsupported`.
+// that could be out of f64's range remains `unsupported`.
 fn parse_integer(s: Slice<u8>, reader: Reader, positive: bool) -> Reader {
     let mut r: Reader = reader;
+    let start: u64 = if positive { r.index } else { r.index - 1u64 };
     if r.index >= s.length() {
         return error(s, r, "EOF while parsing a value".as_slice());
     }
@@ -435,10 +436,10 @@ fn parse_integer(s: Slice<u8>, reader: Reader, positive: bool) -> Reader {
     } else {
         return error(s, r, "invalid number".as_slice());
     }
-    parse_number(s, r, positive, significand, digits, long)
+    parse_number(s, r, positive, significand, digits, long, start)
 }
 
-fn parse_number(s: Slice<u8>, reader: Reader, positive: bool, significand: u64, digits: u64, long: bool) -> Reader {
+fn parse_number(s: Slice<u8>, reader: Reader, positive: bool, significand: u64, digits: u64, long: bool, start: u64) -> Reader {
     let mut r: Reader = reader;
     let mut exponent: u64 = 0u64;
     let mut negative_exponent: bool = false;
@@ -489,16 +490,46 @@ fn parse_number(s: Slice<u8>, reader: Reader, positive: bool, significand: u64, 
         if significand != 0u64 && !negative_exponent && digits + exponent >= 300u64 {
             return unsupported(r);
         }
-        return add(r, V_F64, 0u64, 0u64);
+        return float_node(s, r, start);
     }
     if positive {
         return add(r, V_U64, significand, 0u64);
     }
     if significand == 0u64 || significand > 9223372036854775808u64 {
         // `-0` and what underflows i64 become floats.
-        return add(r, V_F64, 0u64, 0u64);
+        return float_node(s, r, start);
     }
     add(r, V_I64, significand, 0u64)
+}
+
+// Preserve the lexeme for the subset where serde_json's shortest float
+// spelling is identical to the input. Other float diagnostics remain
+// unsupported rather than risking a different error message.
+fn float_node(s: Slice<u8>, reader: Reader, start: u64) -> Reader {
+    let mut r: Reader = reader;
+    let first: u64 = r.strings.length();
+    let mut at: u64 = start;
+    while at < r.index {
+        r.strings.push(s[at]);
+        at += 1u64;
+    }
+    let end: u64 = r.strings.length();
+    add(r, V_F64, first, end)
+}
+
+fn canonical_simple_float(raw: Slice<u8>) -> bool {
+    let mut dot: u64 = 0u64;
+    while dot < raw.length() && raw[dot] != 46u8 {
+        if raw[dot] == 101u8 || raw[dot] == 69u8 { return false; }
+        dot += 1u64;
+    }
+    if dot == raw.length() || dot + 1u64 == raw.length() || raw[raw.length() - 1u64] == 48u8 || raw.length() > 16u64 { return false; }
+    let mut at: u64 = dot + 1u64;
+    while at < raw.length() {
+        if raw[at] < 48u8 || raw[at] > 57u8 { return false; }
+        at += 1u64;
+    }
+    true
 }
 
 // `Unexpected` of a number node, as serde_json writes it.
@@ -514,8 +545,7 @@ fn append_number(out: Buffer<u8>, value: Value) -> Buffer<u8> {
 
 // ------------------------------------------------------------------ serde's messages
 
-// A string as Rust's `{:?}` writes it; text past ASCII is `unsupported`
-// (Rust's printable and grapheme tables are not ported).
+// A string as Rust's `{:?}` writes it for the supported printable range.
 fn append_debug(out: Buffer<u8>, value: Slice<u8>) -> Buffer<u8> {
     let mut o: Buffer<u8> = out;
     o.push(34u8);
@@ -557,19 +587,22 @@ fn hex_digit(value: u64) -> u8 {
     narrow(87u64 + value)
 }
 
-fn ascii(value: Slice<u8>) -> bool {
-    let mut index: u64 = 0u64;
-    while index < value.length() {
-        if value[index] >= 128u8 {
-            return false;
-        }
-        index += 1u64;
+// Printable Latin-1 characters have the same quoted spelling in Rust's
+// Debug formatter and in UTF-8. Keep other non-ASCII characters undecided.
+fn debug_safe(value: Slice<u8>) -> bool {
+    let mut at: u64 = 0u64;
+    while at < value.length() {
+        let c: u8 = value[at];
+        if c < 128u8 { at += 1u64; }
+        else if at + 1u64 < value.length() && c == 194u8 && value[at + 1u64] >= 161u8 && value[at + 1u64] <= 191u8 && value[at + 1u64] != 173u8 { at += 2u64; }
+        else if at + 1u64 < value.length() && c == 195u8 && value[at + 1u64] >= 128u8 && value[at + 1u64] <= 191u8 { at += 2u64; }
+        else { return false; }
     }
     true
 }
 
 // "invalid type: <what node is>, expected <expected>", a custom error; a
-// float or a non-ASCII string is `unsupported`.
+// other float and Unicode Debug forms remain `unsupported`.
 fn invalid_type(reader: Reader, node: u64, expected: Slice<u8>) -> Reader {
     let found: Value = reader.nodes[node];
     let mut message: Buffer<u8> = bytes.append(Buffer::new(), "invalid type: ".as_slice());
@@ -585,11 +618,17 @@ fn invalid_type(reader: Reader, node: u64, expected: Slice<u8>) -> Reader {
         message = append_number(message, found);
     } else if found.kind == V_STRING {
         let text_bytes: Buffer<u8> = copy_range(reader.strings.as_slice(), found.a, found.b);
-        if !ascii(text_bytes.as_slice()) {
+        if !debug_safe(text_bytes.as_slice()) {
             return unsupported(reader);
         }
         message = bytes.append(message, "string ".as_slice());
         message = append_debug(message, text_bytes.as_slice());
+    } else if found.kind == V_F64 {
+        let raw: Buffer<u8> = copy_range(reader.strings.as_slice(), found.a, found.b);
+        if !canonical_simple_float(raw.as_slice()) { return unsupported(reader); }
+        message = bytes.append(message, "floating point `".as_slice());
+        message = bytes.append(message, raw.as_slice());
+        message.push(96u8);
     } else if found.kind == V_ARRAY {
         message = bytes.append(message, "sequence".as_slice());
     } else if found.kind == V_MAP {
@@ -2195,7 +2234,7 @@ fn same_value(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, left: u64, right: 
 fn unported(n: Slice<Value>, sl: Slice<u64>, p: u64) -> bool {
     let mut field: u64 = 0u64;
     while field < agent_bytecode_schema.field_count(agent_bytecode_schema.BS_PROGRAM) {
-        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS || field == agent_bytecode_schema.BS_PROGRAM__PASSPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES || field == agent_bytecode_schema.BS_PROGRAM__FEATURES || field == agent_bytecode_schema.BS_PROGRAM__SECRETS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTERS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTER_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__CRYPTOS || field == agent_bytecode_schema.BS_PROGRAM__CRYPTO_BOUNDARIES || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES || field == agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS || field == agent_bytecode_schema.BS_PROGRAM__MCP_BRIDGE_CONTRACTS || field == agent_bytecode_schema.BS_PROGRAM__A2A_BRIDGE_CONTRACTS || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS || field == agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__REGULATORY_MAPPINGS;
+        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS || field == agent_bytecode_schema.BS_PROGRAM__PASSPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES || field == agent_bytecode_schema.BS_PROGRAM__FEATURES || field == agent_bytecode_schema.BS_PROGRAM__SECRETS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTERS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTER_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__CRYPTOS || field == agent_bytecode_schema.BS_PROGRAM__CRYPTO_BOUNDARIES || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES || field == agent_bytecode_schema.BS_PROGRAM__DID_METHODS || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_BOUNDARIES || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_IDENTITIES || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_CREDENTIAL_CONTRACTS || field == agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS || field == agent_bytecode_schema.BS_PROGRAM__MCP_BRIDGE_CONTRACTS || field == agent_bytecode_schema.BS_PROGRAM__A2A_BRIDGE_CONTRACTS || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS || field == agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__REGULATORY_MAPPINGS || field == agent_bytecode_schema.BS_PROGRAM__THIRD_PARTY_VERIFIERS || field == agent_bytecode_schema.BS_PROGRAM__PUBLIC_CONFORMANCE_REPORTS || field == agent_bytecode_schema.BS_PROGRAM__RUNTIME_HARDENING_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__THREAT_MODELS || field == agent_bytecode_schema.BS_PROGRAM__SPEC_FREEZES || field == agent_bytecode_schema.BS_PROGRAM__RELEASE_CANDIDATES || field == agent_bytecode_schema.BS_PROGRAM__RUNTIME_EXECUTION_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__SANDBOXED_PROVIDER_ADAPTERS;
         let value: u64 = fld(n, sl, p, field);
         if !ported && n[value].kind == V_ARRAY && n[value].a != 0u64 {
             return true;
@@ -2253,9 +2292,17 @@ fn metadata(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: 
     o = validate_governance(o, n, sl, st, p);
     o = validate_regulatory(o, n, sl, st, p);
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__THIRD_PARTY_VERIFIERS, agent_bytecode_schema.BS_PROGRAM__PUBLIC_CONFORMANCE_REPORTS, 34u64, "third_party_verifiers and public_conformance_reports require bytecode_version 0.34".as_slice());
+    o = validate_third_party_verifiers(o, n, sl, st, p);
+    o = validate_public_conformance_reports(o, n, sl, st, p);
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__RUNTIME_HARDENING_PROFILES, agent_bytecode_schema.BS_PROGRAM__THREAT_MODELS, 35u64, "runtime_hardening_profiles and threat_models require bytecode_version 0.35".as_slice());
+    o = validate_runtime_hardening_profiles(o, n, sl, st, p);
+    o = validate_threat_models(o, n, sl, st, p);
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__SPEC_FREEZES, agent_bytecode_schema.BS_PROGRAM__RELEASE_CANDIDATES, 36u64, "spec_freezes and release_candidates require bytecode_version 0.36".as_slice());
+    o = validate_spec_freezes(o, n, sl, st, p);
+    o = validate_release_candidates(o, n, sl, st, p);
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__RUNTIME_EXECUTION_PROFILES, agent_bytecode_schema.BS_PROGRAM__SANDBOXED_PROVIDER_ADAPTERS, 100u64, "runtime MVP metadata requires bytecode version 1.0".as_slice());
+    o = validate_runtime_execution_profiles(o, n, sl, st, p);
+    o = validate_sandboxed_provider_adapters(o, n, sl, st, p);
     o = validate_adapters(o, n, sl, st, p);
     o = validate_adapter_profiles(o, n, sl, st, p);
     o = validate_cryptos(o, n, sl, st, p);
@@ -2995,6 +3042,18 @@ fn bare_empty(n: Slice<Value>, node: u64) -> bool {
     n[node].a == n[node].b
 }
 
+fn any_empty(n: Slice<Value>, list: u64) -> bool {
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let entry: u64 = link - 1u64;
+        link = n[entry].next;
+        if bare_empty(n, entry) {
+            return true;
+        }
+    }
+    false
+}
+
 // ... if list field `field` is empty or has an empty (untrimmed) entry.
 fn nonempty_strict(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
     let list: u64 = fld(n, sl, item, field);
@@ -3215,6 +3274,384 @@ fn validate_regulatory(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Sli
         }
         o = nonempty_strict(o, n, sl, st, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__PURPOSE, "regulatory_mapping".as_slice(), name, "purpose must not be empty".as_slice());
         o = notes_empty(o, n, sl, st, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__NOTES, "regulatory_mapping".as_slice(), name);
+    }
+    o
+}
+
+fn validate_third_party_verifiers(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let items: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__THIRD_PARTY_VERIFIERS);
+    let mut link: u64 = n[items].a;
+    while link != 0u64 {
+        let v: u64 = link - 1u64;
+        link = n[v].next;
+        let name: u64 = fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__NAME);
+        if seen_before(n, sl, st, items, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__NAME, v, name) {
+            o = named(o, n, st, "duplicate third_party_verifier ".as_slice(), name, "".as_slice());
+        }
+        o = must(o, n, sl, st, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__VERIFIER_TYPE, "internal community academic vendor independent_lab custom".as_slice(), "third_party_verifier".as_slice(), name, "invalid verifier_type".as_slice());
+        o = must(o, n, sl, st, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__INDEPENDENCE, "declared self_attested independent_declared".as_slice(), "third_party_verifier".as_slice(), name, "invalid independence".as_slice());
+        o = must(o, n, sl, st, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__IDENTITY_MODE, "declared_only document_only".as_slice(), "third_party_verifier".as_slice(), name, "invalid identity_mode".as_slice());
+        o = must(o, n, sl, st, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__VERIFICATION_MODE, "reproducible_artifacts document_review conformance_replay".as_slice(), "third_party_verifier".as_slice(), name, "invalid verification_mode".as_slice());
+        if blank(n, st, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__DISPLAY_NAME)) || blank(n, st, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__ORGANIZATION)) || blank(n, st, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__JURISDICTION)) {
+            o = invalid(o, n, st, "third_party_verifier".as_slice(), name, "identity metadata must not be empty".as_slice(), NONE);
+        }
+        if is_empty(n, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__ALLOWED_SCOPES)) || any_empty(n, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__ALLOWED_SCOPES)) || is_empty(n, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__DISALLOWED_CLAIMS)) || any_empty(n, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__DISALLOWED_CLAIMS)) || is_empty(n, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__PURPOSE)) || any_empty(n, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__PURPOSE)) {
+            o = invalid(o, n, st, "third_party_verifier".as_slice(), name, "scope, disallowed claims, and purpose must not be empty".as_slice(), NONE);
+        }
+        if !boundaries_closed(n, sl, st, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__NETWORK, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__EXTERNAL_EXECUTION, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__SECRET_MATERIAL, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__KEY_MATERIAL, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__EXECUTION, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__SECURITY_CLAIMS) || !text_is(n, st, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__LEGAL_CLAIMS), "none".as_slice()) || !text_is(n, st, fld(n, sl, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__CERTIFICATION), "none".as_slice()) {
+            o = invalid(o, n, st, "third_party_verifier".as_slice(), name, "runtime, legal, certification, and security claims must remain denied".as_slice(), NONE);
+        }
+        o = notes_empty(o, n, sl, st, v, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__NOTES, "third_party_verifier".as_slice(), name);
+    }
+    o
+}
+
+fn validate_public_conformance_reports(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let items: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PUBLIC_CONFORMANCE_REPORTS);
+    let verifiers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__THIRD_PARTY_VERIFIERS);
+    let profiles: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES);
+    let mappings: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__REGULATORY_MAPPINGS);
+    let maps: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS);
+    let ledgers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS);
+    let mut link: u64 = n[items].a;
+    while link != 0u64 {
+        let report: u64 = link - 1u64;
+        link = n[report].next;
+        let name: u64 = fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__NAME);
+        if seen_before(n, sl, st, items, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__NAME, report, name) {
+            o = named(o, n, st, "duplicate public_conformance_report ".as_slice(), name, "".as_slice());
+        }
+        let evidence_map: u64 = fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__EVIDENCE_MAP);
+        let profile_name: u64 = fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__GOVERNANCE_PROFILE);
+        let mapping_name: u64 = fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__REGULATORY_MAPPING);
+        let profile: u64 = find_last(n, sl, st, profiles, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NAME, profile_name);
+        let mapping: u64 = find_last(n, sl, st, mappings, agent_bytecode_schema.BS_REGULATORY_MAPPING__NAME, mapping_name);
+        if !list_has(n, sl, st, verifiers, agent_bytecode_schema.BS_THIRD_PARTY_VERIFIER__NAME, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__VERIFIER)) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "unknown third_party_verifier".as_slice(), NONE);
+        }
+        if !list_has(n, sl, st, maps, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NAME, evidence_map) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "unknown evidence_map".as_slice(), NONE);
+        }
+        if profile == NONE { o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "unknown governance_profile".as_slice(), NONE); }
+        if mapping == NONE { o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "unknown regulatory_mapping".as_slice(), NONE); }
+        if !list_has(n, sl, st, ledgers, agent_bytecode_schema.BS_TRUST_LEDGER__NAME, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__TRUST_LEDGER)) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "unknown trust_ledger".as_slice(), NONE);
+        }
+        if profile != NONE && !same_text(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__EVIDENCE_MAP), evidence_map) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "governance/evidence_map mismatch".as_slice(), NONE);
+        }
+        if mapping != NONE && !same_text(n, st, fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__GOVERNANCE_PROFILE), profile_name) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "regulatory/governance mismatch".as_slice(), NONE);
+        }
+        if mapping != NONE && !same_text(n, st, fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__EVIDENCE_MAP), evidence_map) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "regulatory/evidence_map mismatch".as_slice(), NONE);
+        }
+        if blank(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__SUITE)) || !text_is(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__SUITE_VERSION), "0.34".as_slice()) || blank(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__SOURCE_ARTIFACT)) || blank(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__BYTECODE_ARTIFACT)) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "suite and artifacts must be non-empty and suite_version 0.34".as_slice(), NONE);
+        }
+        if !one_of(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__RESULT), "passed failed pending_review".as_slice()) || !one_of(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__REPRODUCIBILITY), "declared replayable_locally document_only".as_slice()) || !one_of(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__REVIEW_STATUS), "draft reviewed published deprecated".as_slice()) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "invalid result, reproducibility, or review_status".as_slice(), NONE);
+        }
+        if !text_is(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__SECURITY_REPORT), "required".as_slice()) || !text_is(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__EVIDENCE_BUNDLE), "required".as_slice()) || !text_is(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__TRACE), "required".as_slice()) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "security_report, evidence_bundle, and trace must be required".as_slice(), NONE);
+        }
+        let claims: u64 = fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__CLAIMS);
+        if is_empty(n, claims) { o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "claims must not be empty".as_slice(), NONE); }
+        let mut claim_link: u64 = n[claims].a;
+        while claim_link != 0u64 {
+            let claim: u64 = claim_link - 1u64;
+            claim_link = n[claim].next;
+            let id: u64 = fld(n, sl, claim, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_CLAIM__ID);
+            if seen_before(n, sl, st, claims, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_CLAIM__ID, claim, id) {
+                o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "duplicate claim id".as_slice(), NONE);
+            }
+            if bare_empty(n, id) || bare_empty(n, fld(n, sl, claim, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_CLAIM__STATEMENT)) || bare_empty(n, fld(n, sl, claim, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_CLAIM__EVIDENCE_REF)) {
+                o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "claim fields must not be empty".as_slice(), NONE);
+            }
+            if !one_of(n, st, fld(n, sl, claim, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_CLAIM__CATEGORY), "conformance evidence security_report governance regulatory_mapping bytecode source policy runtime_boundary custom".as_slice()) || !one_of(n, st, fld(n, sl, claim, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_CLAIM__STATUS), "mapped declared pending_review not_applicable".as_slice()) {
+                o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "invalid claim category or status".as_slice(), NONE);
+            }
+        }
+        if !boundaries_closed(n, sl, st, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__NETWORK, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__EXTERNAL_EXECUTION, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__SECRET_MATERIAL, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__KEY_MATERIAL, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__EXECUTION, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__SECURITY_CLAIMS) || !text_is(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__LEGAL_CLAIMS), "none".as_slice()) || !text_is(n, st, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__CERTIFICATION), "none".as_slice()) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "runtime, legal, certification, and security claims must remain denied".as_slice(), NONE);
+        }
+        if is_empty(n, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__PURPOSE)) || any_empty(n, fld(n, sl, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__PURPOSE)) {
+            o = invalid(o, n, st, "public_conformance_report".as_slice(), name, "purpose must not be empty".as_slice(), NONE);
+        }
+        o = notes_empty(o, n, sl, st, report, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__NOTES, "public_conformance_report".as_slice(), name);
+    }
+    o
+}
+
+fn validate_runtime_hardening_profiles(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let items: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__RUNTIME_HARDENING_PROFILES);
+    let maps: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS);
+    let governance: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES);
+    let reports: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PUBLIC_CONFORMANCE_REPORTS);
+    let mut link: u64 = n[items].a;
+    while link != 0u64 {
+        let profile: u64 = link - 1u64;
+        link = n[profile].next;
+        let name: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__NAME);
+        if seen_before(n, sl, st, items, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__NAME, profile, name) {
+            o = named(o, n, st, "duplicate runtime_hardening_profile ".as_slice(), name, "".as_slice());
+        }
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__SCOPE, "agent system package organization".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid scope".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__MODE, "declared_only evidence_only".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid mode".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__ENFORCEMENT, "declared_only evidence_only".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid enforcement".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__SANDBOX, "required declared".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid sandbox".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__ALLOWLIST, "required declared".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid allowlist".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__APPROVAL, "required declared".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid approval".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__INCIDENT_RESPONSE, "declared required".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid incident_response".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__RESIDUAL_RISK, "low moderate high critical unknown".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid residual_risk".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__REVIEW_STATUS, "draft reviewed approved_internal deprecated".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid review_status".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__ASSURANCE, "declared_only evidence_mapped manually_reviewed".as_slice(), "runtime_hardening_profile".as_slice(), name, "invalid assurance".as_slice());
+        if !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__PROVIDER_EXECUTION), "disabled".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__EXTERNAL_PROVIDERS), "disabled".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__NETWORK), "denied".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__TOOL_EXECUTION), "disabled".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__AGENT_EXECUTION), "disabled".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__FILESYSTEM_ACCESS), "denied".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__ENV_ACCESS), "denied".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__SECRET_MATERIAL), "denied".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__KEY_MATERIAL), "denied".as_slice()) || n[fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__DENY_BY_DEFAULT)].a == 0u64 || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__AUDIT_LOG), "required".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__EVIDENCE), "required".as_slice()) || !text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__SECURITY_CLAIMS), "none".as_slice()) {
+            o = invalid(o, n, st, "runtime_hardening_profile".as_slice(), name, "runtime boundaries must remain denied, disabled, required, and deny-by-default".as_slice(), NONE);
+        }
+        if !list_has(n, sl, st, maps, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NAME, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__EVIDENCE_MAP)) || !list_has(n, sl, st, governance, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NAME, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__GOVERNANCE_PROFILE)) || !list_has(n, sl, st, reports, agent_bytecode_schema.BS_PUBLIC_CONFORMANCE_REPORT__NAME, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__PUBLIC_CONFORMANCE_REPORT)) {
+            o = invalid(o, n, st, "runtime_hardening_profile".as_slice(), name, "unknown evidence, governance, or public conformance binding".as_slice(), NONE);
+        }
+        if is_empty(n, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__PROTECTED_ASSETS)) || any_empty(n, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__PROTECTED_ASSETS)) || is_empty(n, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__RUNTIME_BOUNDARIES)) || any_empty(n, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__RUNTIME_BOUNDARIES)) || is_empty(n, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__PURPOSE)) || any_empty(n, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__PURPOSE)) {
+            o = invalid(o, n, st, "runtime_hardening_profile".as_slice(), name, "protected assets, runtime boundaries, and purpose must not be empty".as_slice(), NONE);
+        }
+        o = notes_empty(o, n, sl, st, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__NOTES, "runtime_hardening_profile".as_slice(), name);
+    }
+    o
+}
+
+fn validate_threat_models(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let items: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__THREAT_MODELS);
+    let profiles: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__RUNTIME_HARDENING_PROFILES);
+    let mut link: u64 = n[items].a;
+    while link != 0u64 {
+        let model: u64 = link - 1u64;
+        link = n[model].next;
+        let name: u64 = fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__NAME);
+        if seen_before(n, sl, st, items, agent_bytecode_schema.BS_THREAT_MODEL__NAME, model, name) {
+            o = named(o, n, st, "duplicate threat_model ".as_slice(), name, "".as_slice());
+        }
+        let profile: u64 = find_last(n, sl, st, profiles, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__NAME, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__HARDENING_PROFILE));
+        if profile == NONE {
+            o = invalid(o, n, st, "threat_model".as_slice(), name, "unknown runtime_hardening_profile".as_slice(), NONE);
+        } else if !same_text(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__EVIDENCE_MAP), fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__EVIDENCE_MAP)) || !same_text(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__GOVERNANCE_PROFILE), fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__GOVERNANCE_PROFILE)) || !same_text(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__PUBLIC_CONFORMANCE_REPORT), fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__PUBLIC_CONFORMANCE_REPORT)) {
+            o = invalid(o, n, st, "threat_model".as_slice(), name, "hardening references mismatch".as_slice(), NONE);
+        }
+        o = must(o, n, sl, st, model, agent_bytecode_schema.BS_THREAT_MODEL__METHODOLOGY, "declared structured internal_review".as_slice(), "threat_model".as_slice(), name, "invalid methodology".as_slice());
+        o = must(o, n, sl, st, model, agent_bytecode_schema.BS_THREAT_MODEL__SCOPE, "agent system package organization".as_slice(), "threat_model".as_slice(), name, "invalid scope".as_slice());
+        o = must(o, n, sl, st, model, agent_bytecode_schema.BS_THREAT_MODEL__REVIEW_STATUS, "draft reviewed approved_internal deprecated".as_slice(), "threat_model".as_slice(), name, "invalid review_status".as_slice());
+        o = must(o, n, sl, st, model, agent_bytecode_schema.BS_THREAT_MODEL__RESIDUAL_RISK, "low moderate high critical unknown".as_slice(), "threat_model".as_slice(), name, "invalid residual_risk".as_slice());
+        o = must(o, n, sl, st, model, agent_bytecode_schema.BS_THREAT_MODEL__RISK_ACCEPTANCE, "declared_only pending_review manually_reviewed".as_slice(), "threat_model".as_slice(), name, "invalid risk_acceptance".as_slice());
+        if !text_is(n, st, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__NETWORK), "denied".as_slice()) || !text_is(n, st, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__EXTERNAL_EXECUTION), "disabled".as_slice()) || !text_is(n, st, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__TOOL_EXECUTION), "disabled".as_slice()) || !text_is(n, st, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__AGENT_EXECUTION), "disabled".as_slice()) || !text_is(n, st, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__SECRET_MATERIAL), "denied".as_slice()) || !text_is(n, st, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__KEY_MATERIAL), "denied".as_slice()) || !text_is(n, st, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__EXECUTION), "disabled".as_slice()) || !text_is(n, st, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__SECURITY_CLAIMS), "none".as_slice()) {
+            o = invalid(o, n, st, "threat_model".as_slice(), name, "threat model runtime and security boundaries must remain denied".as_slice(), NONE);
+        }
+        o = validate_threat_collections(o, n, sl, st, model, name);
+        if is_empty(n, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__PURPOSE)) || any_empty(n, fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__PURPOSE)) {
+            o = invalid(o, n, st, "threat_model".as_slice(), name, "purpose must not be empty".as_slice(), NONE);
+        }
+        o = notes_empty(o, n, sl, st, model, agent_bytecode_schema.BS_THREAT_MODEL__NOTES, "threat_model".as_slice(), name);
+    }
+    o
+}
+
+fn validate_threat_collections(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, model: u64, name: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let assets: u64 = fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__ASSETS);
+    let threats: u64 = fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__THREATS);
+    let mitigations: u64 = fld(n, sl, model, agent_bytecode_schema.BS_THREAT_MODEL__MITIGATIONS);
+    if is_empty(n, assets) || is_empty(n, threats) || is_empty(n, mitigations) {
+        o = invalid(o, n, st, "threat_model".as_slice(), name, "assets, threats, and mitigations must not be empty".as_slice(), NONE);
+    }
+    let mut link: u64 = n[assets].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        let id: u64 = fld(n, sl, item, agent_bytecode_schema.BS_THREAT_ASSET__ID);
+        if seen_before(n, sl, st, assets, agent_bytecode_schema.BS_THREAT_ASSET__ID, item, id) { o = invalid(o, n, st, "threat_model".as_slice(), name, "duplicate asset id".as_slice(), NONE); }
+        if bare_empty(n, id) || bare_empty(n, fld(n, sl, item, agent_bytecode_schema.BS_THREAT_ASSET__DESCRIPTION)) || bare_empty(n, fld(n, sl, item, agent_bytecode_schema.BS_THREAT_ASSET__EVIDENCE_REF)) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_THREAT_ASSET__CATEGORY), "secret key identity credential handshake ledger bridge evidence policy runtime provider user_data custom".as_slice()) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_THREAT_ASSET__SENSITIVITY), "low moderate high critical unknown".as_slice()) { o = invalid(o, n, st, "threat_model".as_slice(), name, "invalid asset".as_slice(), NONE); }
+    }
+    link = n[threats].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        let id: u64 = fld(n, sl, item, agent_bytecode_schema.BS_THREAT__ID);
+        if seen_before(n, sl, st, threats, agent_bytecode_schema.BS_THREAT__ID, item, id) { o = invalid(o, n, st, "threat_model".as_slice(), name, "duplicate threat id".as_slice(), NONE); }
+        if bare_empty(n, id) || bare_empty(n, fld(n, sl, item, agent_bytecode_schema.BS_THREAT__TARGET)) || bare_empty(n, fld(n, sl, item, agent_bytecode_schema.BS_THREAT__MITIGATION)) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_THREAT__CATEGORY), "prompt_injection secret_leakage tool_abuse network_exfiltration identity_spoofing credential_misuse handshake_replay bridge_misuse evidence_tampering policy_bypass provider_misuse runtime_escape supply_chain custom".as_slice()) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_THREAT__IMPACT), "low moderate high critical unknown".as_slice()) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_THREAT__STATUS), "declared mitigated_declared pending_review accepted_risk not_applicable".as_slice()) { o = invalid(o, n, st, "threat_model".as_slice(), name, "invalid threat".as_slice(), NONE); }
+    }
+    link = n[mitigations].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        let id: u64 = fld(n, sl, item, agent_bytecode_schema.BS_THREAT_MITIGATION__ID);
+        if seen_before(n, sl, st, mitigations, agent_bytecode_schema.BS_THREAT_MITIGATION__ID, item, id) { o = invalid(o, n, st, "threat_model".as_slice(), name, "duplicate mitigation id".as_slice(), NONE); }
+        if bare_empty(n, id) || bare_empty(n, fld(n, sl, item, agent_bytecode_schema.BS_THREAT_MITIGATION__CONTROL_REF)) || bare_empty(n, fld(n, sl, item, agent_bytecode_schema.BS_THREAT_MITIGATION__EVIDENCE_REF)) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_THREAT_MITIGATION__CATEGORY), "network_boundary secret_boundary key_boundary tool_boundary agent_boundary provider_boundary policy_enforcement audit_logging evidence_mapping sandboxing review_process custom".as_slice()) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_THREAT_MITIGATION__STATUS), "mapped declared pending_review not_applicable".as_slice()) { o = invalid(o, n, st, "threat_model".as_slice(), name, "invalid mitigation".as_slice(), NONE); }
+    }
+    o
+}
+
+fn valid_strings(n: Slice<Value>, list: u64) -> bool {
+    !is_empty(n, list) && !any_empty(n, list)
+}
+
+fn has_word(n: Slice<Value>, st: Slice<u8>, list: u64, word: Slice<u8>) -> bool {
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if text_is(n, st, item, word) { return true; }
+    }
+    false
+}
+
+fn closed_release_boundaries(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, runtime: u64, network: u64, external: u64, provider: u64, secret: u64, key: u64, env: u64, filesystem: u64, tool: u64, agent: u64, claims: u64, legal: u64, certification: u64) -> bool {
+    text_is(n, st, fld(n, sl, item, runtime), "disabled".as_slice()) && text_is(n, st, fld(n, sl, item, network), "denied".as_slice()) && text_is(n, st, fld(n, sl, item, external), "disabled".as_slice()) && text_is(n, st, fld(n, sl, item, provider), "disabled".as_slice()) && text_is(n, st, fld(n, sl, item, secret), "denied".as_slice()) && text_is(n, st, fld(n, sl, item, key), "denied".as_slice()) && text_is(n, st, fld(n, sl, item, env), "denied".as_slice()) && text_is(n, st, fld(n, sl, item, filesystem), "denied".as_slice()) && text_is(n, st, fld(n, sl, item, tool), "disabled".as_slice()) && text_is(n, st, fld(n, sl, item, agent), "disabled".as_slice()) && text_is(n, st, fld(n, sl, item, claims), "none".as_slice()) && text_is(n, st, fld(n, sl, item, legal), "none".as_slice()) && text_is(n, st, fld(n, sl, item, certification), "none".as_slice())
+}
+
+fn validate_spec_freezes(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let items: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__SPEC_FREEZES);
+    let mut link: u64 = n[items].a;
+    while link != 0u64 {
+        let freeze: u64 = link - 1u64;
+        link = n[freeze].next;
+        let name: u64 = fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__NAME);
+        if seen_before(n, sl, st, items, agent_bytecode_schema.BS_SPEC_FREEZE__NAME, freeze, name) { o = named(o, n, st, "duplicate spec_freeze ".as_slice(), name, "".as_slice()); }
+        let versions: u64 = fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__COMPATIBLE_VERSIONS);
+        let suites: u64 = fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__REQUIRED_SUITES);
+        let notes: u64 = fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__NOTES);
+        let valid: bool = !bare_empty(n, name) && text_is(n, st, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__VERSION), "0.36".as_slice()) && !bare_empty(n, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__TARGET)) && one_of(n, st, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__FREEZE_SCOPE), "language bytecode conformance evidence full".as_slice()) && one_of(n, st, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__COMPATIBILITY), "cumulative declared_only".as_slice()) && one_of(n, st, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__STABILITY), "rc_candidate frozen_draft".as_slice()) && valid_strings(n, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__FROZEN_FEATURES)) && valid_strings(n, versions) && valid_strings(n, suites) && valid_strings(n, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__PURPOSE)) && has_word(n, st, versions, "0.34".as_slice()) && has_word(n, st, versions, "0.35".as_slice()) && has_word(n, st, versions, "0.36".as_slice()) && has_word(n, st, suites, "conformance/suite.v036.json".as_slice()) && text_is(n, st, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__EVIDENCE_BUNDLE), "required".as_slice()) && text_is(n, st, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__SECURITY_REPORT), "required".as_slice()) && text_is(n, st, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__CONFORMANCE), "required".as_slice()) && text_is(n, st, fld(n, sl, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__BACKWARD_COMPATIBILITY), "required".as_slice()) && closed_release_boundaries(n, sl, st, freeze, agent_bytecode_schema.BS_SPEC_FREEZE__RUNTIME_STATUS, agent_bytecode_schema.BS_SPEC_FREEZE__NETWORK, agent_bytecode_schema.BS_SPEC_FREEZE__EXTERNAL_EXECUTION, agent_bytecode_schema.BS_SPEC_FREEZE__PROVIDER_EXECUTION, agent_bytecode_schema.BS_SPEC_FREEZE__SECRET_MATERIAL, agent_bytecode_schema.BS_SPEC_FREEZE__KEY_MATERIAL, agent_bytecode_schema.BS_SPEC_FREEZE__ENV_ACCESS, agent_bytecode_schema.BS_SPEC_FREEZE__FILESYSTEM_ACCESS, agent_bytecode_schema.BS_SPEC_FREEZE__TOOL_EXECUTION, agent_bytecode_schema.BS_SPEC_FREEZE__AGENT_EXECUTION, agent_bytecode_schema.BS_SPEC_FREEZE__SECURITY_CLAIMS, agent_bytecode_schema.BS_SPEC_FREEZE__LEGAL_CLAIMS, agent_bytecode_schema.BS_SPEC_FREEZE__CERTIFICATION) && (n[notes].kind != V_STRING || !bare_empty(n, notes));
+        if !valid { o = invalid(o, n, st, "spec_freeze".as_slice(), name, "invalid freeze metadata or an enabled runtime/claim boundary".as_slice(), NONE); }
+    }
+    o
+}
+
+fn matrix_has_version(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, list: u64, word: Slice<u8>) -> bool {
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if text_is(n, st, fld(n, sl, item, agent_bytecode_schema.BS_COMPATIBILITY_MATRIX_ENTRY__VERSION), word) { return true; }
+    }
+    false
+}
+
+fn valid_matrix(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, list: u64) -> bool {
+    if is_empty(n, list) { return false; }
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if bare_empty(n, fld(n, sl, item, agent_bytecode_schema.BS_COMPATIBILITY_MATRIX_ENTRY__VERSION)) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_COMPATIBILITY_MATRIX_ENTRY__BYTECODE), "compatible native unsupported".as_slice()) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_COMPATIBILITY_MATRIX_ENTRY__EVIDENCE), "compatible native unsupported".as_slice()) || !one_of(n, st, fld(n, sl, item, agent_bytecode_schema.BS_COMPATIBILITY_MATRIX_ENTRY__CONFORMANCE), "compatible native unsupported".as_slice()) { return false; }
+    }
+    true
+}
+
+fn validate_release_candidates(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let items: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__RELEASE_CANDIDATES);
+    let freezes: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__SPEC_FREEZES);
+    let mut link: u64 = n[items].a;
+    while link != 0u64 {
+        let candidate: u64 = link - 1u64;
+        link = n[candidate].next;
+        let name: u64 = fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__NAME);
+        if seen_before(n, sl, st, items, agent_bytecode_schema.BS_RELEASE_CANDIDATE__NAME, candidate, name) { o = named(o, n, st, "duplicate release_candidate ".as_slice(), name, "".as_slice()); }
+        let version: u64 = fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__VERSION);
+        let matrix: u64 = fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__COMPATIBILITY_MATRIX);
+        let notes: u64 = fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__NOTES);
+        let valid: bool = !bare_empty(n, name) && bytes.starts_with(st.slice(n[version].a, n[version].b), "1.0.0-rc".as_slice()) && text_is(n, st, fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__BASE_VERSION), "0.36".as_slice()) && list_has(n, sl, st, freezes, agent_bytecode_schema.BS_SPEC_FREEZE__NAME, fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__SPEC_FREEZE)) && one_of(n, st, fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__READINESS), "draft rc pending_review".as_slice()) && valid_strings(n, fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__REQUIRED_ARTIFACTS)) && valid_strings(n, fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__REQUIRED_CHECKS)) && valid_strings(n, fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__KNOWN_LIMITATIONS)) && valid_strings(n, fld(n, sl, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__PURPOSE)) && matrix_has_version(n, sl, st, matrix, "0.34".as_slice()) && matrix_has_version(n, sl, st, matrix, "0.35".as_slice()) && matrix_has_version(n, sl, st, matrix, "0.36".as_slice()) && valid_matrix(n, sl, st, matrix) && closed_release_boundaries(n, sl, st, candidate, agent_bytecode_schema.BS_RELEASE_CANDIDATE__RUNTIME_STATUS, agent_bytecode_schema.BS_RELEASE_CANDIDATE__NETWORK, agent_bytecode_schema.BS_RELEASE_CANDIDATE__EXTERNAL_EXECUTION, agent_bytecode_schema.BS_RELEASE_CANDIDATE__PROVIDER_EXECUTION, agent_bytecode_schema.BS_RELEASE_CANDIDATE__SECRET_MATERIAL, agent_bytecode_schema.BS_RELEASE_CANDIDATE__KEY_MATERIAL, agent_bytecode_schema.BS_RELEASE_CANDIDATE__ENV_ACCESS, agent_bytecode_schema.BS_RELEASE_CANDIDATE__FILESYSTEM_ACCESS, agent_bytecode_schema.BS_RELEASE_CANDIDATE__TOOL_EXECUTION, agent_bytecode_schema.BS_RELEASE_CANDIDATE__AGENT_EXECUTION, agent_bytecode_schema.BS_RELEASE_CANDIDATE__SECURITY_CLAIMS, agent_bytecode_schema.BS_RELEASE_CANDIDATE__LEGAL_CLAIMS, agent_bytecode_schema.BS_RELEASE_CANDIDATE__CERTIFICATION) && (n[notes].kind != V_STRING || !bare_empty(n, notes));
+        if !valid { o = invalid(o, n, st, "release_candidate".as_slice(), name, "invalid RC metadata or an enabled runtime/claim boundary".as_slice(), NONE); }
+    }
+    o
+}
+
+fn lists_disjoint(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, allowed: u64, denied: u64) -> bool {
+    let mut link: u64 = n[allowed].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if list_has(n, sl, st, denied, NONE, item) { return false; }
+    }
+    true
+}
+
+fn runtime_agents_known(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, wanted: u64, agents: u64) -> bool {
+    let mut link: u64 = n[wanted].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if !list_has(n, sl, st, agents, agent_bytecode_schema.BS_AGENT__NAME, item) { return false; }
+    }
+    true
+}
+
+fn declared_reference(n: Slice<Value>, st: Slice<u8>, node: u64, first: Slice<u8>, second: Slice<u8>) -> bool {
+    let value: Slice<u8> = st.slice(n[node].a, n[node].b);
+    let mut colon: u64 = 0u64;
+    while colon < value.length() && value[colon] != 58u8 { colon += 1u64; }
+    if colon == value.length() || colon + 1u64 == value.length() { return false; }
+    let prefix: Slice<u8> = value.slice(0u64, colon);
+    if !bytes.equal(prefix, first) && !bytes.equal(prefix, second) { return false; }
+    let mut at: u64 = colon + 1u64;
+    while at < value.length() {
+        let ch: u8 = value[at];
+        if !(ch == 95u8 || (ch >= 48u8 && ch <= 57u8) || (ch >= 65u8 && ch <= 90u8) || (ch >= 97u8 && ch <= 122u8)) { return false; }
+        at += 1u64;
+    }
+    true
+}
+
+fn validate_runtime_execution_profiles(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let items: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__RUNTIME_EXECUTION_PROFILES);
+    let agents: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__AGENTS);
+    let providers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS);
+    let hardening: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__RUNTIME_HARDENING_PROFILES);
+    let threats: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__THREAT_MODELS);
+    let maps: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS);
+    let governance: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES);
+    let mut link: u64 = n[items].a;
+    while link != 0u64 {
+        let profile: u64 = link - 1u64;
+        link = n[profile].next;
+        let name: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__NAME);
+        if seen_before(n, sl, st, items, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__NAME, profile, name) { o = named(o, n, st, "duplicate runtime_execution_profile ".as_slice(), name, "".as_slice()); }
+        let provider: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__PROVIDER);
+        let governance_name: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__GOVERNANCE_PROFILE);
+        let governance_item: u64 = find_last(n, sl, st, governance, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NAME, governance_name);
+        let allowed: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__ALLOWED_ACTIONS);
+        let denied: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__DENIED_ACTIONS);
+        let notes: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__NOTES);
+        let valid: bool = !bare_empty(n, name) && one_of(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__MODE), "dry_run simulated sandboxed_external".as_slice()) && runtime_agents_known(n, sl, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__AGENTS), agents) && (text_is(n, st, provider, "simulated".as_slice()) || list_has(n, sl, st, providers, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME, provider)) && list_has(n, sl, st, hardening, agent_bytecode_schema.BS_RUNTIME_HARDENING_PROFILE__NAME, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__HARDENING)) && list_has(n, sl, st, threats, agent_bytecode_schema.BS_THREAT_MODEL__NAME, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__THREAT_MODEL)) && list_has(n, sl, st, maps, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NAME, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__EVIDENCE_MAP)) && governance_item != NONE && same_text(n, st, fld(n, sl, governance_item, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__EVIDENCE_MAP), fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__EVIDENCE_MAP)) && valid_strings(n, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__AGENTS)) && valid_strings(n, allowed) && valid_strings(n, denied) && valid_strings(n, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__PURPOSE)) && lists_disjoint(n, sl, st, allowed, denied) && one_of(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__NETWORK), "denied declared_only".as_slice()) && one_of(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__EXTERNAL_EXECUTION), "disabled sandboxed".as_slice()) && text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__TOOL_EXECUTION), "disabled".as_slice()) && text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__AGENT_EXECUTION), "disabled".as_slice()) && one_of(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__SECRETS), "denied env_reference_only".as_slice()) && text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__KEY_MATERIAL), "denied".as_slice()) && text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__AUDIT), "required".as_slice()) && text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__EVIDENCE), "required".as_slice()) && text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__SECURITY_REPORT), "required".as_slice()) && n[fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__FAIL_CLOSED)].a != 0u64 && text_is(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__SECURITY_CLAIMS), "none".as_slice()) && (n[notes].kind != V_STRING || !bare_empty(n, notes));
+        if !valid { o = invalid(o, n, st, "runtime_execution_profile".as_slice(), name, "invalid binding, action boundary, or fail-closed requirement".as_slice(), NONE); }
+    }
+    o
+}
+
+fn validate_sandboxed_provider_adapters(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let items: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__SANDBOXED_PROVIDER_ADAPTERS);
+    let providers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__PROVIDERS);
+    let runtimes: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__RUNTIME_EXECUTION_PROFILES);
+    let mut link: u64 = n[items].a;
+    while link != 0u64 {
+        let adapter: u64 = link - 1u64;
+        link = n[adapter].next;
+        let name: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__NAME);
+        if seen_before(n, sl, st, items, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__NAME, adapter, name) { o = named(o, n, st, "duplicate sandboxed_provider_adapter ".as_slice(), name, "".as_slice()); }
+        let provider: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__PROVIDER);
+        let runtime: u64 = find_last(n, sl, st, runtimes, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__NAME, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__RUNTIME));
+        let allowed: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__ALLOWED_OPERATIONS);
+        let denied: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__DENIED_OPERATIONS);
+        let endpoint_value: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__ENDPOINT_VALUE);
+        let secret_value: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__SECRET_VALUE);
+        let notes: u64 = fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__NOTES);
+        let valid: bool = !bare_empty(n, name) && (text_is(n, st, provider, "simulated".as_slice()) || list_has(n, sl, st, providers, agent_bytecode_schema.BS_PROVIDER_CONTRACT__NAME, provider)) && runtime != NONE && same_text(n, st, fld(n, sl, runtime, agent_bytecode_schema.BS_RUNTIME_EXECUTION_PROFILE__PROVIDER), provider) && one_of(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__ADAPTER_KIND), "llm embedding moderation custom".as_slice()) && one_of(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__PROTOCOL), "https_declared local_declared".as_slice()) && declared_reference(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__ENDPOINT_REF), "env".as_slice(), "config".as_slice()) && declared_reference(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__SECRET_REF), "env".as_slice(), "secret_boundary".as_slice()) && n[endpoint_value].kind == V_NULL && n[secret_value].kind == V_NULL && n[fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__REDACTED)].a != 0u64 && valid_strings(n, allowed) && valid_strings(n, denied) && valid_strings(n, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__PURPOSE)) && lists_disjoint(n, sl, st, allowed, denied) && one_of(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__REQUEST_POLICY), "declared_only redacted_logged".as_slice()) && one_of(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__RESPONSE_POLICY), "evidence_logged redacted_logged".as_slice()) && one_of(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__NETWORK), "declared_only denied".as_slice()) && one_of(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__EXTERNAL_EXECUTION), "sandboxed disabled".as_slice()) && text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__TOOL_EXECUTION), "disabled".as_slice()) && one_of(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__SECRET_MATERIAL), "env_reference_only denied".as_slice()) && text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__KEY_MATERIAL), "denied".as_slice()) && text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__AUDIT), "required".as_slice()) && text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__EVIDENCE), "required".as_slice()) && text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__SECURITY_REPORT), "required".as_slice()) && n[fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__FAIL_CLOSED)].a != 0u64 && text_is(n, st, fld(n, sl, adapter, agent_bytecode_schema.BS_SANDBOXED_PROVIDER_ADAPTER__SECURITY_CLAIMS), "none".as_slice()) && (n[notes].kind != V_STRING || !bare_empty(n, notes));
+        if !valid { o = invalid(o, n, st, "sandboxed_provider_adapter".as_slice(), name, "invalid redacted reference, binding, operation, or fail-closed requirement".as_slice(), NONE); }
     }
     o
 }

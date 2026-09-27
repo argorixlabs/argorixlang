@@ -26,7 +26,7 @@ en Argorix coinciden con los de stage0 en todo el corpus (1.564 y 1.423
 archivos), y su chequeo semántico y su grafo de módulos dan los mismos
 diagnósticos en 1.462 programas y 79 paquetes; su IR y su bytecode son idénticos
 a los de stage0 en los 557 programas y 36 paquetes que chequean; faltan las
-decisiones del verificador y la matriz de compatibilidad.
+el verificador coincide con stage0 en 891 casos sin diferencias ni indecisos; la matriz de compatibilidad ESP-018.E está documentada y la suite v1.0 pasa 137/137. PR #65 espera revisión y CI.
 Ninguna otra tarea cambió de estado.
 El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)
 y el estado operativo del día —carriles, ramas, PRs e issues abiertos— en
