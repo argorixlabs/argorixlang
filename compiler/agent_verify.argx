@@ -2195,7 +2195,7 @@ fn same_value(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, left: u64, right: 
 fn unported(n: Slice<Value>, sl: Slice<u64>, p: u64) -> bool {
     let mut field: u64 = 0u64;
     while field < agent_bytecode_schema.field_count(agent_bytecode_schema.BS_PROGRAM) {
-        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS || field == agent_bytecode_schema.BS_PROGRAM__PASSPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES || field == agent_bytecode_schema.BS_PROGRAM__FEATURES || field == agent_bytecode_schema.BS_PROGRAM__SECRETS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTERS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTER_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__CRYPTOS || field == agent_bytecode_schema.BS_PROGRAM__CRYPTO_BOUNDARIES || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES;
+        let ported: bool = field == agent_bytecode_schema.BS_PROGRAM__SOURCE_DIGEST || field == agent_bytecode_schema.BS_PROGRAM__BYTECODE_VERSION || field == agent_bytecode_schema.BS_PROGRAM__LANGUAGE || field == agent_bytecode_schema.BS_PROGRAM__MODULE || field == agent_bytecode_schema.BS_PROGRAM__MODULES || field == agent_bytecode_schema.BS_PROGRAM__IMPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDERS || field == agent_bytecode_schema.BS_PROGRAM__ASSERTIONS || field == agent_bytecode_schema.BS_PROGRAM__POLICIES || field == agent_bytecode_schema.BS_PROGRAM__TYPES || field == agent_bytecode_schema.BS_PROGRAM__ENUMS || field == agent_bytecode_schema.BS_PROGRAM__FAILURES || field == agent_bytecode_schema.BS_PROGRAM__AGENTS || field == agent_bytecode_schema.BS_PROGRAM__CAPABILITIES || field == agent_bytecode_schema.BS_PROGRAM__TOOLS || field == agent_bytecode_schema.BS_PROGRAM__MODELS || field == agent_bytecode_schema.BS_PROGRAM__INSTRUCTIONS || field == agent_bytecode_schema.BS_PROGRAM__PASSPORTS || field == agent_bytecode_schema.BS_PROGRAM__PROVIDER_HARNESSES || field == agent_bytecode_schema.BS_PROGRAM__FEATURES || field == agent_bytecode_schema.BS_PROGRAM__SECRETS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTERS || field == agent_bytecode_schema.BS_PROGRAM__ADAPTER_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__CRYPTOS || field == agent_bytecode_schema.BS_PROGRAM__CRYPTO_BOUNDARIES || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES || field == agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS || field == agent_bytecode_schema.BS_PROGRAM__MCP_BRIDGE_CONTRACTS || field == agent_bytecode_schema.BS_PROGRAM__A2A_BRIDGE_CONTRACTS || field == agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS || field == agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES || field == agent_bytecode_schema.BS_PROGRAM__REGULATORY_MAPPINGS;
         let value: u64 = fld(n, sl, p, field);
         if !ported && n[value].kind == V_ARRAY && n[value].a != 0u64 {
             return true;
@@ -2243,9 +2243,15 @@ fn metadata(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: 
     o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_HANDSHAKES)), 29u64);
     o = validate_atrust_handshakes(o, n, sl, st, p);
     o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS)), 30u64);
+    o = validate_trust_ledgers(o, n, sl, st, p);
     o = gate_version(o, n, sl, st, p, rank, is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__MCP_BRIDGE_CONTRACTS)) && is_empty(n, list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__A2A_BRIDGE_CONTRACTS)), 31u64);
+    o = validate_mcp_bridges(o, n, sl, st, p);
+    o = validate_a2a_bridges(o, n, sl, st, p);
     o = gate(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS, 32u64, "atrust_evidence_maps require bytecode_version 0.32".as_slice());
+    o = validate_evidence_maps(o, n, sl, st, p);
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES, agent_bytecode_schema.BS_PROGRAM__REGULATORY_MAPPINGS, 33u64, "governance_profiles and regulatory_mappings require bytecode_version 0.33".as_slice());
+    o = validate_governance(o, n, sl, st, p);
+    o = validate_regulatory(o, n, sl, st, p);
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__THIRD_PARTY_VERIFIERS, agent_bytecode_schema.BS_PROGRAM__PUBLIC_CONFORMANCE_REPORTS, 34u64, "third_party_verifiers and public_conformance_reports require bytecode_version 0.34".as_slice());
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__RUNTIME_HARDENING_PROFILES, agent_bytecode_schema.BS_PROGRAM__THREAT_MODELS, 35u64, "runtime_hardening_profiles and threat_models require bytecode_version 0.35".as_slice());
     o = gate_pair(o, n, sl, p, rank, agent_bytecode_schema.BS_PROGRAM__SPEC_FREEZES, agent_bytecode_schema.BS_PROGRAM__RELEASE_CANDIDATES, 36u64, "spec_freezes and release_candidates require bytecode_version 0.36".as_slice());
@@ -2785,6 +2791,430 @@ fn validate_atrust_handshakes(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, 
             o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__EVIDENCE, "required".as_slice(), "atrust handshake".as_slice(), name, "evidence must be required".as_slice());
             o = must(o, n, sl, st, h, agent_bytecode_schema.BS_A_TRUST_HANDSHAKE__SECURITY_CLAIMS, "none".as_slice(), "atrust handshake".as_slice(), name, "security_claims must be none".as_slice());
         }
+    }
+    o
+}
+
+// ... if list field `field` of `item` is empty.
+fn nonempty(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
+    if !is_empty(n, fld(n, sl, item, field)) {
+        return out;
+    }
+    invalid(out, n, st, kind, name, reason, NONE)
+}
+
+// Whether a crypto named `name` is of kind `hash` and not denied.
+fn hash_crypto(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64, name: u64) -> bool {
+    let mut link: u64 = n[list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__CRYPTOS)].a;
+    while link != 0u64 {
+        let crypto: u64 = link - 1u64;
+        link = n[crypto].next;
+        if same_text(n, st, fld(n, sl, crypto, agent_bytecode_schema.BS_CRYPTO__NAME), name) && text_is(n, st, fld(n, sl, crypto, agent_bytecode_schema.BS_CRYPTO__KIND), "hash".as_slice()) && !text_is(n, st, fld(n, sl, crypto, agent_bytecode_schema.BS_CRYPTO__STATUS), "denied".as_slice()) {
+            return true;
+        }
+    }
+    false
+}
+
+fn validate_trust_ledgers(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let ledgers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS);
+    let mut link: u64 = n[ledgers].a;
+    while link != 0u64 {
+        let l: u64 = link - 1u64;
+        link = n[l].next;
+        let name: u64 = fld(n, sl, l, agent_bytecode_schema.BS_TRUST_LEDGER__NAME);
+        if seen_before(n, sl, st, ledgers, agent_bytecode_schema.BS_TRUST_LEDGER__NAME, l, name) {
+            o = named(o, n, st, "duplicate trust ledger ".as_slice(), name, "".as_slice());
+        } else {
+            o = filled(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__NAME, "trust ledger".as_slice(), name, "name must not be empty".as_slice());
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__SCOPE, "local package bundle".as_slice(), "trust ledger".as_slice(), name, "scope must be local, package, or bundle".as_slice());
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__MODE, "dry_run declared_only".as_slice(), "trust ledger".as_slice(), name, "mode must be dry_run or declared_only".as_slice());
+            let algorithm: u64 = fld(n, sl, l, agent_bytecode_schema.BS_TRUST_LEDGER__HASH_ALGORITHM);
+            if blank(n, st, algorithm) {
+                o = invalid(o, n, st, "trust ledger".as_slice(), name, "hash_algorithm must not be empty".as_slice(), NONE);
+            } else if !hash_crypto(n, sl, st, p, algorithm) {
+                o = invalid(o, n, st, "trust ledger".as_slice(), name, "hash_algorithm must reference a declared, non-denied crypto of kind hash".as_slice(), NONE);
+            }
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__CHAIN_POLICY, "append_only declared_only".as_slice(), "trust ledger".as_slice(), name, "chain_policy must be append_only or declared_only".as_slice());
+            o = nonempty(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__ENTRIES, "trust ledger".as_slice(), name, "entries must not be empty".as_slice());
+            o = any_blank_field(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__PURPOSE, "trust ledger".as_slice(), name, "purpose must not contain empty items".as_slice());
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__NETWORK, "denied".as_slice(), "trust ledger".as_slice(), name, "network must be denied".as_slice());
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__KEY_MATERIAL, "denied".as_slice(), "trust ledger".as_slice(), name, "key_material must be denied".as_slice());
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__SECRET_MATERIAL, "denied".as_slice(), "trust ledger".as_slice(), name, "secret_material must be denied".as_slice());
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__EXECUTION, "disabled".as_slice(), "trust ledger".as_slice(), name, "execution must be disabled".as_slice());
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__EVIDENCE, "required".as_slice(), "trust ledger".as_slice(), name, "evidence must be required".as_slice());
+            o = must(o, n, sl, st, l, agent_bytecode_schema.BS_TRUST_LEDGER__SECURITY_CLAIMS, "none".as_slice(), "trust ledger".as_slice(), name, "security_claims must be none".as_slice());
+            o = ledger_entries(o, n, sl, st, l, name, algorithm);
+        }
+    }
+    o
+}
+
+fn ledger_entries(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, l: u64, name: u64, algorithm: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let entries: u64 = fld(n, sl, l, agent_bytecode_schema.BS_TRUST_LEDGER__ENTRIES);
+    let mut previous: u64 = NONE;
+    let mut link: u64 = n[entries].a;
+    while link != 0u64 {
+        let e: u64 = link - 1u64;
+        link = n[e].next;
+        let id: u64 = fld(n, sl, e, agent_bytecode_schema.BS_TRUST_LEDGER_ENTRY__ID);
+        if seen_before(n, sl, st, entries, agent_bytecode_schema.BS_TRUST_LEDGER_ENTRY__ID, e, id) {
+            o = invalid(o, n, st, "trust ledger".as_slice(), name, "entry ids must be unique".as_slice(), NONE);
+        }
+        o = filled(o, n, sl, st, e, agent_bytecode_schema.BS_TRUST_LEDGER_ENTRY__ID, "trust ledger".as_slice(), name, "entry id must not be empty".as_slice());
+        o = must(o, n, sl, st, e, agent_bytecode_schema.BS_TRUST_LEDGER_ENTRY__KIND, "identity credential handshake evidence policy custom".as_slice(), "trust ledger".as_slice(), name, "entry kind is invalid".as_slice());
+        o = filled(o, n, sl, st, e, agent_bytecode_schema.BS_TRUST_LEDGER_ENTRY__SUBJECT, "trust ledger".as_slice(), name, "entry subject must not be empty".as_slice());
+        o = filled(o, n, sl, st, e, agent_bytecode_schema.BS_TRUST_LEDGER_ENTRY__EVIDENCE_REF, "trust ledger".as_slice(), name, "entry evidence_ref must not be empty".as_slice());
+        let entry_hash: u64 = fld(n, sl, e, agent_bytecode_schema.BS_TRUST_LEDGER_ENTRY__ENTRY_HASH);
+        if blank(n, st, entry_hash) {
+            o = invalid(o, n, st, "trust ledger".as_slice(), name, "entry entry_hash must not be empty".as_slice(), NONE);
+        } else if !blank(n, st, algorithm) && !prefixed(n, st, entry_hash, algorithm) {
+            o = invalid(o, n, st, "trust ledger".as_slice(), name, "entry_hash must use the declared hash_algorithm prefix".as_slice(), NONE);
+        }
+        let previous_hash: u64 = fld(n, sl, e, agent_bytecode_schema.BS_TRUST_LEDGER_ENTRY__PREVIOUS_HASH);
+        if blank(n, st, previous_hash) {
+            o = invalid(o, n, st, "trust ledger".as_slice(), name, "entry previous_hash must not be empty".as_slice(), NONE);
+        } else if previous == NONE {
+            if !text_is(n, st, previous_hash, "GENESIS".as_slice()) {
+                o = invalid(o, n, st, "trust ledger".as_slice(), name, "first entry previous_hash must be GENESIS".as_slice(), NONE);
+            }
+        } else if !same_text(n, st, previous_hash, previous) {
+            o = invalid(o, n, st, "trust ledger".as_slice(), name, "entry previous_hash must match the prior entry_hash".as_slice(), NONE);
+        }
+        previous = entry_hash;
+    }
+    let chain_root: u64 = fld(n, sl, l, agent_bytecode_schema.BS_TRUST_LEDGER__CHAIN_ROOT);
+    if previous != NONE {
+        if !same_text(n, st, chain_root, previous) {
+            o = invalid(o, n, st, "trust ledger".as_slice(), name, "chain_root must match the final entry_hash".as_slice(), NONE);
+        }
+    } else if blank(n, st, chain_root) {
+        o = invalid(o, n, st, "trust ledger".as_slice(), name, "chain_root must not be empty".as_slice(), NONE);
+    }
+    o
+}
+
+// Whether `hash` starts with `<algorithm>:`.
+fn prefixed(n: Slice<Value>, st: Slice<u8>, hash: u64, algorithm: u64) -> bool {
+    let length: u64 = n[algorithm].b - n[algorithm].a;
+    if n[hash].b - n[hash].a < length + 1u64 {
+        return false;
+    }
+    bytes.equal(st.slice(n[hash].a, n[hash].a + length), st.slice(n[algorithm].a, n[algorithm].b)) && st[n[hash].a + length] == 58u8
+}
+
+fn validate_mcp_bridges(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let bridges: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__MCP_BRIDGE_CONTRACTS);
+    let mut link: u64 = n[bridges].a;
+    while link != 0u64 {
+        let c: u64 = link - 1u64;
+        link = n[c].next;
+        let name: u64 = fld(n, sl, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__NAME);
+        if seen_before(n, sl, st, bridges, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__NAME, c, name) {
+            o = named(o, n, st, "duplicate mcp bridge contract ".as_slice(), name, "".as_slice());
+        } else {
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__NAME, "mcp bridge contract".as_slice(), name, "name must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__AGENT, "mcp bridge contract".as_slice(), name, "agent must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__PASSPORT, "mcp bridge contract".as_slice(), name, "passport must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__IDENTITY, "mcp bridge contract".as_slice(), name, "identity must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__BOUNDARY, "mcp bridge contract".as_slice(), name, "boundary must not be empty".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__TRANSPORT, "declared_only disabled".as_slice(), "mcp bridge contract".as_slice(), name, "transport must be declared_only or disabled".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__PROTOCOL, "mcp".as_slice(), "mcp bridge contract".as_slice(), name, "protocol must be mcp".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__DIRECTION, "inbound outbound bidirectional".as_slice(), "mcp bridge contract".as_slice(), name, "direction must be inbound, outbound, or bidirectional".as_slice());
+            o = any_blank_field(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__TOOLS, "mcp bridge contract".as_slice(), name, "tools must not contain empty items".as_slice());
+            o = any_blank_field(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__RESOURCES, "mcp bridge contract".as_slice(), name, "resources must not contain empty items".as_slice());
+            o = any_blank_field(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__PROMPTS, "mcp bridge contract".as_slice(), name, "prompts must not contain empty items".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__NETWORK, "denied".as_slice(), "mcp bridge contract".as_slice(), name, "network must be denied".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__EXTERNAL_EXECUTION, "disabled".as_slice(), "mcp bridge contract".as_slice(), name, "external_execution must be disabled".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__TOOL_EXECUTION, "disabled".as_slice(), "mcp bridge contract".as_slice(), name, "tool_execution must be disabled".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__SECRET_MATERIAL, "denied".as_slice(), "mcp bridge contract".as_slice(), name, "secret_material must be denied".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__KEY_MATERIAL, "denied".as_slice(), "mcp bridge contract".as_slice(), name, "key_material must be denied".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__AUTHENTICATION, "none declared_only".as_slice(), "mcp bridge contract".as_slice(), name, "authentication must be none or declared_only".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__AUTHORIZATION, "policy_bound declared_only".as_slice(), "mcp bridge contract".as_slice(), name, "authorization must be policy_bound or declared_only".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__EVIDENCE, "required".as_slice(), "mcp bridge contract".as_slice(), name, "evidence must be required".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__SECURITY_CLAIMS, "none".as_slice(), "mcp bridge contract".as_slice(), name, "security_claims must be none".as_slice());
+            o = nonempty(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__PURPOSE, "mcp bridge contract".as_slice(), name, "purpose must not be empty".as_slice());
+            o = any_blank_field(o, n, sl, st, c, agent_bytecode_schema.BS_MCP_BRIDGE_CONTRACT__PURPOSE, "mcp bridge contract".as_slice(), name, "purpose must not contain empty items".as_slice());
+        }
+    }
+    o
+}
+
+fn validate_a2a_bridges(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let bridges: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__A2A_BRIDGE_CONTRACTS);
+    let mut link: u64 = n[bridges].a;
+    while link != 0u64 {
+        let c: u64 = link - 1u64;
+        link = n[c].next;
+        let name: u64 = fld(n, sl, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__NAME);
+        if seen_before(n, sl, st, bridges, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__NAME, c, name) {
+            o = named(o, n, st, "duplicate a2a bridge contract ".as_slice(), name, "".as_slice());
+        } else {
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__NAME, "a2a bridge contract".as_slice(), name, "name must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__INITIATOR, "a2a bridge contract".as_slice(), name, "initiator must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__RESPONDER, "a2a bridge contract".as_slice(), name, "responder must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__INITIATOR_PASSPORT, "a2a bridge contract".as_slice(), name, "initiator_passport must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__RESPONDER_PASSPORT, "a2a bridge contract".as_slice(), name, "responder_passport must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__INITIATOR_IDENTITY, "a2a bridge contract".as_slice(), name, "initiator_identity must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__RESPONDER_IDENTITY, "a2a bridge contract".as_slice(), name, "responder_identity must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__HANDSHAKE, "a2a bridge contract".as_slice(), name, "handshake must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__TRUST_LEDGER, "a2a bridge contract".as_slice(), name, "trust_ledger must not be empty".as_slice());
+            o = filled(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__BOUNDARY, "a2a bridge contract".as_slice(), name, "boundary must not be empty".as_slice());
+            let initiator: u64 = fld(n, sl, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__INITIATOR);
+            if !blank(n, st, initiator) && same_text(n, st, initiator, fld(n, sl, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__RESPONDER)) {
+                o = invalid(o, n, st, "a2a bridge contract".as_slice(), name, "initiator and responder must be distinct".as_slice(), NONE);
+            }
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__PROTOCOL, "a2a".as_slice(), "a2a bridge contract".as_slice(), name, "protocol must be a2a".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__TRANSPORT, "declared_only disabled".as_slice(), "a2a bridge contract".as_slice(), name, "transport must be declared_only or disabled".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__DIRECTION, "inbound outbound bidirectional".as_slice(), "a2a bridge contract".as_slice(), name, "direction must be inbound, outbound, or bidirectional".as_slice());
+            o = nonempty(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__MESSAGE_CONTRACTS, "a2a bridge contract".as_slice(), name, "message_contracts must not be empty".as_slice());
+            o = any_blank_field(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__MESSAGE_CONTRACTS, "a2a bridge contract".as_slice(), name, "message_contracts must not contain empty items".as_slice());
+            o = any_blank_field(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__CAPABILITIES, "a2a bridge contract".as_slice(), name, "capabilities must not contain empty items".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__NETWORK, "denied".as_slice(), "a2a bridge contract".as_slice(), name, "network must be denied".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__EXTERNAL_EXECUTION, "disabled".as_slice(), "a2a bridge contract".as_slice(), name, "external_execution must be disabled".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__AGENT_EXECUTION, "disabled".as_slice(), "a2a bridge contract".as_slice(), name, "agent_execution must be disabled".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__SECRET_MATERIAL, "denied".as_slice(), "a2a bridge contract".as_slice(), name, "secret_material must be denied".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__KEY_MATERIAL, "denied".as_slice(), "a2a bridge contract".as_slice(), name, "key_material must be denied".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__AUTHENTICATION, "none declared_only".as_slice(), "a2a bridge contract".as_slice(), name, "authentication must be none or declared_only".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__AUTHORIZATION, "policy_bound declared_only".as_slice(), "a2a bridge contract".as_slice(), name, "authorization must be policy_bound or declared_only".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__EVIDENCE, "required".as_slice(), "a2a bridge contract".as_slice(), name, "evidence must be required".as_slice());
+            o = must(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__SECURITY_CLAIMS, "none".as_slice(), "a2a bridge contract".as_slice(), name, "security_claims must be none".as_slice());
+            o = nonempty(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__PURPOSE, "a2a bridge contract".as_slice(), name, "purpose must not be empty".as_slice());
+            o = any_blank_field(o, n, sl, st, c, agent_bytecode_schema.BS_A2_A_BRIDGE_CONTRACT__PURPOSE, "a2a bridge contract".as_slice(), name, "purpose must not contain empty items".as_slice());
+        }
+    }
+    o
+}
+
+// Whether a string node is empty, untrimmed.
+fn bare_empty(n: Slice<Value>, node: u64) -> bool {
+    n[node].a == n[node].b
+}
+
+// ... if list field `field` is empty or has an empty (untrimmed) entry.
+fn nonempty_strict(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, kind: Slice<u8>, name: u64, reason: Slice<u8>) -> Buffer<u8> {
+    let list: u64 = fld(n, sl, item, field);
+    let mut bad: bool = is_empty(n, list);
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let entry: u64 = link - 1u64;
+        link = n[entry].next;
+        if bare_empty(n, entry) {
+            bad = true;
+        }
+    }
+    if !bad {
+        return out;
+    }
+    invalid(out, n, st, kind, name, reason, NONE)
+}
+
+// ... if option field `field` is `Some("")`.
+fn notes_empty(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, field: u64, kind: Slice<u8>, name: u64) -> Buffer<u8> {
+    let notes: u64 = fld(n, sl, item, field);
+    if n[notes].kind != V_STRING || !bare_empty(n, notes) {
+        return out;
+    }
+    invalid(out, n, st, kind, name, "notes must not be empty".as_slice(), NONE)
+}
+
+// The last element of `list` whose field `field` is `name`, or NONE.
+fn find_last(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, list: u64, field: u64, name: u64) -> u64 {
+    let mut found: u64 = NONE;
+    let mut link: u64 = n[list].a;
+    while link != 0u64 {
+        let item: u64 = link - 1u64;
+        link = n[item].next;
+        if same_text(n, st, fld(n, sl, item, field), name) {
+            found = item;
+        }
+    }
+    found
+}
+
+// Whether fields `first` to `first + count - 1` hold the words of the
+// runtime boundary: network denied, external_execution disabled, secret and
+// key material denied, execution disabled, security_claims none.
+fn boundaries_closed(n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, item: u64, network: u64, external: u64, secret: u64, key: u64, execution: u64, claims: u64) -> bool {
+    text_is(n, st, fld(n, sl, item, network), "denied".as_slice()) && text_is(n, st, fld(n, sl, item, external), "disabled".as_slice()) && text_is(n, st, fld(n, sl, item, secret), "denied".as_slice()) && text_is(n, st, fld(n, sl, item, key), "denied".as_slice()) && text_is(n, st, fld(n, sl, item, execution), "disabled".as_slice()) && text_is(n, st, fld(n, sl, item, claims), "none".as_slice())
+}
+
+fn validate_evidence_maps(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let maps: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS);
+    let mut link: u64 = n[maps].a;
+    while link != 0u64 {
+        let map: u64 = link - 1u64;
+        link = n[map].next;
+        let name: u64 = fld(n, sl, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NAME);
+        if seen_before(n, sl, st, maps, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NAME, map, name) {
+            o = named(o, n, st, "duplicate atrust_evidence_map ".as_slice(), name, "".as_slice());
+        }
+        o = filled(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__AGENT, "atrust_evidence_map".as_slice(), name, "missing required field `agent`".as_slice());
+        o = filled(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__PASSPORT, "atrust_evidence_map".as_slice(), name, "missing required field `passport`".as_slice());
+        o = filled(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__IDENTITY, "atrust_evidence_map".as_slice(), name, "missing required field `identity`".as_slice());
+        o = filled(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__CREDENTIAL_CONTRACT, "atrust_evidence_map".as_slice(), name, "missing required field `credential_contract`".as_slice());
+        o = filled(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__HANDSHAKE, "atrust_evidence_map".as_slice(), name, "missing required field `handshake`".as_slice());
+        o = filled(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__TRUST_LEDGER, "atrust_evidence_map".as_slice(), name, "missing required field `trust_ledger`".as_slice());
+        o = nonempty(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__MCP_BRIDGES, "atrust_evidence_map".as_slice(), name, "missing required field `mcp_bridges`".as_slice());
+        o = any_blank_field(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__MCP_BRIDGES, "atrust_evidence_map".as_slice(), name, "`mcp_bridges` must not contain empty strings".as_slice());
+        o = nonempty(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__A2A_BRIDGES, "atrust_evidence_map".as_slice(), name, "missing required field `a2a_bridges`".as_slice());
+        o = any_blank_field(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__A2A_BRIDGES, "atrust_evidence_map".as_slice(), name, "`a2a_bridges` must not contain empty strings".as_slice());
+        o = nonempty(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__POLICIES, "atrust_evidence_map".as_slice(), name, "missing required field `policies`".as_slice());
+        o = any_blank_field(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__POLICIES, "atrust_evidence_map".as_slice(), name, "`policies` must not contain empty strings".as_slice());
+        o = nonempty(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__PURPOSE, "atrust_evidence_map".as_slice(), name, "missing required field `purpose`".as_slice());
+        o = any_blank_field(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__PURPOSE, "atrust_evidence_map".as_slice(), name, "`purpose` must not contain empty strings".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__COVERAGE, "required complete".as_slice(), "atrust_evidence_map".as_slice(), name, "coverage must be required or complete".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__MAPPING_MODE, "declared_only evidence_only".as_slice(), "atrust_evidence_map".as_slice(), name, "mapping_mode must be declared_only or evidence_only".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__VERIFICATION, "declared_only disabled".as_slice(), "atrust_evidence_map".as_slice(), name, "verification must be declared_only or disabled".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__RESOLUTION, "disabled".as_slice(), "atrust_evidence_map".as_slice(), name, "resolution must be disabled".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__EVIDENCE_BUNDLE, "required".as_slice(), "atrust_evidence_map".as_slice(), name, "evidence_bundle must be required".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__SECURITY_REPORT, "required".as_slice(), "atrust_evidence_map".as_slice(), name, "security_report must be required".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__TRACE, "required".as_slice(), "atrust_evidence_map".as_slice(), name, "trace must be required".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NETWORK, "denied".as_slice(), "atrust_evidence_map".as_slice(), name, "network must be denied".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__EXTERNAL_EXECUTION, "disabled".as_slice(), "atrust_evidence_map".as_slice(), name, "external_execution must be disabled".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__SECRET_MATERIAL, "denied".as_slice(), "atrust_evidence_map".as_slice(), name, "secret_material must be denied".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__KEY_MATERIAL, "denied".as_slice(), "atrust_evidence_map".as_slice(), name, "key_material must be denied".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__EXECUTION, "disabled".as_slice(), "atrust_evidence_map".as_slice(), name, "execution must be disabled".as_slice());
+        o = must(o, n, sl, st, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__SECURITY_CLAIMS, "none".as_slice(), "atrust_evidence_map".as_slice(), name, "security_claims must be none".as_slice());
+        let notes: u64 = fld(n, sl, map, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NOTES);
+        if n[notes].kind == V_STRING && blank(n, st, notes) {
+            o = invalid(o, n, st, "atrust_evidence_map".as_slice(), name, "notes must not be empty".as_slice(), NONE);
+        }
+    }
+    o
+}
+
+fn validate_governance(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let profiles: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES);
+    let maps: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS);
+    let ledgers: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__TRUST_LEDGERS);
+    let policies: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__POLICIES);
+    let mut link: u64 = n[profiles].a;
+    while link != 0u64 {
+        let profile: u64 = link - 1u64;
+        link = n[profile].next;
+        let name: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NAME);
+        if seen_before(n, sl, st, profiles, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NAME, profile, name) {
+            o = named(o, n, st, "duplicate governance_profile ".as_slice(), name, "".as_slice());
+        }
+        o = filled(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NAME, "governance_profile".as_slice(), name, "name must not be empty".as_slice());
+        o = filled(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__OWNER, "governance_profile".as_slice(), name, "owner must not be empty".as_slice());
+        o = filled(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__JURISDICTION, "governance_profile".as_slice(), name, "jurisdiction must not be empty".as_slice());
+        o = filled(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__FRAMEWORK, "governance_profile".as_slice(), name, "framework must not be empty".as_slice());
+        o = filled(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__EVIDENCE_MAP, "governance_profile".as_slice(), name, "evidence_map must not be empty".as_slice());
+        o = filled(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__TRUST_LEDGER, "governance_profile".as_slice(), name, "trust_ledger must not be empty".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__SCOPE, "agent system package organization".as_slice(), "governance_profile".as_slice(), name, "invalid scope".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__LEVEL, "baseline audit regulated experimental".as_slice(), "governance_profile".as_slice(), name, "invalid level".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__DOMAIN, "ai_agent security compliance privacy safety custom".as_slice(), "governance_profile".as_slice(), name, "invalid domain".as_slice());
+        if !list_has(n, sl, st, maps, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NAME, fld(n, sl, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__EVIDENCE_MAP)) {
+            o = invalid(o, n, st, "governance_profile".as_slice(), name, "unknown evidence_map".as_slice(), NONE);
+        }
+        if !list_has(n, sl, st, ledgers, agent_bytecode_schema.BS_TRUST_LEDGER__NAME, fld(n, sl, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__TRUST_LEDGER)) {
+            o = invalid(o, n, st, "governance_profile".as_slice(), name, "unknown trust_ledger".as_slice(), NONE);
+        }
+        let profile_policies: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__POLICIES);
+        let mut bad: bool = is_empty(n, profile_policies);
+        let mut policy_link: u64 = n[profile_policies].a;
+        while policy_link != 0u64 {
+            let policy: u64 = policy_link - 1u64;
+            policy_link = n[policy].next;
+            if bare_empty(n, policy) || !list_has(n, sl, st, policies, agent_bytecode_schema.BS_POLICY__NAME, policy) {
+                bad = true;
+            }
+        }
+        if bad {
+            o = invalid(o, n, st, "governance_profile".as_slice(), name, "policies must be non-empty and reference declared policies".as_slice(), NONE);
+        }
+        let controls: u64 = fld(n, sl, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__CONTROLS);
+        o = nonempty(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__CONTROLS, "governance_profile".as_slice(), name, "controls must not be empty".as_slice());
+        let mut control_link: u64 = n[controls].a;
+        while control_link != 0u64 {
+            let control: u64 = control_link - 1u64;
+            control_link = n[control].next;
+            if seen_before(n, sl, st, controls, agent_bytecode_schema.BS_GOVERNANCE_CONTROL__ID, control, fld(n, sl, control, agent_bytecode_schema.BS_GOVERNANCE_CONTROL__ID)) {
+                o = invalid(o, n, st, "governance_profile".as_slice(), name, "duplicate control id".as_slice(), NONE);
+            }
+            if blank(n, st, fld(n, sl, control, agent_bytecode_schema.BS_GOVERNANCE_CONTROL__ID)) || blank(n, st, fld(n, sl, control, agent_bytecode_schema.BS_GOVERNANCE_CONTROL__REQUIREMENT)) || blank(n, st, fld(n, sl, control, agent_bytecode_schema.BS_GOVERNANCE_CONTROL__EVIDENCE_REF)) {
+                o = invalid(o, n, st, "governance_profile".as_slice(), name, "control fields must not be empty".as_slice(), NONE);
+            }
+            o = must(o, n, sl, st, control, agent_bytecode_schema.BS_GOVERNANCE_CONTROL__CATEGORY, "identity credential handshake ledger bridge evidence runtime_boundary policy security privacy safety compliance custom".as_slice(), "governance_profile".as_slice(), name, "invalid control category".as_slice());
+            o = must(o, n, sl, st, control, agent_bytecode_schema.BS_GOVERNANCE_CONTROL__STATUS, "mapped declared pending_review not_applicable".as_slice(), "governance_profile".as_slice(), name, "invalid control status".as_slice());
+        }
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__RISK_LEVEL, "low moderate high critical unknown".as_slice(), "governance_profile".as_slice(), name, "invalid risk_level".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__REVIEW_STATUS, "draft reviewed approved_internal deprecated".as_slice(), "governance_profile".as_slice(), name, "invalid review_status".as_slice());
+        o = must(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__ASSURANCE, "declared_only evidence_mapped manually_reviewed".as_slice(), "governance_profile".as_slice(), name, "invalid assurance".as_slice());
+        if !boundaries_closed(n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NETWORK, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__EXTERNAL_EXECUTION, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__SECRET_MATERIAL, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__KEY_MATERIAL, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__EXECUTION, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__SECURITY_CLAIMS) {
+            o = invalid(o, n, st, "governance_profile".as_slice(), name, "runtime boundaries must remain denied/disabled and security_claims none".as_slice(), NONE);
+        }
+        o = nonempty_strict(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__PURPOSE, "governance_profile".as_slice(), name, "purpose must not be empty".as_slice());
+        o = notes_empty(o, n, sl, st, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NOTES, "governance_profile".as_slice(), name);
+    }
+    o
+}
+
+fn validate_regulatory(out: Buffer<u8>, n: Slice<Value>, sl: Slice<u64>, st: Slice<u8>, p: u64) -> Buffer<u8> {
+    let mut o: Buffer<u8> = out;
+    let mappings: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__REGULATORY_MAPPINGS);
+    let profiles: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__GOVERNANCE_PROFILES);
+    let maps: u64 = list_of(n, sl, p, agent_bytecode_schema.BS_PROGRAM__ATRUST_EVIDENCE_MAPS);
+    let mut link: u64 = n[mappings].a;
+    while link != 0u64 {
+        let mapping: u64 = link - 1u64;
+        link = n[mapping].next;
+        let name: u64 = fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__NAME);
+        if seen_before(n, sl, st, mappings, agent_bytecode_schema.BS_REGULATORY_MAPPING__NAME, mapping, name) {
+            o = named(o, n, st, "duplicate regulatory_mapping ".as_slice(), name, "".as_slice());
+        }
+        let profile: u64 = find_last(n, sl, st, profiles, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__NAME, fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__GOVERNANCE_PROFILE));
+        if profile == NONE {
+            o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "unknown governance_profile".as_slice(), NONE);
+        }
+        let evidence_map: u64 = fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__EVIDENCE_MAP);
+        if !list_has(n, sl, st, maps, agent_bytecode_schema.BS_A_TRUST_EVIDENCE_MAP__NAME, evidence_map) {
+            o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "unknown evidence_map".as_slice(), NONE);
+        }
+        if profile != NONE && !same_text(n, st, fld(n, sl, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__EVIDENCE_MAP), evidence_map) {
+            o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "evidence_map does not match governance_profile".as_slice(), NONE);
+        }
+        if blank(n, st, fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__JURISDICTION)) || blank(n, st, fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__FRAMEWORK)) {
+            o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "jurisdiction and framework must not be empty".as_slice(), NONE);
+        }
+        let obligations: u64 = fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__OBLIGATIONS);
+        o = nonempty(o, n, sl, st, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__OBLIGATIONS, "regulatory_mapping".as_slice(), name, "obligations must not be empty".as_slice());
+        let mut obligation_link: u64 = n[obligations].a;
+        while obligation_link != 0u64 {
+            let obligation: u64 = obligation_link - 1u64;
+            obligation_link = n[obligation].next;
+            let id: u64 = fld(n, sl, obligation, agent_bytecode_schema.BS_REGULATORY_OBLIGATION__ID);
+            if seen_before(n, sl, st, obligations, agent_bytecode_schema.BS_REGULATORY_OBLIGATION__ID, obligation, id) {
+                o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "duplicate obligation id".as_slice(), NONE);
+            }
+            let control: u64 = fld(n, sl, obligation, agent_bytecode_schema.BS_REGULATORY_OBLIGATION__CONTROL);
+            if blank(n, st, id) || blank(n, st, fld(n, sl, obligation, agent_bytecode_schema.BS_REGULATORY_OBLIGATION__SOURCE)) || blank(n, st, fld(n, sl, obligation, agent_bytecode_schema.BS_REGULATORY_OBLIGATION__REQUIREMENT)) || blank(n, st, control) || blank(n, st, fld(n, sl, obligation, agent_bytecode_schema.BS_REGULATORY_OBLIGATION__EVIDENCE_REF)) {
+                o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "obligation fields must not be empty".as_slice(), NONE);
+            }
+            let known: bool = profile != NONE && list_has(n, sl, st, fld(n, sl, profile, agent_bytecode_schema.BS_GOVERNANCE_PROFILE__CONTROLS), agent_bytecode_schema.BS_GOVERNANCE_CONTROL__ID, control);
+            if !known {
+                o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "obligation references unknown control".as_slice(), NONE);
+            }
+            o = must(o, n, sl, st, obligation, agent_bytecode_schema.BS_REGULATORY_OBLIGATION__STATUS, "mapped pending_review gap not_applicable".as_slice(), "regulatory_mapping".as_slice(), name, "invalid obligation status".as_slice());
+        }
+        o = must(o, n, sl, st, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__COVERAGE, "mapped partial pending_review".as_slice(), "regulatory_mapping".as_slice(), name, "invalid coverage".as_slice());
+        o = must(o, n, sl, st, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__ASSESSMENT, "declared_only evidence_mapped manual_review_required".as_slice(), "regulatory_mapping".as_slice(), name, "invalid assessment".as_slice());
+        if !text_is(n, st, fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__LEGAL_CLAIMS), "none".as_slice()) || !text_is(n, st, fld(n, sl, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__CERTIFICATION), "none".as_slice()) {
+            o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "legal_claims and certification must be none".as_slice(), NONE);
+        }
+        if !boundaries_closed(n, sl, st, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__NETWORK, agent_bytecode_schema.BS_REGULATORY_MAPPING__EXTERNAL_EXECUTION, agent_bytecode_schema.BS_REGULATORY_MAPPING__SECRET_MATERIAL, agent_bytecode_schema.BS_REGULATORY_MAPPING__KEY_MATERIAL, agent_bytecode_schema.BS_REGULATORY_MAPPING__EXECUTION, agent_bytecode_schema.BS_REGULATORY_MAPPING__SECURITY_CLAIMS) {
+            o = invalid(o, n, st, "regulatory_mapping".as_slice(), name, "runtime boundaries must remain denied/disabled and security_claims none".as_slice(), NONE);
+        }
+        o = nonempty_strict(o, n, sl, st, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__PURPOSE, "regulatory_mapping".as_slice(), name, "purpose must not be empty".as_slice());
+        o = notes_empty(o, n, sl, st, mapping, agent_bytecode_schema.BS_REGULATORY_MAPPING__NOTES, "regulatory_mapping".as_slice(), name);
     }
     o
 }
