@@ -102,41 +102,17 @@
       "scope": "Parser y AST en Argorix (compiler/); volcado canonico del AST igual al del parser stage0 en 135 archivos; limite de anidamiento de 256 en ambos parsers; PR 54, CI verde en main@21b80ca"
     },
     "ESP-012": {
-      "status": "HECHA",
+      "status": "EN_CURSO",
       "file": "tasks/espada/ESP-012.md",
       "evidence": "crates/argorixc/tests/check_differential.rs; crates/argorixc/tests/link_differential.rs; tests/selfhost/check/cases.json",
-      "scope": "Resolucion, tipos y modulos en Argorix: checker (PRs 55 y 56) y linker (PR 57) en compiler/check.argx y compiler/link.argx, iguales a stage0"
+      "scope": "Checker (PRs 55 y 56) y linker (PR 57) en Argorix, iguales a stage0"
     },
-    "ESP-018": {"status": "EN_CURSO", "file": "tasks/espada/ESP-018.md", "evidence": "crates/argorixc/tests/agent_lexer_differential.rs; crates/argorixc/tests/unicode_tables.rs; tests/selfhost/agent/cases.json", "scope": "ESP-018.A lexer en Argorix; parser, checker, lowering y compatibilidad pendientes"},
-    "ESP-013": {
-      "status": "HECHA",
-      "file": "tasks/espada/ESP-013.md",
-      "evidence": "PR 58; tests/selfhost/ir/cases.json; tests/selfhost/c/cases.json; tests/selfhost/pipeline/cases.json",
-      "scope": "IR, verificador, backend C y pipeline de build en Argorix"
-    },
-    "ESP-014": {
-      "status": "HECHA",
-      "file": "tasks/espada/ESP-014.md",
-      "evidence": "PR 59; bootstrap/stage1.py; tests/selfhost/stage1/cases.json",
-      "scope": "stage1, el primer compilador self-hosted completo"
-    },
-    "ESP-015": {
-      "status": "HECHA",
-      "file": "tasks/espada/ESP-015.md",
-      "evidence": "PR 60; bootstrap/selfhost.py",
-      "scope": "Bootstrap stage2/stage3 sin Rust"
-    },
-    "ESP-016": {
-      "status": "HECHA",
-      "file": "tasks/espada/ESP-016.md",
-      "evidence": "PR 61; bootstrap/native.py; crates/argorixc/tests/native.rs",
-      "scope": "Backend nativo x86-64 Linux (ELF64); el compilador se construye sin compilador C"
-    },
-    "ESP-017": {
-      "status": "HECHA",
-      "file": "tasks/espada/ESP-017.md",
-      "evidence": "bootstrap/native-windows.ps1; native-windows job of .github/workflows/core-c.yml",
-      "scope": "Segundo destino: Windows x86-64 (COFF, ABI x64 de Microsoft, host de archivos wide) y bootstrap nativo sin compilador C ni Rust en ambos sistemas"
+    "ESP-017": {"status": "HECHA", "file": "tasks/espada/ESP-017.md", "evidence": "bootstrap/native-windows.ps1; native-windows job of .github/workflows/core-c.yml", "scope": "Windows x86-64 y bootstrap nativo sin compilador C ni Rust"},
+    "ESP-018": {
+      "status": "EN_CURSO",
+      "file": "tasks/espada/ESP-018.md",
+      "evidence": "crates/argorixc/tests/agent_lexer_differential.rs; crates/argorixc/tests/agent_parser_differential.rs; crates/argorixc/tests/agent_check_differential.rs; crates/argorixc/tests/agent_package_differential.rs; crates/argorixc/tests/agent_ir_differential.rs; crates/argorixc/tests/agent_bytecode_differential.rs; crates/argorixc/tests/agent_ir_table.rs; crates/argorixc/tests/unicode_tables.rs; crates/argorixc/tests/agent_schema.rs; crates/argorixc/tests/agent_blocks.rs; tests/selfhost/agent/cases.json",
+      "scope": "Lenguaje de agentes migrado a Argorix; ESP-018.A (lexer) y ESP-018.B (parser) hechas, iguales a stage0 en 1564 y 1423 archivos; ESP-018.C (chequeo y grafo de modulos) hecha, igual a stage0 en 1462 programas y 79 paquetes; ESP-018.D: IR y bytecode iguales a stage0; verificador 891/891 contra stage0; ESP-018.E documentada; PR 65 pendiente de revisión y CI"
     }
   },
   "note": "Estado de planificación, no evidencia de implementación. ESP-026 queda sustituida por tareas MAT. Añadir requisitos cruzados del campo additional_dependencies al resolver disponibilidad. esp_progress se actualiza al reclamar o cerrar una tarea ESP; el estado operativo del día vive en WORKBOARD.md.",

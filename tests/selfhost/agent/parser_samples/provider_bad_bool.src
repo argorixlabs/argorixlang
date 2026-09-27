@@ -1,0 +1,2 @@
+module demo
+provider P { kind simulated enabled yes dry_run_only true }

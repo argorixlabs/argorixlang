@@ -1,0 +1,3 @@
+module app.apps.tool
+import shared.types
+agent A { receives Q }

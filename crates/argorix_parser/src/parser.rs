@@ -65,6 +65,32 @@ pub fn parse_source(source: &str) -> Result<Program, Vec<Diagnostic>> {
     Parser::new(tokens).parse().map_err(|error| vec![error])
 }
 
+/// The canonical syntax-tree dump of the agent language (ESP-018.B,
+/// `spec/language/ast.md`): what `compiler/agent_parser.argx` must print for
+/// the same bytes.
+///
+/// - Source that is not UTF-8 gives the line of the token dump.
+/// - Source that does not lex or parse gives each diagnostic, `line:column:
+///   message`.
+/// - Otherwise the program is one line of compact JSON, as `serde_json`
+///   writes the syntax tree.
+pub fn ast_dump(source: &[u8]) -> String {
+    let Ok(text) = std::str::from_utf8(source) else {
+        return crate::lexer::token_dump(source);
+    };
+    match parse_source(text) {
+        Err(diagnostics) => diagnostics
+            .iter()
+            .map(|diagnostic| format!("{diagnostic}\n"))
+            .collect(),
+        Ok(program) => {
+            let mut out = serde_json::to_string(&program).unwrap_or_default();
+            out.push('\n');
+            out
+        }
+    }
+}
+
 fn parse_bridge_direction(value: &str) -> BridgeDirection {
     match value {
         "inbound" => BridgeDirection::Inbound,

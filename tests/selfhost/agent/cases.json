@@ -2,7 +2,7 @@
   "schema_version": 1,
   "core_version": "0.1",
   "task": "ESP-018",
-  "purpose": "Fixtures of the agent-language lexer in compiler/agent_lexer.argx. The differential against the stage0 lexer over the whole corpus is crates/argorixc/tests/agent_lexer_differential.rs; these run it under gcc, clang and the sanitizers.",
+  "purpose": "Fixtures of the agent-language lexer, parser, checker, module graph, IR and bytecode in compiler/agent_lexer.argx, compiler/agent_parser.argx, compiler/agent_check.argx, compiler/agent_package.argx and compiler/agent_ir.argx (IR and bytecode). The differentials against stage0 over the whole corpus are crates/argorixc/tests/agent_lexer_differential.rs, agent_parser_differential.rs, agent_check_differential.rs, agent_package_differential.rs, agent_ir_differential.rs and agent_bytecode_differential.rs; these run them under gcc, clang and the sanitizers.",
   "cases": [
     {
       "id": "agent_lex_files",
@@ -18,6 +18,95 @@
         "expected_build": {
           "dumps/0.tokens": "1:1 0 5 Ident agent\n1:7 6 11 Ident Café\n1:12 12 13 LeftBrace\n2:3 16 24 Ident receives\n2:12 25 26 Ident M\n3:3 29 38 Ident max_steps\n3:13 39 41 Integer 10\n3:16 42 44 Arrow\n3:19 45 49 String \"ok\"\n4:1 50 51 RightBrace\n5:1 52 52 Eof\n",
           "dumps/1.tokens": "1:3: unterminated string literal\n2:3: integer literal exceeds u64 range\n2:24: unexpected character `!`\n"
+        }
+      }
+    },
+    {
+      "id": "agent_parse_files",
+      "file": "parse_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "parse_package",
+        "read_budget": 200,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.ast": "{\"module\":{\"value\":\"demo\",\"span\":{\"start\":7,\"end\":11,\"line\":1,\"column\":8}},\"imports\":[],\"providers\":[],\"harnesses\":[],\"features\":[],\"secrets\":[],\"adapters\":[],\"adapter_profiles\":[],\"cryptos\":[],\"crypto_boundaries\":[],\"did_methods\":[],\"atrust_boundaries\":[],\"atrust_identities\":[],\"atrust_credential_contracts\":[],\"atrust_handshakes\":[],\"trust_ledgers\":[],\"mcp_bridge_contracts\":[],\"a2a_bridge_contracts\":[],\"atrust_evidence_maps\":[],\"governance_profiles\":[],\"regulatory_mappings\":[],\"third_party_verifiers\":[],\"public_conformance_reports\":[],\"runtime_hardening_profiles\":[],\"threat_models\":[],\"spec_freezes\":[],\"release_candidates\":[],\"runtime_execution_profiles\":[],\"sandboxed_provider_adapters\":[],\"assertions\":[],\"policies\":[],\"failures\":[],\"capabilities\":[],\"enums\":[],\"types\":[],\"tools\":[],\"models\":[],\"agents\":[{\"name\":{\"value\":\"A\",\"span\":{\"start\":18,\"end\":19,\"line\":2,\"column\":7}},\"approval\":null,\"receives\":[{\"message_type\":{\"value\":\"Q\",\"span\":{\"start\":31,\"end\":32,\"line\":2,\"column\":20}},\"from\":null}],\"sends\":[],\"capabilities\":[],\"tools\":[],\"models\":[],\"handlers\":[]}],\"protocols\":[],\"passports\":[]}\n",
+          "dumps/1.ast": "2:22: duplicate crypto field `kind`\n"
+        }
+      }
+    },
+    {
+      "id": "agent_check_files",
+      "file": "check_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "check_package",
+        "read_budget": 200,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.check": "ok\n",
+          "dumps/1.check": "4:10: passport `P` is missing required field `agent_name`\n4:10: passport `P` is missing required field `global_id`\n4:10: passport `P` is missing required field `identity`\n4:10: passport `P` is missing required field `provider`\n4:10: passport `P` is missing required field `version`\n4:10: passport `P` is missing required field `jurisdiction`\n4:10: passport `P` is missing required field `intent`\n4:10: passport `P` requires non-empty `data_residency`\n5:11: passport `P` references unknown agent `Ghost`\n6:13: passport `P` country `chile` must use a 2-letter ISO-like code\n7:16: passport `P` has invalid risk_level `extreme`; allowed: low, medium, high, critical\n"
+        }
+      }
+    },
+    {
+      "id": "agent_package_files",
+      "file": "package_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "package_package",
+        "read_budget": 20000,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.package": "entry main\nmodule b.left src/b/left.argx\nmodule b.right src/b/right.argx\nmodule c.base src/c/base.argx\nmodule main src/main.argx\nimport b.left c.base\nimport b.right c.base\nimport main b.left\nimport main b.right\nok\n",
+          "dumps/1.package": "error: cyclic import detected: a.one -> a.two -> a.three -> a.one\n",
+          "dumps/0.package-ir": "{\n  \"ir_version\": \"1.0\",\n  \"language\": \"Argorix Lang\",\n  \"module\": \"main\",\n  \"modules\": [\n    {\n      \"name\": \"b.left\",\n      \"path\": \"src/b/left.argx\"\n    },\n    {\n      \"name\": \"b.right\",\n      \"path\": \"src/b/right.argx\"\n    },\n    {\n      \"name\": \"c.base\",\n      \"path\": \"src/c/base.argx\"\n    },\n    {\n      \"name\": \"main\",\n      \"path\": \"src/main.argx\"\n    }\n  ],\n  \"imports\": [\n    {\n      \"from\": \"b.left\",\n      \"to\": \"c.base\"\n    },\n    {\n      \"from\": \"b.right\",\n      \"to\": \"c.base\"\n    },\n    {\n      \"from\": \"main\",\n      \"to\": \"b.left\"\n    },\n    {\n      \"from\": \"main\",\n      \"to\": \"b.right\"\n    }\n  ],\n  \"providers\": [],\n  \"provider_harnesses\": [],\n  \"assertions\": [],\n  \"policies\": [],\n  \"failures\": [],\n  \"capabilities\": [],\n  \"enums\": [],\n  \"types\": [\n    {\n      \"name\": \"L\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"R\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"Q\",\n      \"fields\": []\n    }\n  ],\n  \"tools\": [],\n  \"models\": [],\n  \"agents\": [\n    {\n      \"name\": \"A\",\n      \"approval\": \"denied\",\n      \"receives\": [\n        {\n          \"message_type\": \"Q\",\n          \"from\": null\n        }\n      ],\n      \"sends\": [],\n      \"capabilities\": [],\n      \"tools\": [],\n      \"models\": [],\n      \"handlers\": []\n    }\n  ],\n  \"protocols\": []\n}\n",
+          "dumps/1.package-ir": "error: cyclic import detected: a.one -> a.two -> a.three -> a.one\n",
+          "dumps/0.package-bytecode": "{\n  \"bytecode_version\": \"1.0\",\n  \"language\": \"Argorix Lang\",\n  \"module\": \"main\",\n  \"modules\": [\n    {\n      \"name\": \"b.left\",\n      \"path\": \"src/b/left.argx\"\n    },\n    {\n      \"name\": \"b.right\",\n      \"path\": \"src/b/right.argx\"\n    },\n    {\n      \"name\": \"c.base\",\n      \"path\": \"src/c/base.argx\"\n    },\n    {\n      \"name\": \"main\",\n      \"path\": \"src/main.argx\"\n    }\n  ],\n  \"imports\": [\n    {\n      \"from\": \"b.left\",\n      \"to\": \"c.base\"\n    },\n    {\n      \"from\": \"b.right\",\n      \"to\": \"c.base\"\n    },\n    {\n      \"from\": \"main\",\n      \"to\": \"b.left\"\n    },\n    {\n      \"from\": \"main\",\n      \"to\": \"b.right\"\n    }\n  ],\n  \"providers\": [],\n  \"provider_harnesses\": [],\n  \"assertions\": [],\n  \"policies\": [],\n  \"types\": [\n    {\n      \"name\": \"L\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"R\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"Q\",\n      \"fields\": []\n    }\n  ],\n  \"enums\": [],\n  \"failures\": [],\n  \"agents\": [\n    {\n      \"name\": \"A\",\n      \"approval\": \"denied\"\n    }\n  ],\n  \"capabilities\": [],\n  \"tools\": [],\n  \"models\": [],\n  \"instructions\": [\n    {\n      \"op\": \"DeclareAgent\",\n      \"name\": \"A\",\n      \"approval\": \"denied\"\n    },\n    {\n      \"op\": \"PolicyReport\"\n    },\n    {\n      \"op\": \"End\"\n    }\n  ]\n}\n",
+          "dumps/1.package-bytecode": "error: cyclic import detected: a.one -> a.two -> a.three -> a.one\n"
+        }
+      }
+    },
+    {
+      "id": "agent_ir_files",
+      "file": "ir_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "ir_package",
+        "read_budget": 20000,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.ir": "{\n  \"ir_version\": \"1.0\",\n  \"language\": \"Argorix Lang\",\n  \"module\": \"demo\",\n  \"providers\": [],\n  \"provider_harnesses\": [],\n  \"assertions\": [],\n  \"policies\": [],\n  \"failures\": [],\n  \"capabilities\": [],\n  \"enums\": [],\n  \"types\": [\n    {\n      \"name\": \"Q\",\n      \"fields\": []\n    }\n  ],\n  \"tools\": [],\n  \"models\": [],\n  \"agents\": [\n    {\n      \"name\": \"A\",\n      \"approval\": \"denied\",\n      \"receives\": [\n        {\n          \"message_type\": \"Q\",\n          \"from\": null\n        }\n      ],\n      \"sends\": [],\n      \"capabilities\": [],\n      \"tools\": [],\n      \"models\": [],\n      \"handlers\": [\n        {\n          \"message_type\": \"Q\",\n          \"binding\": \"q\",\n          \"instructions\": [\n            {\n              \"op\": \"trace\",\n              \"binding\": \"q\"\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"protocols\": []\n}\n",
+          "dumps/1.ir": "2:20: unknown message type `Missing`; messages must reference a declared `type`\n"
+        }
+      }
+    },
+    {
+      "id": "agent_bytecode_files",
+      "file": "bytecode_files.argx",
+      "expected_exit": 0,
+      "expected_stdout": "ARGORIX_RESULT:2",
+      "expected_stderr": "",
+      "host": {
+        "package_root": "ir_package",
+        "read_budget": 20000,
+        "write_budget": 20000,
+        "build_dirs": ["dumps"],
+        "expected_build": {
+          "dumps/0.bytecode": "{\n  \"source_digest\": \"sha256:8805293934639d934f3f915c55998c17d2eef16398a329e1df90040d4d107645\",\n  \"bytecode_version\": \"1.0\",\n  \"language\": \"Argorix Lang\",\n  \"module\": \"demo\",\n  \"providers\": [],\n  \"provider_harnesses\": [],\n  \"assertions\": [],\n  \"policies\": [],\n  \"types\": [\n    {\n      \"name\": \"Q\",\n      \"fields\": []\n    }\n  ],\n  \"enums\": [],\n  \"failures\": [],\n  \"agents\": [\n    {\n      \"name\": \"A\",\n      \"approval\": \"denied\"\n    }\n  ],\n  \"capabilities\": [],\n  \"tools\": [],\n  \"models\": [],\n  \"instructions\": [\n    {\n      \"op\": \"DeclareAgent\",\n      \"name\": \"A\",\n      \"approval\": \"denied\"\n    },\n    {\n      \"op\": \"DeclareHandler\",\n      \"agent\": \"A\",\n      \"message_type\": \"Q\",\n      \"binding\": \"q\"\n    },\n    {\n      \"op\": \"TraceValue\",\n      \"agent\": \"A\",\n      \"binding\": \"q\"\n    },\n    {\n      \"op\": \"EndHandler\"\n    },\n    {\n      \"op\": \"PolicyReport\"\n    },\n    {\n      \"op\": \"End\"\n    }\n  ]\n}\n",
+          "dumps/1.bytecode": "2:20: unknown message type `Missing`; messages must reference a declared `type`\n"
         }
       }
     }

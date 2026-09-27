@@ -1,0 +1,2 @@
+module demo
+agent A { on Q as q { "x" } }

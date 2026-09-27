@@ -1,0 +1,2 @@
+module demo
+model Chat { capability c input Q output R }

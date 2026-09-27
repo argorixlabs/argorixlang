@@ -1,0 +1,7 @@
+# a comment
+  [ package ]  
+name="demo"   # trailing
+	version =  "0.1.0"
+
+[entry]
+main = "./src/./main.argx"

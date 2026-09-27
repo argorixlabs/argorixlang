@@ -1,0 +1,5 @@
+module demo
+protocol P {
+  User -> Agent: request Q
+  Agent -> User: inform R
+}

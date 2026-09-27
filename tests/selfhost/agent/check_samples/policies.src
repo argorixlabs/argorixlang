@@ -1,0 +1,21 @@
+module demo
+assert no_unhandled_messages
+assert runtime_status failed
+assert runtime_status completed
+assert made_up
+policy P {
+  require no_unhandled_messages
+  require no_unhandled_messages
+  deny no_unhandled_messages
+  deny external_execution
+  require external_execution
+  require runtime_status completed
+  deny runtime_status completed
+  require invented_rule
+  require runtime_status stalled
+  on violation { action escalate }
+}
+policy P { on violation { action block } }
+failure F { action retry }
+failure F { action halt trace required }
+failure G { action review trace required }

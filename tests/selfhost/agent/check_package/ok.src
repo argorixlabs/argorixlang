@@ -1,0 +1,3 @@
+module demo
+type Q
+agent A { receives Q }

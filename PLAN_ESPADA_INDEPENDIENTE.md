@@ -2,7 +2,7 @@
 
 > Plan rector: [Plan maestro de ArgorixLang](PLAN_MAESTRO_ARGORIXLANG.md). Este documento desarrolla la entrega R1 de independencia; no acredita por sí solo la madurez final. Aplicar las dependencias cruzadas del maestro. ESP-026 queda sustituida por fichas MAT independientes.
 
-Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. ESP-009 (biblioteca estándar mínima), ESP-010 (lexer), ESP-011 (parser), ESP-012 (resolución, tipos y módulos), ESP-013 (lowering y emisión), ESP-014 (compilador self-hosted), ESP-015 (bootstrap stage2/stage3 sin Rust) y ESP-016 (backend nativo Linux) están HECHAS; ESP-017 (segundo destino, Windows, y bootstrap nativo) está EN_CURSO. Self-hosting e independencia completa siguen pendientes.
+Estado: EN EJECUCIÓN. ESP-001–008 completadas como inventario, baseline, arquitectura, especificación Core, prototipo de memoria/ABI, frontend Rust stage0, IR Core verificado y ejecución mediante backend C transitorio/runtime C1. ESP-009 (biblioteca estándar mínima), ESP-010 (lexer), ESP-011 (parser) y ESP-012 (resolución, tipos y módulos en Argorix) están HECHAS; ESP-013 (lowering y emisión en Argorix) está EN_CURSO. Self-hosting e independencia completa siguen pendientes.
 Fecha: 2026-09-17. Base inspeccionada: `5d73d66`, workspace `1.0.0`.
 Última actualización de estado: 2026-09-22 sobre `main@9c77061`. El estado operativo del día (quién tiene cada carril, ramas, PRs e issues abiertos) vive en [WORKBOARD.md](WORKBOARD.md) y en los registros de `coordination/`; esta tabla solo cambia al reclamar o cerrar una tarea.
 Este plan reemplazó la prioridad del backlog AL: self-hosting deja de estar diferido. El plan maestro vigente añade funcionalidad completa y producción como entregas obligatorias posteriores.
@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) ESP-015 (PR #60) y ESP-016 (PR #61). ESP-017 está HECHA (PR #63); ESP-018 está EN_CURSO (lexer en PR #64); ESP-019 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) ESP-015 (PR #60) y ESP-016 (PR #61). ESP-018 está EN_CURSO; ESP-017 está HECHA (PR #63); ESP-019 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -460,18 +460,6 @@ runtime:
 **Entregables:** dos matrices de bootstrap, binarios nativos y guía de construcción.
 **Aceptación:** ambos entornos recompilan y ejecutan sin Rust ni compilador C para fuentes Argorix. No comparar hashes entre plataformas distintas; comparar dentro del mismo entorno fijado. Plataforma no validada permanece no soportada por la nueva release.
 
-**Estado (2026-09-26):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-017.md),
-[especificación](spec/core/native-x86-64.md), [guía](bootstrap/native/BUILDING.md)).
-El mismo backend escribe ahora también objetos COFF para Windows x86-64
-(`target x86_64-windows`): `compiler/coff.argx`, llamadas al runtime con la
-ABI x64 de Microsoft, sondeo de páginas de pila y la entrada en un hilo con
-la pila reservada. La frontera de archivos del host funciona en Windows con
-la API wide (UTF-16, rutas finales por handle, sin seguir reparse points al
-escribir). `bootstrap/native-windows.ps1` (PowerShell, sin Python) hace el
-bootstrap con solo `link.exe` en el PATH, sin compilador C ni Rust: native1,
-native2 y native3 son idénticos byte a byte y pasan los 87 casos. Linux
-sigue con el bootstrap de ESP-016. Se cierra al fusionarse con CI verde.
-
 ### ESP-018 — Lenguaje de agentes y políticas migrado
 
 **Objetivo:** que self-hosting no signifique abandonar el producto ArgorixLang existente.
@@ -479,6 +467,27 @@ sigue con el bootstrap de ESP-016. Se cierra al fusionarse con CI verde.
 **Pasos:** migrar declaraciones y reglas inventariadas en ESP-001; cubrir protocolos, capabilities, módulos, typed messages, governance y versiones; implementar matriz de compatibilidad; corregir divergencias usando especificación y baseline. Reutilizar infraestructura Core sin habilitar efectos adicionales.
 **Entregables:** compilador Argorix del lenguaje completo y matriz funcional por feature/versión.
 **Aceptación:** todo elemento del inventario tiene implementación o incompatibilidad explícita aceptada dentro del alcance; corpus histórico aplicable pasa. DENY, REVIEW y UNKNOWN no se convierten en PASS por la migración.
+
+**Estado (2026-09-26):** EN_CURSO en el carril de Claude ([ficha](tasks/espada/ESP-018.md)),
+dividida en cinco subtareas: lexer, parser y AST, chequeo semántico y módulos,
+lowering a IR y bytecode, y matriz de compatibilidad. ESP-018.A y ESP-018.B están
+hechas: el lexer (`compiler/agent_lexer.argx`, con los datos Unicode
+versionados de `compiler/unicode.argx`) coincide con el lexer stage0 en 1.564
+archivos, y el parser (`compiler/agent_parser.argx`) produce el mismo árbol
+sintáctico que el parser stage0 en los 1.342 programas del corpus y 81
+muestras adversarias ([tokens](spec/language/tokens.md),
+[árbol](spec/language/ast.md)). El esquema del árbol, las tablas de palabras
+y 24 declaraciones se generan desde las fuentes de stage0 con tests en Rust.
+ESP-018.C está hecha: todos los chequeos de `checker.rs` están portados
+(`compiler/agent_check.argx`, [chequeo](spec/language/check.md)) y dan los
+mismos diagnósticos, spans incluidos, que stage0 en 1.462 programas; el grafo
+de módulos (`compiler/agent_package.argx`, [paquetes](spec/language/packages.md))
+resuelve, fusiona y chequea los 50 paquetes del repositorio y 27 paquetes
+adversarios igual que `argorix_module`. ESP-018.D está EN_CURSO: el IR
+(`compiler/agent_ir.argx`, [IR](spec/language/ir.md)), con emisores generados
+desde `ir.rs`, es idéntico al de stage0 en los 557 programas y los 36 paquetes
+que chequean, y también el bytecode sin verificar
+([bytecode](spec/language/bytecode.md)); el verificador coincide con stage0 en 891 casos; ESP-018.E documenta la matriz de compatibilidad y el límite de decisiones de política. PR #65 espera revisión y CI.
 
 ### ESP-019 — VM y scheduler en Argorix
 

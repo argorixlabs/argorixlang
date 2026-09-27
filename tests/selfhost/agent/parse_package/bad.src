@@ -1,0 +1,2 @@
+module demo
+crypto c { kind hash kind mac }

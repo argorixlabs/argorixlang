@@ -1,0 +1,3 @@
+module z.more
+type Q
+tool T { provider nowhere capability c.read input Q output Q }

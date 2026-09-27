@@ -1,0 +1,13 @@
+module demo
+type Q
+type Q { a: string a: int b: Missing c: Color }
+enum Color { Red }
+enum Color { Blue }
+tool T { capability c.read input Q output Q }
+tool T { capability c.read input Q output Q }
+model M { provider simulated capability c.read input Q output Q }
+model M { provider simulated capability c.read input Q output Q }
+capability c.read { level safe }
+capability c.read { level dangerous }
+agent A { receives Q }
+agent A { receives Q }

@@ -1,6 +1,6 @@
 use crate::span::Spanned;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Program {
     pub module: Spanned<String>,
     pub imports: Vec<ImportDecl>,
@@ -44,12 +44,12 @@ pub struct Program {
     pub passports: Vec<PassportDecl>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ImportDecl {
     pub path: Spanned<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum ProviderKindDecl {
     Simulated,
     External,
@@ -64,7 +64,7 @@ impl ProviderKindDecl {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ProviderDecl {
     pub name: Spanned<String>,
     pub kind: Spanned<ProviderKindDecl>,
@@ -79,7 +79,7 @@ pub struct ProviderDecl {
 /// A top-level `harness` block describing declarative provider containment.
 ///
 /// Harnesses are metadata only. They do not make providers executable.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ProviderHarnessDecl {
     pub name: Spanned<String>,
     pub provider: Spanned<String>,
@@ -96,7 +96,7 @@ pub struct ProviderHarnessDecl {
     pub attestations: Vec<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum HarnessMode {
     DryRun,
     Simulated,
@@ -113,7 +113,7 @@ impl HarnessMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum HarnessNetwork {
     Denied,
     Unknown(String),
@@ -128,7 +128,7 @@ impl HarnessNetwork {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum HarnessSecrets {
     Denied,
     Unknown(String),
@@ -143,7 +143,7 @@ impl HarnessSecrets {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum HarnessFilesystem {
     None,
     ReadOnly,
@@ -165,7 +165,7 @@ impl HarnessFilesystem {
 /// v0.21 feature flags are governance metadata only. A feature flag never makes a
 /// provider executable; it records that an experimental capability exists, whether
 /// it is disabled by default, and whether it requires approval.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct FeatureDecl {
     pub name: Spanned<String>,
     pub provider: Option<Spanned<String>>,
@@ -175,7 +175,7 @@ pub struct FeatureDecl {
     pub purpose: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum FeatureStatus {
     Experimental,
     Preview,
@@ -200,7 +200,7 @@ impl FeatureStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum FeatureDefault {
     Disabled,
     Enabled,
@@ -222,7 +222,7 @@ impl FeatureDefault {
 /// v0.21 secret declarations record only the boundary metadata of a future secret:
 /// its handle, scope, denied access, and `none` source. They never contain secret
 /// material, never read environment variables, and never open a vault.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SecretDecl {
     pub name: Spanned<String>,
     pub handle: Spanned<String>,
@@ -233,7 +233,7 @@ pub struct SecretDecl {
     pub source: Spanned<SecretSource>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum SecretScope {
     Provider,
     Adapter,
@@ -256,7 +256,7 @@ impl SecretScope {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum SecretAccess {
     Denied,
     Unknown(String),
@@ -271,7 +271,7 @@ impl SecretAccess {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum SecretSource {
     None,
     Unknown(String),
@@ -292,7 +292,7 @@ impl SecretSource {
 /// future adapter would connect provider contracts, feature flags, secret boundaries
 /// and harnesses. Adapters do not execute, do not call external systems, and do not
 /// read secrets or environment variables. `simulated` remains the only executable provider.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AdapterDecl {
     pub name: Spanned<String>,
     pub provider: Spanned<String>,
@@ -311,7 +311,7 @@ pub struct AdapterDecl {
     pub conformance: Vec<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterKind {
     Llm,
     Tool,
@@ -340,7 +340,7 @@ impl AdapterKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterMode {
     Experimental,
     Preview,
@@ -361,7 +361,7 @@ impl AdapterMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterExecution {
     Disabled,
     Unknown(String),
@@ -376,7 +376,7 @@ impl AdapterExecution {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterNetwork {
     Denied,
     Unknown(String),
@@ -391,7 +391,7 @@ impl AdapterNetwork {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterSecrets {
     Denied,
     Unknown(String),
@@ -406,7 +406,7 @@ impl AdapterSecrets {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterFilesystem {
     None,
     ReadOnly,
@@ -429,7 +429,7 @@ impl AdapterFilesystem {
 /// (e.g. OpenAI, Anthropic, generic). They declare contracts, capabilities, auth style,
 /// and conformance requirements. Profiles do not execute, do not call APIs, and do not
 /// read secrets or environment variables. `simulated` remains the only executable provider.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AdapterProfileDecl {
     pub name: Spanned<String>,
     pub adapter: Spanned<String>,
@@ -447,7 +447,7 @@ pub struct AdapterProfileDecl {
     pub required_conformance: Vec<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterProfileFamily {
     Llm,
     Tool,
@@ -476,7 +476,7 @@ impl AdapterProfileFamily {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterProfileApiStyle {
     Responses,
     Messages,
@@ -507,7 +507,7 @@ impl AdapterProfileApiStyle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterProfileAuth {
     None,
     SecretBoundary,
@@ -530,7 +530,7 @@ impl AdapterProfileAuth {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterProfileExecution {
     Disabled,
     Unknown(String),
@@ -545,7 +545,7 @@ impl AdapterProfileExecution {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterProfileNetwork {
     Denied,
     Unknown(String),
@@ -560,7 +560,7 @@ impl AdapterProfileNetwork {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum AdapterProfileSecrets {
     Denied,
     Unknown(String),
@@ -583,7 +583,7 @@ impl AdapterProfileSecrets {
 /// execute any cryptography, do not generate keys, do not sign, do not verify
 /// signatures, do not encrypt, do not decrypt. `simulated` remains the only
 /// executable provider. No key material or secret material is stored or read.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CryptoDecl {
     pub name: Spanned<String>,
     pub kind: Spanned<CryptoKind>,
@@ -599,7 +599,7 @@ pub struct CryptoDecl {
 /// A declared cryptographic trust boundary: which primitives are allowed/denied
 /// across a perimeter, and whether key material, secret material, or execution
 /// may cross it. Declarative only — no key material is stored or read.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CryptoBoundaryDecl {
     pub name: Spanned<String>,
     pub allowed_hashes: Vec<Spanned<String>>,
@@ -617,7 +617,7 @@ pub struct CryptoBoundaryDecl {
     pub execution: Spanned<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum CryptoKind {
     Hash,
     Signature,
@@ -648,7 +648,7 @@ impl CryptoKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum CryptoStatus {
     Allowed,
     Legacy,
@@ -673,7 +673,7 @@ impl CryptoStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum CryptoStrength {
     Classical,
     PostQuantum,
@@ -694,20 +694,20 @@ impl CryptoStrength {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AssertionDecl {
     pub name: Spanned<String>,
     pub argument: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PolicyDecl {
     pub name: Spanned<String>,
     pub rules: Vec<PolicyRuleDecl>,
     pub violation: Option<PolicyViolationDecl>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum PolicyRuleDecl {
     Require { rule: Spanned<PolicyRule> },
     Deny { rule: Spanned<PolicyRule> },
@@ -728,7 +728,7 @@ impl PolicyRuleDecl {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum PolicyRule {
     NoUnhandledMessages,
     AllToolCallsTraced,
@@ -1404,13 +1404,13 @@ impl PolicyRule {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PolicyViolationDecl {
     pub action: Spanned<PolicyViolationAction>,
     pub trace_required: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum PolicyViolationAction {
     Block,
     Review,
@@ -1430,14 +1430,14 @@ impl PolicyViolationAction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct FailureDecl {
     pub name: Spanned<String>,
     pub action: Spanned<String>,
     pub trace_required: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ModelDecl {
     pub name: Spanned<String>,
     pub provider: Spanned<String>,
@@ -1446,7 +1446,7 @@ pub struct ModelDecl {
     pub output: Spanned<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ToolDecl {
     pub name: Spanned<String>,
     pub provider: Option<Spanned<String>>,
@@ -1455,7 +1455,7 @@ pub struct ToolDecl {
     pub output: Spanned<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum CapabilityLevel {
     Safe,
     Restricted,
@@ -1472,14 +1472,14 @@ impl CapabilityLevel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CapabilityDecl {
     pub name: Spanned<String>,
     pub level: Spanned<CapabilityLevel>,
     pub requires_approval: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Approval {
     Granted,
     Denied,
@@ -1494,25 +1494,25 @@ impl Approval {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct EnumDecl {
     pub name: Spanned<String>,
     pub variants: Vec<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TypeDecl {
     pub name: Spanned<String>,
     pub fields: Vec<FieldDecl>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct FieldDecl {
     pub name: Spanned<String>,
     pub field_type: Spanned<MessageFieldType>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum MessageFieldType {
     String,
     Bool,
@@ -1537,7 +1537,7 @@ impl MessageFieldType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AgentDecl {
     pub name: Spanned<String>,
     pub approval: Option<Spanned<Approval>>,
@@ -1558,14 +1558,14 @@ impl AgentDecl {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct HandlerDecl {
     pub message_type: Spanned<String>,
     pub binding: Spanned<String>,
     pub instructions: Vec<HandlerInstruction>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum HandlerInstruction {
     Emit {
         message_type: Spanned<String>,
@@ -1591,25 +1591,25 @@ pub enum HandlerInstruction {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ReceiveDecl {
     pub message_type: Spanned<String>,
     pub from: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SendDecl {
     pub message_type: Spanned<String>,
     pub to: Spanned<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ProtocolDecl {
     pub name: Spanned<String>,
     pub steps: Vec<ProtocolStep>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ProtocolStep {
     pub from: Spanned<String>,
     pub to: Spanned<String>,
@@ -1621,7 +1621,7 @@ pub struct ProtocolStep {
 ///
 /// v0.19 passports are compilable, verifiable, auditable metadata only. They
 /// perform no network resolution, DID verification, or ASN lookup.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PassportDecl {
     pub name: Spanned<String>,
     pub agent: Spanned<String>,
@@ -1644,7 +1644,7 @@ pub struct PassportDecl {
     pub attestations: Vec<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PassportAsnDecl {
     pub registry: Spanned<String>,
     pub number: Spanned<String>,
@@ -1654,7 +1654,7 @@ pub struct PassportAsnDecl {
 
 /// A top-level `did_method` block describing a DID method that may be referenced
 /// by ATrust boundaries. Declarative only — no DID resolution is performed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DidMethodDecl {
     pub name: Spanned<String>,
     pub status: Spanned<DidMethodStatus>,
@@ -1666,7 +1666,7 @@ pub struct DidMethodDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum DidMethodStatus {
     Experimental,
     Preview,
@@ -1689,7 +1689,7 @@ impl DidMethodStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum DidResolutionMode {
     Disabled,
     Embedded,
@@ -1708,7 +1708,7 @@ impl DidResolutionMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum DidLedgerMode {
     None,
     Local,
@@ -1732,7 +1732,7 @@ impl DidLedgerMode {
 /// A top-level `atrust_boundary` block declaring an ATrust boundary contract.
 /// Metadata only — no identity resolution, credential verification, handshake,
 /// signing, or key operations are performed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ATrustBoundaryDecl {
     pub name: Spanned<String>,
     pub crypto_boundary: Spanned<String>,
@@ -1750,7 +1750,7 @@ pub struct ATrustBoundaryDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustIdentityFormat {
     Did,
     Opaque,
@@ -1769,7 +1769,7 @@ impl ATrustIdentityFormat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustCredentialMode {
     Disabled,
     DeclaredOnly,
@@ -1786,7 +1786,7 @@ impl ATrustCredentialMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustHandshakeMode {
     Disabled,
     DeclaredOnly,
@@ -1803,7 +1803,7 @@ impl ATrustHandshakeMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustResolutionMode {
     Disabled,
     Embedded,
@@ -1822,7 +1822,7 @@ impl ATrustResolutionMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustMaterialBoundary {
     Denied,
     Unknown(String),
@@ -1837,7 +1837,7 @@ impl ATrustMaterialBoundary {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustExecution {
     Disabled,
     Unknown(String),
@@ -1852,7 +1852,7 @@ impl ATrustExecution {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustPostQuantumRequirement {
     Required,
     Optional,
@@ -1871,7 +1871,7 @@ impl ATrustPostQuantumRequirement {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustSecurityClaims {
     None,
     Unknown(String),
@@ -1889,7 +1889,7 @@ impl ATrustSecurityClaims {
 /// A top-level `atrust_identity` block declaring a dry-run ATrust identity for an agent.
 /// v0.27 is simulation + evidence only. No real DID resolution, VC verification,
 /// signing, or network access.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ATrustIdentityDecl {
     pub name: Spanned<String>,
     pub subject: Spanned<String>,
@@ -1908,7 +1908,7 @@ pub struct ATrustIdentityDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustIdentityStatus {
     Active,
     Suspended,
@@ -1927,7 +1927,7 @@ impl ATrustIdentityStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustIdentityValidation {
     DryRun,
     Unknown(String),
@@ -1942,7 +1942,7 @@ impl ATrustIdentityValidation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustEvidenceRequirement {
     Required,
     Unknown(String),
@@ -1960,7 +1960,7 @@ impl ATrustEvidenceRequirement {
 /// A top-level `atrust_credential_contract` block declaring an ATrust credential contract.
 /// v0.28 is credential contract metadata only. No VC parsing, no credential verification,
 /// no signing, no DID resolution, no network.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ATrustCredentialContractDecl {
     pub name: Spanned<String>,
     pub subject: Spanned<String>,
@@ -1985,7 +1985,7 @@ pub struct ATrustCredentialContractDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustCredentialStatus {
     Declared,
     Active,
@@ -2006,7 +2006,7 @@ impl ATrustCredentialStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustCredentialVerification {
     DeclaredOnly,
     Unknown(String),
@@ -2021,7 +2021,7 @@ impl ATrustCredentialVerification {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustCredentialPresentation {
     Disabled,
     DeclaredOnly,
@@ -2041,7 +2041,7 @@ impl ATrustCredentialPresentation {
 /// A top-level `atrust_handshake` block declaring an ATrust handshake dry-run contract.
 /// v0.29 is handshake dry-run metadata + evidence only. No real crypto, network, nonces,
 /// signatures, or live challenge-response.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ATrustHandshakeDecl {
     pub name: Spanned<String>,
     pub initiator: Spanned<String>,
@@ -2068,7 +2068,7 @@ pub struct ATrustHandshakeDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustHandshakeDryRunMode {
     DryRun,
     Unknown(String),
@@ -2083,7 +2083,7 @@ impl ATrustHandshakeDryRunMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustHandshakeDirection {
     OneWay,
     Mutual,
@@ -2100,7 +2100,7 @@ impl ATrustHandshakeDirection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustHandshakeChallenge {
     Disabled,
     DeclaredOnly,
@@ -2117,7 +2117,7 @@ impl ATrustHandshakeChallenge {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustHandshakeResponse {
     Disabled,
     DeclaredOnly,
@@ -2134,7 +2134,7 @@ impl ATrustHandshakeResponse {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustHandshakeTranscript {
     MetadataOnly,
     EvidenceOnly,
@@ -2151,7 +2151,7 @@ impl ATrustHandshakeTranscript {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustHandshakeVerification {
     Disabled,
     DeclaredOnly,
@@ -2168,7 +2168,7 @@ impl ATrustHandshakeVerification {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustNetworkBoundary {
     Denied,
     Unknown(String),
@@ -2187,7 +2187,7 @@ impl ATrustNetworkBoundary {
 /// v0.30 is hash-chain metadata + evidence only. It is NOT a blockchain: no
 /// consensus, mining, signing, signature verification, network, or key/secret
 /// handling. It preserves an ordered, auditable relation of trust evidence.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TrustLedgerDecl {
     pub name: Spanned<String>,
     pub scope: Spanned<TrustLedgerScope>,
@@ -2206,7 +2206,7 @@ pub struct TrustLedgerDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TrustLedgerEntryDecl {
     pub id: Spanned<String>,
     pub kind: Spanned<TrustLedgerEntryKind>,
@@ -2216,7 +2216,7 @@ pub struct TrustLedgerEntryDecl {
     pub evidence_ref: Spanned<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum TrustLedgerScope {
     Local,
     Package,
@@ -2235,7 +2235,7 @@ impl TrustLedgerScope {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum TrustLedgerMode {
     DryRun,
     DeclaredOnly,
@@ -2252,7 +2252,7 @@ impl TrustLedgerMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum TrustLedgerChainPolicy {
     AppendOnly,
     DeclaredOnly,
@@ -2269,7 +2269,7 @@ impl TrustLedgerChainPolicy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum TrustLedgerEntryKind {
     Identity,
     Credential,
@@ -2298,7 +2298,7 @@ impl TrustLedgerEntryKind {
 /// surface. v0.31 is bridge-contract metadata + evidence only. It declares how
 /// an agent *could* interoperate with MCP tools/resources/prompts; it does NOT
 /// open network access, start an MCP server, execute tools, or read secrets.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct McpBridgeContractDecl {
     pub name: Spanned<String>,
     pub agent: Spanned<String>,
@@ -2328,7 +2328,7 @@ pub struct McpBridgeContractDecl {
 /// interoperability surface. v0.31 is bridge-contract metadata + evidence only.
 /// It declares how two agents *could* interoperate; it does NOT open network
 /// access, execute agents, send messages, or read secrets.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct A2ABridgeContractDecl {
     pub name: Spanned<String>,
     pub initiator: Spanned<String>,
@@ -2362,7 +2362,7 @@ pub struct A2ABridgeContractDecl {
 /// credential, handshake, ledger and bridge metadata. v0.32 is mapping only:
 /// it records declared evidence coverage without real verification, network,
 /// signing, key access, or bridge runtime connectivity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ATrustEvidenceMapDecl {
     pub name: Spanned<String>,
     pub agent: Spanned<String>,
@@ -2391,7 +2391,7 @@ pub struct ATrustEvidenceMapDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustEvidenceMapCoverage {
     Required,
     Complete,
@@ -2408,7 +2408,7 @@ impl ATrustEvidenceMapCoverage {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ATrustEvidenceMapMappingMode {
     DeclaredOnly,
     EvidenceOnly,
@@ -2427,7 +2427,7 @@ impl ATrustEvidenceMapMappingMode {
 
 macro_rules! source_enum {
     ($name:ident { $($variant:ident => $source:literal),+ $(,)? }) => {
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
         pub enum $name {
             $($variant,)+
             Unknown(String),
@@ -2521,7 +2521,7 @@ source_enum!(RegulatoryObligationStatus {
 });
 
 /// Declarative governance metadata. It is not a compliance certification.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct GovernanceProfileDecl {
     pub name: Spanned<String>,
     pub scope: Spanned<GovernanceScope>,
@@ -2547,7 +2547,7 @@ pub struct GovernanceProfileDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct GovernanceControlDecl {
     pub id: Spanned<String>,
     pub category: Spanned<GovernanceControlCategory>,
@@ -2558,7 +2558,7 @@ pub struct GovernanceControlDecl {
 
 /// Audit-oriented regulatory mapping metadata. It is not legal advice,
 /// certification, regulatory approval, or proof that obligations are satisfied.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RegulatoryMappingDecl {
     pub name: Spanned<String>,
     pub governance_profile: Spanned<String>,
@@ -2580,7 +2580,7 @@ pub struct RegulatoryMappingDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RegulatoryObligationDecl {
     pub id: Spanned<String>,
     pub source: Spanned<String>,
@@ -2649,7 +2649,7 @@ source_enum!(PublicConformanceClaimStatus {
 
 /// Declared reviewer metadata only; it does not prove identity, independence,
 /// certification, or cryptographic endorsement.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ThirdPartyVerifierDecl {
     pub name: Spanned<String>,
     pub verifier_type: Spanned<ThirdPartyVerifierType>,
@@ -2675,7 +2675,7 @@ pub struct ThirdPartyVerifierDecl {
 
 /// Reproducible public conformance metadata. It is not legal certification,
 /// regulator approval, or evidence that external execution occurred.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PublicConformanceReportDecl {
     pub name: Spanned<String>,
     pub verifier: Spanned<String>,
@@ -2706,7 +2706,7 @@ pub struct PublicConformanceReportDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PublicConformanceClaimDecl {
     pub id: Spanned<String>,
     pub category: Spanned<PublicConformanceClaimCategory>,
@@ -2717,7 +2717,7 @@ pub struct PublicConformanceClaimDecl {
 
 /// Declarative pre-runtime hardening metadata. No field enables runtime
 /// execution or active enforcement in v0.35.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RuntimeHardeningProfileDecl {
     pub name: Spanned<String>,
     pub scope: Spanned<String>,
@@ -2754,7 +2754,7 @@ pub struct RuntimeHardeningProfileDecl {
 
 /// Declarative threat-model metadata. It cannot execute attacks or establish
 /// that a system is secure.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ThreatModelDecl {
     pub name: Spanned<String>,
     pub hardening_profile: Spanned<String>,
@@ -2781,7 +2781,7 @@ pub struct ThreatModelDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ThreatAssetDecl {
     pub id: Spanned<String>,
     pub category: Spanned<String>,
@@ -2790,7 +2790,7 @@ pub struct ThreatAssetDecl {
     pub evidence_ref: Spanned<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ThreatDecl {
     pub id: Spanned<String>,
     pub category: Spanned<String>,
@@ -2800,7 +2800,7 @@ pub struct ThreatDecl {
     pub status: Spanned<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ThreatMitigationDecl {
     pub id: Spanned<String>,
     pub category: Spanned<String>,
@@ -2811,7 +2811,7 @@ pub struct ThreatMitigationDecl {
 
 /// Declarative specification-freeze metadata for the v1.0 release-candidate
 /// boundary. It does not enable runtime behavior.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SpecFreezeDecl {
     pub name: Spanned<String>,
     pub version: Spanned<String>,
@@ -2843,7 +2843,7 @@ pub struct SpecFreezeDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ReleaseCandidateDecl {
     pub name: Spanned<String>,
     pub version: Spanned<String>,
@@ -2871,7 +2871,7 @@ pub struct ReleaseCandidateDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CompatibilityMatrixEntryDecl {
     pub version: Spanned<String>,
     pub bytecode: Spanned<String>,
@@ -2881,7 +2881,7 @@ pub struct CompatibilityMatrixEntryDecl {
 
 /// A governed v1.0 runtime entrypoint. This declaration authorizes no action
 /// by itself; the VM still evaluates every bound guard and fails closed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RuntimeExecutionProfileDecl {
     pub name: Spanned<String>,
     pub mode: Spanned<String>,
@@ -2911,7 +2911,7 @@ pub struct RuntimeExecutionProfileDecl {
 /// A redacted adapter contract for a governed external-call plan. References
 /// are identifiers only; this structure never contains resolved environment or
 /// secret values.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SandboxedProviderAdapterDecl {
     pub name: Spanned<String>,
     pub provider: Spanned<String>,
@@ -2938,7 +2938,7 @@ pub struct SandboxedProviderAdapterDecl {
     pub notes: Option<Spanned<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum BridgeTransport {
     DeclaredOnly,
     Disabled,
@@ -2955,7 +2955,7 @@ impl BridgeTransport {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum McpProtocol {
     Mcp,
     Unknown(String),
@@ -2970,7 +2970,7 @@ impl McpProtocol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum A2AProtocol {
     A2A,
     Unknown(String),
@@ -2985,7 +2985,7 @@ impl A2AProtocol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum BridgeDirection {
     Inbound,
     Outbound,
@@ -3004,7 +3004,7 @@ impl BridgeDirection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum BridgeAuthentication {
     None,
     DeclaredOnly,
@@ -3021,7 +3021,7 @@ impl BridgeAuthentication {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum BridgeAuthorization {
     PolicyBound,
     DeclaredOnly,

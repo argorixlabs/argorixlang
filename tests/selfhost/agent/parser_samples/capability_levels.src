@@ -1,0 +1,4 @@
+module demo
+capability a.b { level safe }
+capability c { level restricted requires approval }
+capability d { level dangerous }

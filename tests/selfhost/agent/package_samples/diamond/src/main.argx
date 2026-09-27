@@ -1,0 +1,5 @@
+module main
+import b.left
+import b.right
+import b.left
+agent A { receives Q }

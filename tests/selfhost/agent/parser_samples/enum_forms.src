@@ -1,0 +1,3 @@
+module demo
+enum Color { Red Green Blue }
+enum Empty { }

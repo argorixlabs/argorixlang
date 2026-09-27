@@ -1,0 +1,2 @@
+module demo
+provider P { kind remote enabled true dry_run_only true }

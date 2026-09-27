@@ -1,0 +1,2 @@
+module demo
+policy P { on breach { action block } }

@@ -1,0 +1,11 @@
+module demo
+agent A {
+  security { approval granted }
+  receives Q from B
+  receives R
+  sends S to C
+  capabilities { net.read fs.write }
+  tools { Search }
+  models { Chat }
+  on Q as q { emit S to C trace q call Search with q ask Chat with q regex.match(q) halt }
+}

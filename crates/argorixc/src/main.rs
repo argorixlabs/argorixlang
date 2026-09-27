@@ -58,6 +58,30 @@ enum Command {
     /// Print the canonical token dump of an agent-language source file
     /// (spec/language/tokens.md).
     AgentTokens { file: PathBuf },
+    /// Print the canonical syntax-tree dump of an agent-language source file
+    /// (spec/language/ast.md).
+    AgentAst { file: PathBuf },
+    /// Print the checker diagnostics of an agent-language source file
+    /// (spec/language/check.md).
+    AgentCheck { file: PathBuf },
+    /// Print the module graph and whole-package checker diagnostics of an
+    /// agent-language package (spec/language/packages.md).
+    AgentPackage { manifest: PathBuf },
+    /// Print the IR of an agent-language source file, or its diagnostics
+    /// (spec/language/ir.md).
+    AgentIr { file: PathBuf },
+    /// Print the IR of an agent-language package, or its diagnostics
+    /// (spec/language/ir.md).
+    AgentPackageIr { manifest: PathBuf },
+    /// Print the bytecode of an agent-language source file, unverified, or
+    /// its diagnostics (spec/language/bytecode.md).
+    AgentBytecode { file: PathBuf },
+    /// Print the bytecode of an agent-language package, unverified, or its
+    /// diagnostics (spec/language/bytecode.md).
+    AgentPackageBytecode { manifest: PathBuf },
+    /// Print the bytecode verifier's decision on a serialized bytecode file
+    /// (spec/language/verify.md).
+    AgentVerify { file: PathBuf },
     /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
     CoreAst { file: PathBuf },
     /// Print the checker diagnostics of one Core file, checked on its own.
@@ -199,6 +223,55 @@ fn run() -> Result<()> {
             let source =
                 fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
             print!("{}", argorix_parser::lexer::token_dump(&source));
+        }
+        Command::AgentAst { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_parser::parser::ast_dump(&source));
+        }
+        Command::AgentCheck { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_semantics::agent_check_dump(&source));
+        }
+        Command::AgentPackage { manifest } => {
+            let manifest_path = if manifest.is_dir() {
+                manifest.join("argorix.toml")
+            } else {
+                manifest
+            };
+            print!("{}", argorix_module::package_dump(&manifest_path));
+        }
+        Command::AgentIr { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_module::agent_ir_dump(&source));
+        }
+        Command::AgentPackageIr { manifest } => {
+            let manifest_path = if manifest.is_dir() {
+                manifest.join("argorix.toml")
+            } else {
+                manifest
+            };
+            print!("{}", argorix_module::package_ir_dump(&manifest_path));
+        }
+        Command::AgentBytecode { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_module::agent_bytecode_dump(&source));
+        }
+        Command::AgentPackageBytecode { manifest } => {
+            let manifest_path = if manifest.is_dir() {
+                manifest.join("argorix.toml")
+            } else {
+                manifest
+            };
+            print!("{}", argorix_module::package_bytecode_dump(&manifest_path));
+        }
+        Command::AgentVerify { file } => {
+            let bytes =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_module::bytecode_verify_dump(&bytes));
         }
         Command::CoreCheck { file } => {
             let compiled = compile_core(&file, cli.stdlib.as_deref(), &cli.modules)?;

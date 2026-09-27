@@ -1,0 +1,2 @@
+module demo
+capability a { level unsafe }

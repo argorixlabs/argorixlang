@@ -1,0 +1,2 @@
+module demo
+crypto a { purpose ["a" "b"] }

@@ -1,0 +1,1 @@
+{"bytecode_version":"1.0","language":"L","module":"m","agents":[],"capabilities":[],"instructions":[{"op":"DeclareProviderContract","name":"p","kind":"k","enabled":true,"dry_run_only":true,"requires_feature_flag":false,"requires_explicit_approval":false,"allowed_targets":[1]}]}

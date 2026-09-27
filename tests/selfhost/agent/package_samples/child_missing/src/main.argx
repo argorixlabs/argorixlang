@@ -1,0 +1,2 @@
+module main
+import agents.gone

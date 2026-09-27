@@ -1,0 +1,2 @@
+module demo
+spec_freeze F { version 1 }

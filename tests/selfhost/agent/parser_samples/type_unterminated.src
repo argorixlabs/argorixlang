@@ -1,0 +1,2 @@
+module demo
+type Msg { text: string

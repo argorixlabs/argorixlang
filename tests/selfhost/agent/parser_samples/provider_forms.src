@@ -1,0 +1,3 @@
+module demo
+provider P { kind external enabled true dry_run_only false requires feature_flag requires approval allowed_targets { a b } allowed_capabilities { c } }
+provider Q { kind simulated enabled false dry_run_only true }
