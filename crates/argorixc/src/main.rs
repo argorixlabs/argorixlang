@@ -55,6 +55,9 @@ enum Command {
     CoreVerifyIrDump { file: PathBuf },
     /// Print the canonical token dump of a Core source file (spec/core/tokens.md).
     CoreTokens { file: PathBuf },
+    /// Print the canonical token dump of an agent-language source file
+    /// (spec/language/tokens.md).
+    AgentTokens { file: PathBuf },
     /// Print the canonical AST dump of a Core source file (spec/core/ast.md).
     CoreAst { file: PathBuf },
     /// Print the checker diagnostics of one Core file, checked on its own.
@@ -191,6 +194,11 @@ fn run() -> Result<()> {
             let source =
                 fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
             print!("{}", core_token_dump(&source));
+        }
+        Command::AgentTokens { file } => {
+            let source =
+                fs::read(&file).with_context(|| format!("failed to read `{}`", file.display()))?;
+            print!("{}", argorix_parser::lexer::token_dump(&source));
         }
         Command::CoreCheck { file } => {
             let compiled = compile_core(&file, cli.stdlib.as_deref(), &cli.modules)?;

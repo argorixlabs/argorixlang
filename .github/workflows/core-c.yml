@@ -386,6 +386,15 @@ jobs:
           --bundle target/core-c/check-bundle
           --work-dir target/core-c/check
           --report target/core-c/report-check.json
+      - name: Run the agent-language lexer fixtures (ESP-018)
+        run: >-
+          ./target/debug/core-c-harness all
+          --argorixc target/debug/argorixc
+          --cc ${{ matrix.cc }} ${{ matrix.flags }}
+          --cases tests/selfhost/agent/cases.json
+          --bundle target/core-c/agent-bundle
+          --work-dir target/core-c/agent
+          --report target/core-c/report-agent.json
       - name: Run the IR fixtures (ESP-013)
         run: >-
           ./target/debug/core-c-harness all

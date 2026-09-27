@@ -1,0 +1,4 @@
+agent Café {
+  receives M
+  max_steps 10 -> "ok"
+}

@@ -1,0 +1,335 @@
+core 0.1;
+module compiler.agent_lexer;
+
+// The agent-language lexer, in Argorix (ESP-018.A). It follows
+// spec/language/tokens.md and must produce the same token dump as the stage0
+// lexer (`crates/argorix_parser/src/lexer.rs`):
+//
+// - the source is UTF-8, checked first;
+// - whitespace is space, tab, CR and LF; `//` runs to the end of the line;
+// - an identifier starts with `_` or an alphabetic character and goes on
+//   with `_`, `.` or an alphanumeric one, in Unicode's sense
+//   (`compiler.unicode`);
+// - a string runs to the next `"` on the same line, with no escapes;
+// - an integer is ASCII digits, below 2^64;
+// - a span is a byte range; its line counts LFs and its column counts
+//   characters, from 1;
+// - lexing goes on after an error, and the tokens are kept only when there
+//   was none.
+
+import stdlib.text;
+import stdlib.result;
+import stdlib.bytes;
+import compiler.unicode;
+
+pub const IDENT: u64 = 1u64;
+pub const STRING: u64 = 2u64;
+pub const INTEGER: u64 = 3u64;
+pub const LEFT_BRACE: u64 = 4u64;
+pub const RIGHT_BRACE: u64 = 5u64;
+pub const LEFT_PAREN: u64 = 6u64;
+pub const RIGHT_PAREN: u64 = 7u64;
+pub const LEFT_BRACKET: u64 = 8u64;
+pub const RIGHT_BRACKET: u64 = 9u64;
+pub const COMMA: u64 = 10u64;
+pub const COLON: u64 = 11u64;
+pub const ARROW: u64 = 12u64;
+pub const EOF: u64 = 13u64;
+
+// Why lexing failed.
+pub const UNEXPECTED_CHARACTER: u64 = 1u64;
+pub const UNTERMINATED_STRING: u64 = 2u64;
+pub const INTEGER_RANGE: u64 = 3u64;
+
+// A token: its kind, byte span, line and column, and an integer's value. An
+// identifier's text is `source[start..end]`, a string's value
+// `source[start + 1..end - 1]`.
+pub struct AgentToken { kind: u64, start: u64, end: u64, line: u64, column: u64, value: u64, }
+
+// A lexical error, with the span it points at.
+pub struct AgentError { kind: u64, start: u64, end: u64, line: u64, column: u64, }
+
+// The tokens, ending in `EOF`, or the errors. `invalid` holds when the source
+// is not UTF-8; then the one error's line and column are the first invalid
+// byte's.
+pub struct AgentLexed { tokens: Buffer<AgentToken>, errors: Buffer<AgentError>, invalid: bool, }
+
+pub fn lex(source: Slice<u8>) -> AgentLexed {
+    let mut tokens: Buffer<AgentToken> = Buffer::new();
+    let mut errors: Buffer<AgentError> = Buffer::new();
+    match text.validate(source) {
+        Checked::Err { failure } => {
+            errors.push(invalid_at(source, result.position(failure)));
+            return AgentLexed { tokens: tokens, errors: errors, invalid: true };
+        },
+        Checked::Ok => {},
+    }
+    let length: u64 = source.length();
+    let mut at: u64 = 0u64;
+    let mut line: u64 = 1u64;
+    let mut column: u64 = 1u64;
+    while at < length {
+        let byte: u8 = source[at];
+        let next: u8 = if at + 1u64 < length { source[at + 1u64] } else { 0u8 };
+        let start: u64 = at;
+        let start_line: u64 = line;
+        let start_column: u64 = column;
+        let single: u64 = single_kind(byte);
+        if byte == 32u8 || byte == 9u8 || byte == 13u8 {
+            at += 1u64;
+            column += 1u64;
+        } else if byte == 10u8 {
+            at += 1u64;
+            line += 1u64;
+            column = 1u64;
+        } else if byte == 47u8 && next == 47u8 {
+            while at < length && source[at] != 10u8 {
+                at += width(source[at]);
+                column += 1u64;
+            }
+        } else if single != 0u64 {
+            at += 1u64;
+            column += 1u64;
+            tokens.push(AgentToken { kind: single, start: start, end: at, line: start_line, column: start_column, value: 0u64 });
+        } else if byte == 34u8 {
+            at += 1u64;
+            column += 1u64;
+            while at < length && source[at] != 34u8 && source[at] != 10u8 {
+                at += width(source[at]);
+                column += 1u64;
+            }
+            if at < length && source[at] == 34u8 {
+                at += 1u64;
+                column += 1u64;
+                tokens.push(AgentToken { kind: STRING, start: start, end: at, line: start_line, column: start_column, value: 0u64 });
+            } else {
+                errors.push(AgentError { kind: UNTERMINATED_STRING, start: start, end: at, line: start_line, column: start_column });
+            }
+        } else if byte == 45u8 && next == 62u8 {
+            at += 2u64;
+            column += 2u64;
+            tokens.push(AgentToken { kind: ARROW, start: start, end: at, line: start_line, column: start_column, value: 0u64 });
+        } else if is_digit(byte) {
+            let mut value: u64 = 0u64;
+            let mut overflow: bool = false;
+            while at < length && is_digit(source[at]) {
+                let digit: u64 = digit_value(source[at]);
+                if value > (18446744073709551615u64 - digit) / 10u64 {
+                    overflow = true;
+                } else {
+                    value = value * 10u64 + digit;
+                }
+                at += 1u64;
+                column += 1u64;
+            }
+            if overflow {
+                errors.push(AgentError { kind: INTEGER_RANGE, start: start, end: at, line: start_line, column: start_column });
+            } else {
+                tokens.push(AgentToken { kind: INTEGER, start: start, end: at, line: start_line, column: start_column, value: value });
+            }
+        } else if ident_start(source, at) {
+            at += width(byte);
+            column += 1u64;
+            while at < length && ident_continue(source, at) {
+                at += width(source[at]);
+                column += 1u64;
+            }
+            tokens.push(AgentToken { kind: IDENT, start: start, end: at, line: start_line, column: start_column, value: 0u64 });
+        } else {
+            at += width(byte);
+            column += 1u64;
+            errors.push(AgentError { kind: UNEXPECTED_CHARACTER, start: start, end: at, line: start_line, column: start_column });
+        }
+    }
+    tokens.push(AgentToken { kind: EOF, start: at, end: at, line: line, column: column, value: 0u64 });
+    AgentLexed { tokens: tokens, errors: errors, invalid: false }
+}
+
+// The canonical dump of spec/language/tokens.md.
+pub fn dump(source: Slice<u8>) -> Buffer<u8> {
+    let lexed: AgentLexed = lex(source);
+    let mut out: Buffer<u8> = Buffer::new();
+    if lexed.invalid {
+        let error: AgentError = lexed.errors[0u64];
+        out = position(out, error.line, error.column);
+        return bytes.append(out, ": source is not valid UTF-8\n".as_slice());
+    }
+    if lexed.errors.length() > 0u64 {
+        let mut index: u64 = 0u64;
+        while index < lexed.errors.length() {
+            let error: AgentError = lexed.errors[index];
+            out = position(out, error.line, error.column);
+            out = bytes.append(out, ": ".as_slice());
+            if error.kind == UNEXPECTED_CHARACTER {
+                out = bytes.append(out, "unexpected character `".as_slice());
+                out = append_range(out, source, error.start, error.end);
+                out.push(96u8);
+            } else if error.kind == UNTERMINATED_STRING {
+                out = bytes.append(out, "unterminated string literal".as_slice());
+            } else {
+                out = bytes.append(out, "integer literal exceeds u64 range".as_slice());
+            }
+            out.push(10u8);
+            index += 1u64;
+        }
+        return out;
+    }
+    let mut index: u64 = 0u64;
+    while index < lexed.tokens.length() {
+        let token: AgentToken = lexed.tokens[index];
+        out = position(out, token.line, token.column);
+        out.push(32u8);
+        out = bytes.append_decimal(out, token.start);
+        out.push(32u8);
+        out = bytes.append_decimal(out, token.end);
+        out.push(32u8);
+        if token.kind == IDENT {
+            out = bytes.append(out, "Ident ".as_slice());
+            out = append_range(out, source, token.start, token.end);
+        } else if token.kind == STRING {
+            out = bytes.append(out, "String \"".as_slice());
+            out = append_escaped(out, source, token.start + 1u64, token.end - 1u64);
+            out.push(34u8);
+        } else if token.kind == INTEGER {
+            out = bytes.append(out, "Integer ".as_slice());
+            out = bytes.append_decimal(out, token.value);
+        } else {
+            out = append_kind(out, token.kind);
+        }
+        out.push(10u8);
+        index += 1u64;
+    }
+    out
+}
+
+fn append_kind(out: Buffer<u8>, kind: u64) -> Buffer<u8> {
+    if kind == LEFT_BRACE { return bytes.append(out, "LeftBrace".as_slice()); }
+    if kind == RIGHT_BRACE { return bytes.append(out, "RightBrace".as_slice()); }
+    if kind == LEFT_PAREN { return bytes.append(out, "LeftParen".as_slice()); }
+    if kind == RIGHT_PAREN { return bytes.append(out, "RightParen".as_slice()); }
+    if kind == LEFT_BRACKET { return bytes.append(out, "LeftBracket".as_slice()); }
+    if kind == RIGHT_BRACKET { return bytes.append(out, "RightBracket".as_slice()); }
+    if kind == COMMA { return bytes.append(out, "Comma".as_slice()); }
+    if kind == COLON { return bytes.append(out, "Colon".as_slice()); }
+    if kind == ARROW { return bytes.append(out, "Arrow".as_slice()); }
+    bytes.append(out, "Eof".as_slice())
+}
+
+fn position(out: Buffer<u8>, line: u64, column: u64) -> Buffer<u8> {
+    let mut written: Buffer<u8> = bytes.append_decimal(out, line);
+    written.push(58u8);
+    bytes.append_decimal(written, column)
+}
+
+fn append_range(out: Buffer<u8>, source: Slice<u8>, start: u64, end: u64) -> Buffer<u8> {
+    bytes.append(out, source.slice(start, end))
+}
+
+fn append_escaped(out: Buffer<u8>, source: Slice<u8>, start: u64, end: u64) -> Buffer<u8> {
+    text.append_json_escaped(out, source.slice(start, end))
+}
+
+// The one-character tokens, or 0.
+fn single_kind(byte: u8) -> u64 {
+    match byte {
+        123u8 => LEFT_BRACE,
+        125u8 => RIGHT_BRACE,
+        40u8 => LEFT_PAREN,
+        41u8 => RIGHT_PAREN,
+        91u8 => LEFT_BRACKET,
+        93u8 => RIGHT_BRACKET,
+        44u8 => COMMA,
+        58u8 => COLON,
+        _ => 0u64,
+    }
+}
+
+// Whether the character at `at` starts an identifier: `_` or alphabetic.
+fn ident_start(source: Slice<u8>, at: u64) -> bool {
+    let byte: u8 = source[at];
+    if byte < 128u8 {
+        return byte == 95u8 || is_letter(byte);
+    }
+    unicode.alphabetic(scalar(source, at))
+}
+
+// Whether the character at `at` goes on with an identifier: `_`, `.` or
+// alphanumeric.
+fn ident_continue(source: Slice<u8>, at: u64) -> bool {
+    let byte: u8 = source[at];
+    if byte < 128u8 {
+        return byte == 95u8 || byte == 46u8 || is_letter(byte) || is_digit(byte);
+    }
+    unicode.alphanumeric(scalar(source, at))
+}
+
+// The scalar value of the valid UTF-8 sequence at `at`.
+fn scalar(source: Slice<u8>, at: u64) -> u64 {
+    let lead: u8 = source[at];
+    if lead < 224u8 {
+        return widen(lead - 192u8) * 64u64 + widen(source[at + 1u64] - 128u8);
+    }
+    if lead < 240u8 {
+        return widen(lead - 224u8) * 4096u64 + widen(source[at + 1u64] - 128u8) * 64u64 + widen(source[at + 2u64] - 128u8);
+    }
+    widen(lead - 240u8) * 262144u64 + widen(source[at + 1u64] - 128u8) * 4096u64 + widen(source[at + 2u64] - 128u8) * 64u64 + widen(source[at + 3u64] - 128u8)
+}
+
+// The error for source that is not UTF-8: the line and column of its first
+// invalid byte.
+fn invalid_at(source: Slice<u8>, bad: u64) -> AgentError {
+    let mut line: u64 = 1u64;
+    let mut column: u64 = 1u64;
+    let mut at: u64 = 0u64;
+    while at < bad {
+        let byte: u8 = source[at];
+        if byte == 10u8 {
+            line += 1u64;
+            column = 1u64;
+        } else if byte < 128u8 || byte >= 192u8 {
+            column += 1u64;
+        }
+        at += 1u64;
+    }
+    AgentError { kind: 0u64, start: bad, end: bad, line: line, column: column }
+}
+
+// The length of the UTF-8 sequence a valid leading byte starts.
+fn width(byte: u8) -> u64 {
+    if byte < 128u8 {
+        1u64
+    } else if byte < 224u8 {
+        2u64
+    } else if byte < 240u8 {
+        3u64
+    } else {
+        4u64
+    }
+}
+
+fn is_digit(byte: u8) -> bool {
+    byte >= 48u8 && byte <= 57u8
+}
+
+fn is_letter(byte: u8) -> bool {
+    (byte >= 65u8 && byte <= 90u8) || (byte >= 97u8 && byte <= 122u8)
+}
+
+fn digit_value(byte: u8) -> u64 {
+    widen(byte - 48u8)
+}
+
+// A byte as a u64: Core has no numeric conversion, so one bit at a time.
+fn widen(byte: u8) -> u64 {
+    let mut rest: u8 = byte;
+    let mut value: u64 = 0u64;
+    if rest >= 128u8 { rest -= 128u8; value += 128u64; }
+    if rest >= 64u8 { rest -= 64u8; value += 64u64; }
+    if rest >= 32u8 { rest -= 32u8; value += 32u64; }
+    if rest >= 16u8 { rest -= 16u8; value += 16u64; }
+    if rest >= 8u8 { rest -= 8u8; value += 8u64; }
+    if rest >= 4u8 { rest -= 4u8; value += 4u64; }
+    if rest >= 2u8 { rest -= 2u8; value += 2u64; }
+    if rest >= 1u8 { value += 1u64; }
+    value
+}

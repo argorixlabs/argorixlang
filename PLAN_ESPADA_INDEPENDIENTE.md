@@ -85,7 +85,7 @@ Los artefactos grandes de CI se publicarán como artefactos de ejecución; versi
 
 ## 6. Índice de tareas y dependencias
 
-ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) ESP-015 (PR #60) y ESP-016 (PR #61). ESP-017 está EN_CURSO; ESP-018 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
+ESP-001 a ESP-008 están HECHAS como inventario, baseline histórico, arquitectura, especificación/corpus Core, prototipo de memoria/ABI, frontend Core stage0, IR verificado y backend C transitorio con runtime C1, con evidencia en `tasks/espada/`. ESP-009 está HECHA (carril de Claude, PRs #47, #48 y #51, con las subtareas ESP-009.B a ESP-009.F). ESP-010 y ESP-011 están HECHAS (PRs #53 y #54), y ESP-012 también (PRs #55, #56 y #57), como ESP-013 (PR #58) ESP-014 (PR #59) ESP-015 (PR #60) y ESP-016 (PR #61). ESP-017 está HECHA (PR #63); ESP-018 está EN_CURSO (lexer en PR #64); ESP-019 a ESP-025 siguen PENDIENTES. ESP-026 está SUSTITUIDA por fichas MAT del maestro. Ordenar por dependencias, incluidas las cruzadas; el ID no autoriza saltarse una puerta.
 
 Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o eleva su evidencia (regla de subdivisión del maestro, §10). El padre solo pasa a HECHA cuando cumple todos sus criterios.
 
@@ -112,8 +112,8 @@ Una subtarea `ESP-NNN.X` no recorta los criterios de su padre: los habilita o el
 | ESP-014 | Primer compilador self-hosted completo | 013 | HECHA |
 | ESP-015 | Bootstrap stage2/stage3 sin Rust | 014 | HECHA |
 | ESP-016 | Backend nativo inicial | 015 | HECHA |
-| ESP-017 | Segundo destino y bootstrap nativo | 016 | EN_CURSO |
-| ESP-018 | Lenguaje de agentes y políticas migrado | 015 | PENDIENTE |
+| ESP-017 | Segundo destino y bootstrap nativo | 016 | HECHA |
+| ESP-018 | Lenguaje de agentes y políticas migrado | 015 | EN_CURSO |
 | ESP-019 | VM y scheduler en Argorix | 018 | PENDIENTE |
 | ESP-020 | Evidencia, firma y paquetes en Argorix | 019 | PENDIENTE |
 | ESP-021 | Runtime externo gobernado | 019, 020 | PENDIENTE |

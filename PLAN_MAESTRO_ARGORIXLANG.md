@@ -20,11 +20,11 @@ parser y el AST en `compiler/` coinciden con el parser stage0 en 135 archivos.
 el IR, el verificador y el backend C en Argorix; stage1, el primer compilador
 self-hosted; el bootstrap stage2/stage3 sin Rust; y el backend nativo x86-64
 para Linux, con el que el compilador se construye sin compilador C.
-**ESP-017 (segundo destino y bootstrap nativo) está EN_CURSO**: el mismo
+**ESP-017 (segundo destino y bootstrap nativo) está HECHA** (PR #63): el mismo
 backend escribe objetos COFF para Windows x86-64, y en Windows el compilador
 se reconstruye a sí mismo solo con `link.exe`, sin compilador C ni Rust
 (`bootstrap/native-windows.ps1`).
-Ninguna otra tarea cambió de estado.
+**ESP-018 está EN_CURSO**: su lexer en Argorix coincide byte a byte con el lexer stage0 en 1.564 archivos (PR #64).
 El detalle por tarea vive en el [Plan Espada](PLAN_ESPADA_INDEPENDIENTE.md)
 y el estado operativo del día —carriles, ramas, PRs e issues abiertos— en
 [WORKBOARD.md](WORKBOARD.md) y `coordination/`.

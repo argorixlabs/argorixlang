@@ -12,3 +12,5 @@ tests/selfhost/parser/package/** -text
 tests/selfhost/parser/samples/** -text
 tests/selfhost/check/samples/** -text
 tests/selfhost/check/package/** -text
+tests/selfhost/agent/samples/** -text
+tests/selfhost/agent/package/** -text
