@@ -17,6 +17,56 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+
+#ifdef _WIN32
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <fcntl.h>
+#include <io.h>
+
+/* The body a native program runs, and its context (ESP-017). */
+typedef struct argorix_rt_task {
+    void (*body)(void *);
+    void *context;
+} argorix_rt_task;
+
+static DWORD WINAPI argorix_rt_thread(LPVOID parameter) {
+    argorix_rt_task *task = (argorix_rt_task *)parameter;
+    task->body(task->context);
+    return 0U;
+}
+
+/* Windows grows a thread's stack through a guard page, and the C library
+ * checks large frames against the thread's own stack, so a native program
+ * cannot switch to a stack of its own as on Linux. It runs on a thread
+ * whose stack reserves `size` bytes instead, sized as on Linux; pages are
+ * committed as the program touches them, a page at a time. Output is
+ * written in binary mode, so a program writes the bytes it writes on Linux.
+ * Returns once the body has. */
+void argorix_rt_run(uint64_t size, void (*body)(void *), void *context) {
+    (void)_setmode(_fileno(stdout), _O_BINARY);
+    (void)_setmode(_fileno(stderr), _O_BINARY);
+    if (size > (uint64_t)SIZE_MAX) {
+        argorix_trap("OUT_OF_MEMORY");
+    }
+    argorix_rt_task task = {body, context};
+    HANDLE thread = CreateThread(
+        NULL, (SIZE_T)size, argorix_rt_thread, &task, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL
+    );
+    if (thread == NULL) {
+        argorix_trap("OUT_OF_MEMORY");
+    }
+    if (WaitForSingleObject(thread, INFINITE) != WAIT_OBJECT_0) {
+        argorix_trap("OUT_OF_MEMORY");
+    }
+    (void)CloseHandle(thread);
+}
+
+#else
+
 #include <sys/mman.h>
 
 /* The stack a native program runs on: `size` bytes, sized by the backend for
@@ -39,6 +89,8 @@ void *argorix_rt_stack(uint64_t size) {
     }
     return base + guard + rounded;
 }
+
+#endif /* _WIN32 */
 
 /* The entry's result, as the C backend's main prints it. */
 void argorix_rt_print_u64(uint64_t value) {

@@ -1,6 +1,7 @@
-# Native backend: Linux x86-64 (ESP-016)
+# Native backend: x86-64 for Linux and Windows (ESP-016, ESP-017)
 
-Status: ESP-016. `compiler/native.argx` compiles a linked and checked Core
+Status: ESP-016 for Linux, ESP-017 for Windows (see "Windows x86-64"
+below). `compiler/native.argx` compiles a linked and checked Core
 package to x86-64 machine code in an ELF64 relocatable object. The system
 linker combines the object with the runtime shim and the C library into an
 executable. No C is written and no C compiler runs: the C compiler's one job
@@ -276,11 +277,110 @@ shim, the linker and the C library are recorded, not verified.
   - In CI (`core-c.yml`, `native`), `bootstrap` runs in a container with
     no C compiler, no Rust and no network.
 
+## Windows x86-64 (ESP-017)
+
+`target x86_64-windows` in the build file asks for the same program as a
+COFF object for Windows. `x86_64-linux` is the default. The target goes into
+the manifest, as `"target":"x86_64-windows"` and
+`"object":"coff-amd64-relocatable"`. Everything above holds, except where
+the program meets the system.
+
+**Object format** (`compiler/coff.argx`):
+
+- the file header (machine AMD64, time stamp 0), then one section, `.text`:
+  the code, then the read-only data at a 16-byte boundary;
+- `.text`'s relocations: one `IMAGE_REL_AMD64_REL32` per call to the
+  runtime, against an undefined external symbol. The addend is in the field,
+  which holds 0. Past 65,534 relocations, the count goes in the first
+  record, as `IMAGE_SCN_LNK_NRELOC_OVFL` asks;
+- the symbol table: `.text`'s static section symbol and its auxiliary
+  record, `main` (external, a function), then the runtime functions it
+  calls, undefined, in the order of first use;
+- the string table, for names longer than 8 bytes.
+
+**Calls to the runtime.** Native code loads a runtime call's arguments into
+RDI, RSI, RDX, RCX and R8, as on Linux. For Windows each call then:
+
+1. moves them to RCX, RDX, R8 and R9, as the Microsoft x64 ABI passes them;
+2. reserves 48 bytes, the 32 the callee may use, the fifth argument at
+   `[rsp + 32]`, and alignment;
+3. calls, and gives the 48 bytes back.
+
+Program functions keep their own convention. Registers that ABI has a callee
+keep (RBX, RSI, RDI) are saved by `main` and by the body it runs, the only
+code a Windows caller enters.
+
+**Stack.** Windows grows a thread's stack through a guard page, and its C
+library checks large frames against the thread's own stack. So:
+
+- A native program does not switch to a stack of its own as on Linux.
+  `main(argc, argv)` calls `argorix_rt_run(size, body, context)`, which
+  runs the body on a thread whose stack reserves `size` bytes, sized as on
+  Linux, and returns once it has. The body sets the budget, starts the host,
+  calls the entry and prints the result.
+- Every function probes its frame after reserving it: one read a page from
+  the frame pointer down, while above the stack pointer, then one at the
+  stack pointer. So the stack grows through the guard page in order,
+  however large the frame.
+
+Running out of call depth is still the typed trap.
+
+**Output.** `argorix_rt_run` puts standard output and standard error in
+binary mode, so a program writes the same bytes it writes on Linux.
+
+**Host.** The compiler-host operations are the ones of
+`bootstrap/c/argorix_core_host.h`, over the wide Win32 API
+(`spec/core/stdlib.md`).
+
+**Link line** (MSVC `link.exe`, with the static C library):
+
+```text
+link /nologo /Brepro /subsystem:console /out:<program>.exe <program>.obj \
+     argorix_core_runtime.obj argorix_native_shim.obj argorix_native_host.obj \
+     libcmt.lib libucrt.lib libvcruntime.lib kernel32.lib shell32.lib
+```
+
+`/Brepro` makes the executable depend only on its inputs, so generations
+can be compared byte for byte. The shim objects are built once by MSVC `cl`
+with `/std:c11 /O2 /W3 /WX /wd5105 /c`. C5105 is raised by the Windows SDK's
+own headers under a conforming preprocessor.
+
+**Bootstrap** (`bootstrap/native-windows.ps1`, PowerShell, which Windows
+ships; no Python):
+
+- `seed` needs stage0 and `cl`:
+  - stage0 writes the compiler's C, `cl` builds stage1 from it and builds
+    the shim;
+  - stage1 writes the seed object;
+  - `shim.json` records the shim's sources, flags, compiler and objects.
+- `linker` copies `link.exe` and the libraries it loads out of the developer
+  environment, and `linker.json` records them.
+- `bootstrap` runs with only that linker on the path, and checks:
+  - native1, native2 and native3 write the seed's object, manifest and
+    diagnostics, byte for byte, and are byte-identical executables;
+  - the 87 fixture cases pass natively, and native2 and native3 write the
+    same object for each;
+  - `-RequireNoCCompiler` and `-RequireRustFreeHost` find no C compiler and
+    no Rust tool on the path.
+- `cases` runs any `cases.json` natively, such as the spec oracle's
+  generated programs.
+
+**Comparing targets.** An object for Windows is not an object for Linux:
+digests are compared only within one target and one fixed host, never
+across them (spec/independence.md).
+
 ## Limits of this backend
 
-- **One target:** Linux x86-64. A second target, Windows, is ESP-017.
+- **Two targets:** Linux x86-64 and Windows x86-64 (ESP-017). No other
+  system or architecture is supported.
 - **No debug information and no local symbols:** a debugger sees one
   function, `main`, and addresses.
+  - Minimal debugging: on Linux, `objdump -d` and `nm` on the object and the
+    executable. On Windows, `dumpbin /disasm /symbols` on the object, and
+    `link /MAP:<file>` for where `main` and the shim's functions landed in
+    the executable. No PDB is written.
+  - A trap names its code on standard error on both systems. That is the
+    first thing to read.
 - **The trusted base:** the linker, the C library and the shim objects are
   trusted and recorded. As in ESP-015, equal generations show that the
   compiler reproduces itself, not that no defect reproduces with it; that

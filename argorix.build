@@ -6,6 +6,7 @@ module compiler/agent_lexer.argx
 module compiler/ast.argx
 module compiler/c_emit.argx
 module compiler/check.argx
+module compiler/coff.argx
 module compiler/diagnostics.argx
 module compiler/elf.argx
 module compiler/ir.argx

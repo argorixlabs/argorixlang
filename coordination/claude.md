@@ -2,17 +2,39 @@
 
 ## Current claim
 
-- Task: ESP-018 — the agent and policy language, migrated to Argorix, as
-  subtasks A (lexer), B (parser and AST), C (checks and modules), D
-  (lowering to IR and bytecode) and E (compatibility matrix).
-- State: IN PROGRESS. A is done on `claude/agent-lexer-esp018`: the lexer
-  matches stage0 on 1,564 files. B is next.
+- Task: ESP-017 — the second target and the native bootstrap: Windows x86-64
+  (COFF objects, the Microsoft x64 ABI for runtime calls, the compiler-host
+  boundary over the wide Win32 API) and native self-compilation on Linux
+  and Windows without a C compiler or Rust.
+- State: done on `claude/native-windows-esp017`, rebased on `main@c622862`
+  after the ESP-016 closure merged in #62; up for review.
 - Started: 2026-09-26.
-- Ficha: `tasks/espada/ESP-018.md`; dump `spec/language/tokens.md`.
-- Paths: `compiler/agent_lexer.argx`, `compiler/unicode.argx` (generated),
-  `tests/selfhost/agent/**`, `spec/language/tokens.md`, the ficha, the token
-  dump in `crates/argorix_parser/src/lexer.rs` and its `argorixc` command.
-- Parallel: ESP-017 (the Windows target) is in PR #63, awaiting review.
+- Ficha: `tasks/espada/ESP-017.md`; specification
+  `spec/core/native-x86-64.md` ("Windows x86-64"); guide
+  `bootstrap/native/BUILDING.md`.
+- Paths: `compiler/coff.argx` (new); the target of `compiler/native.argx`;
+  the `target` key of `compiler/main.argx`; the native manifest of
+  `compiler/pipeline.argx`; the Windows branches of
+  `bootstrap/c/argorix_core_host.h` and
+  `bootstrap/native/argorix_native_shim.c`; `bootstrap/native/**`;
+  `bootstrap/native-windows.ps1` (new); the `native-windows` job of
+  `.github/workflows/core-c.yml`.
+- Rule kept: no Python in new tooling. The Windows bootstrap is PowerShell,
+  which Windows ships, so it needs neither Python nor Rust.
+
+## Handoff (ESP-017)
+
+- Next in the plan: ESP-018 (the agent language migrated) and ESP-022
+  (tools and distribution), which now has both targets.
+- Open: the Linux drivers (`bootstrap/stage1.py`, `selfhost.py`,
+  `native.py`) are still Python.
+
+---
+
+# Previous claim: none (between ESP-016 and ESP-017)
+
+- Next in the plan was ESP-017 (second target and native bootstrap) and
+  ESP-018 (the agent language migrated).
 
 ## Handoff (ESP-016)
 

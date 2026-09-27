@@ -380,7 +380,7 @@ fn stage1_reports_each_outcome_when_cc_is_available() {
         (
             "unknown-key",
             "argorix-build 1\ndiagnostics out.txt\noutput out.c\n",
-            Some("argorix.build:3: unknown key; the keys are `root`, `module`, `c`, `object`, `manifest`, `diagnostics`, `steps`, `depth`, `buffer-bytes`, `arena-bytes` and `arena-slots`\n"),
+            Some("argorix.build:3: unknown key; the keys are `root`, `module`, `c`, `object`, `manifest`, `diagnostics`, `steps`, `depth`, `buffer-bytes`, `arena-bytes`, `arena-slots` and `target`\n"),
         ),
         (
             "repeated-key",
